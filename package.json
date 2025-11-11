@@ -1,0 +1,25 @@
+{
+  "name": "ai-faceswap-cloudflare-backend",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker backend for AI FaceSwap mobile app",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "start": "wrangler dev"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker",
+    "faceswap",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241106.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.78.0"
+  }
+}
+

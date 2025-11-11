@@ -1,0 +1,15 @@
+{
+  "name": "ai-faceswap-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+  // Environment variables - Set these via wrangler secret put:
+  // RAPIDAPI_KEY - Your RapidAPI key
+  // GOOGLE_CLOUD_API_KEY - Your Google Cloud Vision API key
+  // GOOGLE_CLOUD_PROJECT_ID - Your Google Cloud Project ID (optional)
+}
+
