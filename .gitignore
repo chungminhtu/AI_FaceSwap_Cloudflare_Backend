@@ -8,3 +8,4 @@ dist/
 secrets.json
 .DS_Store
 
+package-lock.json

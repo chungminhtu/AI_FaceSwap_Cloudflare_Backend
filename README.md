@@ -34,33 +34,18 @@ npm install
 
 **ALL configuration must be set via environment variables - no hardcoded defaults!**
 
-Set your environment variables using Wrangler CLI:
+**For local development:** Create a `.dev.vars` file with all required variables:
 
 ```bash
-# RapidAPI Configuration (ALL REQUIRED)
-wrangler secret put RAPIDAPI_KEY
-wrangler secret put RAPIDAPI_HOST
-wrangler secret put RAPIDAPI_ENDPOINT
-
-# Google Cloud Vision API Configuration (ALL REQUIRED)
-wrangler secret put GOOGLE_CLOUD_API_KEY
-wrangler secret put GOOGLE_VISION_ENDPOINT
-
-# Optional
-wrangler secret put GOOGLE_CLOUD_PROJECT_ID
-```
-
-**For local development:** Create a `.env` file with all required variables:
-
-```bash
-# .env (ALL REQUIRED - no defaults)
-RAPIDAPI_KEY=your_rapidapi_key_here
+# .dev.vars (ALL REQUIRED - no defaults)
+RAPIDAPI_KEY=a6c4db0ee6msh0dc524a0797828dp1a04bcjsnc80ab176f0ef
 RAPIDAPI_HOST=ai-face-swap2.p.rapidapi.com
 RAPIDAPI_ENDPOINT=https://ai-face-swap2.p.rapidapi.com/public/process/urls
-GOOGLE_CLOUD_API_KEY=your_google_cloud_api_key_here
+GOOGLE_CLOUD_API_KEY=your_google_cloud_vision_api_key_here
 GOOGLE_VISION_ENDPOINT=https://vision.googleapis.com/v1/images:annotate
-GOOGLE_CLOUD_PROJECT_ID=your_project_id_here  # Optional
 ```
+
+**For production:** Set secrets using Wrangler CLI (see Deployment section below).
 
 ### 3. Get Google Cloud Vision API Key
 
@@ -81,8 +66,11 @@ npm run dev
 
 This will start a local development server. The worker will be available at `http://localhost:8787`
 
+**Note:** Make sure your `.dev.vars` file is configured with all required variables (see Setup Instructions above).
+
 ### Test the API
 
+**Using curl:**
 ```bash
 curl --location 'http://localhost:8787/faceswap' \
 --header 'Content-Type: application/json' \
@@ -92,7 +80,51 @@ curl --location 'http://localhost:8787/faceswap' \
 }'
 ```
 
+**Using Postman/Insomnia:**
+- **URL:** `http://localhost:8787/faceswap`
+- **Method:** `POST`
+- **Headers:** `Content-Type: application/json`
+- **Body (JSON):**
+```json
+{
+    "target_url": "https://temp.live3d.io/aifaceswap/static_img/template-2-aafa80bf126595068e90d04e4eb76969.webp",
+    "source_url": "https://raw.githubusercontent.com/chungminhtu/anh/refs/heads/gh-pages/IMG_2852_1.jpeg"
+}
+```
+
+**Expected Response (Success):**
+```json
+{
+    "ResultImageUrl": "https://...",
+    "Success": true,
+    "Message": "Successful",
+    "StatusCode": 200
+}
+```
+
 ## Deployment
+
+### Set Secrets in Cloudflare
+
+**Option A: Bulk Upload (Recommended)**
+```bash
+# 1. Edit secrets.json with your actual Google Cloud API key
+# 2. Login to Cloudflare
+npx wrangler login
+
+# 3. Upload all secrets at once
+npx wrangler secret bulk secrets.json
+```
+
+**Option B: Set One by One**
+```bash
+npx wrangler login
+npx wrangler secret put RAPIDAPI_KEY
+npx wrangler secret put RAPIDAPI_HOST
+npx wrangler secret put RAPIDAPI_ENDPOINT
+npx wrangler secret put GOOGLE_CLOUD_API_KEY
+npx wrangler secret put GOOGLE_VISION_ENDPOINT
+```
 
 ### Deploy to Cloudflare
 
@@ -112,6 +144,7 @@ curl --location 'https://ai-faceswap-backend.your-subdomain.workers.dev/faceswap
     "source_url": "https://raw.githubusercontent.com/chungminhtu/anh/refs/heads/gh-pages/IMG_2852_1.jpeg"
 }'
 ```
+
 
 ## API Endpoint
 
@@ -202,8 +235,8 @@ The backend automatically checks all FaceSwap results using Google Cloud Vision 
 ## Troubleshooting
 
 ### Error: "RAPIDAPI_KEY not set"
-- Make sure you've set the secret using `wrangler secret put RAPIDAPI_KEY`
-- For local dev, check your `.dev.vars` file
+- Make sure you've set the secret using `wrangler secret put RAPIDAPI_KEY` (for production)
+- For local dev, check your `.dev.vars` file has all required variables
 
 ### Error: "GOOGLE_CLOUD_API_KEY not set"
 - Make sure you've set the secret using `wrangler secret put GOOGLE_CLOUD_API_KEY`

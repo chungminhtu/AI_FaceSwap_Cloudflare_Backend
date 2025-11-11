@@ -23,15 +23,29 @@ export const callFaceSwap = async (
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
     return {
       Success: false,
       Message: `FaceSwap API error: ${response.status} ${response.statusText}`,
       StatusCode: response.status,
-      Error: await response.text(),
+      Error: errorText,
     };
   }
 
-  return await response.json();
+  const responseText = await response.text();
+  try {
+    const data = JSON.parse(responseText);
+    console.log('FaceSwap API response:', JSON.stringify(data).substring(0, 200));
+    return data as FaceSwapResponse;
+  } catch (error) {
+    console.error('JSON parse error:', error, 'Response:', responseText.substring(0, 200));
+    return {
+      Success: false,
+      Message: `Failed to parse FaceSwap API response: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: responseText.substring(0, 200),
+    };
+  }
 };
 
 export const checkSafeSearch = async (

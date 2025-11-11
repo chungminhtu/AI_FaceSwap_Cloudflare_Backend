@@ -26,6 +26,7 @@ export default {
       const faceSwapResult = await callFaceSwap(body.target_url, body.source_url, env);
 
       if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
+        console.error('FaceSwap failed:', faceSwapResult);
         return jsonResponse(faceSwapResult, faceSwapResult.StatusCode || 500);
       }
 
@@ -33,6 +34,7 @@ export default {
 
       if (safeSearchResult.error) {
         console.error('Safe search error:', safeSearchResult.error);
+        return errorResponse(`Safe search validation failed: ${safeSearchResult.error}`, 500);
       }
 
       if (!safeSearchResult.isSafe) {
@@ -41,6 +43,7 @@ export default {
 
       return jsonResponse(faceSwapResult);
     } catch (error) {
+      console.error('Unhandled error:', error);
       return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
     }
   },
