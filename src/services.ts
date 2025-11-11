@@ -1,24 +1,25 @@
-import type { FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { getConfig } from './config';
+import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
 import { isUnsafe } from './utils';
-
-type Config = ReturnType<typeof getConfig>;
-type RapidApiConfig = Config['rapidApi'];
-type GoogleVisionConfig = Config['googleVision'];
 
 export const callFaceSwap = async (
   targetUrl: string,
   sourceUrl: string,
-  config: RapidApiConfig
+  env: Env
 ): Promise<FaceSwapResponse> => {
-  const response = await fetch(config.endpoint, {
+  // Create form-data for multipart/form-data request
+  const formData = new FormData();
+  formData.append('target_url', targetUrl);
+  formData.append('source_url', sourceUrl);
+
+  const response = await fetch(env.RAPIDAPI_ENDPOINT, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'x-rapidapi-host': config.host,
-      'x-rapidapi-key': config.key,
+      'accept': 'application/json',
+      'x-rapidapi-host': env.RAPIDAPI_HOST,
+      'x-rapidapi-key': env.RAPIDAPI_KEY,
+      // Don't set Content-Type - browser/worker will set it with boundary for FormData
     },
-    body: JSON.stringify({ TargetImageUrl: targetUrl, SourceImageUrl: sourceUrl }),
+    body: formData,
   });
 
   if (!response.ok) {
@@ -35,14 +36,10 @@ export const callFaceSwap = async (
 
 export const checkSafeSearch = async (
   imageUrl: string,
-  config: GoogleVisionConfig
+  env: Env
 ): Promise<SafeSearchResult> => {
   try {
-    const endpoint = config.projectId
-      ? `https://vision.googleapis.com/v1/projects/${config.projectId}/locations/global/images:annotate`
-      : config.endpoint;
-
-    const response = await fetch(`${endpoint}?key=${config.key}`, {
+    const response = await fetch(`${env.GOOGLE_VISION_ENDPOINT}?key=${env.GOOGLE_CLOUD_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

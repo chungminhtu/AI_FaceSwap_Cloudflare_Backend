@@ -4,5 +4,7 @@ dist/
 *.log
 .env
 .env.local
+.dev.vars
+secrets.json
 .DS_Store
 

@@ -1,8 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import type { Env, FaceSwapRequest } from './types';
-import { CORS_HEADERS, getConfig } from './config';
-import { jsonResponse, errorResponse } from './utils';
+import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
 import { callFaceSwap, checkSafeSearch } from './services';
 import { validateEnv, validateRequest } from './validators';
 
@@ -24,14 +23,13 @@ export default {
       const requestError = validateRequest(body);
       if (requestError) return errorResponse(requestError, 400);
 
-      const config = getConfig(env);
-      const faceSwapResult = await callFaceSwap(body.TargetImageUrl, body.SourceImageUrl, config.rapidApi);
+      const faceSwapResult = await callFaceSwap(body.target_url, body.source_url, env);
 
       if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
         return jsonResponse(faceSwapResult, faceSwapResult.StatusCode || 500);
       }
 
-      const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, config.googleVision);
+      const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
       if (safeSearchResult.error) {
         console.error('Safe search error:', safeSearchResult.error);

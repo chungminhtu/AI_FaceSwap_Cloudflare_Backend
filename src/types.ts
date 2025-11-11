@@ -1,15 +1,14 @@
 export interface Env {
   RAPIDAPI_KEY: string;
+  RAPIDAPI_HOST: string;
+  RAPIDAPI_ENDPOINT: string;
   GOOGLE_CLOUD_API_KEY: string;
-  GOOGLE_CLOUD_PROJECT_ID?: string;
-  RAPIDAPI_HOST?: string;
-  RAPIDAPI_ENDPOINT?: string;
-  GOOGLE_VISION_ENDPOINT?: string;
+  GOOGLE_VISION_ENDPOINT: string;
 }
 
 export interface FaceSwapRequest {
-  TargetImageUrl: string;
-  SourceImageUrl: string;
+  target_url: string;
+  source_url: string;
 }
 
 export interface FaceSwapResponse {

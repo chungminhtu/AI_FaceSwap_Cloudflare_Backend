@@ -1,4 +1,10 @@
-import { CORS_HEADERS, UNSAFE_LEVELS } from './config';
+export const UNSAFE_LEVELS = ['LIKELY', 'VERY_LIKELY'];
+
+export const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
 
 export const jsonResponse = (data: any, status = 200): Response =>
   new Response(JSON.stringify(data), {
