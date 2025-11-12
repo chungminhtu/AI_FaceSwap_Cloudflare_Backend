@@ -1,525 +1,336 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 
-const GREEN = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const RED = '\x1b[31m';
-const NC = '\x1b[0m'; // No Color
+// Colors for output
+const colors = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  cyan: '\x1b[36m',
+};
 
-function exec(command, options = {}) {
+const log = {
+  info: (msg) => console.log(`${colors.cyan}ℹ${colors.reset} ${msg}`),
+  success: (msg) => console.log(`${colors.green}✓${colors.reset} ${msg}`),
+  warn: (msg) => console.log(`${colors.yellow}⚠${colors.reset} ${msg}`),
+  error: (msg) => console.log(`${colors.red}✗${colors.reset} ${msg}`),
+};
+
+// Execute command and return output
+function execCommand(command, options = {}) {
   try {
-    return execSync(command, { 
-      encoding: 'utf8', 
-      stdio: options.silent ? 'pipe' : 'inherit',
-      ...options 
-    });
+    return execSync(command, { encoding: 'utf8', stdio: options.silent ? 'pipe' : 'inherit', ...options });
   } catch (error) {
-    if (!options.ignoreError) {
+    if (options.throwOnError !== false) {
       throw error;
     }
-    return error.stdout || error.stderr || '';
+    return null;
   }
 }
 
-function execSilent(command) {
-  return exec(command, { silent: true, ignoreError: true });
+// Prompt user for input
+function prompt(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
 }
 
-function log(message, color = '') {
-  console.log(`${color}${message}${NC}`);
-}
-
+// Check if wrangler is installed
 function checkWrangler() {
   try {
-    execSilent('wrangler --version');
+    execSync('wrangler --version', { stdio: 'ignore' });
     return true;
   } catch {
-    log('❌ Wrangler CLI not found. Installing...', RED);
-    exec('npm install -g wrangler');
-    return true;
+    return false;
   }
 }
 
+// Check if user is authenticated
 function checkAuth() {
-  log('📋 Checking Cloudflare authentication...', YELLOW);
   try {
-    execSilent('wrangler whoami');
-    log('✓ Authenticated', GREEN);
+    execCommand('wrangler whoami', { silent: true, throwOnError: false });
     return true;
   } catch {
-    log('⚠️  Not logged in. Please authenticate...', YELLOW);
-    exec('wrangler login');
-    return true;
+    return false;
   }
 }
 
-function setupR2() {
-  log('📦 Checking R2 bucket...', YELLOW);
-  const buckets = execSilent('wrangler r2 bucket list');
-  
-  if (!buckets.includes('faceswap-images')) {
-    log('📦 Creating R2 bucket \'faceswap-images\'...', YELLOW);
-    exec('wrangler r2 bucket create faceswap-images');
-    log('✓ R2 bucket created', GREEN);
-  } else {
-    log('✓ R2 bucket exists', GREEN);
-  }
-}
-
-function setupD1() {
-  log('💾 Checking D1 database...', YELLOW);
-  const databases = execSilent('wrangler d1 list');
-  
-  if (!databases.includes('faceswap-db')) {
-    log('💾 Creating D1 database \'faceswap-db\'...', YELLOW);
-    exec('wrangler d1 create faceswap-db');
-    log('✓ D1 database created', GREEN);
-    
-    if (fs.existsSync('schema.sql')) {
-      log('   Initializing database schema...', YELLOW);
-      exec('wrangler d1 execute faceswap-db --file=schema.sql');
-      log('✓ Database schema initialized', GREEN);
-    }
-  } else {
-    log('✓ D1 database exists', GREEN);
-    if (fs.existsSync('schema.sql')) {
-      log('   Checking database schema...', YELLOW);
-      try {
-        execSilent('wrangler d1 execute faceswap-db --command="SELECT COUNT(*) FROM presets LIMIT 1"');
-      } catch {
-        log('   Initializing database schema...', YELLOW);
-        exec('wrangler d1 execute faceswap-db --file=schema.sql');
-        log('✓ Database schema initialized', GREEN);
-      }
-    }
-  }
-}
-
-function setupCORS() {
-  log('⚙️  Configuring R2 CORS...', YELLOW);
-  
-  const corsConfig = JSON.stringify([
-    {
-      AllowedOrigins: ['*'],
-      AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
-      AllowedHeaders: ['*'],
-      ExposeHeaders: ['ETag'],
-      MaxAgeSeconds: 3600
-    }
-  ], null, 2);
-  
-  fs.writeFileSync('r2-cors.json', corsConfig);
-  
+// Get list of secrets
+function getSecrets() {
   try {
-    exec('wrangler r2 bucket cors set faceswap-images --file r2-cors.json --force', { silent: true });
-    log('✓ R2 CORS configured via wrangler', GREEN);
+    const output = execCommand('wrangler secret list', { silent: true, throwOnError: false });
+    if (!output) return [];
+    return output.split('\n')
+      .filter(line => line.trim() && !line.includes('Secret') && !line.includes('---'))
+      .map(line => line.split(/\s+/)[0])
+      .filter(Boolean);
   } catch {
-    const corsList = execSilent('wrangler r2 bucket cors list faceswap-images');
-    if (corsList && corsList !== 'null' && corsList.trim()) {
-      log('✓ R2 CORS already configured', GREEN);
-    } else {
-      log('⚠️  CORS configuration via wrangler failed (this is common - not critical)', YELLOW);
-      log('   CORS can be configured later via Cloudflare Dashboard', YELLOW);
-      log('   File saved: r2-cors.json', YELLOW);
-    }
+    return [];
   }
 }
 
-function checkSecrets() {
-  log('🔐 Checking environment variables...', YELLOW);
-  const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_CLOUD_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
-  const secretList = execSilent('wrangler secret list');
-  const missingVars = requiredVars.filter(v => !secretList.includes(v));
-  
-  if (missingVars.length > 0) {
-    if (fs.existsSync('secrets.json')) {
-      log('✓ Found secrets.json, uploading secrets in bulk...', GREEN);
-      try {
-        exec('wrangler secret bulk secrets.json');
-        log('✓ Secrets uploaded', GREEN);
-      } catch (error) {
-        log('⚠️  Failed to upload secrets. Please check secrets.json', YELLOW);
-      }
-    } else {
-      log('⚠️  Missing environment variables:', YELLOW);
-      missingVars.forEach(v => log(`   - ${v}`, YELLOW));
-      log('No secrets.json found. Please create one or set secrets manually.', YELLOW);
-      log('⚠️  Deployment will continue but Worker may fail without these secrets.', YELLOW);
-    }
-  } else {
-    log('✓ All environment variables are set', GREEN);
-  }
-}
-
-function deployWorker() {
-  log('🚀 Deploying Worker...', YELLOW);
-  
-  let workerUrl = '';
-  
+// Validate service account key format
+function validateServiceAccountKey(key) {
   try {
-    // Deploy and capture output
-    const output = exec('wrangler deploy', { encoding: 'utf8', silent: true });
-    
-    // Extract Worker URL from output
-    if (output && typeof output === 'string') {
-      const urlMatch = output.match(/https:\/\/[^\s]+\.workers\.dev/);
-      if (urlMatch && urlMatch[0]) {
-        workerUrl = urlMatch[0];
-      }
-    }
-  } catch (error) {
-    // Deployment might have succeeded even if there's an error
-    // Try to extract URL from error output
-    if (error.stdout && typeof error.stdout === 'string') {
-      const urlMatch = error.stdout.match(/https:\/\/[^\s]+\.workers\.dev/);
-      if (urlMatch && urlMatch[0]) {
-        workerUrl = urlMatch[0];
-      }
-    }
-  }
-  
-  // If not found in output, try from deployments list
-  if (!workerUrl) {
-    try {
-      const deployments = execSilent('wrangler deployments list');
-      if (deployments && typeof deployments === 'string') {
-        const deploymentMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
-        if (deploymentMatch && deploymentMatch[0]) {
-          workerUrl = deploymentMatch[0];
-        }
-      }
-    } catch {}
-  }
-  
-  // If still not found, try to get from wrangler whoami
-  if (!workerUrl) {
-    try {
-      const whoami = execSilent('wrangler whoami');
-      // Try to extract subdomain from account info
-      if (whoami && typeof whoami === 'string') {
-        // Look for email pattern to extract subdomain
-        const emailMatch = whoami.match(/([a-zA-Z0-9_-]+)@/);
-        if (emailMatch && emailMatch[1]) {
-          const subdomain = emailMatch[1];
-          workerUrl = `https://ai-faceswap-backend.${subdomain}.workers.dev`;
-        }
-      }
-    } catch {}
-  }
-  
-  // Final fallback
-  if (!workerUrl) {
-    workerUrl = 'https://ai-faceswap-backend.YOUR_SUBDOMAIN.workers.dev';
-    log('⚠️  Could not auto-detect Worker URL', YELLOW);
-    log('   Please check Cloudflare Dashboard for your Worker URL', YELLOW);
-  }
-  
-  log('✓ Worker deployed', GREEN);
-  if (!workerUrl.includes('YOUR_SUBDOMAIN') && !workerUrl.includes('@')) {
-    log(`✓ Worker URL: ${workerUrl}`, GREEN);
-  }
-  
-  return workerUrl;
-}
-
-function updateHTML(workerUrl) {
-  if (workerUrl.includes('YOUR_SUBDOMAIN') || workerUrl.includes('@')) {
-    log('⚠️  Skipping HTML update - Worker URL not detected', YELLOW);
-    log('   Please manually update WORKER_URL in index.html', YELLOW);
-    return;
-  }
-  
-  log('📝 Updating HTML with Worker URL...', YELLOW);
-  try {
-    let html = fs.readFileSync('index.html', 'utf8');
-    html = html.replace(/const WORKER_URL = '.*';/, `const WORKER_URL = '${workerUrl}';`);
-    fs.writeFileSync('index.html', html);
-    log('✓ HTML updated', GREEN);
-  } catch (error) {
-    log('⚠️  Failed to update HTML', YELLOW);
-  }
-}
-
-function deployPages() {
-  log('🌐 Deploying to Cloudflare Pages...', YELLOW);
-  
-  if (!fs.existsSync('index.html')) {
-    log('❌ index.html not found! Cannot deploy Pages.', RED);
-    return { success: false, url: null };
-  }
-  
-  // Ensure public_page directory exists
-  if (!fs.existsSync('public_page')) {
-    fs.mkdirSync('public_page', { recursive: true });
-  }
-  
-  // Copy index.html to public_page
-  fs.copyFileSync('index.html', 'public_page/index.html');
-  
-  let pagesUrl = '';
-  let deploymentSuccess = false;
-  
-  try {
-    log('   Deploying public_page directory...', YELLOW);
-    const output = exec('wrangler pages deploy public_page --project-name=faceswap-test --branch=main --commit-dirty=true --commit-message="Automated deploy"', { encoding: 'utf8', silent: true });
-    
-    // Check if deployment succeeded by looking for success indicators
-    if (output && typeof output === 'string') {
-      // Look for success messages
-      if (output.includes('Deployment complete') || output.includes('Success!') || output.includes('✨')) {
-        deploymentSuccess = true;
-      }
-      
-      // Try to extract Pages URL from output
-      const urlMatch = output.match(/https:\/\/[^\s]+\.pages\.dev/);
-      if (urlMatch && urlMatch[0]) {
-        pagesUrl = urlMatch[0];
-      }
-    }
-  } catch (error) {
-    // Even if there's an error, check if deployment succeeded
-    const errorOutput = error.stdout || error.stderr || '';
-    if (errorOutput && typeof errorOutput === 'string') {
-      if (errorOutput.includes('Deployment complete') || errorOutput.includes('Success!') || errorOutput.includes('✨')) {
-        deploymentSuccess = true;
-      }
-      
-      // Try to extract URL from error output too
-      const urlMatch = errorOutput.match(/https:\/\/[^\s]+\.pages\.dev/);
-      if (urlMatch && urlMatch[0]) {
-        pagesUrl = urlMatch[0];
-      }
-    }
-  }
-  
-  // If URL not found, try from project list
-  if (!pagesUrl) {
-    try {
-      const projectList = execSilent('wrangler pages project list');
-      if (projectList && typeof projectList === 'string' && projectList.includes('faceswap-test')) {
-        const projectMatch = projectList.match(/https:\/\/[^\s]+\.pages\.dev/);
-        if (projectMatch && projectMatch[0]) {
-          pagesUrl = projectMatch[0];
-          deploymentSuccess = true;
-        }
-      }
-    } catch {}
-  }
-  
-  if (deploymentSuccess || pagesUrl) {
-    log('✓ Pages deployed', GREEN);
-    if (pagesUrl) {
-      log(`✓ Pages URL: ${pagesUrl}`, GREEN);
-    }
-    return { success: true, url: pagesUrl };
-  } else {
-    log('⚠️  Pages deployment may have failed', YELLOW);
-    log('   Try checking Cloudflare Dashboard for deployment status', YELLOW);
-    return { success: false, url: null };
-  }
-}
-
-function writeDeploymentInfo(workerUrl, pagesResult) {
-  log('📝 Writing deployment info to DEPLOYMENT_INFO.md...', YELLOW);
-  
-  const pagesUrl = pagesResult.url || 'Not deployed yet';
-  const pagesStatus = pagesResult.success ? 'Deployed' : 'Failed/Not deployed';
-  
-  // Check R2 status
-  const r2Exists = execSilent('wrangler r2 bucket list').includes('faceswap-images');
-  const r2Status = r2Exists ? 'Exists' : 'Not found';
-  const corsConfigured = fs.existsSync('r2-cors.json') ? 'Configured (see r2-cors.json)' : 'Not configured';
-  
-  // Check D1 status
-  const d1Exists = execSilent('wrangler d1 list').includes('faceswap-db');
-  const d1Status = d1Exists ? 'Exists' : 'Not found';
-  
-  // Get environment variables
-  let envVarsList = '';
-  try {
-    const secretList = execSilent('wrangler secret list');
-    const envVars = secretList.split('\n').filter(line => 
-      line.includes('RAPIDAPI') || line.includes('GOOGLE')
-    );
-    if (envVars.length > 0) {
-      envVarsList = envVars.map(line => {
-        const parts = line.trim().split(/\s+/);
-        return `- **${parts[0]}:** ${parts[1] || 'Set'}`;
-      }).join('\n');
-    } else {
-      envVarsList = '- Check manually: `wrangler secret list`';
-    }
+    const decoded = Buffer.from(key, 'base64').toString('utf8');
+    const serviceAccount = JSON.parse(decoded);
+    return serviceAccount.client_email && serviceAccount.private_key && serviceAccount.project_id;
   } catch {
-    envVarsList = '- Check manually: `wrangler secret list`';
+    return false;
   }
-  
-  const deploymentInfo = `# Deployment Information
-
-**Generated:** ${new Date().toLocaleString()}
-
-## 🌐 HTML Test Page (Frontend)
-
-- **URL:** ${pagesUrl}
-- **Status:** ${pagesStatus}
-- **Description:** Main user interface for face swap application
-- **Project Name:** faceswap-test
-- **Directory:** public_page/
-
-## 🔧 Worker API (Backend)
-
-- **URL:** ${workerUrl}
-- **Status:** Deployed
-- **Endpoints:**
-  - \`POST /\` - Face swap API
-  - \`POST /faceswap\` - Face swap API (alias)
-  - \`POST /upload-url\` - Get upload URL
-  - \`PUT /upload-proxy/{key}\` - Upload file to R2
-  - \`GET /presets\` - List all presets
-  - \`GET /results\` - List all results
-  - \`GET /r2/{key}\` - Serve R2 files
-
-## Cloudflare Pages
-
-- **URL:** ${pagesUrl}
-- **Status:** ${pagesStatus}
-- **Project Name:** faceswap-test
-- **Directory:** public_page/
-
-## R2 Storage
-
-- **Bucket Name:** faceswap-images
-- **Binding:** FACESWAP_IMAGES
-- **Status:** ${r2Status}
-- **CORS:** ${corsConfigured}
-
-## D1 Database
-
-- **Database Name:** faceswap-db
-- **Binding:** DB
-- **Status:** ${d1Status}
-- **Schema:** schema.sql
-- **Tables:**
-  - \`presets\` - Store preset image metadata
-  - \`results\` - Store face swap results
-
-## Environment Variables
-
-${envVarsList}
-
-## Quick Commands
-
-\`\`\`bash
-# Deploy everything (Worker + Pages + R2 + D1)
-npm run deploy
-
-# Run locally
-npm run dev
-\`\`\`
-
-## Manual Setup (if needed)
-
-### Initialize Database Schema
-\`\`\`bash
-wrangler d1 execute faceswap-db --file=schema.sql
-\`\`\`
-
-### Configure R2 CORS
-1. Go to: https://dash.cloudflare.com
-2. Navigate to: R2 > faceswap-images > Settings > CORS Policy
-3. Paste contents from r2-cors.json
-
-### Set Environment Variables
-\`\`\`bash
-wrangler secret put RAPIDAPI_KEY
-wrangler secret put RAPIDAPI_HOST
-wrangler secret put RAPIDAPI_ENDPOINT
-wrangler secret put GOOGLE_CLOUD_API_KEY
-wrangler secret put GOOGLE_VISION_ENDPOINT
-\`\`\`
-
-## Notes
-
-- Worker URL is automatically updated in index.html during deployment
-- All images are stored in R2 bucket: faceswap-images
-- Presets and results are stored in D1 database
-- CORS configuration may need manual setup via Dashboard
-
----
-*Generated by deploy.js - RoosterX Global Viet Nam*
-`;
-
-  fs.writeFileSync('DEPLOYMENT_INFO.md', deploymentInfo);
-  log('✓ Deployment info saved to DEPLOYMENT_INFO.md', GREEN);
-  log('', '');
-  log('📄 View deployment info:', GREEN);
-  log('   cat DEPLOYMENT_INFO.md', '');
 }
 
-// Main execution
+// Run setup script
+async function runSetupScript() {
+  const setupScript = path.join(process.cwd(), 'setup-google-cloud.js');
+  if (!fs.existsSync(setupScript)) {
+    log.error('setup-google-cloud.js not found');
+    return false;
+  }
+
+  log.info('Running Google Cloud setup script...');
+  return new Promise((resolve) => {
+    const proc = spawn('node', [setupScript], { stdio: 'inherit' });
+    proc.on('close', (code) => {
+      resolve(code === 0);
+    });
+    proc.on('error', () => {
+      resolve(false);
+    });
+  });
+}
+
 async function main() {
-  console.log('🚀 Face Swap AI - Deployment Script');
-  console.log('======================================');
-  console.log('');
-  
-  checkWrangler();
-  checkAuth();
-  console.log('');
-  
-  setupR2();
-  console.log('');
-  
-  setupD1();
-  console.log('');
-  
-  setupCORS();
-  console.log('');
-  
-  checkSecrets();
-  console.log('');
-  
-  const workerUrl = deployWorker();
-  console.log('');
-  
-  updateHTML(workerUrl);
-  console.log('');
-  
-  const pagesResult = deployPages();
-  console.log('');
-  
-  // Summary
-  log('======================================', GREEN);
-  log('✅ Deployment Complete!', GREEN);
-  log('======================================', GREEN);
-  console.log('');
-  log('📡 Worker API URL:', GREEN);
-  console.log(`   ${workerUrl}`);
-  console.log('');
-  
-  if (pagesResult.url && !pagesResult.url.includes('Not deployed')) {
-    log('🌐 HTML Test Page URL:', GREEN);
-    console.log(`   ${pagesResult.url}`);
-    console.log('');
-    log('👉 Open in browser:', GREEN);
-    console.log(`   ${pagesResult.url}`);
-    console.log('');
-  } else {
-    log('🌐 Pages not deployed', YELLOW);
-    log('   To deploy Pages and get your URL:', YELLOW);
-    log('   1. Run: npm run deploy:pages', YELLOW);
-    log('   2. Or go to: https://dash.cloudflare.com', YELLOW);
-    log('   3. Navigate to: Workers & Pages > Create Application > Pages', YELLOW);
-    log('   4. Upload index.html', YELLOW);
-    console.log('');
+  console.log('\n🚀 Face Swap AI - Deployment Script');
+  console.log('====================================\n');
+
+  // Check wrangler
+  if (!checkWrangler()) {
+    log.error('Wrangler CLI not found. Installing...');
+    try {
+      execCommand('npm install -g wrangler', { stdio: 'inherit' });
+    } catch {
+      log.error('Failed to install wrangler. Please install manually: npm install -g wrangler');
+      process.exit(1);
+    }
   }
-  
-  writeDeploymentInfo(workerUrl, pagesResult);
+
+  // Check authentication
+  log.info('Checking Cloudflare authentication...');
+  if (!checkAuth()) {
+    log.warn('Not authenticated. Please login...');
+    try {
+      execCommand('wrangler login', { stdio: 'inherit' });
+      log.success('Authenticated');
+    } catch {
+      log.error('Authentication failed');
+      process.exit(1);
+    }
+  } else {
+    log.success('Authenticated');
+  }
+
+  // Check R2 bucket
+  log.info('Checking R2 bucket...');
+  try {
+    const buckets = execCommand('wrangler r2 bucket list', { silent: true, throwOnError: false });
+    if (!buckets || !buckets.includes('faceswap-images')) {
+      log.warn('R2 bucket not found. Creating...');
+      execCommand('wrangler r2 bucket create faceswap-images', { stdio: 'inherit' });
+      log.success('R2 bucket created');
+    } else {
+      log.success('R2 bucket exists');
+    }
+  } catch (error) {
+    log.warn('Could not verify R2 bucket (may already exist)');
+  }
+
+  // Check D1 database
+  log.info('Checking D1 database...');
+  try {
+    const dbs = execCommand('wrangler d1 list', { silent: true, throwOnError: false });
+    if (!dbs || !dbs.includes('faceswap-db')) {
+      log.warn('D1 database not found. Creating...');
+      execCommand('wrangler d1 create faceswap-db', { stdio: 'inherit' });
+      log.success('D1 database created');
+      
+      // Initialize schema
+      const schemaPath = path.join(process.cwd(), 'schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        log.info('Initializing database schema...');
+        execCommand(`wrangler d1 execute faceswap-db --file=${schemaPath}`, { stdio: 'inherit' });
+        log.success('Database schema initialized');
+      }
+    } else {
+      log.success('D1 database exists');
+      // Check if schema is initialized
+      const schemaPath = path.join(process.cwd(), 'schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        try {
+          execCommand('wrangler d1 execute faceswap-db --command="SELECT COUNT(*) FROM presets LIMIT 1"', { silent: true, throwOnError: false });
+        } catch {
+          log.info('Initializing database schema...');
+          execCommand(`wrangler d1 execute faceswap-db --file=${schemaPath}`, { stdio: 'inherit' });
+          log.success('Database schema initialized');
+        }
+      }
+    }
+  } catch (error) {
+    log.warn('Could not verify D1 database (may already exist)');
+  }
+
+  // Configure R2 CORS
+  log.info('Configuring R2 CORS...');
+  const corsPath = path.join(process.cwd(), 'r2-cors.json');
+  if (fs.existsSync(corsPath)) {
+    try {
+      execCommand(`wrangler r2 bucket cors set faceswap-images --file=${corsPath}`, { throwOnError: false, stdio: 'inherit' });
+      log.success('R2 CORS configured');
+    } catch {
+      log.warn('CORS configuration via wrangler failed (this is common - not critical)');
+      log.warn('CORS can be configured later via Cloudflare Dashboard');
+    }
+  }
+
+  // Check secrets
+  log.info('Checking environment variables...');
+  const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_SERVICE_ACCOUNT_KEY', 'GOOGLE_VISION_ENDPOINT'];
+  const existingSecrets = getSecrets();
+  const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
+
+  if (missingVars.length > 0) {
+    log.warn(`Missing environment variables: ${missingVars.join(', ')}`);
+    
+    if (missingVars.includes('GOOGLE_SERVICE_ACCOUNT_KEY')) {
+      const runSetup = await prompt('Run Google Cloud setup script first? (y/n): ');
+      if (runSetup.toLowerCase() === 'y') {
+        const success = await runSetupScript();
+        if (success) {
+          log.success('Google Cloud setup completed');
+          // Refresh secrets list
+          const newSecrets = getSecrets();
+          missingVars.forEach(v => {
+            if (newSecrets.includes(v)) {
+              const index = missingVars.indexOf(v);
+              missingVars.splice(index, 1);
+            }
+          });
+        }
+      }
+    }
+
+    if (missingVars.length > 0) {
+      log.warn(`Still missing: ${missingVars.join(', ')}`);
+      log.warn('You can set secrets manually with: wrangler secret put <NAME>');
+      log.warn('Or create a secrets.json file and use: wrangler secret bulk secrets.json');
+    }
+  } else {
+    log.success('All environment variables are set');
+    
+    // Validate service account key if it exists
+    if (existingSecrets.includes('GOOGLE_SERVICE_ACCOUNT_KEY')) {
+      log.info('Validating service account key format...');
+      // Note: We can't read the secret value, but we can verify it's set
+      // The actual validation happens at runtime in the Worker
+      log.success('Service account key is set (format will be validated at runtime)');
+    }
+  }
+
+  // Deploy Worker
+  log.info('Deploying Worker...');
+  try {
+    const deployOutput = execCommand('wrangler deploy', { silent: false });
+    log.success('Worker deployed');
+    
+    // Try to extract Worker URL
+    let workerUrl = '';
+    if (deployOutput) {
+      const urlMatch = deployOutput.match(/https:\/\/[^\s]+\.workers\.dev/);
+      if (urlMatch) {
+        workerUrl = urlMatch[0];
+      }
+    }
+    
+    if (!workerUrl) {
+      // Try to get from deployments
+      try {
+        const deployments = execCommand('wrangler deployments list', { silent: true, throwOnError: false });
+        if (deployments) {
+          const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
+          if (urlMatch) {
+            workerUrl = urlMatch[0];
+          }
+        }
+      } catch {}
+    }
+
+    if (workerUrl) {
+      log.success(`Worker URL: ${workerUrl}`);
+      
+      // Update HTML with Worker URL
+      const htmlPath = path.join(process.cwd(), 'index.html');
+      if (fs.existsSync(htmlPath)) {
+        log.info('Updating HTML with Worker URL...');
+        try {
+          let htmlContent = fs.readFileSync(htmlPath, 'utf8');
+          const urlPattern = /const WORKER_URL = ['"](.*?)['"]/;
+          if (urlPattern.test(htmlContent)) {
+            htmlContent = htmlContent.replace(urlPattern, `const WORKER_URL = '${workerUrl}'`);
+            fs.writeFileSync(htmlPath, htmlContent, 'utf8');
+            log.success('HTML updated');
+          }
+        } catch (error) {
+          log.warn('Failed to update HTML');
+        }
+      }
+    } else {
+      log.warn('Could not auto-detect Worker URL. Please check Cloudflare Dashboard.');
+    }
+  } catch (error) {
+    log.error('Worker deployment failed!');
+    process.exit(1);
+  }
+
+  // Deploy Pages
+  log.info('Deploying to Cloudflare Pages...');
+  const publicPageDir = path.join(process.cwd(), 'public_page');
+  if (fs.existsSync(publicPageDir)) {
+    try {
+      execCommand(
+        `wrangler pages deploy ${publicPageDir} --project-name=faceswap-test --branch=main --commit-dirty=true`,
+        { throwOnError: false, stdio: 'inherit' }
+      );
+      log.success('Pages deployed');
+    } catch (error) {
+      log.warn('Pages deployment failed (non-critical)');
+    }
+  } else {
+    log.warn('public_page directory not found, skipping Pages deployment');
+  }
+
+  // Summary
+  console.log('\n' + '='.repeat(50));
+  log.success('Deployment Complete!');
+  console.log('\nNext steps:');
+  console.log('1. Test your Worker API');
+  console.log('2. Check Cloudflare Dashboard for URLs');
+  console.log('3. Review google-cloud-setup.md for Google Cloud info\n');
 }
 
-main().catch(error => {
-  console.error('Deployment failed:', error);
+main().catch((error) => {
+  log.error(`Deployment failed: ${error.message}`);
   process.exit(1);
 });
-

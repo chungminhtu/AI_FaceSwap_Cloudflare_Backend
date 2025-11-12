@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
+    "setup:gcp": "node setup-google-cloud.js",
     "deploy": "node deploy.js"
   },
   "keywords": [

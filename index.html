@@ -34,23 +34,25 @@
         .header {
             grid-column: 1 / -1;
             text-align: center;
-            padding: 5px 0 8px 0;
-            border-bottom: 2px solid #667eea;
-            margin-bottom: 8px;
+            padding: 3px 0 5px 0;
+            border-bottom: 1px solid #667eea;
+            margin-bottom: 5px;
         }
 
         h1 {
             color: #333;
-            font-size: 1.4em;
-            margin: 0 0 3px 0;
-            line-height: 1.2;
+            font-size: 1.2em;
+            margin: 0;
+            line-height: 1.1;
+            padding: 0;
         }
 
         .brand {
             color: #667eea;
-            font-size: 0.75em;
+            font-size: 0.7em;
             font-weight: 600;
-            margin: 0;
+            margin: 2px 0 0 0;
+            line-height: 1;
         }
 
         .left-panel, .right-panel {
@@ -418,6 +420,11 @@
 
             <div class="section">
                 <div class="section-title">🖼️ Chọn Preset</div>
+                <div style="margin-bottom: 8px;">
+                    <button class="btn" onclick="loadPresets()" style="padding: 6px 12px; font-size: 0.85em; width: auto; display: inline-block;">
+                        🔄 Làm mới
+                    </button>
+                </div>
                 <div class="preset-gallery" id="presetGallery">
                     <div class="preview-placeholder">Đang tải...</div>
                 </div>
@@ -476,38 +483,78 @@
 
         // Load presets
         async function loadPresets() {
+            const gallery = document.getElementById('presetGallery');
+            gallery.innerHTML = '<div class="preview-placeholder">Đang tải...</div>';
+            
             try {
+                console.log('Loading presets from:', `${WORKER_URL}/presets`);
                 const response = await fetch(`${WORKER_URL}/presets`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('Presets data:', data);
                 presets = data.presets || [];
-                renderPresets();
+                console.log(`Loaded ${presets.length} presets`);
+                
+                if (presets.length === 0) {
+                    gallery.innerHTML = '<div class="preview-placeholder">Chưa có preset. Tải ảnh lên ở trên.</div>';
+                } else {
+                    renderPresets();
+                }
             } catch (error) {
                 console.error('Error loading presets:', error);
-                document.getElementById('presetGallery').innerHTML = 
-                    '<div class="preview-placeholder">Lỗi tải preset</div>';
+                gallery.innerHTML = `<div class="preview-placeholder">Lỗi tải preset: ${error.message}<br><small>Kiểm tra console để biết thêm chi tiết</small></div>`;
             }
         }
 
         function renderPresets() {
             const gallery = document.getElementById('presetGallery');
             if (presets.length === 0) {
-                gallery.innerHTML = '<div class="preview-placeholder">Chưa có preset</div>';
+                gallery.innerHTML = '<div class="preview-placeholder">Chưa có preset. Tải ảnh lên ở trên.</div>';
                 return;
             }
 
-            gallery.innerHTML = presets.map(preset => `
+            console.log('Rendering presets:', presets);
+            gallery.innerHTML = presets.map(preset => {
+                // Fix image URL - convert upload-proxy to /r2/ for viewing
+                let imageUrl = preset.image_url;
+                if (imageUrl.includes('/upload-proxy/')) {
+                    imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
+                }
+                
+                return `
                 <div class="preset-card ${selectedPreset?.id === preset.id ? 'selected' : ''}" 
-                     onclick="selectPreset('${preset.id}')">
-                    <img src="${preset.image_url}" alt="${preset.name}" loading="lazy">
+                     onclick="selectPreset('${preset.id}')"
+                     title="Nhấn để chọn: ${preset.name}">
+                    <img src="${imageUrl}" alt="${preset.name}" loading="lazy" 
+                         onerror="console.error('Failed to load image:', '${imageUrl}'); this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';">
                     <div class="name">${preset.name}</div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function selectPreset(presetId) {
             selectedPreset = presets.find(p => p.id === presetId);
+            console.log('Selected preset:', selectedPreset);
             renderPresets();
             updateSwapButton();
+            
+            // Show visual feedback
+            if (selectedPreset) {
+                const statusEl = document.getElementById('presetUploadStatus');
+                statusEl.textContent = `✓ Đã chọn: ${selectedPreset.name}`;
+                statusEl.className = 'status success';
+                setTimeout(() => {
+                    if (statusEl.textContent.includes('Đã chọn')) {
+                        statusEl.textContent = '';
+                        statusEl.className = 'status';
+                    }
+                }, 2000);
+            }
         }
 
         // Load results
@@ -612,7 +659,12 @@
                 statusEl.className = 'status success';
                 document.getElementById('presetName').value = '';
                 e.target.value = '';
-                await loadPresets();
+                
+                // Wait a bit for database to be ready, then reload
+                console.log('Upload complete, reloading presets...');
+                setTimeout(async () => {
+                    await loadPresets();
+                }, 500);
             } else {
                 statusEl.textContent = `✗ Tất cả upload đều thất bại`;
                 statusEl.className = 'status error';

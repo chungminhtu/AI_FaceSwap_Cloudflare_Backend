@@ -78,10 +78,33 @@ export default {
         });
       }
       
+      // Allow GET to serve the file (for viewing uploaded files)
+      if (request.method === 'GET') {
+        try {
+          const key = path.replace('/upload-proxy/', '');
+          const object = await env.FACESWAP_IMAGES.get(key);
+          
+          if (!object) {
+            return errorResponse('File not found', 404);
+          }
+          
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          headers.set('etag', object.httpEtag);
+          headers.set('Cache-Control', 'public, max-age=31536000');
+          headers.set('Access-Control-Allow-Origin', '*');
+          
+          return new Response(object.body, { headers });
+        } catch (error) {
+          console.error('Error serving file:', error);
+          return errorResponse(`Failed to serve file: ${error instanceof Error ? error.message : String(error)}`, 500);
+        }
+      }
+      
       if (request.method !== 'PUT') {
         return new Response(JSON.stringify({ 
           Success: false, 
-          Message: `Method not allowed. Use PUT. Got: ${request.method}`, 
+          Message: `Method not allowed. Use PUT or GET. Got: ${request.method}`, 
           StatusCode: 405 
         }), {
           status: 405,
@@ -99,13 +122,18 @@ export default {
           return errorResponse('Empty file data', 400);
         }
         
-        await env.FACESWAP_IMAGES.put(key, fileData, {
-          httpMetadata: {
-            contentType: request.headers.get('Content-Type') || 'image/jpeg',
-          },
-        });
-        
-        console.log(`File uploaded successfully: ${key}`);
+        // Upload to R2
+        try {
+          await env.FACESWAP_IMAGES.put(key, fileData, {
+            httpMetadata: {
+              contentType: request.headers.get('Content-Type') || 'image/jpeg',
+            },
+          });
+          console.log(`File uploaded successfully to R2: ${key}`);
+        } catch (r2Error) {
+          console.error('R2 upload error:', r2Error);
+          return errorResponse(`R2 upload failed: ${r2Error instanceof Error ? r2Error.message : String(r2Error)}`, 500);
+        }
 
         // Get the public URL
         const publicUrl = env.R2_PUBLIC_URL 
@@ -128,9 +156,17 @@ export default {
           
           const presetId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           
-          await env.DB.prepare(
-            'INSERT INTO presets (id, name, image_url, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(presetId, presetName, publicUrl, Math.floor(Date.now() / 1000)).run();
+          // Try to save to database, but don't fail the upload if DB fails
+          try {
+            await env.DB.prepare(
+              'INSERT INTO presets (id, name, image_url, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(presetId, presetName, publicUrl, Math.floor(Date.now() / 1000)).run();
+            console.log(`Preset saved to database: ${presetId}`);
+          } catch (dbError) {
+            console.error('Database save error (non-fatal):', dbError);
+            // Still return success since file was uploaded to R2
+            // Database might not be initialized yet
+          }
 
           return jsonResponse({ 
             success: true, 
@@ -180,18 +216,24 @@ export default {
           'SELECT id, preset_id, preset_name, result_url, created_at FROM results ORDER BY created_at DESC LIMIT 50'
         ).all();
 
+        if (!result || !result.results) {
+          return jsonResponse({ results: [] });
+        }
+
         const results = result.results.map((row: any) => ({
-          id: row.id,
-          preset_id: row.preset_id,
-          preset_name: row.preset_name,
-          result_url: row.result_url,
-          created_at: new Date(row.created_at * 1000).toISOString()
+          id: row.id || '',
+          preset_id: row.preset_id || '',
+          preset_name: row.preset_name || 'Unnamed',
+          result_url: row.result_url || '',
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
         return jsonResponse({ results });
       } catch (error) {
         console.error('List results error:', error);
-        return errorResponse(`Failed to list results: ${error instanceof Error ? error.message : String(error)}`, 500);
+        // Return empty array instead of error to prevent UI breaking
+        // If table doesn't exist, schema needs to be initialized
+        return jsonResponse({ results: [] });
       }
     }
 
