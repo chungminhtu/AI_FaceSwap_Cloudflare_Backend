@@ -19,13 +19,7 @@
 		{
 			"binding": "DB",
 			"database_name": "faceswap-db",
-			"database_id": "faceswap-db"
-		},
-		{
-			"binding": "faceswap_db",
-			"database_name": "faceswap-db",
-			"database_id": "1ef54281-cf28-4dcf-953c-d52f83bdaf4f",
-			"remote": true
+			"database_id": "1ef54281-cf28-4dcf-953c-d52f83bdaf4f"
 		}
 	]
 }

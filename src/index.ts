@@ -54,7 +54,14 @@ export default {
     // Handle proxy upload endpoint (for direct browser uploads)
     if (path.startsWith('/upload-proxy/')) {
       if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
+        return new Response(null, { 
+          status: 204, 
+          headers: { 
+            ...CORS_HEADERS, 
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Max-Age': '86400' 
+          } 
+        });
       }
       
       if (request.method !== 'PUT') {
@@ -78,7 +85,18 @@ export default {
 
         // If this is a preset upload, save to database
         if (key.startsWith('preset/')) {
-          const presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
+          let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
+          
+          // Decode base64 if encoded
+          const isEncoded = request.headers.get('X-Preset-Name-Encoded') === 'base64';
+          if (isEncoded) {
+            try {
+              presetName = decodeURIComponent(escape(atob(presetName)));
+            } catch (e) {
+              console.warn('Failed to decode preset name, using as-is:', e);
+            }
+          }
+          
           const presetId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           
           await env.DB.prepare(

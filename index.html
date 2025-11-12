@@ -34,21 +34,23 @@
         .header {
             grid-column: 1 / -1;
             text-align: center;
-            padding-bottom: 15px;
+            padding: 5px 0 8px 0;
             border-bottom: 2px solid #667eea;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         h1 {
             color: #333;
-            font-size: 2em;
-            margin-bottom: 5px;
+            font-size: 1.4em;
+            margin: 0 0 3px 0;
+            line-height: 1.2;
         }
 
         .brand {
             color: #667eea;
-            font-size: 0.85em;
+            font-size: 0.75em;
             font-weight: 600;
+            margin: 0;
         }
 
         .left-panel, .right-panel {
@@ -407,8 +409,8 @@
                         <input type="text" id="presetName" placeholder="Nhập tên">
                     </div>
                     <div class="file-input-wrapper">
-                        <input type="file" id="presetUpload" accept="image/*">
-                        <button class="btn">Chọn Ảnh</button>
+                        <input type="file" id="presetUpload" accept="image/*" multiple>
+                        <button class="btn">Chọn Ảnh (có thể chọn nhiều)</button>
                     </div>
                     <div class="status" id="presetUploadStatus"></div>
                 </div>
@@ -543,52 +545,76 @@
             }).join('');
         }
 
-        // Preset upload
+        // Preset upload (multiple files)
         document.getElementById('presetUpload').addEventListener('change', async function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
 
-            const presetName = document.getElementById('presetName').value.trim() || `Preset ${Date.now()}`;
             const statusEl = document.getElementById('presetUploadStatus');
-
-            statusEl.textContent = 'Đang tải lên...';
+            const basePresetName = document.getElementById('presetName').value.trim() || 'Preset';
+            
+            statusEl.textContent = `Đang tải lên ${files.length} ảnh...`;
             statusEl.className = 'status loading';
 
-            try {
-                const timestamp = Date.now();
-                const randomStr = Math.random().toString(36).substring(2, 15);
-                const extension = file.name.split('.').pop();
-                const filename = `preset-${timestamp}-${randomStr}.${extension}`;
+            let successCount = 0;
+            let failCount = 0;
 
-                const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename, type: 'preset' })
-                });
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                try {
+                    // Sanitize filename to remove special characters
+                    const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                    const timestamp = Date.now();
+                    const randomStr = Math.random().toString(36).substring(2, 15);
+                    const extension = originalName.split('.').pop() || 'jpg';
+                    const filename = `preset-${timestamp}-${i}-${randomStr}.${extension}`;
+                    
+                    // Use filename as preset name if no custom name, or append number
+                    const presetName = files.length === 1 
+                        ? (basePresetName || originalName.replace(/\.[^/.]+$/, ''))
+                        : `${basePresetName} ${i + 1}`;
 
-                if (!uploadUrlResponse.ok) throw new Error('Không thể lấy URL upload');
+                    const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename, type: 'preset' })
+                    });
 
-                const { uploadUrl } = await uploadUrlResponse.json();
+                    if (!uploadUrlResponse.ok) throw new Error('Không thể lấy URL upload');
 
-                const uploadResponse = await fetch(uploadUrl, {
-                    method: 'PUT',
-                    body: file,
-                    headers: {
-                        'Content-Type': file.type,
-                        'X-Preset-Name': presetName
-                    }
-                });
+                    const { uploadUrl } = await uploadUrlResponse.json();
 
-                if (!uploadResponse.ok) throw new Error('Upload thất bại');
+                    // Encode preset name to base64 to avoid header encoding issues
+                    const encodedPresetName = btoa(unescape(encodeURIComponent(presetName)));
 
-                statusEl.textContent = '✓ Thành công!';
+                    const uploadResponse = await fetch(uploadUrl, {
+                        method: 'PUT',
+                        body: file,
+                        headers: {
+                            'Content-Type': file.type,
+                            'X-Preset-Name': encodedPresetName,
+                            'X-Preset-Name-Encoded': 'base64'
+                        }
+                    });
+
+                    if (!uploadResponse.ok) throw new Error(`Upload thất bại: ${file.name}`);
+
+                    successCount++;
+                    statusEl.textContent = `Đang tải... (${successCount}/${files.length})`;
+                } catch (error) {
+                    failCount++;
+                    console.error(`Upload failed for ${file.name}:`, error);
+                }
+            }
+
+            if (successCount > 0) {
+                statusEl.textContent = `✓ Thành công ${successCount} ảnh${failCount > 0 ? `, thất bại ${failCount}` : ''}`;
                 statusEl.className = 'status success';
-
                 document.getElementById('presetName').value = '';
                 e.target.value = '';
                 await loadPresets();
-            } catch (error) {
-                statusEl.textContent = `✗ ${error.message}`;
+            } else {
+                statusEl.textContent = `✗ Tất cả upload đều thất bại`;
                 statusEl.className = 'status error';
             }
         });
@@ -614,9 +640,11 @@
             statusEl.className = 'status loading';
 
             try {
+                // Sanitize filename to remove special characters
+                const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
                 const timestamp = Date.now();
                 const randomStr = Math.random().toString(36).substring(2, 15);
-                const extension = file.name.split('.').pop();
+                const extension = originalName.split('.').pop() || 'jpg';
                 const filename = `selfie-${timestamp}-${randomStr}.${extension}`;
 
                 const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {

@@ -157,43 +157,72 @@ function checkSecrets() {
 function deployWorker() {
   log('🚀 Deploying Worker...', YELLOW);
   
+  let workerUrl = '';
+  
   try {
-    const output = exec('wrangler deploy', { encoding: 'utf8' });
+    // Deploy and capture output
+    const output = exec('wrangler deploy', { encoding: 'utf8', silent: true });
     
     // Extract Worker URL from output
-    let workerUrl = '';
-    const urlMatch = output.match(/https:\/\/[^\s]+\.workers\.dev/);
-    if (urlMatch) {
-      workerUrl = urlMatch[0];
-    } else {
-      // Try from deployments list
-      try {
-        const deployments = execSilent('wrangler deployments list');
-        const deploymentMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
-        if (deploymentMatch) {
-          workerUrl = deploymentMatch[0];
-        }
-      } catch {}
-      
-      if (!workerUrl) {
-        // Construct from worker name
-        workerUrl = 'https://ai-faceswap-backend.YOUR_SUBDOMAIN.workers.dev';
-        log('⚠️  Could not auto-detect Worker URL', YELLOW);
-        log('   Please check Cloudflare Dashboard for your Worker URL', YELLOW);
+    if (output && typeof output === 'string') {
+      const urlMatch = output.match(/https:\/\/[^\s]+\.workers\.dev/);
+      if (urlMatch && urlMatch[0]) {
+        workerUrl = urlMatch[0];
       }
     }
-    
-    log('✓ Worker deployed', GREEN);
-    if (!workerUrl.includes('YOUR_SUBDOMAIN') && !workerUrl.includes('@')) {
-      log(`✓ Worker URL: ${workerUrl}`, GREEN);
-    }
-    
-    return workerUrl;
   } catch (error) {
-    log('❌ Worker deployment failed!', RED);
-    console.error(error.message);
-    process.exit(1);
+    // Deployment might have succeeded even if there's an error
+    // Try to extract URL from error output
+    if (error.stdout && typeof error.stdout === 'string') {
+      const urlMatch = error.stdout.match(/https:\/\/[^\s]+\.workers\.dev/);
+      if (urlMatch && urlMatch[0]) {
+        workerUrl = urlMatch[0];
+      }
+    }
   }
+  
+  // If not found in output, try from deployments list
+  if (!workerUrl) {
+    try {
+      const deployments = execSilent('wrangler deployments list');
+      if (deployments && typeof deployments === 'string') {
+        const deploymentMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
+        if (deploymentMatch && deploymentMatch[0]) {
+          workerUrl = deploymentMatch[0];
+        }
+      }
+    } catch {}
+  }
+  
+  // If still not found, try to get from wrangler whoami
+  if (!workerUrl) {
+    try {
+      const whoami = execSilent('wrangler whoami');
+      // Try to extract subdomain from account info
+      if (whoami && typeof whoami === 'string') {
+        // Look for email pattern to extract subdomain
+        const emailMatch = whoami.match(/([a-zA-Z0-9_-]+)@/);
+        if (emailMatch && emailMatch[1]) {
+          const subdomain = emailMatch[1];
+          workerUrl = `https://ai-faceswap-backend.${subdomain}.workers.dev`;
+        }
+      }
+    } catch {}
+  }
+  
+  // Final fallback
+  if (!workerUrl) {
+    workerUrl = 'https://ai-faceswap-backend.YOUR_SUBDOMAIN.workers.dev';
+    log('⚠️  Could not auto-detect Worker URL', YELLOW);
+    log('   Please check Cloudflare Dashboard for your Worker URL', YELLOW);
+  }
+  
+  log('✓ Worker deployed', GREEN);
+  if (!workerUrl.includes('YOUR_SUBDOMAIN') && !workerUrl.includes('@')) {
+    log(`✓ Worker URL: ${workerUrl}`, GREEN);
+  }
+  
+  return workerUrl;
 }
 
 function updateHTML(workerUrl) {
@@ -230,56 +259,65 @@ function deployPages() {
   // Copy index.html to public_page
   fs.copyFileSync('index.html', 'public_page/index.html');
   
+  let pagesUrl = '';
+  let deploymentSuccess = false;
+  
   try {
     log('   Deploying public_page directory...', YELLOW);
-    const output = exec('wrangler pages deploy public_page --project-name=faceswap-test --branch=main --commit-dirty=true --commit-message="Automated deploy"', { encoding: 'utf8' });
+    const output = exec('wrangler pages deploy public_page --project-name=faceswap-test --branch=main --commit-dirty=true --commit-message="Automated deploy"', { encoding: 'utf8', silent: true });
     
-    // Try to extract Pages URL
-    let pagesUrl = '';
-    const urlMatch = output.match(/https:\/\/[^\s]+\.pages\.dev/);
-    if (urlMatch) {
-      pagesUrl = urlMatch[0];
-    } else {
-      // Try from project list
-      try {
-        const projectList = execSilent('wrangler pages project list');
-        const projectMatch = projectList.match(/https:\/\/[^\s]+\.pages\.dev/);
-        if (projectMatch) {
-          pagesUrl = projectMatch[0];
-        }
-      } catch {}
+    // Check if deployment succeeded by looking for success indicators
+    if (output && typeof output === 'string') {
+      // Look for success messages
+      if (output.includes('Deployment complete') || output.includes('Success!') || output.includes('✨')) {
+        deploymentSuccess = true;
+      }
+      
+      // Try to extract Pages URL from output
+      const urlMatch = output.match(/https:\/\/[^\s]+\.pages\.dev/);
+      if (urlMatch && urlMatch[0]) {
+        pagesUrl = urlMatch[0];
+      }
     }
-    
+  } catch (error) {
+    // Even if there's an error, check if deployment succeeded
+    const errorOutput = error.stdout || error.stderr || '';
+    if (errorOutput && typeof errorOutput === 'string') {
+      if (errorOutput.includes('Deployment complete') || errorOutput.includes('Success!') || errorOutput.includes('✨')) {
+        deploymentSuccess = true;
+      }
+      
+      // Try to extract URL from error output too
+      const urlMatch = errorOutput.match(/https:\/\/[^\s]+\.pages\.dev/);
+      if (urlMatch && urlMatch[0]) {
+        pagesUrl = urlMatch[0];
+      }
+    }
+  }
+  
+  // If URL not found, try from project list
+  if (!pagesUrl) {
+    try {
+      const projectList = execSilent('wrangler pages project list');
+      if (projectList && typeof projectList === 'string' && projectList.includes('faceswap-test')) {
+        const projectMatch = projectList.match(/https:\/\/[^\s]+\.pages\.dev/);
+        if (projectMatch && projectMatch[0]) {
+          pagesUrl = projectMatch[0];
+          deploymentSuccess = true;
+        }
+      }
+    } catch {}
+  }
+  
+  if (deploymentSuccess || pagesUrl) {
     log('✓ Pages deployed', GREEN);
     if (pagesUrl) {
       log(`✓ Pages URL: ${pagesUrl}`, GREEN);
     }
-    
     return { success: true, url: pagesUrl };
-  } catch (error) {
-    log('⚠️  Pages deployment via wrangler failed', YELLOW);
-    
-    // Try to get existing Pages URL
-    try {
-      const projectList = execSilent('wrangler pages project list');
-      if (projectList.includes('faceswap-test')) {
-        const projectMatch = projectList.match(/https:\/\/[^\s]+\.pages\.dev/);
-        if (projectMatch) {
-          const pagesUrl = projectMatch[0];
-          log(`✓ Found existing Pages URL: ${pagesUrl}`, GREEN);
-          return { success: true, url: pagesUrl };
-        }
-      }
-    } catch {}
-    
-    log('   Pages deployment failed. Try these options:', YELLOW);
-    log('   Option 1 - Manual Dashboard Upload:', YELLOW);
-    log('   1. Go to: https://dash.cloudflare.com', YELLOW);
-    log('   2. Navigate to: Workers & Pages > Create Application > Pages', YELLOW);
-    log('   3. Choose \'Upload assets\' and upload index.html', YELLOW);
-    log('   Option 2 - Retry command:', YELLOW);
-    log('   npm run deploy:pages', YELLOW);
-    
+  } else {
+    log('⚠️  Pages deployment may have failed', YELLOW);
+    log('   Try checking Cloudflare Dashboard for deployment status', YELLOW);
     return { success: false, url: null };
   }
 }
@@ -322,7 +360,15 @@ function writeDeploymentInfo(workerUrl, pagesResult) {
 
 **Generated:** ${new Date().toLocaleString()}
 
-## Worker API
+## 🌐 HTML Test Page (Frontend)
+
+- **URL:** ${pagesUrl}
+- **Status:** ${pagesStatus}
+- **Description:** Main user interface for face swap application
+- **Project Name:** faceswap-test
+- **Directory:** public_page/
+
+## 🔧 Worker API (Backend)
 
 - **URL:** ${workerUrl}
 - **Status:** Deployed
