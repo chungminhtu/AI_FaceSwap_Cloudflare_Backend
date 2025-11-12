@@ -250,8 +250,8 @@ async function main() {
   
   if (fs.existsSync(publicPageDir)) {
     try {
-      execCommand(
-        `wrangler pages deploy ${publicPageDir} --project-name=faceswap-test --branch=main --commit-dirty=true`,
+      const pagesResult = execCommand(
+        `wrangler pages deploy ${publicPageDir} --project-name=ai-faceswap-frontend --branch=main --commit-dirty=true`,
         { throwOnError: false, stdio: 'inherit' }
       );
       log.success('Pages deployed');

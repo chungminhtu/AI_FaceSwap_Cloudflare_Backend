@@ -142,26 +142,31 @@ export default {
 
         // If this is a preset upload, save to database
         if (key.startsWith('preset/')) {
+          console.log('Processing preset upload:', key);
           let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
-          
+          console.log('Raw preset name:', presetName);
+
           // Decode base64 if encoded
           const isEncoded = request.headers.get('X-Preset-Name-Encoded') === 'base64';
           if (isEncoded) {
             try {
               presetName = decodeURIComponent(escape(atob(presetName)));
+              console.log('Decoded preset name:', presetName);
             } catch (e) {
               console.warn('Failed to decode preset name, using as-is:', e);
             }
           }
-          
+
           const presetId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          
+          console.log('Generated preset ID:', presetId);
+          console.log('Public URL:', publicUrl);
+
           // Try to save to database, but don't fail the upload if DB fails
           try {
-            await env.DB.prepare(
+            const result = await env.DB.prepare(
               'INSERT INTO presets (id, name, image_url, created_at) VALUES (?, ?, ?, ?)'
             ).bind(presetId, presetName, publicUrl, Math.floor(Date.now() / 1000)).run();
-            console.log(`Preset saved to database: ${presetId}`);
+            console.log(`Preset saved to database: ${presetId}, result:`, result);
           } catch (dbError) {
             console.error('Database save error (non-fatal):', dbError);
             // Still return success since file was uploaded to R2
