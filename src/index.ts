@@ -163,10 +163,30 @@ export default {
 
           // Try to save to database, but don't fail the upload if DB fails
           try {
+            // First, check if a collection with this name already exists
+            let collectionResult = await env.DB.prepare(
+              'SELECT id FROM preset_collections WHERE name = ?'
+            ).bind(presetName).first();
+
+            let collectionId: string;
+
+            if (!collectionResult) {
+              // Create new collection
+              collectionId = `collection_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+              await env.DB.prepare(
+                'INSERT INTO preset_collections (id, name, created_at) VALUES (?, ?, ?)'
+              ).bind(collectionId, presetName, Math.floor(Date.now() / 1000)).run();
+            } else {
+              collectionId = collectionResult.id as string;
+            }
+
+            // Add image to collection
+            const imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             const result = await env.DB.prepare(
-              'INSERT INTO presets (id, name, image_url, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(presetId, presetName, publicUrl, Math.floor(Date.now() / 1000)).run();
-            console.log(`Preset saved to database: ${presetId}, result:`, result);
+              'INSERT INTO preset_images (id, collection_id, image_url, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(imageId, collectionId, publicUrl, Math.floor(Date.now() / 1000)).run();
+
+            console.log(`Preset image saved to database: ${imageId}, collection: ${collectionId}, result:`, result);
           } catch (dbError) {
             console.error('Database save error (non-fatal):', dbError);
             // Still return success since file was uploaded to R2
@@ -191,26 +211,55 @@ export default {
     // Handle preset listing
     if (path === '/presets' && request.method === 'GET') {
       try {
-        const result = await env.DB.prepare(
-          'SELECT id, name, image_url, created_at FROM presets ORDER BY created_at DESC'
-        ).all();
+        // Get all collections with their images
+        const collectionsResult = await env.DB.prepare(`
+          SELECT
+            c.id,
+            c.name,
+            c.created_at as collection_created_at,
+            i.id as image_id,
+            i.image_url,
+            i.created_at as image_created_at
+          FROM preset_collections c
+          LEFT JOIN preset_images i ON c.id = i.collection_id
+          ORDER BY c.created_at DESC, i.created_at DESC
+        `).all();
 
-        if (!result || !result.results) {
-          return jsonResponse({ presets: [] });
+        if (!collectionsResult || !collectionsResult.results) {
+          return jsonResponse({ preset_collections: [] });
         }
 
-        const presets = result.results.map((row: any) => ({
-          id: row.id || '',
-          name: row.name || 'Unnamed',
-          image_url: row.image_url || '',
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
+        // Group images by collection
+        const collectionsMap = new Map();
 
-        return jsonResponse({ presets });
+        for (const row of collectionsResult.results as any[]) {
+          const collectionId = row.id;
+          if (!collectionsMap.has(collectionId)) {
+            collectionsMap.set(collectionId, {
+              id: collectionId,
+              name: row.name || 'Unnamed',
+              created_at: row.collection_created_at ? new Date(row.collection_created_at * 1000).toISOString() : new Date().toISOString(),
+              images: []
+            });
+          }
+
+          if (row.image_id && row.image_url) {
+            collectionsMap.get(collectionId).images.push({
+              id: row.image_id,
+              collection_id: collectionId,
+              image_url: row.image_url,
+              created_at: row.image_created_at ? new Date(row.image_created_at * 1000).toISOString() : new Date().toISOString()
+            });
+          }
+        }
+
+        const presetCollections = Array.from(collectionsMap.values());
+
+        return jsonResponse({ preset_collections: presetCollections });
       } catch (error) {
         console.error('List presets error:', error);
         // Return empty array instead of error to prevent UI breaking
-        return jsonResponse({ presets: [] });
+        return jsonResponse({ preset_collections: [] });
       }
     }
 
@@ -218,7 +267,7 @@ export default {
     if (path === '/results' && request.method === 'GET') {
       try {
         const result = await env.DB.prepare(
-          'SELECT id, preset_id, preset_name, result_url, created_at FROM results ORDER BY created_at DESC LIMIT 50'
+          'SELECT id, preset_collection_id, preset_image_id, preset_name, result_url, created_at FROM results ORDER BY created_at DESC LIMIT 50'
         ).all();
 
         if (!result || !result.results) {
@@ -227,7 +276,8 @@ export default {
 
         const results = result.results.map((row: any) => ({
           id: row.id || '',
-          preset_id: row.preset_id || '',
+          preset_collection_id: row.preset_collection_id || '',
+          preset_image_id: row.preset_image_id || '',
           preset_name: row.preset_name || 'Unnamed',
           result_url: row.result_url || '',
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
@@ -271,7 +321,7 @@ export default {
       if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
       try {
-        const body: FaceSwapRequest & { preset_id?: string; preset_name?: string } = await request.json();
+        const body: FaceSwapRequest & { preset_image_id?: string; preset_collection_id?: string; preset_name?: string } = await request.json();
         const requestError = validateRequest(body);
         if (requestError) return errorResponse(requestError, 400);
 
@@ -309,11 +359,11 @@ export default {
           : `${url.origin}/r2/${resultKey}`;
 
         // Save result to database
-        if (body.preset_id && body.preset_name) {
+        if (body.preset_image_id && body.preset_collection_id && body.preset_name) {
           const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           await env.DB.prepare(
-            'INSERT INTO results (id, preset_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?)'
-          ).bind(resultId, body.preset_id, body.preset_name, resultUrl, Math.floor(Date.now() / 1000)).run();
+            'INSERT INTO results (id, preset_collection_id, preset_image_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+          ).bind(resultId, body.preset_collection_id, body.preset_image_id, body.preset_name, resultUrl, Math.floor(Date.now() / 1000)).run();
         }
 
         return jsonResponse({

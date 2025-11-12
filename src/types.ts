@@ -48,20 +48,28 @@ export interface UploadUrlResponse {
   publicUrl: string;
 }
 
-export interface Preset {
+export interface PresetCollection {
   id: string;
   name: string;
+  images: PresetImage[];
+  created_at: string;
+}
+
+export interface PresetImage {
+  id: string;
+  collection_id: string;
   image_url: string;
   created_at: string;
 }
 
 export interface PresetListResponse {
-  presets: Preset[];
+  preset_collections: PresetCollection[];
 }
 
 export interface Result {
   id: string;
-  preset_id: string;
+  preset_collection_id: string;
+  preset_image_id: string;
   preset_name: string;
   result_url: string;
   created_at: string;
