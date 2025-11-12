@@ -140,7 +140,7 @@ export default {
           ? `${env.R2_PUBLIC_URL}/${key}`
           : `${url.origin}/r2/${key}`;
 
-        // If this is a preset upload, save to database
+        // Save upload metadata to database based on type
         if (key.startsWith('preset/')) {
           console.log('Processing preset upload:', key);
           let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
@@ -193,11 +193,36 @@ export default {
             // Database might not be initialized yet
           }
 
-          return jsonResponse({ 
-            success: true, 
+          return jsonResponse({
+            success: true,
             url: publicUrl,
             presetId: presetId,
             presetName: presetName
+          });
+        } else if (key.startsWith('selfie/')) {
+          console.log('Processing selfie upload:', key);
+
+          // Extract filename from key (remove 'selfie/' prefix)
+          const filename = key.replace('selfie/', '');
+          const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+          // Try to save to database, but don't fail the upload if DB fails
+          try {
+            const result = await env.DB.prepare(
+              'INSERT INTO selfies (id, image_url, filename, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(selfieId, publicUrl, filename, Math.floor(Date.now() / 1000)).run();
+
+            console.log(`Selfie saved to database: ${selfieId}, result:`, result);
+          } catch (dbError) {
+            console.error('Selfie database save error (non-fatal):', dbError);
+            // Still return success since file was uploaded to R2
+            // Database might not be initialized yet
+          }
+
+          return jsonResponse({
+            success: true,
+            url: publicUrl,
+            selfieId: selfieId
           });
         }
 
@@ -284,11 +309,37 @@ export default {
       }
     }
 
+    // Handle selfies listing
+    if (path === '/selfies' && request.method === 'GET') {
+      try {
+        const result = await env.DB.prepare(
+          'SELECT id, image_url, filename, created_at FROM selfies ORDER BY created_at DESC LIMIT 50'
+        ).all();
+
+        if (!result || !result.results) {
+          return jsonResponse({ selfies: [] });
+        }
+
+        const selfies = result.results.map((row: any) => ({
+          id: row.id || '',
+          image_url: row.image_url || '',
+          filename: row.filename || '',
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+        }));
+
+        return jsonResponse({ selfies });
+      } catch (error) {
+        console.error('List selfies error:', error);
+        // Return empty array instead of error to prevent UI breaking
+        return jsonResponse({ selfies: [] });
+      }
+    }
+
     // Handle results listing
     if (path === '/results' && request.method === 'GET') {
       try {
         const result = await env.DB.prepare(
-          'SELECT id, preset_collection_id, preset_image_id, preset_name, result_url, created_at FROM results ORDER BY created_at DESC LIMIT 50'
+          'SELECT id, selfie_id, preset_collection_id, preset_image_id, preset_name, result_url, created_at FROM results ORDER BY created_at DESC LIMIT 50'
         ).all();
 
         if (!result || !result.results) {
@@ -297,6 +348,7 @@ export default {
 
         const results = result.results.map((row: any) => ({
           id: row.id || '',
+          selfie_id: row.selfie_id || '',
           preset_collection_id: row.preset_collection_id || '',
           preset_image_id: row.preset_image_id || '',
           preset_name: row.preset_name || 'Unnamed',
@@ -308,7 +360,6 @@ export default {
       } catch (error) {
         console.error('List results error:', error);
         // Return empty array instead of error to prevent UI breaking
-        // If table doesn't exist, schema needs to be initialized
         return jsonResponse({ results: [] });
       }
     }
@@ -381,10 +432,24 @@ export default {
 
         // Save result to database
         if (body.preset_image_id && body.preset_collection_id && body.preset_name) {
+          // Find the selfie_id by matching the source_url with selfies table
+          let selfieId = null;
+          try {
+            const selfieResult = await env.DB.prepare(
+              'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
+            ).bind(body.source_url).first();
+
+            if (selfieResult) {
+              selfieId = selfieResult.id;
+            }
+          } catch (dbError) {
+            console.warn('Could not find selfie in database:', dbError);
+          }
+
           const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           await env.DB.prepare(
-            'INSERT INTO results (id, preset_collection_id, preset_image_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-          ).bind(resultId, body.preset_collection_id, body.preset_image_id, body.preset_name, resultUrl, Math.floor(Date.now() / 1000)).run();
+            'INSERT INTO results (id, selfie_id, preset_collection_id, preset_image_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(resultId, selfieId, body.preset_collection_id, body.preset_image_id, body.preset_name, resultUrl, Math.floor(Date.now() / 1000)).run();
         }
 
         return jsonResponse({

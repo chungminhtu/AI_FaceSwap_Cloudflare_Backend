@@ -3,365 +3,1406 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Swap AI</title>
+    <title>Face Swap AI - Comparison Interface</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px; margin-bottom: 20px; }
-        .header h1 { font-size: 2em; margin-bottom: 5px; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-        .grid .result { grid-column: 1 / -1; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
 
-        .panel { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
-        .panel h3 { color: #667eea; margin-bottom: 15px; font-size: 1.2em; }
+        .app {
+            width: 100%;
+            padding: 10px;
+        }
 
-        .upload-area { border: 2px dashed #ddd; border-radius: 8px; padding: 40px 20px; cursor: pointer; transition: all 0.3s; background: #fafafa; }
-        .upload-area:hover { border-color: #667eea; background: rgba(102, 126, 234, 0.05); }
-        .file-input { display: none; }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            color: white;
+        }
 
-        .preview { max-width: 100%; max-height: 200px; border-radius: 8px; display: none; margin: 10px 0; }
-        .preview.show { display: block; }
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
 
-        .placeholder { color: #999; font-size: 0.9em; }
-        .placeholder .icon { font-size: 2em; margin-bottom: 10px; }
+        .header .subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
 
-                .collections { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
-                .collection-card { border: 2px solid #ddd; border-radius: 8px; padding: 10px; cursor: pointer; transition: all 0.3s; text-align: center; }
-                .collection-card:hover { border-color: #667eea; transform: translateY(-2px); }
-                .collection-card img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; }
-                .collection-card .name { font-weight: bold; margin: 5px 0; }
-                .collection-card .count { color: #666; font-size: 0.8em; }
-                .upload-collection { border: 2px dashed #667eea; border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.3s; background: rgba(102, 126, 234, 0.05); }
-                .upload-collection:hover { border-color: #764ba2; background: rgba(118, 75, 162, 0.1); }
-                .upload-collection .icon { font-size: 2em; margin-bottom: 10px; }
+        .reset-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+            padding: 8px 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
 
-                .collection-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; }
-                .collection-modal.show { display: flex; }
-                .collection-modal-content { background: white; border-radius: 10px; padding: 20px; max-width: 400px; width: 90%; }
-                .collection-modal h3 { margin-bottom: 15px; color: #667eea; }
-                .collection-modal input { width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 15px; font-size: 1em; }
-                .collection-modal .buttons { display: flex; gap: 10px; justify-content: flex-end; }
-                .collection-modal button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 1em; }
-                .collection-modal .cancel { background: #f5f5f5; color: #333; }
-                .collection-modal .upload { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
 
-        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; }
-        .modal.show { display: flex; }
-        .modal-content { background: white; border-radius: 10px; padding: 20px; max-width: 600px; max-height: 80vh; overflow-y: auto; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .modal-close { background: none; border: none; font-size: 1.5em; cursor: pointer; }
-        .modal-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-        .modal-image { border: 2px solid transparent; border-radius: 8px; overflow: hidden; cursor: pointer; transition: all 0.3s; }
-        .modal-image:hover { border-color: #667eea; }
-        .modal-image.selected { border-color: #764ba2; transform: scale(1.05); }
-        .modal-image img { width: 100%; height: 100px; object-fit: cover; }
+        .grid-item {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
 
-        .btn { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; margin: 10px 5px; transition: all 0.3s; }
-        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .selfie-panel, .preset-panel {
+            grid-column: span 1;
+        }
 
-        .loading { display: none; text-align: center; padding: 20px; }
-        .loading.show { display: block; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .result-panel {
+            grid-column: span 2;
+            min-height: 400px;
+        }
 
-        .error { background: #fee; color: #c33; padding: 10px; border-radius: 8px; margin: 10px 0; display: none; }
-        .error.show { display: block; }
+        .panel-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } .grid .result { grid-column: 1; } .container { padding: 10px; } }
+        .panel-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .panel-status {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        .preset-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px;
+        }
+
+        .preset-option {
+            padding: 20px 10px;
+            text-align: center;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .preset-option:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-zone {
+            padding: 30px 15px;
+            text-align: center;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            margin: 15px;
+            cursor: pointer;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .preset-name-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+
+        .preset-name-modal.show {
+            display: flex;
+        }
+
+        .preset-name-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .preset-name-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            margin: 15px 0;
+            box-sizing: border-box;
+        }
+
+        .preset-name-input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            opacity: 0.6;
+        }
+
+        .upload-text {
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+            color: #666;
+        }
+
+        .upload-subtext {
+            font-size: 0.7rem;
+            color: #999;
+        }
+
+        .image-preview {
+            padding: 15px;
+            text-align: center;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 250px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .collections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            padding: 15px;
+        }
+
+        .collection-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+        }
+
+        .collection-image {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+
+        .collection-info {
+            padding: 15px;
+        }
+
+        .collection-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        .collection-count {
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            max-width: 95vw;
+            max-height: 95vh;
+            overflow: hidden;
+            width: 100%;
+            margin: 10px;
+        }
+
+        .modal-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: #f5f5f5;
+        }
+
+        .modal-body {
+            padding: 15px;
+            max-height: 75vh;
+            overflow-y: auto;
+        }
+
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+        }
+
+        .preset-item {
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 3px solid transparent;
+        }
+
+        .preset-item.selected {
+            border-color: #667eea;
+        }
+
+        .preset-image {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+
+        .generate-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 15px auto;
+            display: block;
+        }
+
+        .generate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+        }
+
+        .loading-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        .history-section {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .history-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .history-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+        }
+
+        .history-item {
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .history-image {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+        }
+
+        .history-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+            color: white;
+            padding: 10px;
+            font-size: 0.8rem;
+        }
+
+
+        .progress-steps {
+            display: flex;
+            justify-content: center;
+            margin: 15px 0;
+            gap: 8px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 0.85rem;
+        }
+
+        .step.completed {
+            background: #28a745;
+            color: white;
+        }
+
+        .step.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .step.pending {
+            background: #f8f9fa;
+            color: #666;
+        }
+
+        .step-icon {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: currentColor;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .app {
+                padding: 5px;
+            }
+
+            .comparison-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
+                gap: 10px;
+            }
+
+            .selfie-panel, .preset-panel, .result-panel {
+                grid-column: span 1;
+            }
+
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .header {
+                margin-bottom: 15px;
+            }
+
+            .collections-grid, .preset-grid, .uploaded-preset-grid, .history-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                gap: 10px;
+            }
+
+            .preset-options {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .modal-content {
+                margin: 5px;
+                max-width: 98vw;
+            }
+
+            .progress-steps {
+                margin: 10px 0;
+                gap: 5px;
+            }
+
+            .step {
+                font-size: 0.8rem;
+                padding: 5px 10px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="app">
+        <button class="reset-btn" onclick="resetApp()">🔄 Reset</button>
+
         <div class="header">
             <h1>🎭 Face Swap AI</h1>
-            <div class="subtitle">Compare originals with results</div>
+            <div class="subtitle">Compare originals with AI-generated results</div>
         </div>
 
-                <div class="collections" id="collections">
-                    <div class="upload-collection" onclick="uploadCollection()">
-                        <div class="icon">➕</div>
-                        <div>Upload New Collection</div>
-                    </div>
-                </div>
+        <div class="progress-steps">
+            <div class="step active" id="step1">
+                <span class="step-icon">1</span>
+                Upload Selfie
+            </div>
+            <div class="step pending" id="step2">
+                <span class="step-icon">2</span>
+                Choose Preset
+            </div>
+            <div class="step pending" id="step3">
+                <span class="step-icon">3</span>
+                Generate Result
+            </div>
+        </div>
 
-        <div class="grid">
-            <div class="panel">
-                <h3>📸 Selfie Selected</h3>
-                <div class="placeholder" id="selfiePlaceholder">
-                    <div class="icon">📷</div>
-                    <div>Upload a selfie to get started</div>
-                    </div>
-                <img class="preview" id="selfiePreview" alt="Selected selfie">
-                <div class="upload-area" id="selfieUpload">
-                    <input type="file" class="file-input" id="selfieFile" accept="image/*">
-                    Choose Selfie Image
+        <div class="comparison-grid">
+            <div class="grid-item selfie-panel">
+                <div class="panel-header">
+                    <div class="panel-title">📸 Your Selfie</div>
+                    <div class="panel-status" id="selfie-status">Not selected</div>
                 </div>
+                <div class="upload-zone" id="selfie-upload" onclick="triggerFileInput('selfie-input')">
+                    <div class="upload-icon">📷</div>
+                    <div class="upload-text">Click to upload or drag & drop</div>
+                    <div class="upload-subtext">JPG, PNG, WebP up to 10MB</div>
+                    <input type="file" id="selfie-input" accept="image/*" style="display: none;">
+                </div>
+                <div class="image-preview" id="selfie-preview" style="display: none;"></div>
             </div>
 
-            <div class="panel">
-                <h3>🎭 Preset Selected</h3>
-                <div class="placeholder" id="presetPlaceholder">
-                    <div class="icon">🎭</div>
-                    <div>Click a collection above to select an image</div>
-                            </div>
-                <img class="preview" id="presetPreview" alt="Selected preset">
+            <div class="grid-item preset-panel">
+                <div class="panel-header">
+                    <div class="panel-title">🎭 Preset Image</div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button id="browse-uploaded-btn" class="reset-btn" style="display: none; font-size: 12px; padding: 4px 8px;" onclick="openUploadedPresetsModal()">Browse Uploaded</button>
+                        <div class="panel-status" id="preset-status">Not selected</div>
                     </div>
-
-            <div class="panel result">
-                <h3>✨ Face Swap Result</h3>
-                <div class="placeholder" id="resultPlaceholder">
-                    <div class="icon">🎭</div>
-                    <div>Select images above and click Generate</div>
-                            </div>
-                <img class="preview" id="resultImage" alt="Face swap result">
-
-                <div class="loading" id="loading">
-                    <div class="spinner"></div>
-                    <div>Generating face swap...</div>
-                        </div>
-
-                <div class="error" id="error"></div>
-
-                <button class="btn" id="generateBtn" disabled>Generate Face Swap</button>
-                <button class="btn" id="resetBtn" style="display: none;">Reset</button>
-                        </div>
-                        </div>
+                </div>
+                <div class="preset-options">
+                    <div class="upload-zone preset-option" onclick="openCollectionsModal()">
+                        <div class="upload-icon">🎨</div>
+                        <div class="upload-text">Browse Collections</div>
+                        <div class="upload-subtext">Choose from galleries</div>
                     </div>
+                    <div class="upload-zone preset-option" onclick="showPresetUploadModal()">
+                        <div class="upload-icon">📤</div>
+                        <div class="upload-text">Upload Custom</div>
+                        <div class="upload-subtext">Select your own images</div>
+                    </div>
+                </div>
+                <div class="image-preview" id="preset-preview" style="display: none;"></div>
+            </div>
 
-            <div class="collection-modal" id="collectionModal">
-                <div class="collection-modal-content">
-                    <h3>Upload New Collection</h3>
-                    <input type="text" id="collectionName" placeholder="Enter collection name" maxlength="50">
-                    <input type="file" id="collectionFiles" multiple accept="image/*" style="display: none;">
-                    <div class="buttons">
-                        <button class="cancel" onclick="closeCollectionModal()">Cancel</button>
-                        <button class="upload" onclick="selectCollectionFiles()">Select Images</button>
+            <div class="grid-item result-panel">
+                <div class="panel-header">
+                    <div class="panel-title">✨ Face Swap Result</div>
+                    <div class="panel-status" id="result-status">Waiting for generation</div>
+                </div>
+                <div class="image-preview" id="result-preview" style="display: none;">
+                    <div style="padding: 60px; color: #999; font-style: italic;">
+                        Result will appear here after generation
                     </div>
                 </div>
             </div>
+        </div>
 
-            <div class="modal" id="imageModal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 id="modalTitle">Select Image</h3>
-                        <button class="modal-close" onclick="closeModal()">×</button>
-                    </div>
-                    <div class="modal-images" id="modalImages"></div>
+        <button class="generate-btn" id="generate-btn" onclick="generateFaceSwap()" disabled>
+            🚀 Generate Face Swap
+        </button>
+
+        <div class="history-section">
+            <div class="history-header">
+                <div class="history-title">📚 Recent Results</div>
+                <button class="reset-btn" style="position: static; margin: 0;" onclick="clearHistory()">🗑️ Clear</button>
+            </div>
+            <div class="history-grid" id="history-grid">
+                <!-- History items will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Collections Modal -->
+    <div class="modal" id="collections-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">🎨 Choose Collection</div>
+                <button class="modal-close" onclick="closeModal('collections-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="collections-grid" id="collections-grid">
+                    <!-- Collections will be populated here -->
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Preset Selection Modal -->
+    <div class="modal" id="preset-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="preset-modal-title">Choose Preset Image</div>
+                <button class="modal-close" onclick="closeModal('preset-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="preset-grid" id="preset-grid">
+                    <!-- Preset images will be populated here -->
+                </div>
+                <button class="generate-btn" style="margin-top: 20px;" onclick="selectPresetAndClose()">✅ Select This Image</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Uploaded Presets Modal -->
+    <div class="modal" id="uploaded-presets-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Select from Your Uploaded Images</div>
+                <button class="modal-close" onclick="closeModal('uploaded-presets-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="preset-grid" id="uploaded-preset-grid">
+                    <!-- Uploaded preset images will be populated here -->
+                </div>
+                <button class="generate-btn" style="margin-top: 20px;" onclick="confirmPresetSelection()">✅ Use Selected Image</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preset Name Modal -->
+    <div class="preset-name-modal" id="preset-name-modal" onclick="cancelPresetUpload()">
+        <div class="preset-name-content" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="cancelPresetUpload()" style="position: absolute; top: 10px; right: 15px;">&times;</button>
+            <h3 style="margin-bottom: 15px;">Upload Custom Presets</h3>
+            <div style="margin-bottom: 20px;">
+                <button class="reset-btn" style="padding: 10px 20px; margin-bottom: 15px;" onclick="triggerFileInput('preset-input')">📁 Select Images</button>
+                <input type="file" id="preset-input" accept="image/*" multiple style="display: none;">
+                <div id="selected-files-info" style="font-size: 0.9rem; color: #666; margin-bottom: 15px;"></div>
+            </div>
+            <input type="text" class="preset-name-input" id="preset-name-input" placeholder="Enter collection name" maxlength="50">
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="generate-btn" style="flex: 1; margin: 0;" id="upload-btn" onclick="confirmPresetUpload()" disabled>Upload</button>
+                <button class="reset-btn" style="padding: 12px 20px; margin: 0;" onclick="cancelPresetUpload()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div id="loading-text">Processing your face swap...</div>
+            <div style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+                This may take 10-30 seconds
+            </div>
+        </div>
+    </div>
+
 
     <script>
-        const API = 'https://ai-faceswap-backend.chungminhtu03.workers.dev';
-        let preset = null, selfieUrl = null, collections = [];
+        // API Configuration - Always use backend for API calls
+        const API_BASE_URL = window.location.protocol === 'file:' ||
+                            window.location.hostname === 'localhost' ||
+                            window.location.hostname === '127.0.0.1' ||
+                            window.location.hostname.includes('localhost') ||
+                            window.location.port === '5500' ||  // VS Code Live Server
+                            window.location.port === '3000' ||  // Common dev ports
+                            window.location.port === '8080'
+            ? 'http://localhost:8787'  // Local wrangler dev server
+            : 'https://ai-faceswap-backend.chungminhtu03.workers.dev';  // Production backend
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadCollections();
-            setupEvents();
+        console.log('API Base URL:', API_BASE_URL);
+        console.log('Current location:', window.location.href);
+        console.log('Protocol:', window.location.protocol);
+        console.log('Hostname:', window.location.hostname);
+        console.log('Port:', window.location.port);
+
+        // App state
+        let appState = {
+            selfie: null,
+            presets: [], // Array of uploaded preset images
+            selectedPreset: null, // Currently selected preset URL
+            result: null,
+            history: JSON.parse(localStorage.getItem('faceswap-history') || '[]'),
+            selectedPresetIndex: -1
+        };
+
+        // Load collections from API
+        let collections = [];
+
+        // Pending uploads
+        let pendingPresetFiles = null;
+        let pendingPresetName = '';
+
+        // Load collections from backend API
+        async function loadCollectionsFromAPI() {
+            try {
+                console.log('Loading collections from:', `${API_BASE_URL}/presets`);
+                const response = await fetch(`${API_BASE_URL}/presets`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Collections API response:', data);
+
+                if (data.preset_collections) {
+                    collections = data.preset_collections.map(collection => ({
+                        id: collection.id,
+                        name: collection.name,
+                        count: collection.images ? collection.images.length : 0,
+                        thumbnail: collection.images && collection.images.length > 0 ? collection.images[0].image_url : '',
+                        images: collection.images ? collection.images.map(img => img.image_url) : []
+                    }));
+                    console.log('Loaded collections:', collections.length);
+                } else {
+                    console.warn('No preset_collections in response, using fallback data');
+                    // Fallback to mock data if API returns empty
+                    collections = [
+                        {
+                            id: 1,
+                            name: "Celebrity Faces",
+                            count: 12,
+                            thumbnail: "https://temp.live3d.io/aifaceswap/static_img/template-2-aafa80bf126595068e90d04e4eb76969.webp",
+                            images: [
+                                "https://temp.live3d.io/aifaceswap/static_img/template-2-aafa80bf126595068e90d04e4eb76969.webp",
+                                "https://example.com/celebrity2.jpg",
+                                "https://example.com/celebrity3.jpg",
+                                "https://example.com/celebrity4.jpg"
+                            ]
+                        }
+                    ];
+                }
+
+                renderCollections();
+            } catch (error) {
+                console.error('Failed to load collections:', error);
+                console.log('Using fallback mock data');
+
+                // Use fallback data
+                collections = [
+                    {
+                        id: 1,
+                        name: "Celebrity Faces",
+                        count: 12,
+                        thumbnail: "https://temp.live3d.io/aifaceswap/static_img/template-2-aafa80bf126595068e90d04e4eb76969.webp",
+                        images: [
+                            "https://temp.live3d.io/aifaceswap/static_img/template-2-aafa80bf126595068e90d04e4eb76969.webp",
+                            "https://example.com/celebrity2.jpg",
+                            "https://example.com/celebrity3.jpg",
+                            "https://example.com/celebrity4.jpg"
+                        ]
+                    }
+                ];
+                renderCollections();
+            }
+        }
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            setupDragAndDrop();
+            loadCollectionsFromAPI();
+            renderHistory();
+            updateUI();
+            setupKeyboardEvents();
         });
 
-        function $(s) { return document.querySelector(s); }
-        function $$(s) { return document.querySelectorAll(s); }
+        // Setup keyboard events
+        function setupKeyboardEvents() {
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    // Close any open modals
+                    document.getElementById('preset-name-modal').classList.remove('show');
+                    document.getElementById('collections-modal').classList.remove('show');
+                    document.getElementById('preset-modal').classList.remove('show');
+                    document.getElementById('uploaded-presets-modal').classList.remove('show');
+                } else if (e.key === 'Enter' && document.getElementById('preset-name-modal').classList.contains('show')) {
+                    // Confirm preset upload on Enter in name modal
+                    confirmPresetUpload();
+                }
+            });
+        }
 
-        function setupEvents() {
-            $('#selfieUpload').onclick = () => $('#selfieFile').click();
-            $('#selfieFile').onchange = handleSelfieUpload;
-            $('#generateBtn').onclick = generateFaceSwap;
-            $('#resetBtn').onclick = reset;
+        // Show preset upload modal
+        function showPresetUploadModal() {
+            // Clear any previous state
+            pendingPresetFiles = null;
+            pendingPresetName = '';
+            document.getElementById('preset-name-input').value = '';
+            document.getElementById('selected-files-info').textContent = '';
+            document.getElementById('upload-btn').disabled = true;
 
-            // Drag & drop
-            const upload = $('#selfieUpload');
-            upload.ondragover = e => { e.preventDefault(); upload.classList.add('dragover'); };
-            upload.ondragleave = () => upload.classList.remove('dragover');
-            upload.ondrop = e => {
-                e.preventDefault(); upload.classList.remove('dragover');
-                $('#selfieFile').files = e.dataTransfer.files;
-                handleSelfieUpload();
-            };
+            // Show modal
+            document.getElementById('preset-name-modal').classList.add('show');
+        }
+
+        // Setup drag and drop
+        function setupDragAndDrop() {
+            const selfieZone = document.getElementById('selfie-upload');
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                selfieZone.addEventListener(eventName, preventDefaults, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                selfieZone.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                selfieZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            selfieZone.addEventListener('drop', handleDrop, false);
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
 
-        async function loadCollections() {
-            try {
-                const res = await fetch(`${API}/presets`);
-                const data = await res.json();
-                collections = data.preset_collections || [];
-                renderCollections();
-            } catch (e) { console.error(e); }
+            function highlight() {
+                selfieZone.classList.add('dragover');
+            }
+
+            function unhighlight() {
+                selfieZone.classList.remove('dragover');
+            }
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                handleFiles(files);
+            }
         }
 
-                function renderCollections() {
-                    const uploadBtn = `<div class="upload-collection" onclick="uploadCollection()">
-                        <div class="icon">➕</div>
-                        <div>Upload New Collection</div>
-                    </div>`;
-
-                    const collectionsHtml = collections.length ?
-                        collections.map(c => `
-                            <div class="collection-card" onclick="openCollection('${c.id}', '${c.name.replace(/'/g, "\\'")}')">
-                                <img src="${c.images[0]?.image_url || ''}" alt="${c.name}" onerror="this.style.display='none'">
-                                <div class="name">${c.name}</div>
-                                <div class="count">${c.images.length} images</div>
-                            </div>
-                        `).join('') :
-                        '';
-
-                    const container = $('#collections');
-                    container.innerHTML = uploadBtn + collectionsHtml;
-                }
-
-        function openCollection(id, name) {
-            const c = collections.find(x => x.id === id);
-            if (!c) return;
-
-            $('#modalTitle').textContent = name;
-            $('#modalImages').innerHTML = c.images.map(img => `
-                <div class="modal-image" onclick="selectImage('${img.id}', '${img.image_url.replace(/'/g, "\\'")}', '${id}', '${name.replace(/'/g, "\\'")}')">
-                    <img src="${img.image_url}" alt="Preset">
-                </div>
-            `).join('');
-            $('#imageModal').classList.add('show');
+        // File input handling
+        function triggerFileInput(inputId) {
+            document.getElementById(inputId).click();
         }
 
-        function selectImage(id, url, collectionId, name) {
-            preset = { id, imageUrl: url, collectionId, collectionName: name };
-            $('#presetPreview').src = url;
-            $('#presetPreview').classList.add('show');
-            $('#presetPlaceholder').style.display = 'none';
-            $('#imageModal').classList.remove('show');
-            updateBtn();
-        }
+        document.getElementById('selfie-input').addEventListener('change', function(e) {
+            handleFiles(e.target.files);
+        });
 
-                function closeModal() { $('#imageModal').classList.remove('show'); }
+        document.getElementById('preset-input').addEventListener('change', function(e) {
+            handlePresetFiles(e.target.files);
+        });
 
-                function uploadCollection() {
-                    $('#collectionModal').classList.add('show');
-                    $('#collectionName').focus();
-                }
-
-                function closeCollectionModal() {
-                    $('#collectionModal').classList.remove('show');
-                    $('#collectionName').value = '';
-                    $('#collectionFiles').value = '';
-                }
-
-                function selectCollectionFiles() {
-                    const name = $('#collectionName').value.trim();
-                    if (!name) {
-                        alert('Please enter a collection name');
-                        $('#collectionName').focus();
-                        return;
-                    }
-
-                    $('#collectionFiles').click();
-                }
-
-                $('#collectionFiles').onchange = async (e) => {
-                    const files = Array.from(e.target.files);
-                    if (!files.length) return;
-
-                    const name = $('#collectionName').value.trim();
-                    closeCollectionModal();
-
+        async function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                if (validateFile(file)) {
                     try {
-                        for (const file of files) {
-                            const filename = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
-                            const res = await fetch(`${API}/upload-url?filename=${filename}&type=preset`, {
-                                method: 'GET',
-                                headers: {
-                                    'X-Preset-Name': encodeURIComponent(name),
-                                    'X-Preset-Name-Encoded': 'false'
-                                }
-                            });
-                            const uploadData = await res.json();
+                        // Get upload URL from backend
+                        console.log('Requesting upload URL from:', `${API_BASE_URL}/upload-url`);
+                        const uploadUrlResponse = await fetch(`${API_BASE_URL}/upload-url`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                filename: `selfie/${file.name}`,
+                                type: 'selfie'
+                            })
+                        });
 
-                            await fetch(uploadData.uploadUrl, { method: 'PUT', body: file });
+                        if (!uploadUrlResponse.ok) {
+                            console.error('Failed to get upload URL for selfie:', uploadUrlResponse.status, uploadUrlResponse.statusText);
+                            const errorText = await uploadUrlResponse.text();
+                            console.error('Error response:', errorText);
+                            return;
                         }
 
-                        // Refresh collections
-                        await loadCollections();
-                    } catch (e) {
-                        console.error('Upload failed:', e);
-                        alert('Upload failed');
+                        const uploadData = await uploadUrlResponse.json();
+
+                        // Upload file to R2 via proxy
+                        const uploadResponse = await fetch(uploadData.uploadUrl, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': file.type
+                            },
+                            body: file
+                        });
+
+                        if (!uploadResponse.ok) {
+                            console.error('Selfie upload failed:', uploadResponse.status);
+                            return;
+                        }
+
+                        const uploadResult = await uploadResponse.json();
+                        appState.selfie = uploadResult.url;
+
+                        updateUI();
+                        updateProgress();
+                        console.log('Selfie uploaded successfully');
+
+                    } catch (error) {
+                        console.error('Failed to upload selfie:', error);
                     }
+                }
+            }
+        }
+
+        function handlePresetFiles(files) {
+            if (files.length > 0) {
+                const validFiles = Array.from(files).filter(validateFile);
+                if (validFiles.length === 0) {
+                    console.error('No valid files selected');
+                    return;
+                }
+
+                // Store files for later upload
+                pendingPresetFiles = validFiles;
+
+                // Update UI to show selected files
+                const fileInfo = document.getElementById('selected-files-info');
+                fileInfo.textContent = `${validFiles.length} file${validFiles.length > 1 ? 's' : ''} selected`;
+
+                // Enable upload button
+                document.getElementById('upload-btn').disabled = false;
+
+                console.log(`Selected ${validFiles.length} valid files for upload`);
+            }
+        }
+
+        function confirmPresetUpload() {
+            const presetName = document.getElementById('preset-name-input').value.trim();
+            if (!presetName) {
+                alert('Please enter a preset collection name');
+                return;
+            }
+
+            if (!pendingPresetFiles || pendingPresetFiles.length === 0) {
+                alert('Please select image files first');
+                return;
+            }
+
+            pendingPresetName = presetName;
+
+            // Hide modal
+            document.getElementById('preset-name-modal').classList.remove('show');
+            document.getElementById('preset-name-input').value = '';
+            document.getElementById('selected-files-info').textContent = '';
+
+            // Now upload with the name
+            uploadPresetFiles();
+        }
+
+        function cancelPresetUpload() {
+            // Clear pending files
+            pendingPresetFiles = null;
+            pendingPresetName = '';
+
+            // Hide modal and clear UI
+            document.getElementById('preset-name-modal').classList.remove('show');
+            document.getElementById('preset-name-input').value = '';
+            document.getElementById('selected-files-info').textContent = '';
+            document.getElementById('upload-btn').disabled = true;
+        }
+
+        async function uploadPresetFiles() {
+            if (!pendingPresetFiles || pendingPresetFiles.length === 0) return;
+
+            // Clear existing presets
+            appState.presets = [];
+            appState.selectedPreset = null;
+
+            // Process each valid file
+            for (let i = 0; i < pendingPresetFiles.length; i++) {
+                const file = pendingPresetFiles[i];
+                try {
+                    // Get upload URL from backend
+                    console.log('Requesting upload URL from:', `${API_BASE_URL}/upload-url`);
+                    const uploadUrlResponse = await fetch(`${API_BASE_URL}/upload-url`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            filename: `preset/${file.name}`,
+                            type: 'preset'
+                        })
+                    });
+
+                    if (!uploadUrlResponse.ok) {
+                        console.error('Failed to get upload URL for preset:', uploadUrlResponse.status, uploadUrlResponse.statusText);
+                        const errorText = await uploadUrlResponse.text();
+                        console.error('Error response:', errorText);
+                        continue;
+                    }
+
+                    const uploadData = await uploadUrlResponse.json();
+
+                    // Upload file to R2 via proxy
+                    const uploadResponse = await fetch(uploadData.uploadUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': file.type,
+                            'X-Preset-Name': pendingPresetName,
+                            'X-Preset-Name-Encoded': 'false'
+                        },
+                        body: file
+                    });
+
+                    if (!uploadResponse.ok) {
+                        console.error('Upload failed:', uploadResponse.status);
+                        continue;
+                    }
+
+                    const uploadResult = await uploadResponse.json();
+
+                    appState.presets.push({
+                        url: uploadResult.url,
+                        name: file.name,
+                        index: i
+                    });
+
+                    // Auto-select first preset
+                    if (i === 0) {
+                        appState.selectedPreset = uploadResult.url;
+                    }
+
+                    console.log(`Uploaded preset: ${file.name}`);
+
+                } catch (error) {
+                    console.error(`Failed to upload ${file.name}:`, error);
+                }
+            }
+
+            // Clear pending files
+            pendingPresetFiles = null;
+            pendingPresetName = '';
+
+            // Update UI after all uploads
+            updateUI();
+            updateProgress();
+
+            if (appState.presets.length > 0) {
+                // Reload collections to include newly uploaded presets
+                await loadCollectionsFromAPI();
+
+                if (appState.presets.length > 1) {
+                    openUploadedPresetsModal();
+                    console.log(`Uploaded ${appState.presets.length} preset images to "${pendingPresetName}"`);
+                } else {
+                    console.log(`Preset image uploaded successfully to "${pendingPresetName}"`);
+                }
+            }
+        }
+
+        function validateFile(file) {
+            const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+            const maxSize = 10 * 1024 * 1024; // 10MB
+
+            if (!validTypes.includes(file.type)) {
+                console.error('Please select a valid image file (JPG, PNG, WebP)');
+                return false;
+            }
+
+            if (file.size > maxSize) {
+                console.error('File size must be less than 10MB');
+                return false;
+            }
+
+            return true;
+        }
+
+        // Modal functions
+        function openCollectionsModal() {
+            document.getElementById('collections-modal').classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        function openPresetModal(collectionId) {
+            const collection = collections.find(c => c.id === collectionId);
+            if (!collection) return;
+
+            document.getElementById('preset-modal-title').textContent = `Choose from ${collection.name}`;
+            renderPresets(collection.images);
+            closeModal('collections-modal');
+            document.getElementById('preset-modal').classList.add('show');
+        }
+
+        function selectPresetAndClose() {
+            if (appState.selectedPresetIndex >= 0) {
+                const presetGrid = document.getElementById('preset-grid');
+                const selectedItem = presetGrid.children[appState.selectedPresetIndex];
+                const img = selectedItem.querySelector('img');
+                appState.selectedPreset = img.src;
+                updateUI();
+                updateProgress();
+                closeModal('preset-modal');
+                appState.selectedPresetIndex = -1;
+            } else {
+                console.warn('Please select a preset image first');
+            }
+        }
+
+        function openUploadedPresetsModal() {
+            if (appState.presets.length === 0) {
+                console.warn('No uploaded presets available');
+                return;
+            }
+
+            renderUploadedPresets();
+            document.getElementById('uploaded-presets-modal').classList.add('show');
+        }
+
+        function confirmPresetSelection() {
+            if (appState.selectedPresetIndex >= 0 && appState.presets[appState.selectedPresetIndex]) {
+                appState.selectedPreset = appState.presets[appState.selectedPresetIndex].url;
+                updateUI();
+                updateProgress();
+                closeModal('uploaded-presets-modal');
+                appState.selectedPresetIndex = -1;
+                console.log('Preset selected successfully');
+            } else {
+                console.warn('Please select a preset image first');
+            }
+        }
+
+        // Rendering functions
+        function renderCollections() {
+            const grid = document.getElementById('collections-grid');
+            grid.innerHTML = collections.map(collection => `
+                <div class="collection-card" onclick="openPresetModal(${collection.id})">
+                    <img src="${collection.thumbnail}" alt="${collection.name}" class="collection-image">
+                    <div class="collection-info">
+                        <div class="collection-name">${collection.name}</div>
+                        <div class="collection-count">${collection.count} images</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderPresets(images) {
+            const grid = document.getElementById('preset-grid');
+            grid.innerHTML = images.map((image, index) => `
+                <div class="preset-item ${appState.selectedPresetIndex === index ? 'selected' : ''}"
+                     onclick="selectPresetItem(${index})">
+                    <img src="${image}" alt="Preset ${index + 1}" class="preset-image">
+                </div>
+            `).join('');
+        }
+
+        function renderUploadedPresets() {
+            const grid = document.getElementById('uploaded-preset-grid');
+            grid.innerHTML = appState.presets.map((preset, index) => `
+                <div class="preset-item ${appState.selectedPresetIndex === index ? 'selected' : ''}"
+                     onclick="selectPresetItem(${index})">
+                    <img src="${preset.url}" alt="${preset.name}" class="preset-image">
+                    <div style="position: absolute; bottom: 5px; left: 5px; right: 5px; background: rgba(0,0,0,0.7); color: white; font-size: 0.7rem; padding: 2px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${preset.name}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectPresetItem(index) {
+            appState.selectedPresetIndex = index;
+            document.querySelectorAll('.preset-item').forEach((item, i) => {
+                item.classList.toggle('selected', i === index);
+            });
+        }
+
+        function renderHistory() {
+            const grid = document.getElementById('history-grid');
+            if (appState.history.length === 0) {
+                grid.innerHTML = '<div style="grid-column: span 4; text-align: center; padding: 40px; color: #999;">No results yet. Generate your first face swap!</div>';
+                return;
+            }
+
+            grid.innerHTML = appState.history.slice(0, 8).map((item, index) => `
+                <div class="history-item" onclick="loadFromHistory(${index})">
+                    <img src="${item.resultUrl}" alt="Result ${index + 1}" class="history-image">
+                    <div class="history-overlay">
+                        ${new Date(item.timestamp).toLocaleDateString()}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // UI update functions
+        function updateUI() {
+            // Update selfie preview
+            const selfiePreview = document.getElementById('selfie-preview');
+            const selfieUpload = document.getElementById('selfie-upload');
+            const selfieStatus = document.getElementById('selfie-status');
+
+            if (appState.selfie) {
+                selfiePreview.style.display = 'block';
+                selfiePreview.innerHTML = `<img src="${appState.selfie}" alt="Your selfie">`;
+                selfieUpload.style.display = 'none';
+                selfieStatus.textContent = 'Selected';
+                selfieStatus.style.color = '#28a745';
+            } else {
+                selfiePreview.style.display = 'none';
+                selfieUpload.style.display = 'flex';
+                selfieStatus.textContent = 'Not selected';
+                selfieStatus.style.color = '#666';
+            }
+
+            // Update preset preview
+            const presetPreview = document.getElementById('preset-preview');
+            const presetOptions = document.querySelector('.preset-options');
+            const presetStatus = document.getElementById('preset-status');
+            const browseUploadedBtn = document.getElementById('browse-uploaded-btn');
+
+            if (appState.selectedPreset) {
+                presetPreview.style.display = 'block';
+                presetPreview.innerHTML = `<img src="${appState.selectedPreset}" alt="Selected preset image">`;
+                presetOptions.style.display = 'none';
+                browseUploadedBtn.style.display = 'none';
+                presetStatus.textContent = 'Selected';
+                presetStatus.style.color = '#28a745';
+            } else {
+                presetPreview.style.display = 'none';
+                presetOptions.style.display = 'grid';
+                browseUploadedBtn.style.display = appState.presets.length > 0 ? 'inline-block' : 'none';
+                presetStatus.textContent = appState.presets.length > 0 ? `${appState.presets.length} uploaded` : 'Not selected';
+                presetStatus.style.color = appState.presets.length > 0 ? '#007bff' : '#666';
+            }
+
+            // Update result preview
+            const resultPreview = document.getElementById('result-preview');
+            const resultStatus = document.getElementById('result-status');
+
+            if (appState.result) {
+                resultPreview.innerHTML = `<img src="${appState.result}" alt="Face swap result">`;
+                resultStatus.textContent = 'Generated';
+                resultStatus.style.color = '#28a745';
+            } else {
+                resultPreview.innerHTML = '<div style="padding: 60px; color: #999; font-style: italic;">Result will appear here after generation</div>';
+                resultStatus.textContent = 'Waiting for generation';
+                resultStatus.style.color = '#666';
+            }
+
+            // Update generate button
+            const generateBtn = document.getElementById('generate-btn');
+            generateBtn.disabled = !appState.selfie || !appState.selectedPreset;
+        }
+
+        function updateProgress() {
+            const step1 = document.getElementById('step1');
+            const step2 = document.getElementById('step2');
+            const step3 = document.getElementById('step3');
+
+            step1.className = 'step ' + (appState.selfie ? 'completed' : 'active');
+            step2.className = 'step ' + (appState.selectedPreset ? 'completed' : (appState.selfie ? 'active' : 'pending'));
+            step3.className = 'step ' + (appState.result ? 'completed' : (appState.selfie && appState.selectedPreset ? 'active' : 'pending'));
+        }
+
+        // Face swap generation
+        async function generateFaceSwap() {
+            if (!appState.selfie || !appState.selectedPreset) {
+                console.warn('Please select both a selfie and preset image');
+                return;
+            }
+
+            // Show loading overlay
+            document.getElementById('loading-overlay').classList.add('show');
+            document.getElementById('generate-btn').disabled = true;
+
+            try {
+                const requestBody = {
+                    target_url: appState.selectedPreset, // preset image
+                    source_url: appState.selfie // selfie image
                 };
 
-        async function handleSelfieUpload() {
-            const file = $('#selfieFile').files[0];
-            if (!file) return;
+                // Add preset metadata if available (for database tracking)
+                if (appState.selectedPreset && typeof appState.selectedPreset === 'string') {
+                    // Try to match with collections to get metadata
+                    for (const collection of collections) {
+                        const imageIndex = collection.images.indexOf(appState.selectedPreset);
+                        if (imageIndex !== -1) {
+                            requestBody.preset_collection_id = collection.id;
+                            requestBody.preset_image_id = `image_${collection.id}_${imageIndex}`;
+                            requestBody.preset_name = collection.name;
+                            break;
+                        }
+                    }
+                }
 
-            try {
-                const filename = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
-                const res = await fetch(`${API}/upload-url?filename=${filename}&type=selfie`);
-                const uploadData = await res.json();
-                await fetch(uploadData.uploadUrl, { method: 'PUT', body: file });
-
-                selfieUrl = uploadData.publicUrl;
-            const reader = new FileReader();
-                reader.onload = e => {
-                    $('#selfiePreview').src = e.target.result;
-                    $('#selfiePreview').classList.add('show');
-                    $('#selfiePlaceholder').style.display = 'none';
-            };
-            reader.readAsDataURL(file);
-                updateBtn();
-            } catch (e) { showError('Upload failed'); }
-        }
-
-        function updateBtn() { $('#generateBtn').disabled = !(preset && selfieUrl); }
-
-        async function generateFaceSwap() {
-            if (!preset || !selfieUrl) return;
-
-            $('#loading').classList.add('show');
-            $('#generateBtn').disabled = true;
-            $('#resultPlaceholder').style.display = 'none';
-            $('#error').classList.remove('show');
-
-            try {
-                const res = await fetch(`${API}/faceswap`, {
+                const response = await fetch(`${API_BASE_URL}/faceswap`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        target_url: preset.imageUrl,
-                        source_url: selfieUrl,
-                        preset_image_id: preset.id,
-                        preset_collection_id: preset.collectionId,
-                        preset_name: preset.collectionName
-                    })
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
                 });
-                const data = await res.json();
 
-                if (data.Success || data.success) {
-                    const url = data.ResultImageUrl || data.result_url || data.url;
-                    $('#resultImage').src = url;
-                    $('#resultImage').classList.add('show');
-                    $('#resetBtn').style.display = 'inline-block';
-                } else throw new Error(data.Message || 'Face swap failed');
-            } catch (e) {
-                showError(e.message || 'Face swap failed');
+                const data = await response.json();
+
+                if (data.Success && data.ResultImageUrl) {
+                    appState.result = data.ResultImageUrl;
+
+                    // Add to history
+                    appState.history.unshift({
+                        selfie: appState.selfie,
+                        preset: appState.selectedPreset,
+                        resultUrl: data.ResultImageUrl,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    // Keep only last 20 items
+                    appState.history = appState.history.slice(0, 20);
+
+                    // Save to localStorage
+                    localStorage.setItem('faceswap-history', JSON.stringify(appState.history));
+
+                    updateUI();
+                    updateProgress();
+                    renderHistory();
+                    console.log('Face swap generated successfully!');
+                } else {
+                    console.error(data.Message || 'Failed to generate face swap');
+                }
+
+            } catch (error) {
+                console.error('Face swap error:', error);
+                console.error('Network error. Please try again.');
             } finally {
-                $('#loading').classList.remove('show');
-                $('#generateBtn').disabled = false;
+                document.getElementById('loading-overlay').classList.remove('show');
+                document.getElementById('generate-btn').disabled = false;
             }
         }
 
-        function reset() {
-            preset = null; selfieUrl = null;
-            $$('.preview').forEach(el => el.classList.remove('show'));
-            $$('.placeholder').forEach(el => el.style.display = 'block');
-            $('#resultPlaceholder').style.display = 'block';
-            $('#resetBtn').style.display = 'none';
-            $('#error').classList.remove('show');
-            $('#selfieFile').value = '';
-            updateBtn();
-            }
-
-        function showError(msg) {
-            $('#error').textContent = msg;
-            $('#error').classList.add('show');
+        // Utility functions
+        function resetApp() {
+            appState.selfie = null;
+            appState.presets = [];
+            appState.selectedPreset = null;
+            appState.result = null;
+            appState.selectedPresetIndex = -1;
+            updateUI();
+            updateProgress();
+            console.log('App reset successfully');
         }
+
+        function clearHistory() {
+            if (confirm('Are you sure you want to clear all history?')) {
+                appState.history = [];
+                localStorage.removeItem('faceswap-history');
+                renderHistory();
+                console.log('History cleared');
+            }
+        }
+
+        function loadFromHistory(index) {
+            const item = appState.history[index];
+            if (item) {
+                appState.selfie = item.selfie;
+                appState.selectedPreset = item.preset;
+                appState.result = item.resultUrl;
+                updateUI();
+                updateProgress();
+                console.log('Loaded from history');
+            }
+        }
+
     </script>
 </body>
 </html>

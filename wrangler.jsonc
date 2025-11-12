@@ -9,6 +9,9 @@
 		"enabled": true,
 		"head_sampling_rate": 1
 	},
+	"site": {
+		"bucket": "public_page"
+	},
 	"r2_buckets": [
 		{
 			"binding": "FACESWAP_IMAGES",

@@ -70,6 +70,13 @@ This will start a local development server. The worker will be available at `htt
 
 ### Test the API
 
+**Using the Web Interface:**
+Visit `http://localhost:8787` in your browser to access the interactive test page. The page includes:
+- Input fields for target and source URLs
+- Pre-filled example URLs for quick testing
+- Real-time results display with image preview
+- Error handling and status messages
+
 **Using curl:**
 ```bash
 curl --location 'http://localhost:8787/faceswap' \
@@ -134,7 +141,9 @@ npm run deploy
 
 After deployment, you'll get a URL like: `https://ai-faceswap-backend.your-subdomain.workers.dev`
 
-### Test Deployed API
+**Test the deployed application:**
+- Visit the deployment URL in your browser to access the interactive test page
+- Or test the API directly using curl:
 
 ```bash
 curl --location 'https://ai-faceswap-backend.your-subdomain.workers.dev/faceswap' \
