@@ -82,36 +82,6 @@ function getSecrets() {
   }
 }
 
-// Validate service account key format
-function validateServiceAccountKey(key) {
-  try {
-    const decoded = Buffer.from(key, 'base64').toString('utf8');
-    const serviceAccount = JSON.parse(decoded);
-    return serviceAccount.client_email && serviceAccount.private_key && serviceAccount.project_id;
-  } catch {
-    return false;
-  }
-}
-
-// Run setup script
-async function runSetupScript() {
-  const setupScript = path.join(process.cwd(), 'setup-google-cloud.js');
-  if (!fs.existsSync(setupScript)) {
-    log.error('setup-google-cloud.js not found');
-    return false;
-  }
-
-  log.info('Running Google Cloud setup script...');
-  return new Promise((resolve) => {
-    const proc = spawn('node', [setupScript], { stdio: 'inherit' });
-    proc.on('close', (code) => {
-      resolve(code === 0);
-    });
-    proc.on('error', () => {
-      resolve(false);
-    });
-  });
-}
 
 async function main() {
   console.log('\n🚀 Face Swap AI - Deployment Script');
@@ -207,46 +177,16 @@ async function main() {
 
   // Check secrets
   log.info('Checking environment variables...');
-  const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_SERVICE_ACCOUNT_KEY', 'GOOGLE_VISION_ENDPOINT'];
+  const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_CLOUD_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
   const existingSecrets = getSecrets();
   const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
 
   if (missingVars.length > 0) {
     log.warn(`Missing environment variables: ${missingVars.join(', ')}`);
-    
-    if (missingVars.includes('GOOGLE_SERVICE_ACCOUNT_KEY')) {
-      const runSetup = await prompt('Run Google Cloud setup script first? (y/n): ');
-      if (runSetup.toLowerCase() === 'y') {
-        const success = await runSetupScript();
-        if (success) {
-          log.success('Google Cloud setup completed');
-          // Refresh secrets list
-          const newSecrets = getSecrets();
-          missingVars.forEach(v => {
-            if (newSecrets.includes(v)) {
-              const index = missingVars.indexOf(v);
-              missingVars.splice(index, 1);
-            }
-          });
-        }
-      }
-    }
-
-    if (missingVars.length > 0) {
-      log.warn(`Still missing: ${missingVars.join(', ')}`);
-      log.warn('You can set secrets manually with: wrangler secret put <NAME>');
-      log.warn('Or create a secrets.json file and use: wrangler secret bulk secrets.json');
-    }
+    log.warn('You can set secrets manually with: wrangler secret put <NAME>');
+    log.warn('Or create a secrets.json file and use: wrangler secret bulk secrets.json');
   } else {
     log.success('All environment variables are set');
-    
-    // Validate service account key if it exists
-    if (existingSecrets.includes('GOOGLE_SERVICE_ACCOUNT_KEY')) {
-      log.info('Validating service account key format...');
-      // Note: We can't read the secret value, but we can verify it's set
-      // The actual validation happens at runtime in the Worker
-      log.success('Service account key is set (format will be validated at runtime)');
-    }
   }
 
   // Deploy Worker
@@ -280,8 +220,8 @@ async function main() {
     if (workerUrl) {
       log.success(`Worker URL: ${workerUrl}`);
       
-      // Update HTML with Worker URL
-      const htmlPath = path.join(process.cwd(), 'index.html');
+      // Update HTML with Worker URL in public_page
+      const htmlPath = path.join(process.cwd(), 'public_page', 'index.html');
       if (fs.existsSync(htmlPath)) {
         log.info('Updating HTML with Worker URL...');
         try {
@@ -307,6 +247,7 @@ async function main() {
   // Deploy Pages
   log.info('Deploying to Cloudflare Pages...');
   const publicPageDir = path.join(process.cwd(), 'public_page');
+  
   if (fs.existsSync(publicPageDir)) {
     try {
       execCommand(
@@ -327,7 +268,7 @@ async function main() {
   console.log('\nNext steps:');
   console.log('1. Test your Worker API');
   console.log('2. Check Cloudflare Dashboard for URLs');
-  console.log('3. Review google-cloud-setup.md for Google Cloud info\n');
+  console.log('3. Check your Worker logs for any issues\n');
 }
 
 main().catch((error) => {
