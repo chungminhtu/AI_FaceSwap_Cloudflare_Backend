@@ -7,5 +7,10 @@ dist/
 .dev.vars
 secrets.json
 .DS_Store
-
-package-lock.json
+pages-dist/
+.pages-temp/
+*.tmp
+temp/
+public_page/
+r2-cors.json
+DEPLOYMENT_INFO.md

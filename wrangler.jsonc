@@ -1,11 +1,31 @@
 {
-  "name": "ai-faceswap-backend",
-  "main": "src/index.ts",
-  "compatibility_date": "2025-03-07",
-  "compatibility_flags": ["nodejs_compat"],
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1
-  }
+	"name": "ai-faceswap-backend",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-03-07",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	"r2_buckets": [
+		{
+			"binding": "FACESWAP_IMAGES",
+			"bucket_name": "faceswap-images"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "faceswap-db",
+			"database_id": "faceswap-db"
+		},
+		{
+			"binding": "faceswap_db",
+			"database_name": "faceswap-db",
+			"database_id": "1ef54281-cf28-4dcf-953c-d52f83bdaf4f",
+			"remote": true
+		}
+	]
 }
-

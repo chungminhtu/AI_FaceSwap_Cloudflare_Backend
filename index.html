@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đổi Mặt AI - RoosterX Global Viet Nam</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 20px;
+            min-height: calc(100vh - 20px);
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .brand {
+            color: #667eea;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .left-panel, .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .center-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .section {
+            background: #f8f9ff;
+            border-radius: 12px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .section-title {
+            font-size: 1.1em;
+            color: #667eea;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        /* Preset Upload - Compact */
+        .preset-upload {
+            background: white;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .input-group {
+            margin-bottom: 10px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .input-group input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9em;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-large {
+            padding: 12px 24px;
+            font-size: 1.1em;
+        }
+
+        .status {
+            font-size: 0.8em;
+            margin-top: 8px;
+            min-height: 18px;
+        }
+
+        .status.success { color: #10b981; }
+        .status.error { color: #ef4444; }
+        .status.loading { color: #667eea; }
+
+        /* Preset Gallery - Grid */
+        .preset-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 5px;
+        }
+
+        .preset-gallery::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .preset-gallery::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .preset-gallery::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 3px;
+        }
+
+        .preset-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+            aspect-ratio: 1;
+        }
+
+        .preset-card:hover {
+            border-color: #667eea;
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .preset-card.selected {
+            border-color: #764ba2;
+            border-width: 3px;
+            background: #f8f9ff;
+        }
+
+        .preset-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .preset-card .name {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 6px;
+            font-size: 0.75em;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .preset-card {
+            position: relative;
+        }
+
+        /* Selfie Upload - Compact */
+        .selfie-upload {
+            text-align: center;
+        }
+
+        .preview-small {
+            width: 100%;
+            max-height: 150px;
+            border-radius: 8px;
+            object-fit: cover;
+            margin-top: 10px;
+            display: none;
+            border: 2px solid #667eea;
+        }
+
+        .preview-small.show {
+            display: block;
+        }
+
+        .preview-placeholder {
+            color: #999;
+            font-size: 0.85em;
+            padding: 20px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        /* Results Gallery */
+        .results-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 5px;
+        }
+
+        .results-gallery::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .results-gallery::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .results-gallery::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 3px;
+        }
+
+        .result-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            aspect-ratio: 1;
+            position: relative;
+        }
+
+        .result-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .result-card .info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 6px;
+            font-size: 0.75em;
+        }
+
+        .result-card .preset-name {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .result-card .date {
+            opacity: 0.8;
+            font-size: 0.85em;
+        }
+
+        /* Main Result Display */
+        .main-result {
+            text-align: center;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8f9ff;
+            border-radius: 12px;
+            border: 2px dashed #ddd;
+        }
+
+        .main-result-image {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+            display: none;
+        }
+
+        .main-result-image.show {
+            display: block;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        .loading-spinner.show {
+            display: block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85em;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr 1.5fr 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            
+            .preset-gallery, .results-gallery {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎭 Đổi Mặt AI</h1>
+            <div class="brand">Được tạo bởi RoosterX Global Viet Nam</div>
+        </div>
+
+        <!-- Left Panel: Preset Upload & Gallery -->
+        <div class="left-panel">
+            <div class="section">
+                <div class="section-title">📤 Tải Preset</div>
+                <div class="preset-upload">
+                    <div class="input-group">
+                        <label>Tên Preset:</label>
+                        <input type="text" id="presetName" placeholder="Nhập tên">
+                    </div>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="presetUpload" accept="image/*">
+                        <button class="btn">Chọn Ảnh</button>
+                    </div>
+                    <div class="status" id="presetUploadStatus"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">🖼️ Chọn Preset</div>
+                <div class="preset-gallery" id="presetGallery">
+                    <div class="preview-placeholder">Đang tải...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel: Selfie Upload & Main Result -->
+        <div class="center-panel">
+            <div class="section">
+                <div class="section-title">😊 Tải Selfie</div>
+                <div class="selfie-upload">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="selfieFile" accept="image/*">
+                        <button class="btn">Chọn Ảnh Selfie</button>
+                    </div>
+                    <img id="selfiePreview" class="preview-small" alt="Selfie">
+                    <div class="preview-placeholder" id="selfiePlaceholder">Chưa chọn ảnh</div>
+                    <div class="status" id="selfieStatus"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">✨ Kết Quả</div>
+                <div class="main-result">
+                    <div class="preview-placeholder" id="resultPlaceholder">
+                        Chọn preset và selfie, sau đó nhấn "Đổi Mặt"
+                    </div>
+                    <img id="resultImage" class="main-result-image" alt="Kết quả">
+                    <div class="loading-spinner" id="loadingSpinner"></div>
+                    <div class="error-message" id="errorMessage"></div>
+                </div>
+                <button class="btn btn-large" id="swapBtn" disabled style="margin-top: 15px;">
+                    ✨ Đổi Mặt
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Results Gallery -->
+        <div class="right-panel">
+            <div class="section">
+                <div class="section-title">📸 Kết Quả Đã Lưu</div>
+                <div class="results-gallery" id="resultsGallery">
+                    <div class="preview-placeholder">Đang tải...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const WORKER_URL = 'https://ai-faceswap-backend.chungminhtu03.workers.dev';
+
+        let selectedPreset = null;
+        let selfieImageUrl = null;
+        let presets = [];
+        let results = [];
+
+        // Load presets
+        async function loadPresets() {
+            try {
+                const response = await fetch(`${WORKER_URL}/presets`);
+                const data = await response.json();
+                presets = data.presets || [];
+                renderPresets();
+            } catch (error) {
+                console.error('Error loading presets:', error);
+                document.getElementById('presetGallery').innerHTML = 
+                    '<div class="preview-placeholder">Lỗi tải preset</div>';
+            }
+        }
+
+        function renderPresets() {
+            const gallery = document.getElementById('presetGallery');
+            if (presets.length === 0) {
+                gallery.innerHTML = '<div class="preview-placeholder">Chưa có preset</div>';
+                return;
+            }
+
+            gallery.innerHTML = presets.map(preset => `
+                <div class="preset-card ${selectedPreset?.id === preset.id ? 'selected' : ''}" 
+                     onclick="selectPreset('${preset.id}')">
+                    <img src="${preset.image_url}" alt="${preset.name}" loading="lazy">
+                    <div class="name">${preset.name}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectPreset(presetId) {
+            selectedPreset = presets.find(p => p.id === presetId);
+            renderPresets();
+            updateSwapButton();
+        }
+
+        // Load results
+        async function loadResults() {
+            try {
+                const response = await fetch(`${WORKER_URL}/results`);
+                const data = await response.json();
+                results = data.results || [];
+                renderResults();
+            } catch (error) {
+                console.error('Error loading results:', error);
+                document.getElementById('resultsGallery').innerHTML = 
+                    '<div class="preview-placeholder">Lỗi tải kết quả</div>';
+            }
+        }
+
+        function renderResults() {
+            const gallery = document.getElementById('resultsGallery');
+            if (results.length === 0) {
+                gallery.innerHTML = '<div class="preview-placeholder">Chưa có kết quả</div>';
+                return;
+            }
+
+            gallery.innerHTML = results.map(result => {
+                const date = new Date(result.created_at).toLocaleDateString('vi-VN');
+                return `
+                    <div class="result-card">
+                        <img src="${result.result_url}" alt="Kết quả" loading="lazy">
+                        <div class="info">
+                            <div class="preset-name">${result.preset_name}</div>
+                            <div class="date">${date}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Preset upload
+        document.getElementById('presetUpload').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const presetName = document.getElementById('presetName').value.trim() || `Preset ${Date.now()}`;
+            const statusEl = document.getElementById('presetUploadStatus');
+
+            statusEl.textContent = 'Đang tải lên...';
+            statusEl.className = 'status loading';
+
+            try {
+                const timestamp = Date.now();
+                const randomStr = Math.random().toString(36).substring(2, 15);
+                const extension = file.name.split('.').pop();
+                const filename = `preset-${timestamp}-${randomStr}.${extension}`;
+
+                const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename, type: 'preset' })
+                });
+
+                if (!uploadUrlResponse.ok) throw new Error('Không thể lấy URL upload');
+
+                const { uploadUrl } = await uploadUrlResponse.json();
+
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: {
+                        'Content-Type': file.type,
+                        'X-Preset-Name': presetName
+                    }
+                });
+
+                if (!uploadResponse.ok) throw new Error('Upload thất bại');
+
+                statusEl.textContent = '✓ Thành công!';
+                statusEl.className = 'status success';
+
+                document.getElementById('presetName').value = '';
+                e.target.value = '';
+                await loadPresets();
+            } catch (error) {
+                statusEl.textContent = `✗ ${error.message}`;
+                statusEl.className = 'status error';
+            }
+        });
+
+        // Selfie upload
+        document.getElementById('selfieFile').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const preview = document.getElementById('selfiePreview');
+            const placeholder = document.getElementById('selfiePlaceholder');
+            const statusEl = document.getElementById('selfieStatus');
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                preview.classList.add('show');
+                placeholder.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+
+            statusEl.textContent = 'Đang tải lên...';
+            statusEl.className = 'status loading';
+
+            try {
+                const timestamp = Date.now();
+                const randomStr = Math.random().toString(36).substring(2, 15);
+                const extension = file.name.split('.').pop();
+                const filename = `selfie-${timestamp}-${randomStr}.${extension}`;
+
+                const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename, type: 'selfie' })
+                });
+
+                if (!uploadUrlResponse.ok) throw new Error('Không thể lấy URL upload');
+
+                const { uploadUrl } = await uploadUrlResponse.json();
+
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: { 'Content-Type': file.type }
+                });
+
+                if (!uploadResponse.ok) throw new Error('Upload thất bại');
+
+                const uploadResult = await uploadResponse.json();
+                selfieImageUrl = uploadResult.url;
+
+                statusEl.textContent = '✓ Thành công!';
+                statusEl.className = 'status success';
+                updateSwapButton();
+            } catch (error) {
+                statusEl.textContent = `✗ ${error.message}`;
+                statusEl.className = 'status error';
+            }
+        });
+
+        function updateSwapButton() {
+            document.getElementById('swapBtn').disabled = !(selectedPreset && selfieImageUrl);
+        }
+
+        // Face swap
+        document.getElementById('swapBtn').addEventListener('click', async function() {
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const resultImage = document.getElementById('resultImage');
+            const resultPlaceholder = document.getElementById('resultPlaceholder');
+            const errorMessage = document.getElementById('errorMessage');
+            const swapBtn = document.getElementById('swapBtn');
+
+            resultImage.classList.remove('show');
+            resultPlaceholder.style.display = 'block';
+            errorMessage.classList.remove('show');
+            loadingSpinner.classList.add('show');
+            swapBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${WORKER_URL}/faceswap`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_url: selectedPreset.image_url,
+                        source_url: selfieImageUrl,
+                        preset_id: selectedPreset.id,
+                        preset_name: selectedPreset.name
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.Success) {
+                    throw new Error(data.Message || 'Đổi mặt thất bại');
+                }
+
+                if (data.ResultImageUrl) {
+                    resultImage.src = data.ResultImageUrl;
+                    resultImage.classList.add('show');
+                    resultPlaceholder.style.display = 'none';
+                    await loadResults(); // Reload results gallery
+                } else {
+                    throw new Error('Không nhận được ảnh kết quả');
+                }
+            } catch (error) {
+                errorMessage.textContent = `Lỗi: ${error.message}`;
+                errorMessage.classList.add('show');
+            } finally {
+                loadingSpinner.classList.remove('show');
+                swapBtn.disabled = false;
+            }
+        });
+
+        // Load on page load
+        loadPresets();
+        loadResults();
+    </script>
+</body>
+</html>
