@@ -7,12 +7,25 @@ import { validateEnv, validateRequest } from './validators';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
-    }
-
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // Handle OPTIONS (CORS preflight) - must be before other handlers
+    if (request.method === 'OPTIONS') {
+      // For upload-proxy, allow PUT method explicitly
+      if (path.startsWith('/upload-proxy/')) {
+        return new Response(null, { 
+          status: 204, 
+          headers: { 
+            ...CORS_HEADERS, 
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Max-Age': '86400' 
+          } 
+        });
+      }
+      // For all other endpoints
+      return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
+    }
 
     // Handle upload URL generation endpoint
     if (path === '/upload-url' && request.method === 'POST') {
@@ -53,6 +66,7 @@ export default {
 
     // Handle proxy upload endpoint (for direct browser uploads)
     if (path.startsWith('/upload-proxy/')) {
+      // OPTIONS already handled above, but double-check
       if (request.method === 'OPTIONS') {
         return new Response(null, { 
           status: 204, 
@@ -65,18 +79,33 @@ export default {
       }
       
       if (request.method !== 'PUT') {
-        return errorResponse('Method not allowed. Use PUT.', 405);
+        return new Response(JSON.stringify({ 
+          Success: false, 
+          Message: `Method not allowed. Use PUT. Got: ${request.method}`, 
+          StatusCode: 405 
+        }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+        });
       }
       
       try {
         const key = path.replace('/upload-proxy/', '');
+        console.log(`Upload request: method=${request.method}, key=${key}, content-type=${request.headers.get('Content-Type')}`);
+        
         const fileData = await request.arrayBuffer();
+        
+        if (!fileData || fileData.byteLength === 0) {
+          return errorResponse('Empty file data', 400);
+        }
         
         await env.FACESWAP_IMAGES.put(key, fileData, {
           httpMetadata: {
             contentType: request.headers.get('Content-Type') || 'image/jpeg',
           },
         });
+        
+        console.log(`File uploaded successfully: ${key}`);
 
         // Get the public URL
         const publicUrl = env.R2_PUBLIC_URL 
@@ -125,17 +154,22 @@ export default {
           'SELECT id, name, image_url, created_at FROM presets ORDER BY created_at DESC'
         ).all();
 
+        if (!result || !result.results) {
+          return jsonResponse({ presets: [] });
+        }
+
         const presets = result.results.map((row: any) => ({
-          id: row.id,
-          name: row.name,
-          image_url: row.image_url,
-          created_at: new Date(row.created_at * 1000).toISOString()
+          id: row.id || '',
+          name: row.name || 'Unnamed',
+          image_url: row.image_url || '',
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
         return jsonResponse({ presets });
       } catch (error) {
         console.error('List presets error:', error);
-        return errorResponse(`Failed to list presets: ${error instanceof Error ? error.message : String(error)}`, 500);
+        // Return empty array instead of error to prevent UI breaking
+        return jsonResponse({ presets: [] });
       }
     }
 

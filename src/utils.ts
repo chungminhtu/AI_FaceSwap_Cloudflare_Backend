@@ -19,3 +19,16 @@ export const isUnsafe = (annotation: { adult: string; violence: string; racy: st
   UNSAFE_LEVELS.includes(annotation.adult) ||
   UNSAFE_LEVELS.includes(annotation.violence) ||
   UNSAFE_LEVELS.includes(annotation.racy);
+
+// Base64 URL encoding (for JWT)
+export const base64UrlEncode = (str: string): string => {
+  return btoa(str)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+};
+
+// Base64 decode
+export const base64Decode = (str: string): string => {
+  return atob(str);
+};
