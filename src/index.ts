@@ -208,6 +208,27 @@ export default {
       }
     }
 
+    // Handle data migration
+    if (path === '/migrate' && request.method === 'POST') {
+      try {
+        // Migrate existing data from presets table to new structure
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO preset_collections (id, name, created_at)
+          SELECT 'collection_' || id, name, created_at FROM presets
+        `).run();
+
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO preset_images (id, collection_id, image_url, created_at)
+          SELECT 'image_' || id, 'collection_' || id, image_url, created_at FROM presets
+        `).run();
+
+        return jsonResponse({ success: true, message: 'Migration completed' });
+      } catch (error) {
+        console.error('Migration error:', error);
+        return errorResponse('Migration failed', 500);
+      }
+    }
+
     // Handle preset listing
     if (path === '/presets' && request.method === 'GET') {
       try {
@@ -237,7 +258,7 @@ export default {
           if (!collectionsMap.has(collectionId)) {
             collectionsMap.set(collectionId, {
               id: collectionId,
-              name: row.name || 'Unnamed',
+          name: row.name || 'Unnamed',
               created_at: row.collection_created_at ? new Date(row.collection_created_at * 1000).toISOString() : new Date().toISOString(),
               images: []
             });
