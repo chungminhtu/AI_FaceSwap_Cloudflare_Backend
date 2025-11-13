@@ -36,7 +36,26 @@ export const callFaceSwap = async (
   try {
     const data = JSON.parse(responseText);
     console.log('FaceSwap API response:', JSON.stringify(data).substring(0, 200));
-    return data as FaceSwapResponse;
+    
+    // Transform API response to match FaceSwapResponse format
+    // API returns: { message, file_url, processing_time }
+    // We need: { Success, ResultImageUrl, Message, StatusCode }
+    const transformedResponse: FaceSwapResponse = {
+      Success: data.message === 'Processing successful' || !!data.file_url,
+      ResultImageUrl: data.file_url || data.ResultImageUrl,
+      Message: data.message || 'Face swap completed',
+      StatusCode: response.status,
+      ProcessingTime: data.processing_time?.toString() || data.ProcessingTime,
+    };
+    
+    // If no file_url and no ResultImageUrl, it's a failure
+    if (!transformedResponse.ResultImageUrl) {
+      transformedResponse.Success = false;
+      transformedResponse.Message = data.message || 'No result image URL received';
+      transformedResponse.Error = JSON.stringify(data);
+    }
+    
+    return transformedResponse;
   } catch (error) {
     console.error('JSON parse error:', error, 'Response:', responseText.substring(0, 200));
     return {
