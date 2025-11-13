@@ -193,8 +193,8 @@ export default {
             // Database might not be initialized yet
           }
 
-          return jsonResponse({
-            success: true,
+          return jsonResponse({ 
+            success: true, 
             url: publicUrl,
             presetId: presetId,
             presetName: presetName
@@ -432,18 +432,20 @@ export default {
 
         // Save result to database
         if (body.preset_image_id && body.preset_collection_id && body.preset_name) {
-          // Find the selfie_id by matching the source_url with selfies table
-          let selfieId = null;
-          try {
-            const selfieResult = await env.DB.prepare(
-              'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
-            ).bind(body.source_url).first();
+          // Use provided selfie_id or find it by matching the source_url with selfies table
+          let selfieId = body.selfie_id;
+          if (!selfieId) {
+            try {
+              const selfieResult = await env.DB.prepare(
+                'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
+              ).bind(body.source_url).first();
 
-            if (selfieResult) {
-              selfieId = selfieResult.id;
+              if (selfieResult) {
+                selfieId = selfieResult.id;
+              }
+            } catch (dbError) {
+              console.warn('Could not find selfie in database:', dbError);
             }
-          } catch (dbError) {
-            console.warn('Could not find selfie in database:', dbError);
           }
 
           const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;

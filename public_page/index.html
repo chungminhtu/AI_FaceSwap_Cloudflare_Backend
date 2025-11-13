@@ -148,14 +148,32 @@
         <div class="preset-name-content" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="cancelPresetUpload()" style="position: absolute; top: 10px; right: 15px;">&times;</button>
             <h3 style="margin-bottom: 15px;">Upload Custom Presets</h3>
+            
             <div style="margin-bottom: 20px;">
-                <button class="reset-btn" style="padding: 10px 20px; margin-bottom: 15px;" onclick="triggerFileInput('preset-input')">📁 Select Images</button>
+                <!-- Modern drag-and-drop file upload -->
+                <div class="file-upload-zone" id="file-upload-zone">
+                    <div class="upload-icon-large">📸</div>
+                    <div class="upload-text-large">Drop images here or click to browse</div>
+                    <div class="upload-subtext-large">Supports JPG, PNG, WebP up to 10MB each</div>
+                    <div class="upload-hint">You can select multiple images</div>
+                </div>
                 <input type="file" id="preset-input" accept="image/*" multiple style="display: none;">
-                <div id="selected-files-info" style="font-size: 0.9rem; color: #666; margin-bottom: 15px;"></div>
+                
+                <!-- File preview area -->
+                <div id="file-preview-container" style="display: none; margin-top: 15px;">
+                    <div class="file-preview-header">
+                        <span id="file-count">0 files selected</span>
+                        <button class="clear-files-btn" onclick="clearSelectedFiles()">Clear all</button>
+                    </div>
+                    <div class="file-preview-grid" id="file-preview-grid">
+                        <!-- File previews will be populated here -->
+                    </div>
+                </div>
             </div>
+            
             <input type="text" class="preset-name-input" id="preset-name-input" placeholder="Enter collection name" maxlength="50">
             <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button class="generate-btn" style="flex: 1; margin: 0;" id="upload-btn" onclick="confirmPresetUpload()" disabled>Upload</button>
+                <button class="generate-btn" style="flex: 1; margin: 0;" id="upload-btn" onclick="confirmPresetUpload()" disabled>Upload Collection</button>
                 <button class="reset-btn" style="padding: 12px 20px; margin: 0;" onclick="cancelPresetUpload()">Cancel</button>
             </div>
         </div>

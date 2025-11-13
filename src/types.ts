@@ -12,6 +12,7 @@ export interface Env {
 export interface FaceSwapRequest {
   target_url: string;
   source_url: string;
+  selfie_id?: string;
 }
 
 export interface FaceSwapResponse {

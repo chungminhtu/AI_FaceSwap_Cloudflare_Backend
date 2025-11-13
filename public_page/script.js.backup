@@ -14,7 +14,7 @@ let appState = {
 let selectedPreset = null;
 let selfieImageUrl = null;
 let collections = [];
-let pendingPresetFiles = [];
+let pendingPresetFiles = pendingPresetFiles || [];
 let pendingPresetName = '';
 
 // Initialize app
@@ -152,7 +152,6 @@ async function handleFiles(files) {
                 const uploadResult = await uploadResponse.json();
                 appState.selfie = uploadResult.url;
                 selfieImageUrl = uploadResult.url;
-                appState.selfieId = uploadResult.selfieId; // Store selfie ID for database reference
 
                 updateUI();
                 updateProgress();
@@ -246,13 +245,21 @@ async function loadCollectionsFromAPI() {
         console.log('Collections API response:', data);
 
         if (data.preset_collections) {
-            // Preserve collection and image IDs for database operations
-            collections = data.preset_collections.map(collection => ({
-                id: collection.id, // collection ID
-                name: collection.name,
-                images: collection.images || []
-            }));
-            console.log('Loading collections:', collections.length, 'collections');
+            const grouped = data.preset_collections.reduce((acc, collection) => {
+                if (!acc[collection.name]) {
+                    acc[collection.name] = {
+                        name: collection.name,
+                        images: []
+                    };
+                }
+                acc[collection.name].images.push({
+                    id: collection.id,
+                    image_url: collection.images && collection.images.length > 0 ? collection.images[0].image_url : ''
+                });
+                return acc;
+            }, {});
+            collections = Object.values(grouped);
+            console.log('Loading collections:', grouped.length, 'unique collection items');
         } else {
             collections = [];
         }
@@ -325,17 +332,16 @@ function renderPresets(images) {
     const grid = document.getElementById('preset-grid');
     if (!grid) return;
 
-    grid.innerHTML = images.map((imageData, index) => {
-        // Handle both string URLs and objects with image_url property
-        let displayUrl = typeof imageData === 'string' ? imageData : imageData.image_url;
-        if (displayUrl && typeof displayUrl === 'string' && displayUrl.includes('/upload-proxy/')) {
+    grid.innerHTML = images.map((imageUrl, index) => {
+        let displayUrl = imageUrl;
+        if (displayUrl.includes('/upload-proxy/')) {
             displayUrl = displayUrl.replace('/upload-proxy/', '/r2/');
         }
 
         return `
             <div class="preset-item ${appState.selectedPresetIndex === index ? 'selected' : ''}"
                  onclick="selectPresetItem(${index})">
-                <img src="${displayUrl}" alt="Preset ${index + 1}" class="preset-image" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ENo Image%3C/text%3E%3C/svg%3E';">
+                <img src="${displayUrl}" alt="Preset ${index + 1}" class="preset-image">
             </div>
         `;
     }).join('');
@@ -360,12 +366,10 @@ function selectPresetAndClose() {
     });
 
     if (collection && appState.selectedPresetIndex >= 0 && collection.images[appState.selectedPresetIndex]) {
-        const imageData = collection.images[appState.selectedPresetIndex];
-        const imageUrl = typeof imageData === 'string' ? imageData : imageData.image_url;
+        const imageUrl = collection.images[appState.selectedPresetIndex];
         appState.selectedPreset = imageUrl;
         selectedPreset = {
-            id: imageData.id, // Use actual database image ID
-            collection_id: collection.id, // Use actual database collection ID
+            id: `preset_${collection.name}_${appState.selectedPresetIndex}`,
             name: collection.name,
             image_url: imageUrl
         };
@@ -379,7 +383,7 @@ function selectPresetAndClose() {
 
 // Show preset upload modal
 function showPresetUploadModal() {
-    pendingPresetFiles = [];
+    pendingPresetFiles = pendingPresetFiles || [];
     pendingPresetName = '';
     const nameInput = document.getElementById('preset-name-input');
     const fileInfo = document.getElementById('selected-files-info');
@@ -390,7 +394,6 @@ function showPresetUploadModal() {
     }
     if (fileInfo) fileInfo.textContent = '';
     // Reset file input to ensure change event fires on next selection
-    if (presetInput) {
         // Ensure change event listener is attached
         presetInput.onchange = function(e) {
             console.log('File input change event fired', e.target.files.length);
@@ -435,7 +438,7 @@ function confirmPresetUpload() {
 
 // Cancel preset upload
 function cancelPresetUpload() {
-    pendingPresetFiles = [];
+    pendingPresetFiles = pendingPresetFiles || [];
     pendingPresetName = '';
     const nameInput = document.getElementById('preset-name-input');
     const fileInfo = document.getElementById('selected-files-info');
@@ -506,7 +509,7 @@ async function uploadPresetFiles() {
         }
     }
 
-    pendingPresetFiles = [];
+    pendingPresetFiles = pendingPresetFiles || [];
     pendingPresetName = '';
 
     updateUI();
@@ -691,9 +694,7 @@ async function generateFaceSwap() {
             body: JSON.stringify({
                 target_url: selectedPreset.image_url,
                 source_url: appState.selfie,
-                selfie_id: appState.selfieId, // Include selfie ID for database linking
-                preset_image_id: selectedPreset.id, // Database image ID
-                preset_collection_id: selectedPreset.collection_id, // Database collection ID
+                preset_id: selectedPreset.id,
                 preset_name: selectedPreset.name
             })
         });
@@ -947,24 +948,3 @@ cancelPresetUpload = function() {
     clearSelectedFiles();
     closeModal('preset-name-modal');
 };
-
-
-// Ensure functions are available globally
-window.showPresetUploadModal = showPresetUploadModal;
-window.confirmPresetUpload = confirmPresetUpload;
-window.cancelPresetUpload = cancelPresetUpload;
-
-
-// Ensure all modal functions are available globally
-window.showPresetUploadModal = showPresetUploadModal;
-window.confirmPresetUpload = confirmPresetUpload;
-window.cancelPresetUpload = cancelPresetUpload;
-window.openCollectionsModal = openCollectionsModal;
-window.openPresetModal = openPresetModal;
-window.selectPresetAndClose = selectPresetAndClose;
-window.confirmPresetSelection = confirmPresetSelection;
-window.closeModal = closeModal;
-window.openUploadedPresetsModal = openUploadedPresetsModal;
-
-// Ensure triggerFileInput is globally available
-window.triggerFileInput = triggerFileInput;
