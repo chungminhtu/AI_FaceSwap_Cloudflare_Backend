@@ -661,36 +661,17 @@ background: rgba(220, 53, 69, 0.9);
 </head>
 <body>
 <div class="app">
-<button class="reset-btn" onclick="resetApp()">🔄 Reset</button>
-
 <div class="header">
 <h1>🎭 Đổi Mặt AI</h1>
 <div class="subtitle">So sánh ảnh gốc với kết quả AI</div>
 </div>
 
-<div class="progress-steps">
-<div class="step active" id="step1">
-<span class="step-icon">1</span>
-Tải Selfie
-</div>
-<div class="step pending" id="step2">
-<span class="step-icon">2</span>
-Chọn Preset
-</div>
-<div class="step pending" id="step3">
-<span class="step-icon">3</span>
-Tạo Kết Quả
-</div>
-</div>
 
 <div class="comparison-grid">
 <div class="grid-item selfie-panel">
 <div class="panel-header">
 <div class="panel-title">📸 Ảnh Selfie</div>
-<div style="display: flex; align-items: center; gap: 8px;">
-<button id="browse-selfies-btn" class="reset-btn" style="display: none; font-size: 12px; padding: 4px 8px;" onclick="openSelfiesModal()">Xem Đã Tải</button>
 <div class="panel-status" id="selfie-status">Chưa chọn</div>
-</div>
 </div>
 <div class="upload-zone" id="selfie-upload" onclick="triggerFileInput('selfie-input')">
 <div class="upload-icon">📷</div>
@@ -698,28 +679,19 @@ Tạo Kết Quả
 <div class="upload-subtext">JPG, PNG, WebP tối đa 10MB</div>
 <input type="file" id="selfie-input" accept="image/*" style="display: none;">
 </div>
+<div class="preset-grid" id="selfies-grid" style="margin-top: 15px; display: none;">
+<!-- Previously uploaded selfies will be shown here -->
+</div>
 <div class="image-preview" id="selfie-preview" style="display: none;"></div>
 </div>
 
 <div class="grid-item preset-panel">
 <div class="panel-header">
 <div class="panel-title">🎭 Ảnh Preset</div>
-<div style="display: flex; align-items: center; gap: 8px;">
-<button id="browse-uploaded-btn" class="reset-btn" style="display: none; font-size: 12px; padding: 4px 8px;" onclick="openUploadedPresetsModal()">Xem Đã Tải</button>
 <div class="panel-status" id="preset-status">Chưa chọn</div>
 </div>
-</div>
-<div class="preset-options" id="preset-options">
-<div class="upload-zone preset-option" onclick="openCollectionsModal()">
-<div class="upload-icon">🎨</div>
-<div class="upload-text">Duyệt Bộ Sưu Tập</div>
-<div class="upload-subtext">Chọn từ thư viện</div>
-</div>
-<div class="upload-zone preset-option" onclick="showPresetUploadModal()">
-<div class="upload-icon">📤</div>
-<div class="upload-text">Tải Preset Tùy Chỉnh</div>
-<div class="upload-subtext">Chọn ảnh của bạn</div>
-</div>
+<div class="preset-grid" id="presets-grid" style="margin-top: 15px;">
+<!-- Presets will be shown here -->
 </div>
 <div class="image-preview" id="preset-preview" style="display: none;"></div>
 </div>
@@ -752,104 +724,6 @@ Kết quả sẽ hiển thị ở đây sau khi tạo
 </div>
 </div>
 
-<!-- Collections Modal -->
-<div class="modal" id="collections-modal">
-<div class="modal-content">
-<div class="modal-header">
-<div class="modal-title">🎨 Chọn Bộ Sưu Tập</div>
-<button class="modal-close" onclick="closeModal('collections-modal')">&times;</button>
-</div>
-<div class="modal-body">
-<div class="collections-grid" id="collections-grid">
-<!-- Collections will be populated here -->
-</div>
-</div>
-</div>
-</div>
-
-<!-- Preset Selection Modal -->
-<div class="modal" id="preset-modal">
-<div class="modal-content">
-<div class="modal-header">
-<div class="modal-title" id="preset-modal-title">Chọn Ảnh Preset</div>
-<button class="modal-close" onclick="closeModal('preset-modal')">&times;</button>
-</div>
-<div class="modal-body">
-<div class="preset-grid" id="preset-grid">
-<!-- Preset images will be populated here -->
-</div>
-<button class="generate-btn" style="margin-top: 20px;" onclick="selectPresetAndClose()">✅ Chọn Ảnh Này</button>
-</div>
-</div>
-</div>
-
-<!-- Uploaded Presets Modal -->
-<div class="modal" id="uploaded-presets-modal">
-<div class="modal-content">
-<div class="modal-header">
-<div class="modal-title">Chọn từ Ảnh Đã Tải Lên</div>
-<button class="modal-close" onclick="closeModal('uploaded-presets-modal')">&times;</button>
-</div>
-<div class="modal-body">
-<div class="preset-grid" id="uploaded-preset-grid">
-<!-- Uploaded preset images will be populated here -->
-</div>
-<button class="generate-btn" style="margin-top: 20px;" onclick="confirmPresetSelection()">✅ Sử Dụng Ảnh Đã Chọn</button>
-</div>
-</div>
-</div>
-
-<!-- Selfies Selection Modal -->
-<div class="modal" id="selfies-modal">
-<div class="modal-content">
-<div class="modal-header">
-<div class="modal-title">📸 Chọn Selfie Đã Tải Lên</div>
-<button class="modal-close" onclick="closeModal('selfies-modal')">&times;</button>
-</div>
-<div class="modal-body">
-<div class="preset-grid" id="selfies-grid">
-<!-- Selfie images will be populated here -->
-</div>
-<button class="generate-btn" style="margin-top: 20px;" onclick="confirmSelfieSelection()">✅ Sử Dụng Selfie Đã Chọn</button>
-</div>
-</div>
-</div>
-
-<!-- Preset Name Modal -->
-<div class="preset-name-modal" id="preset-name-modal" onclick="cancelPresetUpload()">
-<div class="preset-name-content" onclick="event.stopPropagation()">
-<button class="modal-close" onclick="cancelPresetUpload()" style="position: absolute; top: 10px; right: 15px;">&times;</button>
-<h3 style="margin-bottom: 15px;">Tải Preset Tùy Chỉnh</h3>
-
-<div style="margin-bottom: 20px;">
-<!-- Modern drag-and-drop file upload -->
-<div class="file-upload-zone" id="file-upload-zone">
-<div class="upload-icon-large">📸</div>
-<div class="upload-text-large">Thả ảnh vào đây hoặc nhấn để duyệt</div>
-<div class="upload-subtext-large">Hỗ trợ JPG, PNG, WebP tối đa 10MB mỗi ảnh</div>
-<div class="upload-hint">Bạn có thể chọn nhiều ảnh</div>
-</div>
-<input type="file" id="preset-input" accept="image/*" multiple style="display: none;">
-
-<!-- File preview area -->
-<div id="file-preview-container" style="display: none; margin-top: 15px;">
-<div class="file-preview-header">
-<span id="file-count">0 files selected</span>
-<button class="clear-files-btn" onclick="clearSelectedFiles()">Xóa tất cả</button>
-</div>
-<div class="file-preview-grid" id="file-preview-grid">
-<!-- File previews will be populated here -->
-</div>
-</div>
-</div>
-
-<input type="text" class="preset-name-input" id="preset-name-input" placeholder="Nhập tên bộ sưu tập" maxlength="50">
-<div style="display: flex; gap: 10px; margin-top: 20px;">
-<button class="generate-btn" style="flex: 1; margin: 0;" id="upload-btn" onclick="confirmPresetUpload()" disabled>Tải Bộ Sưu Tập</button>
-<button class="reset-btn" style="padding: 12px 20px; margin: 0;" onclick="cancelPresetUpload()">Hủy</button>
-</div>
-</div>
-</div>
 
 <!-- Loading Overlay -->
 <div class="loading-overlay" id="loading-overlay">
@@ -871,8 +745,6 @@ let selectedSelfieId = null;
 let presets = [];
 let results = [];
 let selfies = [];
-let selectedFiles = [];
-let currentCollection = null;
 
 // Helper function to safely extract image URL from images array
 function getImageUrl(imageData) {
@@ -903,32 +775,6 @@ return url;
 // Global functions for HTML onclick handlers
 function triggerFileInput(inputId) {
 document.getElementById(inputId).click();
-}
-
-function resetApp() {
-selectedPreset = null;
-selfieImageUrl = null;
-selectedSelfieId = null;
-
-// Reset UI
-document.getElementById('selfie-preview').style.display = 'none';
-document.getElementById('preset-preview').style.display = 'none';
-document.getElementById('result-preview').style.display = 'none';
-document.getElementById('selfie-upload').style.display = 'block';
-document.getElementById('preset-options').style.display = 'grid';
-document.getElementById('browse-selfies-btn').style.display = 'none';
-document.getElementById('selfie-status').textContent = 'Chưa chọn';
-document.getElementById('preset-status').textContent = 'Chưa chọn';
-document.getElementById('result-status').textContent = 'Đang chờ tạo';
-document.getElementById('generate-btn').disabled = true;
-
-// Reset progress steps
-document.getElementById('step1').className = 'step active';
-document.getElementById('step2').className = 'step pending';
-document.getElementById('step3').className = 'step pending';
-
-// Clear file inputs
-document.getElementById('selfie-input').value = '';
 }
 
 async function loadPresets() {
@@ -997,7 +843,6 @@ const reader = new FileReader();
 reader.onload = function(e) {
 preview.querySelector('img').src = e.target.result;
 document.getElementById('selfie-status').textContent = 'Đang tải lên...';
-updateProgress(1, 'active');
 };
 reader.readAsDataURL(file);
 
@@ -1055,289 +900,14 @@ await loadSelfies();
 
 // Update UI after successful upload
 document.getElementById('selfie-status').textContent = '✓ Đã tải lên';
-document.getElementById('browse-selfies-btn').style.display = 'block';
-updateProgress(1, 'completed');
+document.getElementById('selfies-grid').style.display = 'grid';
 updateGenerateButton();
 
 } catch (error) {
 document.getElementById('selfie-status').textContent = `✗ Lỗi: ${error.message}`;
-updateProgress(1, 'pending');
 }
 });
 
-// Modal functions
-function openCollectionsModal() {
-loadCollections();
-document.getElementById('collections-modal').classList.add('show');
-}
-
-function closeModal(modalId) {
-document.getElementById(modalId).classList.remove('show');
-}
-
-async function loadCollections() {
-const grid = document.getElementById('collections-grid');
-
-// Always show loading and load fresh presets
-grid.innerHTML = '<div class="preview-placeholder">Đang tải...</div>';
-await loadPresets();
-
-// Now check if we have presets
-if (presets.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có bộ sưu tập</div>';
-return;
-}
-
-// Display the collection with uploaded presets
-grid.innerHTML = `
-<div class="collection-card" onclick="openPresetModal('uploaded')">
-<div class="collection-image" style="background: linear-gradient(45deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; color: white; font-size: 48px;">🎭</div>
-<div class="collection-info">
-<div class="collection-name">Ảnh Đã Tải Lên</div>
-<div class="collection-count">${presets.length} ảnh</div>
-</div>
-</div>
-`;
-}
-
-function openPresetModal(collectionType) {
-closeModal('collections-modal');
-currentCollection = collectionType;
-document.getElementById('preset-modal').classList.add('show');
-renderPresetGrid(collectionType);
-}
-
-function renderPresetGrid(collectionType) {
-const grid = document.getElementById('preset-grid');
-
-if (presets.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có ảnh preset</div>';
-return;
-}
-
-// Filter presets that have images array with at least one image
-const validPresets = presets.filter(preset => preset.images && preset.images.length > 0);
-
-grid.innerHTML = validPresets.map(preset => {
-let imageUrl = getImageUrl(preset.images[0]);
-if (imageUrl && imageUrl.includes('/upload-proxy/')) {
-imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
-}
-
-return `
-<div class="preset-item ${selectedPreset?.id === preset.id ? 'selected' : ''}"
-onclick="selectPresetItem('${preset.id}')"
-title="${preset.name}">
-<img src="${imageUrl}" alt="${preset.name}" class="preset-image"
-onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';">
-</div>
-`;
-}).join('');
-}
-
-function selectPresetItem(presetId) {
-selectedPreset = presets.find(p => p.id === presetId);
-document.querySelectorAll('.preset-item').forEach(item => {
-item.classList.remove('selected');
-});
-event.currentTarget.classList.add('selected');
-}
-
-function selectPresetAndClose() {
-if (!selectedPreset) {
-alert('Vui lòng chọn một ảnh preset');
-return;
-}
-
-if (!selectedPreset.images || selectedPreset.images.length === 0) {
-alert('Ảnh preset này không hợp lệ. Vui lòng chọn ảnh khác.');
-selectedPreset = null;
-return;
-}
-
-closeModal('preset-modal');
-showSelectedPreset();
-updateProgress(2, 'completed');
-updateGenerateButton();
-}
-
-function showSelectedPreset() {
-const preview = document.getElementById('preset-preview');
-const options = document.getElementById('preset-options');
-
-if (!preview || !options) {
-console.error('Missing elements: preview or options not found');
-return;
-}
-
-options.style.display = 'none';
-preview.style.display = 'block';
-
-let imageUrl = getImageUrl(selectedPreset.images && selectedPreset.images[0] ? selectedPreset.images[0] : '');
-if (imageUrl && imageUrl.includes('/upload-proxy/')) {
-imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
-}
-
-preview.innerHTML = `<img src="${imageUrl}" alt="${selectedPreset.name}" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
-document.getElementById('preset-status').textContent = `✓ Đã chọn: ${selectedPreset.name}`;
-document.getElementById('browse-uploaded-btn').style.display = 'block';
-}
-
-// Preset upload modal
-function showPresetUploadModal() {
-document.getElementById('preset-name-modal').classList.add('show');
-setupFileUpload();
-}
-
-function cancelPresetUpload() {
-document.getElementById('preset-name-modal').classList.remove('show');
-selectedFiles = [];
-document.getElementById('file-preview-container').style.display = 'none';
-document.getElementById('preset-name-input').value = '';
-document.getElementById('upload-btn').disabled = true;
-}
-
-function setupFileUpload() {
-const dropZone = document.getElementById('file-upload-zone');
-const fileInput = document.getElementById('preset-input');
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-dropZone.addEventListener('dragover', (e) => {
-e.preventDefault();
-dropZone.classList.add('dragover');
-});
-
-dropZone.addEventListener('dragleave', () => {
-dropZone.classList.remove('dragover');
-});
-
-dropZone.addEventListener('drop', (e) => {
-e.preventDefault();
-dropZone.classList.remove('dragover');
-handleFiles(e.dataTransfer.files);
-});
-
-fileInput.addEventListener('change', (e) => {
-handleFiles(e.target.files);
-});
-}
-
-function handleFiles(files) {
-selectedFiles = Array.from(files);
-if (selectedFiles.length > 0) {
-renderFilePreviews();
-document.getElementById('upload-btn').disabled = false;
-}
-}
-
-function renderFilePreviews() {
-const container = document.getElementById('file-preview-container');
-const grid = document.getElementById('file-preview-grid');
-const count = document.getElementById('file-count');
-
-container.style.display = 'block';
-count.textContent = `${selectedFiles.length} files selected`;
-
-grid.innerHTML = selectedFiles.map((file, index) => `
-<div class="file-preview-item">
-<img src="" alt="${file.name}">
-<button class="remove-file" onclick="removeFile(${index})">&times;</button>
-</div>
-`).join('');
-
-selectedFiles.forEach((file, index) => {
-const reader = new FileReader();
-reader.onload = (e) => {
-grid.children[index].querySelector('img').src = e.target.result;
-};
-reader.readAsDataURL(file);
-});
-}
-
-function removeFile(index) {
-selectedFiles.splice(index, 1);
-if (selectedFiles.length === 0) {
-document.getElementById('file-preview-container').style.display = 'none';
-document.getElementById('upload-btn').disabled = true;
-} else {
-renderFilePreviews();
-}
-}
-
-function clearSelectedFiles() {
-selectedFiles = [];
-document.getElementById('file-preview-container').style.display = 'none';
-document.getElementById('upload-btn').disabled = true;
-}
-
-async function confirmPresetUpload() {
-const collectionName = document.getElementById('preset-name-input').value.trim();
-if (!collectionName) {
-alert('Vui lòng nhập tên bộ sưu tập');
-return;
-}
-
-if (selectedFiles.length === 0) {
-alert('Vui lòng chọn ít nhất một ảnh');
-return;
-}
-
-document.getElementById('upload-btn').disabled = true;
-document.getElementById('upload-btn').textContent = 'Đang tải...';
-
-let successCount = 0;
-for (let i = 0; i < selectedFiles.length; i++) {
-const file = selectedFiles[i];
-try {
-const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-const timestamp = Date.now();
-const randomStr = Math.random().toString(36).substring(2, 15);
-const extension = originalName.split('.').pop() || 'jpg';
-const filename = `preset-${timestamp}-${i}-${randomStr}.${extension}`;
-
-const presetName = selectedFiles.length === 1
-? collectionName
-: `${collectionName} ${i + 1}`;
-
-const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ filename, type: 'preset' })
-});
-
-if (!uploadUrlResponse.ok) throw new Error('Không thể lấy URL upload');
-
-const { uploadUrl } = await uploadUrlResponse.json();
-
-const encodedPresetName = btoa(unescape(encodeURIComponent(presetName)));
-
-const uploadResponse = await fetch(uploadUrl, {
-method: 'PUT',
-body: file,
-headers: {
-'Content-Type': file.type,
-'X-Preset-Name': encodedPresetName,
-'X-Preset-Name-Encoded': 'base64'
-}
-});
-
-if (uploadResponse.ok) successCount++;
-} catch (error) {
-console.error(`Upload failed for ${file.name}:`, error);
-}
-}
-
-if (successCount > 0) {
-alert(`Tải thành công ${successCount}/${selectedFiles.length} ảnh`);
-cancelPresetUpload();
-setTimeout(() => loadPresets(), 1000);
-} else {
-alert('Tất cả upload đều thất bại');
-document.getElementById('upload-btn').disabled = false;
-document.getElementById('upload-btn').textContent = 'Tải Bộ Sưu Tập';
-}
-}
 
 // Generate face swap
 function generateFaceSwap() {
@@ -1348,8 +918,6 @@ return;
 
 const loading = document.getElementById('loading-overlay');
 loading.classList.add('show');
-
-updateProgress(3, 'active');
 
 generateFaceSwapLogic();
 }
@@ -1406,7 +974,6 @@ resultUrl = resultUrl.replace('/upload-proxy/', '/r2/');
 }
 preview.innerHTML = `<img src="${resultUrl}" alt="Kết quả" style="max-width: 100%; max-height: 400px; border-radius: 8px; object-fit: cover;">`;
 document.getElementById('result-status').textContent = '✓ Hoàn thành';
-updateProgress(3, 'completed');
 await loadResults();
 } else {
 throw new Error('Không nhận được ảnh kết quả');
@@ -1415,7 +982,6 @@ throw new Error('Không nhận được ảnh kết quả');
 console.error('Face swap error:', error);
 document.getElementById('result-status').textContent = `✗ Lỗi: ${error.message}`;
 alert(`Lỗi: ${error.message}`);
-updateProgress(3, 'pending');
 } finally {
 loading.classList.remove('show');
 }
@@ -1424,131 +990,6 @@ loading.classList.remove('show');
 function clearHistory() {
 if (confirm('Bạn có chắc muốn xóa tất cả kết quả?')) {
 document.getElementById('history-grid').innerHTML = '<div class="preview-placeholder">Chưa có kết quả</div>';
-}
-}
-
-function openUploadedPresetsModal() {
-openPresetModal('uploaded');
-document.getElementById('uploaded-presets-modal').classList.add('show');
-}
-
-function confirmPresetSelection() {
-closeModal('uploaded-presets-modal');
-if (selectedPreset) {
-showSelectedPreset();
-updateProgress(2, 'completed');
-updateGenerateButton();
-}
-}
-
-// Load presets and collections functions
-async function loadCollections() {
-const grid = document.getElementById('collections-grid');
-// For now, just show uploaded presets as collections
-if (presets.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Đang tải...</div>';
-await loadPresets();
-}
-
-if (presets.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có bộ sưu tập</div>';
-return;
-}
-
-// Group presets by some criteria or show as single collection
-grid.innerHTML = `
-<div class="collection-card" onclick="openPresetModal('uploaded')">
-<div class="collection-image" style="background: linear-gradient(45deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; color: white; font-size: 48px;">🎭</div>
-<div class="collection-info">
-<div class="collection-name">Ảnh Đã Tải Lên</div>
-<div class="collection-count">${presets.length} ảnh</div>
-</div>
-</div>
-`;
-}
-
-function selectPresetItem(presetId) {
-selectedPreset = presets.find(p => p.id === presetId);
-document.querySelectorAll('.preset-item').forEach(item => {
-item.classList.remove('selected');
-});
-event.currentTarget.classList.add('selected');
-}
-
-function setupFileUpload() {
-const dropZone = document.getElementById('file-upload-zone');
-const fileInput = document.getElementById('preset-input');
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-dropZone.addEventListener('dragover', (e) => {
-e.preventDefault();
-dropZone.classList.add('dragover');
-});
-
-dropZone.addEventListener('dragleave', () => {
-dropZone.classList.remove('dragover');
-});
-
-dropZone.addEventListener('drop', (e) => {
-e.preventDefault();
-dropZone.classList.remove('dragover');
-handleFiles(e.dataTransfer.files);
-});
-
-fileInput.addEventListener('change', (e) => {
-handleFiles(e.target.files);
-});
-}
-
-function handleFiles(files) {
-selectedFiles = Array.from(files);
-if (selectedFiles.length > 0) {
-renderFilePreviews();
-document.getElementById('upload-btn').disabled = false;
-}
-}
-
-function renderFilePreviews() {
-const container = document.getElementById('file-preview-container');
-const grid = document.getElementById('file-preview-grid');
-const count = document.getElementById('file-count');
-
-container.style.display = 'block';
-count.textContent = `${selectedFiles.length} files selected`;
-
-grid.innerHTML = selectedFiles.map((file, index) => `
-<div class="file-preview-item">
-<img src="" alt="${file.name}">
-<button class="remove-file" onclick="removeFile(${index})">&times;</button>
-</div>
-`).join('');
-
-selectedFiles.forEach((file, index) => {
-const reader = new FileReader();
-reader.onload = (e) => {
-grid.children[index].querySelector('img').src = e.target.result;
-};
-reader.readAsDataURL(file);
-});
-}
-
-// Load presets and results functions
-async function loadPresets() {
-try {
-console.log('Loading presets from:', `${WORKER_URL}/presets`);
-const response = await fetch(`${WORKER_URL}/presets`);
-
-if (!response.ok) {
-throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-}
-
-const data = await response.json();
-console.log('Presets data:', data);
-presets = data.preset_collections || [];
-console.log(`Loaded ${presets.length} presets`);
-} catch (error) {
-console.error('Error loading presets:', error);
 }
 }
 
@@ -1585,11 +1026,6 @@ return `
 }
 
 // Utility functions
-function updateProgress(stepNum, status) {
-const stepEl = document.getElementById(`step${stepNum}`);
-stepEl.className = `step ${status}`;
-}
-
 function updateGenerateButton() {
 const isEnabled = !!(selectedPreset && selfieImageUrl);
 console.log('Update generate button:', {
@@ -1607,35 +1043,36 @@ const response = await fetch(`${WORKER_URL}/selfies`);
 const data = await response.json();
 selfies = data.selfies || [];
 console.log(`Loaded ${selfies.length} selfies`);
+renderSelfiesGrid();
 } catch (error) {
 console.error('Error loading selfies:', error);
 selfies = [];
-}
-}
-
-// Open modal to select from previously uploaded selfies
-function openSelfiesModal() {
-loadSelfies();
-document.getElementById('selfies-modal').classList.add('show');
 renderSelfiesGrid();
+}
 }
 
 function renderSelfiesGrid() {
 const grid = document.getElementById('selfies-grid');
+if (!grid) return;
+
 if (selfies.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có selfie đã tải</div>';
+grid.style.display = 'none';
 return;
 }
 
+grid.style.display = 'grid';
 grid.innerHTML = selfies.map(selfie => {
 let imageUrl = selfie.image_url;
 if (imageUrl.includes('/upload-proxy/')) {
 imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
 }
-const date = new Date(selfie.created_at).toLocaleDateString('vi-VN');
+if (!imageUrl.startsWith('http')) {
+imageUrl = `${WORKER_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+}
+
 return `
 <div class="preset-item ${selectedSelfieId === selfie.id ? 'selected' : ''}"
-onclick="selectSelfieItem('${selfie.id}')"
+onclick="selectSelfie('${selfie.id}')"
 title="${selfie.filename}">
 <img src="${imageUrl}" alt="${selfie.filename}" class="preset-image"
 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';">
@@ -1644,38 +1081,33 @@ onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\
 }).join('');
 }
 
-function selectSelfieItem(selfieId) {
+function selectSelfie(selfieId) {
 const selfie = selfies.find(s => s.id === selfieId);
 if (!selfie) return;
 
 selectedSelfieId = selfieId;
 selfieImageUrl = selfie.image_url;
 
-// Update UI
-document.querySelectorAll('.preset-item').forEach(item => {
+// Ensure full URL for API calls
+if (!selfieImageUrl.startsWith('http')) {
+selfieImageUrl = `${WORKER_URL}${selfieImageUrl.startsWith('/') ? '' : '/'}${selfieImageUrl}`;
+}
+
+// Update grid selection
+document.querySelectorAll('#selfies-grid .preset-item').forEach(item => {
 item.classList.remove('selected');
 });
 event.currentTarget.classList.add('selected');
-}
-
-function confirmSelfieSelection() {
-if (!selectedSelfieId) {
-alert('Vui lòng chọn một selfie');
-return;
-}
-
-const selfie = selfies.find(s => s.id === selectedSelfieId);
-if (!selfie) return;
 
 // Update preview
 const preview = document.getElementById('selfie-preview');
 const uploadZone = document.getElementById('selfie-upload');
 
+if (preview && uploadZone) {
 uploadZone.style.display = 'none';
 preview.style.display = 'block';
 
 let imageUrl = selfie.image_url;
-// Ensure full URL for display
 if (imageUrl.includes('/upload-proxy/')) {
 imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
 }
@@ -1683,19 +1115,11 @@ if (!imageUrl.startsWith('http')) {
 imageUrl = `${WORKER_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
 }
 
-// Store the full URL for API calls
-selfieImageUrl = selfie.image_url;
-if (!selfieImageUrl.startsWith('http')) {
-selfieImageUrl = `${WORKER_URL}${selfieImageUrl.startsWith('/') ? '' : '/'}${selfieImageUrl}`;
-}
-
 preview.innerHTML = `<img src="${imageUrl}" alt="Selfie" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
 document.getElementById('selfie-status').textContent = '✓ Đã chọn';
-document.getElementById('browse-selfies-btn').style.display = 'block';
-updateProgress(1, 'completed');
-updateGenerateButton();
+}
 
-closeModal('selfies-modal');
+updateGenerateButton();
 }
 
 // Initialize
