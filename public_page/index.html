@@ -790,9 +790,72 @@ const data = await response.json();
 console.log('Presets data:', data);
 presets = data.preset_collections || [];
 console.log(`Loaded ${presets.length} presets`);
+renderPresetsGrid();
 } catch (error) {
 console.error('Error loading presets:', error);
+renderPresetsGrid();
 }
+}
+
+function renderPresetsGrid() {
+const grid = document.getElementById('presets-grid');
+if (!grid) return;
+
+if (presets.length === 0) {
+grid.innerHTML = '<div class="preview-placeholder">Chưa có ảnh preset.</div>';
+return;
+}
+
+const validPresets = presets.filter(preset => preset.images && preset.images.length > 0);
+
+if (validPresets.length === 0) {
+grid.innerHTML = '<div class="preview-placeholder">Chưa có ảnh preset hợp lệ.</div>';
+return;
+}
+
+grid.innerHTML = validPresets.map(preset => {
+let imageUrl = getImageUrl(preset.images[0]);
+if (imageUrl && imageUrl.includes('/upload-proxy/')) {
+imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
+}
+
+return `
+<div class="preset-item ${selectedPreset?.id === preset.id ? 'selected' : ''}"
+onclick="selectPreset('${preset.id}')"
+title="${preset.name}">
+<img src="${imageUrl}" alt="${preset.name}" class="preset-image"
+onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';">
+</div>
+`;
+}).join('');
+}
+
+function selectPreset(presetId) {
+selectedPreset = presets.find(p => p.id === presetId);
+if (!selectedPreset || !selectedPreset.images || selectedPreset.images.length === 0) {
+alert('Ảnh preset này không hợp lệ');
+return;
+}
+
+// Update grid selection
+document.querySelectorAll('#presets-grid .preset-item').forEach(item => {
+item.classList.remove('selected');
+});
+event.currentTarget.classList.add('selected');
+
+// Show selected preset
+const preview = document.getElementById('preset-preview');
+if (preview) {
+preview.style.display = 'block';
+let imageUrl = getImageUrl(selectedPreset.images[0]);
+if (imageUrl && imageUrl.includes('/upload-proxy/')) {
+imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
+}
+preview.innerHTML = `<img src="${imageUrl}" alt="${selectedPreset.name}" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
+document.getElementById('preset-status').textContent = `✓ Đã chọn: ${selectedPreset.name}`;
+}
+
+updateGenerateButton();
 }
 
 async function loadResults() {
