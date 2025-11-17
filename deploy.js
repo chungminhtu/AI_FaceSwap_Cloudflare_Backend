@@ -93,6 +93,9 @@ async function main() {
   console.log('\n🚀 Face Swap AI - Deployment Script');
   console.log('====================================\n');
 
+  let workerUrl = '';
+  let pagesUrl = '';
+
   // Check wrangler
   if (!checkWrangler()) {
     log.error('Wrangler CLI not found. Installing...');
@@ -184,13 +187,31 @@ async function main() {
   // Check secrets
   log.info('Checking environment variables...');
   const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_CLOUD_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
+  const secretsPath = path.join(process.cwd(), 'secrets.json');
+
+  // Auto-deploy secrets if secrets.json exists
+  if (fs.existsSync(secretsPath)) {
+    log.info('Found secrets.json - deploying secrets automatically...');
+    try {
+      execCommand('wrangler secret bulk secrets.json', { stdio: 'inherit' });
+      log.success('Secrets deployed successfully');
+    } catch (error) {
+      log.error('Failed to deploy secrets from secrets.json');
+      log.warn('You may need to run: wrangler secret bulk secrets.json manually');
+      throw error;
+    }
+  }
+
+  // Verify secrets are set
   const existingSecrets = getSecrets();
   const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
 
   if (missingVars.length > 0) {
     log.warn(`Missing environment variables: ${missingVars.join(', ')}`);
     log.warn('You can set secrets manually with: wrangler secret put <NAME>');
-    log.warn('Or create a secrets.json file and use: wrangler secret bulk secrets.json');
+    if (!fs.existsSync(secretsPath)) {
+      log.warn('Or create a secrets.json file and use: wrangler secret bulk secrets.json');
+    }
   } else {
     log.success('All environment variables are set');
   }
@@ -199,37 +220,26 @@ async function main() {
   log.info(`Deploying Worker: ${WORKER_NAME}...`);
   log.info('📌 Using fixed worker name - URL will NEVER change!');
   try {
-    const deployOutput = execCommand('wrangler deploy', { silent: false });
+    execCommand('wrangler deploy', { silent: false });
     log.success('Worker deployed');
-    
-    // Try to extract Worker URL
-    let workerUrl = '';
-    if (deployOutput) {
-      const urlMatch = deployOutput.match(/https:\/\/[^\s]+\.workers\.dev/);
-      if (urlMatch) {
-        workerUrl = urlMatch[0];
-      }
-    }
-    
-    if (!workerUrl) {
-      // Try to get from deployments
-      try {
-        const deployments = execCommand('wrangler deployments list', { silent: true, throwOnError: false });
-        if (deployments) {
-          const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
-          if (urlMatch) {
-            workerUrl = urlMatch[0];
-          }
+
+    // Try to get Worker URL from deployments
+    try {
+      const deployments = execCommand('wrangler deployments list --latest', { silent: true, throwOnError: false });
+      if (deployments) {
+        const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
+        if (urlMatch) {
+          workerUrl = urlMatch[0];
         }
-      } catch {}
-    }
+      }
+    } catch {}
     
     // If still no URL, construct it based on worker name and account
     if (!workerUrl) {
       try {
         const whoami = execCommand('wrangler whoami', { silent: true, throwOnError: false });
         if (whoami) {
-          const accountMatch = whoami.match(/@([^\s]+)/);
+          const accountMatch = whoami.match(/([^\s]+)@/);
           if (accountMatch) {
             const accountSubdomain = accountMatch[1];
             workerUrl = `https://${WORKER_NAME}.${accountSubdomain}.workers.dev`;
@@ -270,8 +280,7 @@ async function main() {
   log.info(`Deploying to Cloudflare Pages: ${PAGES_PROJECT_NAME}...`);
   log.info('📌 Using fixed project name - URL will NEVER change!');
   const publicPageDir = path.join(process.cwd(), 'public_page');
-  
-  let pagesUrl = '';
+
   if (fs.existsSync(publicPageDir)) {
     try {
       // ALWAYS use the same project name - this is critical for fixed URLs
@@ -307,7 +316,7 @@ async function main() {
         try {
           const whoami = execCommand('wrangler whoami', { silent: true, throwOnError: false });
           if (whoami) {
-            const accountMatch = whoami.match(/@([^\s]+)/);
+            const accountMatch = whoami.match(/([^\s]+)@/);
             if (accountMatch) {
               const accountSubdomain = accountMatch[1];
               pagesUrl = `https://${PAGES_PROJECT_NAME}.${accountSubdomain}.pages.dev`;

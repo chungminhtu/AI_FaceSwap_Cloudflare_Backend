@@ -215,13 +215,22 @@ async function main() {
   log.info('Granting Vision API permissions...');
   try {
     execCommand(
-      `gcloud projects add-iam-policy-binding ${projectId} --member="serviceAccount:${serviceAccountEmail}" --role="roles/cloud-vision-api.user"`,
+      `gcloud projects add-iam-policy-binding ${projectId} --member="serviceAccount:${serviceAccountEmail}" --role="roles/editor"`,
       { stdio: 'inherit' }
     );
     log.success('Permissions granted');
   } catch (error) {
-    log.error('Failed to grant permissions');
-    process.exit(1);
+    // Check if the role is already granted
+    const checkRole = execCommand(
+      `gcloud projects get-iam-policy ${projectId} --filter="bindings.members:serviceAccount:${serviceAccountEmail}" --format="value(bindings.role)"`,
+      { throwOnError: false, silent: true }
+    );
+    if (checkRole && checkRole.includes('roles/editor')) {
+      log.warn('Role already granted, continuing...');
+    } else {
+      log.error('Failed to grant permissions');
+      process.exit(1);
+    }
   }
 
   // Create and download key
@@ -318,7 +327,7 @@ async function main() {
 ## Configuration Details
 
 ### IAM Role
-- **Role:** \`roles/cloud-vision-api.user\`
+- **Role:** \`roles/editor\`
 - **Member:** \`serviceAccount:${serviceAccountEmail}\`
 
 ### API Status
@@ -363,7 +372,7 @@ async function main() {
 - Ensure the service account has the correct IAM role
 
 ### Error: "Permission denied"
-- Verify the service account has \`roles/cloud-vision-api.user\` role
+- Verify the service account has \`roles/editor\` role
 - Check project billing is enabled (required for Vision API)
 
 ### Recreate Service Account Key
