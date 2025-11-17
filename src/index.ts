@@ -205,16 +205,37 @@ export default {
           // Extract filename from key (remove 'selfie/' prefix)
           const filename = key.replace('selfie/', '');
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          const createdAt = Math.floor(Date.now() / 1000);
+
+          console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
           // Try to save to database, but don't fail the upload if DB fails
           try {
             const result = await env.DB.prepare(
               'INSERT INTO selfies (id, image_url, filename, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, filename, Math.floor(Date.now() / 1000)).run();
+            ).bind(selfieId, publicUrl, filename, createdAt).run();
 
-            console.log(`Selfie saved to database: ${selfieId}, result:`, result);
+            console.log(`Selfie saved to database successfully: ${selfieId}`, {
+              success: result.success,
+              meta: result.meta
+            });
+
+            // Verify it was saved by querying it back
+            const verifyResult = await env.DB.prepare(
+              'SELECT id, image_url, filename FROM selfies WHERE id = ?'
+            ).bind(selfieId).first();
+            
+            if (verifyResult) {
+              console.log('Selfie verified in database:', verifyResult);
+            } else {
+              console.warn('Selfie not found in database after insert - possible database issue');
+            }
           } catch (dbError) {
             console.error('Selfie database save error (non-fatal):', dbError);
+            console.error('Error details:', {
+              message: dbError instanceof Error ? dbError.message : String(dbError),
+              stack: dbError instanceof Error ? dbError.stack : undefined
+            });
             // Still return success since file was uploaded to R2
             // Database might not be initialized yet
           }
@@ -312,11 +333,19 @@ export default {
     // Handle selfies listing
     if (path === '/selfies' && request.method === 'GET') {
       try {
+        console.log('Fetching selfies from database...');
         const result = await env.DB.prepare(
           'SELECT id, image_url, filename, created_at FROM selfies ORDER BY created_at DESC LIMIT 50'
         ).all();
 
+        console.log('Selfies query result:', {
+          success: result.success,
+          resultsCount: result.results?.length || 0,
+          meta: result.meta
+        });
+
         if (!result || !result.results) {
+          console.log('No selfies found in database');
           return jsonResponse({ selfies: [] });
         }
 
@@ -327,9 +356,14 @@ export default {
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
+        console.log(`Returning ${selfies.length} selfies`);
         return jsonResponse({ selfies });
       } catch (error) {
         console.error('List selfies error:', error);
+        console.error('Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
         // Return empty array instead of error to prevent UI breaking
         return jsonResponse({ selfies: [] });
       }
@@ -404,21 +438,24 @@ export default {
           return jsonResponse(faceSwapResult, faceSwapResult.StatusCode || 500);
         }
 
-        // Safe search validation - temporarily disabled
-        // TODO: Re-enable safe search validation when API is working
-        /*
-        const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
+        // Safe search validation - can be disabled via DISABLE_SAFE_SEARCH env variable
+        const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
+        
+        if (!disableSafeSearch) {
+          const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
-        if (safeSearchResult.error) {
-          console.error('Safe search error:', safeSearchResult.error);
-          return errorResponse(`Safe search validation failed: ${safeSearchResult.error}`, 500);
-        }
+          if (safeSearchResult.error) {
+            console.error('Safe search error:', safeSearchResult.error);
+            return errorResponse(`Safe search validation failed: ${safeSearchResult.error}`, 500);
+          }
 
-        if (!safeSearchResult.isSafe) {
-          return errorResponse('Content blocked: Image contains unsafe content (adult, violence, or racy content detected)', 403);
+          if (!safeSearchResult.isSafe) {
+            return errorResponse('Content blocked: Image contains unsafe content (adult, violence, or racy content detected)', 403);
+          }
+          console.log('Safe search validation passed');
+        } else {
+          console.log('Safe search validation disabled via DISABLE_SAFE_SEARCH config');
         }
-        */
-        console.log('Safe search validation skipped');
 
         // Try to download result image and store in R2 (non-fatal if it fails)
         let resultUrl = faceSwapResult.ResultImageUrl; // Use original URL as fallback

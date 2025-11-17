@@ -82,6 +82,12 @@ function getSecrets() {
   }
 }
 
+// ============================================================================
+// FIXED PROJECT NAMES - DO NOT CHANGE THESE OR YOUR URLS WILL CHANGE!
+// ============================================================================
+const PAGES_PROJECT_NAME = 'ai-faceswap-frontend';  // This ensures Pages URL never changes
+const WORKER_NAME = 'ai-faceswap-backend';           // From wrangler.jsonc - ensures Worker URL never changes
+// ============================================================================
 
 async function main() {
   console.log('\n🚀 Face Swap AI - Deployment Script');
@@ -190,7 +196,8 @@ async function main() {
   }
 
   // Deploy Worker
-  log.info('Deploying Worker...');
+  log.info(`Deploying Worker: ${WORKER_NAME}...`);
+  log.info('📌 Using fixed worker name - URL will NEVER change!');
   try {
     const deployOutput = execCommand('wrangler deploy', { silent: false });
     log.success('Worker deployed');
@@ -212,6 +219,21 @@ async function main() {
           const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
           if (urlMatch) {
             workerUrl = urlMatch[0];
+          }
+        }
+      } catch {}
+    }
+    
+    // If still no URL, construct it based on worker name and account
+    if (!workerUrl) {
+      try {
+        const whoami = execCommand('wrangler whoami', { silent: true, throwOnError: false });
+        if (whoami) {
+          const accountMatch = whoami.match(/@([^\s]+)/);
+          if (accountMatch) {
+            const accountSubdomain = accountMatch[1];
+            workerUrl = `https://${WORKER_NAME}.${accountSubdomain}.workers.dev`;
+            log.info(`Constructed Worker URL from account: ${workerUrl}`);
           }
         }
       } catch {}
@@ -244,17 +266,63 @@ async function main() {
     process.exit(1);
   }
 
-  // Deploy Pages
-  log.info('Deploying to Cloudflare Pages...');
+  // Deploy Pages - ALWAYS use the same project name to ensure URL never changes
+  log.info(`Deploying to Cloudflare Pages: ${PAGES_PROJECT_NAME}...`);
+  log.info('📌 Using fixed project name - URL will NEVER change!');
   const publicPageDir = path.join(process.cwd(), 'public_page');
   
+  let pagesUrl = '';
   if (fs.existsSync(publicPageDir)) {
     try {
+      // ALWAYS use the same project name - this is critical for fixed URLs
       const pagesResult = execCommand(
-        `wrangler pages deploy ${publicPageDir} --project-name=ai-faceswap-frontend --branch=main --commit-dirty=true`,
+        `wrangler pages deploy ${publicPageDir} --project-name=${PAGES_PROJECT_NAME} --branch=main --commit-dirty=true`,
         { throwOnError: false, stdio: 'inherit' }
       );
       log.success('Pages deployed');
+      
+      // Try to extract Pages URL from output
+      if (pagesResult) {
+        const urlMatch = pagesResult.match(/https:\/\/[^\s]+\.pages\.dev/);
+        if (urlMatch) {
+          pagesUrl = urlMatch[0];
+        }
+      }
+      
+      // If not found in output, try to get from deployments
+      if (!pagesUrl) {
+        try {
+          const deployments = execCommand(`wrangler pages deployment list --project-name=${PAGES_PROJECT_NAME}`, { silent: true, throwOnError: false });
+          if (deployments) {
+            const urlMatch = deployments.match(/https:\/\/[^\s]+\.pages\.dev/);
+            if (urlMatch) {
+              pagesUrl = urlMatch[0];
+            }
+          }
+        } catch {}
+      }
+      
+      // If still no URL, construct it based on project name and account
+      if (!pagesUrl) {
+        try {
+          const whoami = execCommand('wrangler whoami', { silent: true, throwOnError: false });
+          if (whoami) {
+            const accountMatch = whoami.match(/@([^\s]+)/);
+            if (accountMatch) {
+              const accountSubdomain = accountMatch[1];
+              pagesUrl = `https://${PAGES_PROJECT_NAME}.${accountSubdomain}.pages.dev`;
+              log.info(`Constructed Pages URL from project name: ${pagesUrl}`);
+            }
+          }
+        } catch {}
+      }
+      
+      if (pagesUrl) {
+        log.success(`Pages URL: ${pagesUrl}`);
+        log.info('📌 This URL is FIXED and will NEVER change between deployments!');
+      } else {
+        log.warn('Could not determine Pages URL. Check Cloudflare Dashboard.');
+      }
     } catch (error) {
       log.warn('Pages deployment failed (non-critical)');
     }
@@ -265,10 +333,18 @@ async function main() {
   // Summary
   console.log('\n' + '='.repeat(50));
   log.success('Deployment Complete!');
-  console.log('\nNext steps:');
-  console.log('1. Test your Worker API');
-  console.log('2. Check Cloudflare Dashboard for URLs');
-  console.log('3. Check your Worker logs for any issues\n');
+  console.log('\n📌 Fixed URLs (these URLs NEVER change):');
+  if (workerUrl) {
+    console.log(`   Worker (Backend): ${workerUrl}`);
+  }
+  if (pagesUrl) {
+    console.log(`   Pages (Frontend): ${pagesUrl}`);
+  }
+  console.log('\n💡 Tips:');
+  console.log('   • These URLs are FIXED - they won\'t change between deployments');
+  console.log('   • To add a custom domain, see FIXED_URL_GUIDE.md');
+  console.log('   • Check Cloudflare Dashboard for custom domains');
+  console.log('\n');
 }
 
 main().catch((error) => {

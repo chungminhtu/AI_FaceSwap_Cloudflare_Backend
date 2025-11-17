@@ -1,7 +1,7 @@
 # Face Swap AI - Requirements
 
 ## Overview
-A web application for face swapping that allows users to upload preset images, upload selfies, and generate face-swapped results. The application uses Cloudflare Workers for backend API, Cloudflare R2 for image storage, and Cloudflare D1 for database storage.
+A web application for face swapping that allows users to upload preset images, upload profile images, upload selfies, and generate face-swapped results. The application uses Cloudflare Workers for backend API, Cloudflare R2 for image storage, and Cloudflare D1 for database storage.
 
 ## Frontend Structure
 
@@ -13,8 +13,8 @@ A web application for face swapping that allows users to upload preset images, u
 ### UI Layout
 - Three-column grid layout: Left panel, Center panel, Right panel
 - Left panel: Preset upload section and preset gallery
-- Center panel: Selfie upload section and face swap result display
-- Right panel: Results history gallery
+- Center panel: Profile upload section, profile gallery, and face swap result display
+- Right panel: Selfie upload section and results history gallery
 
 ## Backend API Endpoints
 
@@ -29,15 +29,22 @@ A web application for face swapping that allows users to upload preset images, u
 - Each image contains: `id`, `collection_id`, `image_url`, `created_at`
 - Frontend must flatten collections into individual preset objects
 
+#### GET `/profiles`
+- Returns: `{ profiles: [...] }`
+- Each profile contains: `id`, `name`, `image_url`, `created_at`
+- Profiles are stored as individual entries (not collections)
+
 #### POST `/upload-url`
-- Body: `{ filename: string, type: 'preset' | 'selfie' }`
+- Body: `{ filename: string, type: 'preset' | 'profile' | 'selfie' }`
 - Returns: `{ uploadUrl: string }`
 
 #### PUT `/upload-proxy/{key}`
-- Headers: 
+- Headers:
   - `Content-Type: image/*`
   - `X-Preset-Name: base64_encoded_name` (for preset uploads)
   - `X-Preset-Name-Encoded: 'base64'` (for preset uploads)
+  - `X-Profile-Name: base64_encoded_name` (for profile uploads)
+  - `X-Profile-Name-Encoded: 'base64'` (for profile uploads)
 - Body: Image file binary
 - Returns: `{ url: string }`
 
@@ -83,6 +90,25 @@ A web application for face swapping that allows users to upload preset images, u
 - After upload: Clear inputs, reload presets after 500ms delay
 - Show success/error status messages
 
+### Profile Management
+- Display profile gallery in grid layout
+- Each profile card shows image and name
+- Click profile to select as source image (alternative to selfie upload)
+- Selected profile shows status message for 2 seconds
+- Convert image URLs from `/upload-proxy/` to `/r2/` for display
+
+### Profile Upload
+- Input field for profile name
+- Single file input (one profile at a time)
+- On file selection:
+  - Generate filename: `profile-{timestamp}-{random}.{ext}`
+  - Get upload URL from `/upload-url`
+  - Encode profile name to base64
+  - Upload file to returned uploadUrl with headers
+  - Show progress: "Đang tải profile..."
+- After upload: Clear inputs, reload profiles after 500ms delay
+- Show success/error status messages
+
 ### Selfie Upload
 - Single file input
 - Show preview immediately using FileReader
@@ -93,12 +119,13 @@ A web application for face swapping that allows users to upload preset images, u
 - Show success/error status messages
 
 ### Face Swap Generation
-- Button enabled only when both preset and selfie are selected
+- Button enabled when preset is selected AND either profile or selfie is available
+- User can choose between uploading a new selfie OR selecting an existing profile
 - On click:
   - Show loading spinner
   - Hide result image
   - Disable button
-  - Call `/faceswap` with preset and selfie URLs
+  - Call `/faceswap` with preset URL and either profile or selfie URL
   - Display result image on success
   - Show error message on failure
   - Reload results gallery after success
@@ -122,6 +149,16 @@ A web application for face swapping that allows users to upload preset images, u
 }
 ```
 
+### Profile Object
+```javascript
+{
+  id: string,
+  name: string,
+  image_url: string,
+  created_at: string
+}
+```
+
 ### Result Object
 ```javascript
 {
@@ -133,8 +170,10 @@ A web application for face swapping that allows users to upload preset images, u
 
 ## State Variables
 - `selectedPreset`: Currently selected preset object or null
+- `selectedProfile`: Currently selected profile object or null (alternative to selfie)
 - `selfieImageUrl`: URL of uploaded selfie or null
 - `presets`: Array of all preset objects
+- `profiles`: Array of all profile objects
 - `results`: Array of all result objects
 
 ## UI Elements
@@ -144,6 +183,13 @@ A web application for face swapping that allows users to upload preset images, u
 - Max height: 400px with scroll
 - Each card: square aspect ratio, image with name overlay
 - Selected state: thicker border, different background color
+
+### Profile Gallery
+- Grid layout: `repeat(auto-fill, minmax(120px, 1fr))`
+- Max height: 300px with scroll
+- Each card: square aspect ratio, image with name overlay
+- Selected state: thicker border, different background color
+- Alternative selection to selfie upload
 
 ### Status Messages
 - Success: Green color (#10b981)
@@ -166,6 +212,7 @@ A web application for face swapping that allows users to upload preset images, u
 
 ## Initialization
 - Load presets on page load
+- Load profiles on page load
 - Load results on page load
 - Display loading placeholders while fetching
 

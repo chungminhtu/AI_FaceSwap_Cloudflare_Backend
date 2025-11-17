@@ -7,6 +7,7 @@ export interface Env {
   FACESWAP_IMAGES: R2Bucket;
   DB: D1Database;
   R2_PUBLIC_URL?: string; // Optional: Custom domain or public R2 URL
+  DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
 }
 
 export interface FaceSwapRequest {
