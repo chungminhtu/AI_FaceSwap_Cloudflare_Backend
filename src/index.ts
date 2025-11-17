@@ -421,6 +421,31 @@ export default {
       }
     }
 
+    // Handle safety check test endpoint
+    if (path === '/test-safety' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const imageUrl = body.image_url || body.imageUrl;
+        
+        if (!imageUrl) {
+          return errorResponse('Missing image_url in request body', 400);
+        }
+
+        console.log('[TestSafety] Testing safety check for image:', imageUrl);
+        const safeSearchResult = await checkSafeSearch(imageUrl, env);
+
+        return jsonResponse({
+          success: true,
+          imageUrl: imageUrl,
+          result: safeSearchResult,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('[TestSafety] Error:', error);
+        return errorResponse(`Test failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
     // Handle face swap endpoint (root path or /faceswap)
     if ((path === '/' || path === '/faceswap') && request.method === 'POST') {
       const envError = validateEnv(env);
@@ -442,19 +467,24 @@ export default {
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
         
         if (!disableSafeSearch) {
+          console.log('[FaceSwap] Running safety check on result image:', faceSwapResult.ResultImageUrl);
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
           if (safeSearchResult.error) {
-            console.error('Safe search error:', safeSearchResult.error);
+            console.error('[FaceSwap] Safe search error:', safeSearchResult.error);
             return errorResponse(`Safe search validation failed: ${safeSearchResult.error}`, 500);
           }
 
           if (!safeSearchResult.isSafe) {
-            return errorResponse('Content blocked: Image contains unsafe content (adult, violence, or racy content detected)', 403);
+            console.warn('[FaceSwap] Content blocked - unsafe content detected:', safeSearchResult.details);
+            return errorResponse(
+              `Content blocked: Image contains unsafe content. Details: ${JSON.stringify(safeSearchResult.details)}`, 
+              403
+            );
           }
-          console.log('Safe search validation passed');
+          console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
         } else {
-          console.log('Safe search validation disabled via DISABLE_SAFE_SEARCH config');
+          console.log('[FaceSwap] Safe search validation disabled via DISABLE_SAFE_SEARCH config');
         }
 
         // Try to download result image and store in R2 (non-fatal if it fails)

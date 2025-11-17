@@ -276,59 +276,64 @@ async function main() {
     process.exit(1);
   }
 
-  // Deploy Pages - ALWAYS use the same project name to ensure URL never changes
+  // Deploy Pages - Note: Each deployment gets a unique URL with hash
+  // To get a truly fixed URL, you MUST set up a custom domain
   log.info(`Deploying to Cloudflare Pages: ${PAGES_PROJECT_NAME}...`);
-  log.info('📌 Using fixed project name - URL will NEVER change!');
+  log.warn('⚠️  Note: Pages URLs change with each deployment (they include a hash)');
+  log.warn('⚠️  For a FIXED URL, you MUST set up a custom domain (see instructions below)');
   const publicPageDir = path.join(process.cwd(), 'public_page');
 
   if (fs.existsSync(publicPageDir)) {
     try {
-      // ALWAYS use the same project name - this is critical for fixed URLs
+      // ALWAYS use the same project name
       const pagesResult = execCommand(
         `wrangler pages deploy ${publicPageDir} --project-name=${PAGES_PROJECT_NAME} --branch=main --commit-dirty=true`,
         { throwOnError: false, stdio: 'inherit' }
       );
       log.success('Pages deployed');
       
-      // Try to extract Pages URL from output
-      if (pagesResult) {
-        const urlMatch = pagesResult.match(/https:\/\/[^\s]+\.pages\.dev/);
-        if (urlMatch) {
-          pagesUrl = urlMatch[0];
-        }
-      }
+      // Wait a moment for deployment to register
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // If not found in output, try to get from deployments
-      if (!pagesUrl) {
-        try {
-          const deployments = execCommand(`wrangler pages deployment list --project-name=${PAGES_PROJECT_NAME}`, { silent: true, throwOnError: false });
-          if (deployments) {
+      // Get the latest production deployment URL
+      try {
+        const deployments = execCommand(
+          `wrangler pages deployment list --project-name=${PAGES_PROJECT_NAME} --environment=production --json`,
+          { silent: true, throwOnError: false }
+        );
+        
+        if (deployments) {
+          try {
+            const deploymentList = JSON.parse(deployments);
+            if (deploymentList && deploymentList.length > 0) {
+              // Get the first (latest) production deployment
+              const latestDeployment = deploymentList[0];
+              if (latestDeployment && latestDeployment.deployment) {
+                pagesUrl = latestDeployment.deployment;
+                log.success(`Latest Production URL: ${pagesUrl}`);
+              }
+            }
+          } catch (parseError) {
+            // Fallback to regex parsing if JSON fails
             const urlMatch = deployments.match(/https:\/\/[^\s]+\.pages\.dev/);
             if (urlMatch) {
               pagesUrl = urlMatch[0];
             }
           }
-        } catch {}
-      }
-      
-      // If still no URL, construct it based on project name and account
-      if (!pagesUrl) {
-        try {
-          const whoami = execCommand('wrangler whoami', { silent: true, throwOnError: false });
-          if (whoami) {
-            const accountMatch = whoami.match(/([^\s]+)@/);
-            if (accountMatch) {
-              const accountSubdomain = accountMatch[1];
-              pagesUrl = `https://${PAGES_PROJECT_NAME}.${accountSubdomain}.pages.dev`;
-              log.info(`Constructed Pages URL from project name: ${pagesUrl}`);
-            }
+        }
+      } catch (error) {
+        // Try to extract from deployment output
+        if (pagesResult) {
+          const urlMatch = pagesResult.match(/https:\/\/[^\s]+\.pages\.dev/);
+          if (urlMatch) {
+            pagesUrl = urlMatch[0];
           }
-        } catch {}
+        }
       }
       
       if (pagesUrl) {
-        log.success(`Pages URL: ${pagesUrl}`);
-        log.info('📌 This URL is FIXED and will NEVER change between deployments!');
+        log.success(`Current Deployment URL: ${pagesUrl}`);
+        log.warn('⚠️  This URL will CHANGE on the next deployment!');
       } else {
         log.warn('Could not determine Pages URL. Check Cloudflare Dashboard.');
       }
@@ -342,17 +347,25 @@ async function main() {
   // Summary
   console.log('\n' + '='.repeat(50));
   log.success('Deployment Complete!');
-  console.log('\n📌 Fixed URLs (these URLs NEVER change):');
+  console.log('\n📌 URLs:');
   if (workerUrl) {
-    console.log(`   Worker (Backend): ${workerUrl}`);
+    console.log(`   ✅ Worker (Backend): ${workerUrl} (FIXED - never changes)`);
   }
   if (pagesUrl) {
-    console.log(`   Pages (Frontend): ${pagesUrl}`);
+    console.log(`   ⚠️  Pages (Frontend): ${pagesUrl} (CHANGES with each deployment)`);
   }
-  console.log('\n💡 Tips:');
-  console.log('   • These URLs are FIXED - they won\'t change between deployments');
-  console.log('   • To add a custom domain, see FIXED_URL_GUIDE.md');
-  console.log('   • Check Cloudflare Dashboard for custom domains');
+  
+  console.log('\n🔧 TO GET A FIXED FRONTEND URL (REQUIRED):');
+  console.log('   Cloudflare Pages assigns a unique URL with hash for each deployment.');
+  console.log('   To get a FIXED URL that never changes, you MUST set up a custom domain:');
+  console.log('\n   1. Go to Cloudflare Dashboard → Workers & Pages → Your Project');
+  console.log('   2. Click "Custom domains" tab');
+  console.log('   3. Click "Set up a custom domain"');
+  console.log('   4. Enter your domain (e.g., faceswap.yourdomain.com)');
+  console.log('   5. Follow DNS setup instructions');
+  console.log('   6. Once active, your custom domain will be FIXED forever!');
+  console.log('\n   📖 Full guide: https://developers.cloudflare.com/pages/configuration/custom-domains/');
+  console.log('\n💡 Alternative: Use the Worker URL for API calls (it\'s already fixed)');
   console.log('\n');
 }
 

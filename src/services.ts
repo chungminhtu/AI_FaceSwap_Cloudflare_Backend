@@ -77,41 +77,79 @@ export const checkSafeSearch = async (
     // Use API key instead of service account (simpler)
     const apiKey = env.GOOGLE_CLOUD_API_KEY;
     if (!apiKey) {
+      console.error('[SafeSearch] GOOGLE_CLOUD_API_KEY not set');
       return { isSafe: false, error: 'GOOGLE_CLOUD_API_KEY not set' };
     }
 
     // Call Vision API with API key
     const endpoint = `${env.GOOGLE_VISION_ENDPOINT}?key=${apiKey}`;
+    console.log('[SafeSearch] Calling Google Vision API:', {
+      endpoint: env.GOOGLE_VISION_ENDPOINT,
+      imageUrl: imageUrl.substring(0, 100) + '...',
+      hasApiKey: !!apiKey
+    });
+
+    const requestBody = {
+      requests: [{
+        image: { source: { imageUri: imageUrl } },
+        features: [{ type: 'SAFE_SEARCH_DETECTION', maxResults: 1 }],
+      }],
+    };
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        requests: [{
-          image: { source: { imageUri: imageUrl } },
-          features: [{ type: 'SAFE_SEARCH_DETECTION', maxResults: 1 }],
-        }],
-      }),
+      body: JSON.stringify(requestBody),
     });
 
+    console.log('[SafeSearch] API Response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      return { isSafe: false, error: `API error: ${response.status}` };
+      const errorText = await response.text();
+      console.error('[SafeSearch] API error response:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText.substring(0, 500)
+      });
+      return { isSafe: false, error: `API error: ${response.status} - ${errorText.substring(0, 200)}` };
     }
 
     const data = await response.json() as GoogleVisionResponse;
+    console.log('[SafeSearch] API Response data:', JSON.stringify(data, null, 2));
+
     const annotation = data.responses?.[0]?.safeSearchAnnotation;
 
     if (data.responses?.[0]?.error) {
+      console.error('[SafeSearch] API returned error:', data.responses[0].error);
       return { isSafe: false, error: data.responses[0].error.message };
     }
 
     if (!annotation) {
+      console.warn('[SafeSearch] No safe search annotation in response');
       return { isSafe: false, error: 'No safe search annotation' };
     }
 
-    return { isSafe: !isUnsafe(annotation) };
+    const safetyDetails = {
+      adult: annotation.adult,
+      violence: annotation.violence,
+      racy: annotation.racy
+    };
+    const isUnsafeResult = isUnsafe(annotation);
+    
+    console.log('[SafeSearch] Safety check result:', {
+      ...safetyDetails,
+      isSafe: !isUnsafeResult,
+      isUnsafe: isUnsafeResult
+    });
+
+    return { 
+      isSafe: !isUnsafeResult,
+      details: safetyDetails // Include details in response for debugging
+    };
   } catch (error) {
+    console.error('[SafeSearch] Exception:', error);
     return { isSafe: false, error: error instanceof Error ? error.message : String(error) };
   }
 };

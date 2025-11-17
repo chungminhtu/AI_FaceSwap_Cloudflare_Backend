@@ -31,6 +31,11 @@ export interface FaceSwapResponse {
 export interface SafeSearchResult {
   isSafe: boolean;
   error?: string;
+  details?: {
+    adult: string;
+    violence: string;
+    racy: string;
+  };
 }
 
 export interface GoogleVisionResponse {
