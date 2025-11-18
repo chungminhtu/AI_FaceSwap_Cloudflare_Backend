@@ -1308,14 +1308,22 @@ body: JSON.stringify(requestBody)
 const data = await response.json();
 console.log('Face swap response:', data);
 
-if (!response.ok || !data.Success) {
-throw new Error(data.Message || 'Đổi mặt thất bại');
+// Handle new GenericApiResponse format
+if (data.status === 'error') {
+throw new Error(data.message || 'Đổi mặt thất bại');
 }
 
-if (data.ResultImageUrl) {
+// For success case, extract the actual FaceSwapResponse from data.data
+const faceSwapData = data.data;
+
+if (!response.ok || !faceSwapData || !faceSwapData.Success) {
+throw new Error(faceSwapData?.Message || data.message || 'Đổi mặt thất bại');
+}
+
+if (faceSwapData.ResultImageUrl) {
 const preview = document.getElementById('result-preview');
 preview.style.display = 'block';
-let resultUrl = data.ResultImageUrl;
+let resultUrl = faceSwapData.ResultImageUrl;
 // Transform URL if needed (upload-proxy to /r2/)
 if (resultUrl.includes('/upload-proxy/')) {
 resultUrl = resultUrl.replace('/upload-proxy/', '/r2/');
