@@ -492,12 +492,17 @@ export default {
 
           if (!safeSearchResult.isSafe) {
             console.warn('[FaceSwap] Content blocked - unsafe content detected:', safeSearchResult.details);
-            // Return blocked response but include safety check details
+            // Get violation info for response
+            const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
+            const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
+            const statusCode = safeSearchResult.statusCode || 1002; // Default to VIOLENCE if not set
+            
+            // Return blocked response in GenericApiResponse format
             return jsonResponse({
-              Success: false,
-              Message: `Content blocked: Image contains unsafe content`,
-              StatusCode: 403,
-              SafetyCheck: safetyCheckResult
+              data: null,
+              status: 'error',
+              message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
+              code: statusCode
             }, 403);
           }
           console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
@@ -564,11 +569,16 @@ export default {
           }
         }
 
-        // Always return success response with the result URL and safety check info
+        // Return success response in GenericApiResponse format
         return jsonResponse({
-          ...faceSwapResult,
-          ResultImageUrl: resultUrl,
-          SafetyCheck: safetyCheckResult
+          data: {
+            ...faceSwapResult,
+            ResultImageUrl: resultUrl,
+            SafetyCheck: safetyCheckResult
+          },
+          status: 'success',
+          message: faceSwapResult.Message || 'Face swap completed successfully',
+          code: 200
         });
       } catch (error) {
         console.error('Unhandled error:', error);

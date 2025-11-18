@@ -42,6 +42,9 @@ export interface FaceSwapResponse {
 export interface SafeSearchResult {
   isSafe: boolean;
   error?: string;
+  statusCode?: number; // Safety violation code (1001-1005)
+  violationCategory?: string; // 'adult', 'violence', 'racy', 'medical', 'spoof'
+  violationLevel?: string; // 'POSSIBLE', 'LIKELY', 'VERY_LIKELY'
   details?: {
     adult: string;
     spoof?: string;
@@ -49,6 +52,13 @@ export interface SafeSearchResult {
     violence: string;
     racy: string;
   };
+}
+
+export interface GenericApiResponse<T> {
+  data?: T;
+  status: string;
+  message?: string;
+  code: number;
 }
 
 export interface GoogleVisionResponse {

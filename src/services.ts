@@ -1,5 +1,5 @@
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { isUnsafe } from './utils';
+import { isUnsafe, getWorstViolation } from './utils';
 
 export const callFaceSwap = async (
   targetUrl: string,
@@ -141,16 +141,23 @@ export const checkSafeSearch = async (
     // Get strictness from env (default: 'lenient' - only blocks VERY_LIKELY)
     const strictness = (env.SAFETY_STRICTNESS === 'strict' ? 'strict' : 'lenient') as 'strict' | 'lenient';
     const isUnsafeResult = isUnsafe(annotation, strictness);
-
+    
+    // Find worst violation (highest severity)
+    const worstViolation = getWorstViolation(annotation);
+    
     console.log('[SafeSearch] Safety check result:', {
       ...annotation,
       isSafe: !isUnsafeResult,
       isUnsafe: isUnsafeResult,
-      strictness: strictness
+      strictness: strictness,
+      worstViolation: worstViolation
     });
 
     return {
       isSafe: !isUnsafeResult,
+      statusCode: worstViolation?.code,
+      violationCategory: worstViolation?.category,
+      violationLevel: worstViolation?.level,
       details: annotation // Return full safeSearchAnnotation details
     };
   } catch (error) {
