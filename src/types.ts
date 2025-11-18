@@ -8,6 +8,7 @@ export interface Env {
   DB: D1Database;
   R2_PUBLIC_URL?: string; // Optional: Custom domain or public R2 URL
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
+  SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
 }
 
 export interface FaceSwapRequest {
@@ -26,6 +27,16 @@ export interface FaceSwapResponse {
   ProcessingTimeSpan?: string;
   ProcessStartedDateTime?: string;
   Error?: string;
+  SafetyCheck?: {
+    checked: boolean;
+    isSafe: boolean;
+    details?: {
+      adult: string;
+      violence: string;
+      racy: string;
+    };
+    error?: string;
+  };
 }
 
 export interface SafeSearchResult {
@@ -33,6 +44,8 @@ export interface SafeSearchResult {
   error?: string;
   details?: {
     adult: string;
+    spoof?: string;
+    medical?: string;
     violence: string;
     racy: string;
   };
@@ -40,7 +53,13 @@ export interface SafeSearchResult {
 
 export interface GoogleVisionResponse {
   responses?: Array<{
-    safeSearchAnnotation?: { adult: string; violence: string; racy: string };
+    safeSearchAnnotation?: {
+      adult: string;
+      spoof?: string;
+      medical?: string;
+      violence: string;
+      racy: string;
+    };
     error?: { message: string };
   }>;
 }

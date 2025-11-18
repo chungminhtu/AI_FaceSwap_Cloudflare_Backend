@@ -113,7 +113,14 @@ export const checkSafeSearch = async (
         statusText: response.statusText,
         error: errorText.substring(0, 500)
       });
-      return { isSafe: false, error: `API error: ${response.status} - ${errorText.substring(0, 200)}` };
+      
+      // Provide helpful error message for billing errors
+      let errorMessage = `API error: ${response.status} - ${errorText.substring(0, 200)}`;
+      if (response.status === 403 && errorText.includes('billing')) {
+        errorMessage = `Billing not enabled. Google Vision API requires billing to be enabled. Please enable billing at: https://console.developers.google.com/billing?project=521788129450`;
+      }
+      
+      return { isSafe: false, error: errorMessage };
     }
 
     const data = await response.json() as GoogleVisionResponse;
@@ -131,22 +138,20 @@ export const checkSafeSearch = async (
       return { isSafe: false, error: 'No safe search annotation' };
     }
 
-    const safetyDetails = {
-      adult: annotation.adult,
-      violence: annotation.violence,
-      racy: annotation.racy
-    };
-    const isUnsafeResult = isUnsafe(annotation);
-    
+    // Get strictness from env (default: 'lenient' - only blocks VERY_LIKELY)
+    const strictness = (env.SAFETY_STRICTNESS === 'strict' ? 'strict' : 'lenient') as 'strict' | 'lenient';
+    const isUnsafeResult = isUnsafe(annotation, strictness);
+
     console.log('[SafeSearch] Safety check result:', {
-      ...safetyDetails,
+      ...annotation,
       isSafe: !isUnsafeResult,
-      isUnsafe: isUnsafeResult
+      isUnsafe: isUnsafeResult,
+      strictness: strictness
     });
 
-    return { 
+    return {
       isSafe: !isUnsafeResult,
-      details: safetyDetails // Include details in response for debugging
+      details: annotation // Return full safeSearchAnnotation details
     };
   } catch (error) {
     console.error('[SafeSearch] Exception:', error);

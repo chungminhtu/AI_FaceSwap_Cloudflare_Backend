@@ -465,26 +465,49 @@ export default {
 
         // Safe search validation - can be disabled via DISABLE_SAFE_SEARCH env variable
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
+        let safetyCheckResult: { checked: boolean; isSafe: boolean; details?: any; error?: string } | undefined;
         
         if (!disableSafeSearch) {
           console.log('[FaceSwap] Running safety check on result image:', faceSwapResult.ResultImageUrl);
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
+          // Always include safety check info in response so user can see it was called
+          safetyCheckResult = {
+            checked: true,
+            isSafe: safeSearchResult.isSafe,
+            details: safeSearchResult.details,
+            error: safeSearchResult.error
+          };
+
           if (safeSearchResult.error) {
             console.error('[FaceSwap] Safe search error:', safeSearchResult.error);
-            return errorResponse(`Safe search validation failed: ${safeSearchResult.error}`, 500);
+            // Return error but include safety check info
+            return jsonResponse({
+              Success: false,
+              Message: `Safe search validation failed: ${safeSearchResult.error}`,
+              StatusCode: 500,
+              SafetyCheck: safetyCheckResult
+            }, 500);
           }
 
           if (!safeSearchResult.isSafe) {
             console.warn('[FaceSwap] Content blocked - unsafe content detected:', safeSearchResult.details);
-            return errorResponse(
-              `Content blocked: Image contains unsafe content. Details: ${JSON.stringify(safeSearchResult.details)}`, 
-              403
-            );
+            // Return blocked response but include safety check details
+            return jsonResponse({
+              Success: false,
+              Message: `Content blocked: Image contains unsafe content`,
+              StatusCode: 403,
+              SafetyCheck: safetyCheckResult
+            }, 403);
           }
           console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
         } else {
           console.log('[FaceSwap] Safe search validation disabled via DISABLE_SAFE_SEARCH config');
+          safetyCheckResult = {
+            checked: false,
+            isSafe: true,
+            error: 'Safety check disabled via DISABLE_SAFE_SEARCH'
+          };
         }
 
         // Try to download result image and store in R2 (non-fatal if it fails)
@@ -541,10 +564,11 @@ export default {
           }
         }
 
-        // Always return success response with the result URL
+        // Always return success response with the result URL and safety check info
         return jsonResponse({
           ...faceSwapResult,
-          ResultImageUrl: resultUrl
+          ResultImageUrl: resultUrl,
+          SafetyCheck: safetyCheckResult
         });
       } catch (error) {
         console.error('Unhandled error:', error);

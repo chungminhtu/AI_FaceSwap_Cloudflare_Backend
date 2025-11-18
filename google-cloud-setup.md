@@ -1,6 +1,6 @@
 # Google Cloud Vision API Setup Information
 
-**Generated:** 2025-11-17T03:26:30.313Z
+**Generated:** 2025-11-17T06:48:38.055Z
 
 ## Setup Summary
 
@@ -8,16 +8,16 @@
 
 ## Project Information
 
-- **Project ID:** `trusted-play-console-reporter`
-- **Project Name:** `Trusted Play Console Reporter`
-- **Service Account Email:** `faceswap-vision-sa@trusted-play-console-reporter.iam.gserviceaccount.com`
+- **Project ID:** `ai-photo-office`
+- **Project Name:** `AI Photo Office`
+- **Service Account Email:** `faceswap-vision-sa@ai-photo-office.iam.gserviceaccount.com`
 - **Service Account Display Name:** FaceSwap Vision API Service Account
 
 ## Configuration Details
 
 ### IAM Role
 - **Role:** `roles/editor`
-- **Member:** `serviceAccount:faceswap-vision-sa@trusted-play-console-reporter.iam.gserviceaccount.com`
+- **Member:** `serviceAccount:faceswap-vision-sa@ai-photo-office.iam.gserviceaccount.com`
 
 ### API Status
 - **Cloud Vision API:** ✅ Enabled
@@ -68,8 +68,8 @@
 If you need to recreate the key:
 ```bash
 gcloud iam service-accounts keys create key.json \
-  --iam-account=faceswap-vision-sa@trusted-play-console-reporter.iam.gserviceaccount.com \
-  --project=trusted-play-console-reporter
+  --iam-account=faceswap-vision-sa@ai-photo-office.iam.gserviceaccount.com \
+  --project=ai-photo-office
 base64 -i key.json  # macOS
 base64 key.json     # Linux
 # Then set as Cloudflare secret
@@ -78,9 +78,9 @@ wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY
 
 ## Quick Reference
 
-- **Google Cloud Console:** https://console.cloud.google.com/iam-admin/serviceaccounts?project=trusted-play-console-reporter
-- **Vision API Dashboard:** https://console.cloud.google.com/apis/api/vision.googleapis.com/overview?project=trusted-play-console-reporter
-- **IAM & Admin:** https://console.cloud.google.com/iam-admin/iam?project=trusted-play-console-reporter
+- **Google Cloud Console:** https://console.cloud.google.com/iam-admin/serviceaccounts?project=ai-photo-office
+- **Vision API Dashboard:** https://console.cloud.google.com/apis/api/vision.googleapis.com/overview?project=ai-photo-office
+- **IAM & Admin:** https://console.cloud.google.com/iam-admin/iam?project=ai-photo-office
 
 ## Support
 

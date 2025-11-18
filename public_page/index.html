@@ -326,12 +326,146 @@ border: 3px solid transparent;
 
 .preset-item.selected {
 border-color: #667eea;
+transform: scale(1.05);
+box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .preset-image {
 width: 100%;
 height: 120px;
 object-fit: cover;
+}
+
+/* New styles for preset collections */
+.preset-images-stack {
+position: relative;
+width: 100%;
+height: 120px;
+overflow: hidden;
+border-radius: 6px;
+}
+
+.preset-images-stack img {
+position: absolute;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+object-fit: cover;
+transition: opacity 0.3s ease;
+}
+
+.preset-images-stack img:nth-child(1) { z-index: 3; }
+.preset-images-stack img:nth-child(2) {
+z-index: 2;
+transform: rotate(-2deg) scale(0.95);
+opacity: 0.8;
+}
+.preset-images-stack img:nth-child(3) {
+z-index: 1;
+transform: rotate(2deg) scale(0.9);
+opacity: 0.6;
+}
+
+.preset-overlay {
+position: absolute;
+bottom: 0;
+left: 0;
+right: 0;
+background: linear-gradient(transparent, rgba(0,0,0,0.8));
+color: white;
+padding: 8px;
+text-align: center;
+border-radius: 0 0 6px 6px;
+}
+
+.preset-name {
+font-size: 0.85rem;
+font-weight: 600;
+margin-bottom: 2px;
+}
+
+.preset-count {
+font-size: 0.7rem;
+opacity: 0.9;
+}
+
+/* Pagination styles */
+.pagination-controls {
+margin-top: 20px;
+padding: 15px;
+background: white;
+border-radius: 8px;
+box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+text-align: center;
+}
+
+.pagination-info {
+font-size: 0.9rem;
+color: #666;
+margin-bottom: 10px;
+font-weight: 500;
+}
+
+.pagination-buttons {
+display: flex;
+justify-content: center;
+align-items: center;
+gap: 5px;
+flex-wrap: wrap;
+}
+
+.pagination-buttons button {
+padding: 8px 12px;
+border: 1px solid #ddd;
+background: white;
+color: #333;
+border-radius: 4px;
+cursor: pointer;
+font-size: 0.9rem;
+min-width: 40px;
+transition: all 0.2s ease;
+}
+
+.pagination-buttons button:hover:not(:disabled) {
+background: #f8f9fa;
+border-color: #667eea;
+color: #667eea;
+}
+
+.pagination-buttons button:disabled {
+opacity: 0.5;
+cursor: not-allowed;
+}
+
+.pagination-buttons button.active {
+background: #667eea;
+color: white;
+border-color: #667eea;
+font-weight: 600;
+}
+
+/* Mobile pagination styles */
+@media (max-width: 768px) {
+.pagination-controls {
+padding: 10px;
+margin-top: 15px;
+}
+
+.pagination-info {
+font-size: 0.8rem;
+margin-bottom: 8px;
+}
+
+.pagination-buttons {
+gap: 3px;
+}
+
+.pagination-buttons button {
+padding: 6px 8px;
+font-size: 0.8rem;
+min-width: 35px;
+}
 }
 
 .generate-btn {
@@ -484,6 +618,32 @@ text-align: center;
 @keyframes spin {
 0% { transform: rotate(0deg); }
 100% { transform: rotate(360deg); }
+}
+
+@media (min-width: 769px) {
+/* Desktop: Make selected preset items bigger */
+.preset-item.selected {
+transform: scale(1.15) !important;
+width: calc(130px * 1.15);
+height: calc(140px * 1.15);
+margin: 10px;
+}
+
+.preset-item.selected .preset-images-stack {
+height: calc(120px * 1.15);
+}
+
+.preset-item.selected .preset-overlay {
+padding: calc(8px * 1.15);
+}
+
+.preset-item.selected .preset-name {
+font-size: calc(0.85rem * 1.15);
+}
+
+.preset-item.selected .preset-count {
+font-size: calc(0.7rem * 1.15);
+}
 }
 
 @media (max-width: 768px) {
@@ -690,7 +850,21 @@ background: rgba(220, 53, 69, 0.9);
 <div class="panel-title">🎭 Ảnh Preset</div>
 <div class="panel-status" id="preset-status">Chưa chọn</div>
 </div>
-<div class="preset-grid" id="presets-grid" style="margin-top: 15px;">
+<div class="preset-options">
+<div class="preset-option" onclick="showPresetUpload()">
+<div class="upload-icon-large">📤</div>
+<div class="upload-text-large">Tải lên Preset</div>
+<div class="upload-subtext-large">Thêm ảnh mới vào bộ sưu tập</div>
+<div class="upload-hint">JPG, PNG, WebP tối đa 10MB</div>
+</div>
+<div class="preset-option" onclick="showExistingPresets()">
+<div class="upload-icon-large">🎭</div>
+<div class="upload-text-large">Chọn Preset</div>
+<div class="upload-subtext-large">Từ bộ sưu tập hiện có</div>
+<div class="upload-hint">Ảnh đã tải lên trước đó</div>
+</div>
+</div>
+<div class="preset-grid" id="presets-grid" style="margin-top: 15px; display: none;">
 <!-- Presets will be shown here -->
 </div>
 <div class="image-preview" id="preset-preview" style="display: none;"></div>
@@ -725,6 +899,42 @@ Kết quả sẽ hiển thị ở đây sau khi tạo
 </div>
 
 
+<!-- Preset Upload Modal -->
+<div class="preset-name-modal" id="preset-upload-modal">
+<div class="preset-name-content">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+<h3 style="margin: 0;">Tải lên Preset mới</h3>
+<button class="modal-close" onclick="closePresetUploadModal()">×</button>
+</div>
+
+<div class="file-upload-zone" onclick="triggerFileInput('preset-input')">
+<div class="upload-icon-large">📤</div>
+<div class="upload-text-large">Nhấn để chọn ảnh</div>
+<div class="upload-subtext-large">hoặc kéo thả vào đây</div>
+<div class="upload-hint">JPG, PNG, WebP tối đa 10MB</div>
+<input type="file" id="preset-input" accept="image/*" multiple style="display: none;">
+</div>
+
+<div class="file-preview-container" id="preset-file-preview" style="display: none;">
+<div class="file-preview-header">
+<span>Ảnh đã chọn</span>
+<button class="clear-files-btn" onclick="clearPresetFiles()">Xóa tất cả</button>
+</div>
+<div class="file-preview-grid" id="preset-preview-grid"></div>
+</div>
+
+<div style="margin-top: 20px;">
+<label for="preset-name-input" style="display: block; margin-bottom: 8px; font-weight: 600;">Tên bộ sưu tập:</label>
+<input type="text" id="preset-name-input" class="preset-name-input" placeholder="Nhập tên cho bộ preset này..." required>
+</div>
+
+<div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+<button onclick="closePresetUploadModal()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;">Hủy</button>
+<button onclick="uploadPresetImages()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;" id="upload-preset-btn">Tải lên</button>
+</div>
+</div>
+</div>
+
 <!-- Loading Overlay -->
 <div class="loading-overlay" id="loading-overlay">
 <div class="loading-content">
@@ -745,6 +955,10 @@ let selectedSelfieId = null;
 let presets = [];
 let results = [];
 let selfies = [];
+
+// Pagination variables
+let currentPage = 1;
+const itemsPerPage = 12; // Show 12 preset collections per page
 
 // Helper function to safely extract image URL from images array
 function getImageUrl(imageData) {
@@ -813,21 +1027,92 @@ grid.innerHTML = '<div class="preview-placeholder">Chưa có ảnh preset hợp 
 return;
 }
 
-grid.innerHTML = validPresets.map(preset => {
-let imageUrl = getImageUrl(preset.images[0]);
+// Calculate pagination
+const totalPages = Math.ceil(validPresets.length / itemsPerPage);
+const startIndex = (currentPage - 1) * itemsPerPage;
+const endIndex = startIndex + itemsPerPage;
+const currentPresets = validPresets.slice(startIndex, endIndex);
+
+// Render current page items
+grid.innerHTML = currentPresets.map(preset => {
+// Show all images in the collection, not just the first one
+const imageElements = preset.images.slice(0, 5).map((image, index) => { // Show max 5 images to avoid performance issues
+let imageUrl = getImageUrl(image);
 if (imageUrl && imageUrl.includes('/upload-proxy/')) {
 imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
 }
 
+return `<img src="${imageUrl}" alt="${preset.name} ${index + 1}" class="preset-image"
+onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';" style="width: 100%; height: 100%; object-fit: cover;">`;
+}).join('');
+
 return `
 <div class="preset-item ${selectedPreset?.id === preset.id ? 'selected' : ''}"
 onclick="selectPreset('${preset.id}')"
-title="${preset.name}">
-<img src="${imageUrl}" alt="${preset.name}" class="preset-image"
-onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';">
+title="${preset.name} (${preset.images.length} ảnh)">
+<div class="preset-images-stack">
+${imageElements}
+</div>
+<div class="preset-overlay">
+<div class="preset-name">${preset.name}</div>
+<div class="preset-count">${preset.images.length} ảnh</div>
+</div>
 </div>
 `;
 }).join('');
+
+// Add pagination controls if needed
+if (totalPages > 1) {
+const paginationControls = document.createElement('div');
+paginationControls.className = 'pagination-controls';
+paginationControls.innerHTML = `
+<div class="pagination-info">
+Trang ${currentPage} / ${totalPages} (${validPresets.length} bộ sưu tập)
+</div>
+<div class="pagination-buttons">
+<button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>⬅️ Trước</button>
+${generatePageButtons(totalPages)}
+<button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Tiếp ➡️</button>
+</div>
+`;
+
+// Insert pagination after the grid
+grid.parentNode.insertBefore(paginationControls, grid.nextSibling);
+}
+}
+
+function generatePageButtons(totalPages) {
+let buttons = '';
+const maxVisiblePages = 5;
+let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+// Adjust start page if we're near the end
+if (endPage - startPage + 1 < maxVisiblePages) {
+startPage = Math.max(1, endPage - maxVisiblePages + 1);
+}
+
+for (let i = startPage; i <= endPage; i++) {
+buttons += `<button onclick="changePage(${i})" class="${i === currentPage ? 'active' : ''}">${i}</button>`;
+}
+
+return buttons;
+}
+
+function changePage(page) {
+if (page < 1 || page > Math.ceil(presets.filter(p => p.images && p.images.length > 0).length / itemsPerPage)) {
+return;
+}
+
+currentPage = page;
+
+// Remove existing pagination controls
+const existingControls = document.querySelector('.pagination-controls');
+if (existingControls) {
+existingControls.remove();
+}
+
+renderPresetsGrid();
 }
 
 function selectPreset(presetId) {
@@ -843,7 +1128,7 @@ item.classList.remove('selected');
 });
 event.currentTarget.classList.add('selected');
 
-// Show selected preset
+// Show selected preset - show first image as preview
 const preview = document.getElementById('preset-preview');
 if (preview) {
 preview.style.display = 'block';
@@ -852,7 +1137,7 @@ if (imageUrl && imageUrl.includes('/upload-proxy/')) {
 imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
 }
 preview.innerHTML = `<img src="${imageUrl}" alt="${selectedPreset.name}" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
-document.getElementById('preset-status').textContent = `✓ Đã chọn: ${selectedPreset.name}`;
+document.getElementById('preset-status').textContent = `✓ Đã chọn: ${selectedPreset.name} (${selectedPreset.images.length} ảnh)`;
 }
 
 updateGenerateButton();
@@ -1183,6 +1468,203 @@ document.getElementById('selfie-status').textContent = '✓ Đã chọn';
 }
 
 updateGenerateButton();
+}
+
+// Preset upload functionality
+let selectedPresetFiles = [];
+
+function showPresetUpload() {
+document.getElementById('preset-upload-modal').classList.add('show');
+document.getElementById('preset-input').value = '';
+selectedPresetFiles = [];
+updatePresetPreview();
+}
+
+function closePresetUploadModal() {
+document.getElementById('preset-upload-modal').classList.remove('show');
+document.getElementById('preset-name-input').value = '';
+selectedPresetFiles = [];
+updatePresetPreview();
+}
+
+function showExistingPresets() {
+document.getElementById('presets-grid').style.display = 'grid';
+document.getElementById('preset-status').textContent = 'Chọn từ bộ sưu tập';
+
+// Reset pagination when switching to selection mode
+currentPage = 1;
+
+// Remove existing pagination controls
+const existingControls = document.querySelector('.pagination-controls');
+if (existingControls) {
+existingControls.remove();
+}
+
+loadPresets();
+}
+
+// Handle preset file selection
+document.getElementById('preset-input').addEventListener('change', function(e) {
+const files = Array.from(e.target.files);
+if (files.length > 0) {
+selectedPresetFiles = files;
+updatePresetPreview();
+}
+});
+
+// Drag and drop support for preset upload
+const presetUploadZone = document.querySelector('#preset-upload-modal .file-upload-zone');
+if (presetUploadZone) {
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+presetUploadZone.addEventListener(eventName, preventDefaults, false);
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+presetUploadZone.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+presetUploadZone.addEventListener(eventName, unhighlight, false);
+});
+
+presetUploadZone.addEventListener('drop', handleDrop, false);
+
+function preventDefaults(e) {
+e.preventDefault();
+e.stopPropagation();
+}
+
+function highlight() {
+presetUploadZone.classList.add('dragover');
+}
+
+function unhighlight() {
+presetUploadZone.classList.remove('dragover');
+}
+
+function handleDrop(e) {
+const dt = e.dataTransfer;
+const files = dt.files;
+if (files.length > 0) {
+selectedPresetFiles = Array.from(files);
+updatePresetPreview();
+}
+}
+}
+
+function updatePresetPreview() {
+const previewContainer = document.getElementById('preset-file-preview');
+const previewGrid = document.getElementById('preset-preview-grid');
+
+if (selectedPresetFiles.length === 0) {
+previewContainer.style.display = 'none';
+return;
+}
+
+previewContainer.style.display = 'block';
+previewGrid.innerHTML = selectedPresetFiles.map((file, index) => `
+<div class="file-preview-item">
+<img src="${URL.createObjectURL(file)}" alt="${file.name}">
+<button class="remove-file" onclick="removePresetFile(${index})">×</button>
+</div>
+`).join('');
+
+updateUploadButton();
+}
+
+function removePresetFile(index) {
+selectedPresetFiles.splice(index, 1);
+updatePresetPreview();
+}
+
+function clearPresetFiles() {
+selectedPresetFiles = [];
+updatePresetPreview();
+}
+
+function updateUploadButton() {
+const uploadBtn = document.getElementById('upload-preset-btn');
+const nameInput = document.getElementById('preset-name-input');
+const hasFiles = selectedPresetFiles.length > 0;
+const hasName = nameInput.value.trim().length > 0;
+
+uploadBtn.disabled = !hasFiles || !hasName;
+uploadBtn.textContent = hasFiles ? `Tải lên ${selectedPresetFiles.length} ảnh` : 'Tải lên';
+}
+
+document.getElementById('preset-name-input').addEventListener('input', updateUploadButton);
+
+async function uploadPresetImages() {
+if (selectedPresetFiles.length === 0) {
+alert('Vui lòng chọn ít nhất một ảnh');
+return;
+}
+
+const presetName = document.getElementById('preset-name-input').value.trim();
+if (!presetName) {
+alert('Vui lòng nhập tên cho bộ preset');
+return;
+}
+
+const uploadBtn = document.getElementById('upload-preset-btn');
+uploadBtn.disabled = true;
+uploadBtn.textContent = 'Đang tải lên...';
+
+try {
+const uploadedCount = { success: 0, total: selectedPresetFiles.length };
+
+for (let i = 0; i < selectedPresetFiles.length; i++) {
+const file = selectedPresetFiles[i];
+
+// Sanitize filename
+const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+const timestamp = Date.now();
+const randomStr = Math.random().toString(36).substring(2, 15);
+const extension = originalName.split('.').pop() || 'jpg';
+const filename = `preset-${timestamp}-${randomStr}.${extension}`;
+
+// Get upload URL
+const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ filename, type: 'preset' })
+});
+
+if (!uploadUrlResponse.ok) {
+throw new Error(`Không thể lấy URL upload cho ${file.name}`);
+}
+
+const { uploadUrl, publicUrl } = await uploadUrlResponse.json();
+
+// Upload file
+const uploadResponse = await fetch(uploadUrl, {
+method: 'PUT',
+body: file,
+headers: {
+'Content-Type': file.type,
+'X-Preset-Name': btoa(encodeURIComponent(presetName)),
+'X-Preset-Name-Encoded': 'base64'
+}
+});
+
+if (!uploadResponse.ok) {
+throw new Error(`Upload thất bại cho ${file.name}`);
+}
+
+uploadedCount.success++;
+uploadBtn.textContent = `Đã tải lên ${uploadedCount.success}/${uploadedCount.total}...`;
+}
+
+alert(`Thành công! Đã tải lên ${uploadedCount.success} ảnh vào bộ "${presetName}"`);
+closePresetUploadModal();
+loadPresets(); // Refresh the presets list
+
+} catch (error) {
+alert(`Lỗi tải lên: ${error.message}`);
+} finally {
+uploadBtn.disabled = false;
+uploadBtn.textContent = 'Tải lên';
+}
 }
 
 // Initialize
