@@ -1254,6 +1254,10 @@
 
         function logApiCall({ label, method, url, status = 'info', payload }) {
             if (!apiLogList) return;
+            const normalizedMethod = (method || '').toUpperCase();
+            if (normalizedMethod !== 'POST') {
+                return;
+            }
 
             const timestamp = new Date().toLocaleTimeString('vi-VN');
             const entry = document.createElement('div');
@@ -1320,9 +1324,23 @@
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
                 renderGallery(type);
+                logApiCall({
+                    label: `Tải ${config.logName}`,
+                    method: 'GET',
+                    url: config.endpoints.list,
+                    status: 'success',
+                    payload: data
+                });
             } catch (error) {
                 console.error(`Lỗi tải ${type}:`, error);
                 showStatusMessage(`Lỗi tải ${type === 'preset' ? 'mẫu' : 'selfie'}`, 'error');
+                logApiCall({
+                    label: `Tải ${config.logName}`,
+                    method: 'GET',
+                    url: config.endpoints.list,
+                    status: 'error',
+                    payload: { message: error?.message || String(error) }
+                });
             }
         }
 
@@ -1451,6 +1469,14 @@
                     throw new Error(deleteData.message || config.labels.deleteError);
                 }
 
+                logApiCall({
+                    label: `Xóa ${config.logName}`,
+                    method: 'DELETE',
+                    url: `${config.endpoints.delete}/${itemId}`,
+                    status: 'success',
+                    payload: deleteData
+                });
+
                 config.state.items = config.state.items.filter(item => item.id !== itemId);
                 const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
                 config.state.page = Math.min(config.state.page, totalPages);
@@ -1470,6 +1496,13 @@
             } catch (error) {
                 console.error(`Lỗi xóa ${type}:`, error);
                 showStatusMessage(config.labels.deleteError, 'error');
+                logApiCall({
+                    label: `Xóa ${config.logName}`,
+                    method: 'DELETE',
+                    url: `${config.endpoints.delete}/${itemId}`,
+                    status: 'error',
+                    payload: { message: error?.message || String(error) }
+                });
             }
         }
 
@@ -1493,6 +1526,13 @@
             const config = galleries[type];
             config.state.items = [item, ...config.state.items.filter(existing => existing.id !== item.id)];
             config.state.page = 1;
+        }
+
+        async function syncGallerySelection(type, candidate) {
+            await loadGallery(type);
+            const config = galleries[type];
+            const refreshed = config.state.items.find(item => item.id === candidate.id) || candidate;
+            setSelectedItem(type, refreshed);
         }
 
         // Handle image upload
@@ -1533,8 +1573,23 @@
                 }
 
                 if (!uploadUrlResponse.ok) {
+                    logApiCall({
+                        label: `Xin URL Tải Lên (${config.logName})`,
+                        method: 'POST',
+                        url: '/upload-url',
+                        status: 'error',
+                        payload: uploadData
+                    });
                     throw new Error(uploadData.message || 'Không thể lấy URL tải lên');
                 }
+
+                logApiCall({
+                    label: `Xin URL Tải Lên (${config.logName})`,
+                    method: 'POST',
+                    url: '/upload-url',
+                    status: 'success',
+                    payload: uploadData
+                });
 
                 if (uploadData.exists) {
                     const existingImage = {
@@ -1543,6 +1598,14 @@
                         image_url: uploadData.url,
                         created_at: new Date().toISOString()
                     };
+                    logApiCall({
+                        label: `Hình Ảnh Đã Tồn Tại (${config.logName})`,
+                        method: 'HEAD',
+                        url: uploadData.url || 'existing',
+                        status: 'info',
+                        payload: existingImage
+                    });
+
                     addNewItem(type, existingImage);
                     setSelectedItem(type, existingImage);
                     showStatusMessage('Hình ảnh đã tồn tại. Sử dụng phiên bản hiện có.', 'info');
@@ -1564,8 +1627,23 @@
                 }
 
                 if (!uploadResponse.ok) {
+                    logApiCall({
+                        label: `Tải Lên Hình Ảnh (${config.logName})`,
+                        method: 'PUT',
+                        url: uploadData.uploadUrl,
+                        status: 'error',
+                        payload: uploadResult
+                    });
                     throw new Error('Tải lên thất bại');
                 }
+
+                logApiCall({
+                    label: `Tải Lên Hình Ảnh (${config.logName})`,
+                    method: 'PUT',
+                    url: uploadData.uploadUrl,
+                    status: 'success',
+                    payload: uploadResult
+                });
 
                 // Add to local state
                 const newImage = {
@@ -1576,12 +1654,19 @@
                 };
 
                 addNewItem(type, newImage);
-                setSelectedItem(type, newImage);
+                await syncGallerySelection(type, newImage);
                 showStatusMessage('Tải lên hình ảnh thành công', 'success');
 
             } catch (error) {
                 console.error('Lỗi tải lên:', error);
                 showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
+                logApiCall({
+                    label: `Upload (${config.logName})`,
+                    method: 'UPLOAD',
+                    url: config.endpoints.list,
+                    status: 'error',
+                    payload: { message: error?.message || String(error) }
+                });
             } finally {
                 setUploadLoading(type, false);
             }
@@ -1658,10 +1743,24 @@
                 resultDisplay.innerHTML = `<img src="${resultUrl}" alt="Kết quả đổi mặt" class="result-image">`;
 
                 showStatusMessage('Đã hoàn thành đổi mặt thành công', 'success');
+                logApiCall({
+                    label: 'FaceSwap',
+                    method: 'POST',
+                    url: '/faceswap',
+                    status: 'success',
+                    payload: data
+                });
 
             } catch (error) {
                 console.error('Lỗi đổi mặt:', error);
                 showStatusMessage(`Đổi mặt thất bại: ${error.message}`, 'error');
+                logApiCall({
+                    label: 'FaceSwap',
+                    method: 'POST',
+                    url: '/faceswap',
+                    status: 'error',
+                    payload: { message: error?.message || String(error) }
+                });
             } finally {
                 // Hide loading state
                 generateBtn.disabled = false;
