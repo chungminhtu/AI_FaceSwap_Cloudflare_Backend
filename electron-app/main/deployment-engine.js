@@ -254,29 +254,143 @@ class DeploymentEngine {
         // Initialize schema
         const schemaPath = path.join(codebasePath, 'schema.sql');
         if (fs.existsSync(schemaPath)) {
-          execSync(`wrangler d1 execute faceswap-db --file=${schemaPath}`, {
-            stdio: 'inherit',
-            timeout: 30000,
-            cwd: codebasePath
-          });
-        }
-      } else {
-        // Check if schema is initialized
-        const schemaPath = path.join(codebasePath, 'schema.sql');
-        if (fs.existsSync(schemaPath)) {
           try {
-            execSync('wrangler d1 execute faceswap-db --command="SELECT COUNT(*) FROM presets LIMIT 1"', {
-              stdio: 'ignore',
-              timeout: 10000,
-              cwd: codebasePath
-            });
-          } catch (error) {
-            // Schema not initialized, initialize it
-            execSync(`wrangler d1 execute faceswap-db --file=${schemaPath}`, {
+            execSync(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, {
               stdio: 'inherit',
               timeout: 30000,
               cwd: codebasePath
             });
+          } catch (error) {
+            // If schema fails, recreate database
+            execSync('wrangler d1 delete faceswap-db', {
+              stdio: 'inherit',
+              timeout: 30000,
+              cwd: codebasePath
+            });
+            execSync('wrangler d1 create faceswap-db', {
+              stdio: 'inherit',
+              timeout: 30000,
+              cwd: codebasePath
+            });
+            execSync(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, {
+              stdio: 'inherit',
+              timeout: 30000,
+              cwd: codebasePath
+            });
+          }
+        }
+      } else {
+        // Check schema completeness
+        const schemaPath = path.join(codebasePath, 'schema.sql');
+        if (fs.existsSync(schemaPath)) {
+          let needsSchemaUpdate = false;
+          
+          try {
+            // Check for selfies table
+            const selfiesCheck = execSync('wrangler d1 execute faceswap-db --remote --command="SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'selfies\';"', {
+              encoding: 'utf8',
+              stdio: 'pipe',
+              timeout: 10000,
+              cwd: codebasePath
+            });
+            
+            if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
+              needsSchemaUpdate = true;
+            } else {
+              // Check if results table has selfie_id column
+              try {
+                const resultsCheck = execSync('wrangler d1 execute faceswap-db --remote --command="PRAGMA table_info(results);"', {
+                  encoding: 'utf8',
+                  stdio: 'pipe',
+                  timeout: 10000,
+                  cwd: codebasePath
+                });
+                
+                if (resultsCheck && !resultsCheck.includes('selfie_id')) {
+                  needsSchemaUpdate = true;
+                }
+              } catch {
+                // results table might not exist, that's OK - schema.sql will create it
+                needsSchemaUpdate = true;
+              }
+            }
+          } catch (error) {
+            // Could not verify schema - will attempt to apply schema.sql
+            needsSchemaUpdate = true;
+          }
+          
+          if (needsSchemaUpdate) {
+            try {
+              // Apply schema.sql - it uses CREATE TABLE IF NOT EXISTS so it's safe
+              execSync(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, {
+                stdio: 'inherit',
+                timeout: 30000,
+                cwd: codebasePath
+              });
+              
+              // If results table exists but has wrong structure, fix it
+              try {
+                const resultsCheck = execSync('wrangler d1 execute faceswap-db --remote --command="PRAGMA table_info(results);"', {
+                  encoding: 'utf8',
+                  stdio: 'pipe',
+                  timeout: 10000,
+                  cwd: codebasePath
+                });
+                
+                if (resultsCheck && resultsCheck.includes('preset_collection_id') && !resultsCheck.includes('selfie_id')) {
+                  // Check if results table has data
+                  const countCheck = execSync('wrangler d1 execute faceswap-db --remote --command="SELECT COUNT(*) as count FROM results;"', {
+                    encoding: 'utf8',
+                    stdio: 'pipe',
+                    timeout: 10000,
+                    cwd: codebasePath
+                  });
+                  
+                  const hasData = countCheck && countCheck.includes('"count":') && !countCheck.includes('"count":0');
+                  
+                  if (!hasData) {
+                    // Safe to recreate - table is empty
+                    execSync('wrangler d1 execute faceswap-db --remote --command="DROP TABLE IF EXISTS results;"', {
+                      stdio: 'inherit',
+                      timeout: 30000,
+                      cwd: codebasePath
+                    });
+                    execSync('wrangler d1 execute faceswap-db --remote --command="CREATE TABLE results (id TEXT PRIMARY KEY, selfie_id TEXT NOT NULL, preset_collection_id TEXT NOT NULL, preset_image_id TEXT NOT NULL, preset_name TEXT NOT NULL, result_url TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), FOREIGN KEY (selfie_id) REFERENCES selfies(id), FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id), FOREIGN KEY (preset_image_id) REFERENCES preset_images(id));"', {
+                      stdio: 'inherit',
+                      timeout: 30000,
+                      cwd: codebasePath
+                    });
+                  }
+                }
+              } catch (fixError) {
+                // Could not auto-fix results table structure - non-fatal
+              }
+            } catch (error) {
+              // Try to create missing selfies table if it doesn't exist
+              try {
+                const selfiesCheck = execSync('wrangler d1 execute faceswap-db --remote --command="SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'selfies\';"', {
+                  encoding: 'utf8',
+                  stdio: 'pipe',
+                  timeout: 10000,
+                  cwd: codebasePath
+                });
+                
+                if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
+                  execSync('wrangler d1 execute faceswap-db --remote --command="CREATE TABLE IF NOT EXISTS selfies (id TEXT PRIMARY KEY, image_url TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));"', {
+                    stdio: 'inherit',
+                    timeout: 30000,
+                    cwd: codebasePath
+                  });
+                }
+              } catch (createError) {
+                // Failed to create selfies table - non-fatal, will be caught below
+              }
+              
+              // Re-throw if it's a critical error
+              if (!error.message.includes('already exists') && !error.message.includes('no such table')) {
+                throw error;
+              }
+            }
           }
         }
       }
@@ -429,43 +543,8 @@ class DeploymentEngine {
         throw new Error(result.error || 'Pages deployment failed');
       }
 
-      // Wait a moment for deployment to register
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Try to get Pages URL
-      let pagesUrl = '';
-      try {
-        const deployments = execSync(
-          `wrangler pages deployment list --project-name=${pagesProjectName} --environment=production --json`,
-          {
-            encoding: 'utf8',
-            stdio: 'pipe',
-            timeout: 10000,
-            cwd: codebasePath
-          }
-        );
-
-        if (deployments) {
-          try {
-            const deploymentList = JSON.parse(deployments);
-            if (deploymentList && deploymentList.length > 0) {
-              const latestDeployment = deploymentList[0];
-              if (latestDeployment && latestDeployment.deployment) {
-                pagesUrl = latestDeployment.deployment;
-              }
-            }
-          } catch (parseError) {
-            const urlMatch = deployments.match(/https:\/\/[^\s]+\.pages\.dev/);
-            if (urlMatch) {
-              pagesUrl = urlMatch[0];
-            }
-          }
-        }
-      } catch (error) {
-        // Could not determine URL
-      }
-
-      return pagesUrl;
+      // Use fixed Pages domain
+      return 'https://ai-faceswap-frontend.pages.dev/';
     } catch (error) {
       // Pages deployment is non-critical
       return null;

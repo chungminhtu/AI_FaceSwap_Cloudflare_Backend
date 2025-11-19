@@ -27,6 +27,18 @@ export default {
       return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
     }
 
+    // Helper function to get R2 public URL
+    function getR2PublicUrl(key: string): string {
+      if (!env.R2_PUBLIC_URL) {
+        throw new Error('R2_PUBLIC_URL environment variable is not set. Please configure your R2 public URL in Cloudflare Dashboard or set R2_PUBLIC_URL secret.');
+      }
+      // Ensure R2_PUBLIC_URL doesn't end with /
+      const baseUrl = env.R2_PUBLIC_URL.endsWith('/') 
+        ? env.R2_PUBLIC_URL.slice(0, -1) 
+        : env.R2_PUBLIC_URL;
+      return `${baseUrl}/${key}`;
+    }
+
     // Handle upload URL generation endpoint
     if (path === '/upload-url' && request.method === 'POST') {
       try {
@@ -36,22 +48,11 @@ export default {
           return errorResponse('Missing required fields: filename and type', 400);
         }
 
-        // Generate presigned URL for R2 upload
-        // R2 doesn't have built-in presigned URLs, so we'll create a PUT URL
-        // The HTML will upload directly using the R2 S3-compatible API
-        // For now, we'll return a URL that the worker can proxy, or use R2's public access
-        
         // Generate a unique key for the file
         const key = `${body.type}/${body.filename}`;
         
-        // Store metadata (we'll use the worker to handle uploads via a proxy endpoint)
-        // Actually, for direct browser uploads, we need R2 public access or presigned URLs
-        // Since R2 doesn't support presigned URLs natively, we'll create a proxy upload endpoint
-        
-        // Return the key and let the HTML use a proxy endpoint
-        const publicUrl = env.R2_PUBLIC_URL 
-          ? `${env.R2_PUBLIC_URL}/${key}`
-          : `https://${env.FACESWAP_IMAGES ? 'your-account-id' : 'pub'}.r2.dev/${key}`;
+        // Get R2 public URL (CDN URL, not worker proxy)
+        const publicUrl = getR2PublicUrl(key);
 
         return jsonResponse({
           uploadUrl: `${url.origin}/upload-proxy/${key}`,
@@ -135,10 +136,8 @@ export default {
           return errorResponse(`R2 upload failed: ${r2Error instanceof Error ? r2Error.message : String(r2Error)}`, 500);
         }
 
-        // Get the public URL
-        const publicUrl = env.R2_PUBLIC_URL 
-          ? `${env.R2_PUBLIC_URL}/${key}`
-          : `${url.origin}/r2/${key}`;
+        // Get the public URL (R2 CDN URL, not worker proxy)
+        const publicUrl = getR2PublicUrl(key);
 
         // Save upload metadata to database based on type
         if (key.startsWith('preset/')) {
@@ -208,11 +207,28 @@ export default {
 
           console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
-          // Try to save to database, but don't fail the upload if DB fails
+          // Save to database - this MUST succeed for the upload to be considered successful
+          let dbSaved = false;
           try {
+            // First check if selfies table exists
+            const tableCheck = await env.DB.prepare(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
+            ).first();
+            
+            if (!tableCheck) {
+              console.error('ERROR: selfies table does not exist in database!');
+              console.error('Database schema needs to be initialized. Run: wrangler d1 execute faceswap-db --remote --file=schema.sql');
+              return errorResponse('Database schema not initialized. Please run database migration.', 500);
+            }
+
             const result = await env.DB.prepare(
               'INSERT INTO selfies (id, image_url, filename, created_at) VALUES (?, ?, ?, ?)'
             ).bind(selfieId, publicUrl, filename, createdAt).run();
+
+            if (!result.success) {
+              console.error('Database insert returned success=false:', result);
+              return errorResponse('Failed to save selfie to database', 500);
+            }
 
             console.log(`Selfie saved to database successfully: ${selfieId}`, {
               success: result.success,
@@ -226,17 +242,29 @@ export default {
             
             if (verifyResult) {
               console.log('Selfie verified in database:', verifyResult);
+              dbSaved = true;
             } else {
-              console.warn('Selfie not found in database after insert - possible database issue');
+              console.error('CRITICAL: Selfie not found in database after insert!');
+              return errorResponse('Selfie was not saved to database properly', 500);
             }
           } catch (dbError) {
-            console.error('Selfie database save error (non-fatal):', dbError);
+            console.error('Selfie database save error:', dbError);
             console.error('Error details:', {
               message: dbError instanceof Error ? dbError.message : String(dbError),
               stack: dbError instanceof Error ? dbError.stack : undefined
             });
-            // Still return success since file was uploaded to R2
-            // Database might not be initialized yet
+            
+            // Check if it's a table missing error
+            const errorMsg = dbError instanceof Error ? dbError.message : String(dbError);
+            if (errorMsg.includes('no such table') || errorMsg.includes('selfies')) {
+              return errorResponse('Database schema not initialized. Please run: wrangler d1 execute faceswap-db --remote --file=schema.sql', 500);
+            }
+            
+            return errorResponse(`Database save failed: ${errorMsg}`, 500);
+          }
+
+          if (!dbSaved) {
+            return errorResponse('Failed to verify selfie was saved to database', 500);
           }
 
           return jsonResponse({
@@ -609,9 +637,7 @@ export default {
           },
         });
 
-            resultUrl = env.R2_PUBLIC_URL 
-          ? `${env.R2_PUBLIC_URL}/${resultKey}`
-          : `${url.origin}/r2/${resultKey}`;
+            resultUrl = getR2PublicUrl(resultKey);
           } else {
             console.warn('Failed to download result image, using original URL');
           }

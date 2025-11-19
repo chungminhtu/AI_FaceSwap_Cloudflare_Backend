@@ -150,20 +150,113 @@ async function main() {
       const schemaPath = path.join(process.cwd(), 'schema.sql');
       if (fs.existsSync(schemaPath)) {
         log.info('Initializing database schema...');
-        execCommand(`wrangler d1 execute faceswap-db --file=${schemaPath}`, { stdio: 'inherit' });
-        log.success('Database schema initialized');
+        try {
+          execCommand(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, { stdio: 'inherit' });
+          log.success('Database schema initialized');
+        } catch (error) {
+          log.error('Schema initialization failed:', error.message);
+          log.warn('Recreating database to ensure clean schema...');
+          execCommand('wrangler d1 delete faceswap-db', { stdio: 'inherit' });
+          execCommand('wrangler d1 create faceswap-db', { stdio: 'inherit' });
+          execCommand(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, { stdio: 'inherit' });
+          log.success('Database recreated and schema initialized');
+        }
       }
     } else {
       log.success('D1 database exists');
-      // Check if schema is initialized
+      // Check schema completeness
       const schemaPath = path.join(process.cwd(), 'schema.sql');
       if (fs.existsSync(schemaPath)) {
+        log.info('Verifying database schema...');
+        
+        // Check if all required tables exist with correct structure
+        let needsSchemaUpdate = false;
         try {
-          execCommand('wrangler d1 execute faceswap-db --command="SELECT COUNT(*) FROM presets LIMIT 1"', { silent: true, throwOnError: false });
-        } catch {
-          log.info('Initializing database schema...');
-          execCommand(`wrangler d1 execute faceswap-db --file=${schemaPath}`, { stdio: 'inherit' });
-          log.success('Database schema initialized');
+          // Check for selfies table
+          const selfiesCheck = execCommand('wrangler d1 execute faceswap-db --remote --command="SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'selfies\';"', { silent: true, throwOnError: false });
+          if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
+            log.warn('selfies table missing - schema needs update');
+            needsSchemaUpdate = true;
+          }
+          
+          // Check if results table has selfie_id column
+          if (!needsSchemaUpdate) {
+            try {
+              const resultsCheck = execCommand('wrangler d1 execute faceswap-db --remote --command="PRAGMA table_info(results);"', { silent: true, throwOnError: false });
+              if (resultsCheck && !resultsCheck.includes('selfie_id')) {
+                log.warn('results table missing selfie_id column - schema needs update');
+                needsSchemaUpdate = true;
+              }
+            } catch {
+              // results table might not exist, that's OK - schema.sql will create it
+              needsSchemaUpdate = true;
+            }
+          }
+        } catch (error) {
+          log.warn('Could not verify schema - will attempt to apply schema.sql');
+          needsSchemaUpdate = true;
+        }
+        
+        if (needsSchemaUpdate) {
+          log.info('Applying database schema updates...');
+          try {
+            // Apply schema.sql - it uses CREATE TABLE IF NOT EXISTS so it's safe
+            execCommand(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, { stdio: 'inherit' });
+            log.success('Database schema updated');
+            
+            // If results table exists but has wrong structure, fix it
+            try {
+              const resultsCheck = execCommand('wrangler d1 execute faceswap-db --remote --command="PRAGMA table_info(results);"', { silent: true, throwOnError: false });
+              if (resultsCheck && resultsCheck.includes('preset_collection_id') && !resultsCheck.includes('selfie_id')) {
+                log.warn('Fixing results table structure...');
+                // Check if results table has data
+                const countCheck = execCommand('wrangler d1 execute faceswap-db --remote --command="SELECT COUNT(*) as count FROM results;"', { silent: true, throwOnError: false });
+                const hasData = countCheck && countCheck.includes('"count":') && !countCheck.includes('"count":0');
+                
+                if (!hasData) {
+                  // Safe to recreate - table is empty
+                  execCommand('wrangler d1 execute faceswap-db --remote --command="DROP TABLE IF EXISTS results;"', { stdio: 'inherit' });
+                  execCommand('wrangler d1 execute faceswap-db --remote --command="CREATE TABLE results (id TEXT PRIMARY KEY, selfie_id TEXT NOT NULL, preset_collection_id TEXT NOT NULL, preset_image_id TEXT NOT NULL, preset_name TEXT NOT NULL, result_url TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), FOREIGN KEY (selfie_id) REFERENCES selfies(id), FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id), FOREIGN KEY (preset_image_id) REFERENCES preset_images(id));"', { stdio: 'inherit' });
+                  log.success('Results table structure fixed');
+                } else {
+                  log.warn('Results table has data - cannot auto-fix. Please manually migrate or clear data.');
+                }
+              }
+            } catch (fixError) {
+              log.warn('Could not auto-fix results table structure:', fixError.message);
+            }
+          } catch (error) {
+            log.error('Schema update failed:', error.message);
+            log.warn('Attempting to fix by recreating missing tables...');
+            
+            // Try to create missing selfies table if it doesn't exist
+            try {
+              const selfiesCheck = execCommand('wrangler d1 execute faceswap-db --remote --command="SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'selfies\';"', { silent: true, throwOnError: false });
+              if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
+                log.info('Creating selfies table...');
+                execCommand('wrangler d1 execute faceswap-db --remote --command="CREATE TABLE IF NOT EXISTS selfies (id TEXT PRIMARY KEY, image_url TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));"', { stdio: 'inherit' });
+                log.success('Selfies table created');
+              }
+            } catch (createError) {
+              log.error('Failed to create selfies table:', createError.message);
+            }
+            
+            // Prompt user to recreate database if schema is too broken
+            const recreate = await prompt('Schema update failed. Recreate database? (This will DELETE ALL DATA) (y/n): ');
+            if (recreate.toLowerCase() === 'y') {
+              log.warn('Deleting database...');
+              execCommand('wrangler d1 delete faceswap-db', { stdio: 'inherit' });
+              log.info('Creating new database...');
+              execCommand('wrangler d1 create faceswap-db', { stdio: 'inherit' });
+              log.info('Applying schema...');
+              execCommand(`wrangler d1 execute faceswap-db --remote --file=${schemaPath}`, { stdio: 'inherit' });
+              log.success('Database recreated and schema initialized');
+            } else {
+              log.warn('Database schema may be incomplete. Please fix manually.');
+            }
+          }
+        } else {
+          log.success('Database schema is up to date');
         }
       }
     }
@@ -276,11 +369,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Deploy Pages - Note: Each deployment gets a unique URL with hash
-  // To get a truly fixed URL, you MUST set up a custom domain
+  // Deploy Pages
   log.info(`Deploying to Cloudflare Pages: ${PAGES_PROJECT_NAME}...`);
-  log.warn('⚠️  Note: Pages URLs change with each deployment (they include a hash)');
-  log.warn('⚠️  For a FIXED URL, you MUST set up a custom domain (see instructions below)');
   const publicPageDir = path.join(process.cwd(), 'public_page');
 
   if (fs.existsSync(publicPageDir)) {
@@ -292,51 +382,9 @@ async function main() {
       );
       log.success('Pages deployed');
       
-      // Wait a moment for deployment to register
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Get the latest production deployment URL
-      try {
-        const deployments = execCommand(
-          `wrangler pages deployment list --project-name=${PAGES_PROJECT_NAME} --environment=production --json`,
-          { silent: true, throwOnError: false }
-        );
-        
-        if (deployments) {
-          try {
-            const deploymentList = JSON.parse(deployments);
-            if (deploymentList && deploymentList.length > 0) {
-              // Get the first (latest) production deployment
-              const latestDeployment = deploymentList[0];
-              if (latestDeployment && latestDeployment.deployment) {
-                pagesUrl = latestDeployment.deployment;
-                log.success(`Latest Production URL: ${pagesUrl}`);
-              }
-            }
-          } catch (parseError) {
-            // Fallback to regex parsing if JSON fails
-            const urlMatch = deployments.match(/https:\/\/[^\s]+\.pages\.dev/);
-            if (urlMatch) {
-              pagesUrl = urlMatch[0];
-            }
-          }
-        }
-      } catch (error) {
-        // Try to extract from deployment output
-        if (pagesResult) {
-          const urlMatch = pagesResult.match(/https:\/\/[^\s]+\.pages\.dev/);
-          if (urlMatch) {
-            pagesUrl = urlMatch[0];
-          }
-        }
-      }
-      
-      if (pagesUrl) {
-        log.success(`Current Deployment URL: ${pagesUrl}`);
-        log.warn('⚠️  This URL will CHANGE on the next deployment!');
-      } else {
-        log.warn('Could not determine Pages URL. Check Cloudflare Dashboard.');
-      }
+      // Use fixed Pages domain
+      pagesUrl = 'https://ai-faceswap-frontend.pages.dev/';
+      log.success(`Frontend URL: ${pagesUrl}`);
     } catch (error) {
       log.warn('Pages deployment failed (non-critical)');
     }
@@ -349,23 +397,13 @@ async function main() {
   log.success('Deployment Complete!');
   console.log('\n📌 URLs:');
   if (workerUrl) {
-    console.log(`   ✅ Worker (Backend): ${workerUrl} (FIXED - never changes)`);
+    console.log(`   ✅ Worker (Backend): ${workerUrl}`);
   }
   if (pagesUrl) {
-    console.log(`   ⚠️  Pages (Frontend): ${pagesUrl} (CHANGES with each deployment)`);
+    console.log(`   ✅ Pages (Frontend): ${pagesUrl}`);
+  } else {
+    console.log(`   ✅ Pages (Frontend): https://ai-faceswap-frontend.pages.dev/`);
   }
-  
-  console.log('\n🔧 TO GET A FIXED FRONTEND URL (REQUIRED):');
-  console.log('   Cloudflare Pages assigns a unique URL with hash for each deployment.');
-  console.log('   To get a FIXED URL that never changes, you MUST set up a custom domain:');
-  console.log('\n   1. Go to Cloudflare Dashboard → Workers & Pages → Your Project');
-  console.log('   2. Click "Custom domains" tab');
-  console.log('   3. Click "Set up a custom domain"');
-  console.log('   4. Enter your domain (e.g., faceswap.yourdomain.com)');
-  console.log('   5. Follow DNS setup instructions');
-  console.log('   6. Once active, your custom domain will be FIXED forever!');
-  console.log('\n   📖 Full guide: https://developers.cloudflare.com/pages/configuration/custom-domains/');
-  console.log('\n💡 Alternative: Use the Worker URL for API calls (it\'s already fixed)');
   console.log('\n');
 }
 

@@ -38,22 +38,6 @@ CREATE TABLE IF NOT EXISTS results (
   FOREIGN KEY (preset_image_id) REFERENCES preset_images(id)
 );
 
--- Migration: Move existing data from presets table to new structure
-INSERT OR IGNORE INTO preset_collections (id, name, created_at)
-SELECT
-  'collection_' || id as id,
-  name,
-  created_at
-FROM presets;
-
-INSERT OR IGNORE INTO preset_images (id, collection_id, image_url, created_at)
-SELECT
-  'image_' || id as id,
-  'collection_' || id as collection_id,
-  image_url,
-  created_at
-FROM presets;
-
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_preset_collections_created_at ON preset_collections(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_preset_images_collection_id ON preset_images(collection_id);

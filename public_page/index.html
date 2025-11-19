@@ -1413,10 +1413,9 @@
         function updatePreview(type) {
             const config = galleries[type];
             const { selected } = config.state;
-            const { upload, preview } = config.elements;
+            const { preview } = config.elements;
 
             if (!selected) {
-                upload.style.display = 'block';
                 preview.style.display = 'block';
                 preview.innerHTML = `
                     <div class="preview-empty">
@@ -1427,7 +1426,6 @@
                 return;
             }
 
-            upload.style.display = 'none';
             preview.style.display = 'block';
             preview.innerHTML = `
                 <img src="${selected.image_url}" alt="${selected.filename || ''}">
@@ -1620,10 +1618,18 @@
                 });
 
                 let uploadResult = {};
+                let errorMessage = 'Tải lên thất bại';
+                
+                // Read response body once
+                const responseText = await uploadResponse.text();
                 try {
-                    uploadResult = await uploadResponse.json();
-                } catch {
-                    uploadResult = {};
+                    uploadResult = JSON.parse(responseText);
+                    if (uploadResult.message) {
+                        errorMessage = uploadResult.message;
+                    }
+                } catch (parseError) {
+                    // Response is not JSON, use text as error message
+                    errorMessage = responseText || `Tải lên thất bại (HTTP ${uploadResponse.status})`;
                 }
 
                 if (!uploadResponse.ok) {
@@ -1634,7 +1640,14 @@
                         status: 'error',
                         payload: uploadResult
                     });
-                    throw new Error('Tải lên thất bại');
+                    throw new Error(errorMessage);
+                }
+                
+                // Parse JSON for successful response
+                try {
+                    uploadResult = JSON.parse(responseText);
+                } catch {
+                    uploadResult = {};
                 }
 
                 logApiCall({
