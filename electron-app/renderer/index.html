@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Deployment Manager - Quản lý Triển khai</title>
+  <title>RoosterX AI - Face Swap Deployment Tool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700&family=Google+Sans+Code:wght@400;500;600&display=swap" rel="stylesheet">
@@ -13,12 +13,8 @@
   <div class="app-container">
     <!-- Header -->
     <header class="app-header">
-      <h1>Deployment Manager</h1>
-      <div class="header-actions">
-        <button id="btn-setup-guide" class="btn btn-secondary">Hướng dẫn Thiết lập</button>
-        <button id="btn-export-config" class="btn btn-secondary">Xuất Config</button>
-        <button id="btn-import-config" class="btn btn-secondary">Nhập Config</button>
-      </div>
+      <h1>RoosterX AI - Face Swap Deployment Tool</h1>
+      <div class="header-subtitle">Công cụ Triển khai Face Swap AI lên Cloudflare</div>
     </header>
 
     <!-- Main Content -->
@@ -45,9 +41,20 @@
 
         <div class="codebase-section">
           <h3>Đường dẫn Codebase</h3>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5;">
+            📁 Thư mục này sẽ được dùng khi triển khai
+          </p>
           <div class="codebase-path">
-            <input type="text" id="codebase-path" readonly>
+            <input type="text" id="codebase-path" readonly placeholder="Chưa chọn thư mục...">
             <button id="btn-select-codebase" class="btn btn-small">Chọn...</button>
+          </div>
+        </div>
+
+        <div class="sidebar-actions-section">
+          <h3>Công cụ</h3>
+          <div class="sidebar-actions">
+            <button id="btn-setup-guide" class="btn btn-small btn-full">📖 Hướng dẫn Thiết lập</button>
+            <button id="btn-export-config" class="btn btn-small btn-full">💾 Xuất Tất cả Config</button>
           </div>
         </div>
       </aside>
@@ -58,7 +65,7 @@
         <section id="deployment-list-section" class="section">
           <div class="section-header">
             <h2>Danh sách Triển khai</h2>
-            <button id="btn-add-deployment" class="btn btn-primary">+ Thêm Triển khai</button>
+            <button id="btn-add-deployment" class="btn btn-primary">Thêm Triển khai Mới</button>
           </div>
           <div id="deployment-list" class="deployment-list">
             <!-- Deployments will be rendered here -->
@@ -89,6 +96,9 @@
       </div>
     </main>
   </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
 
   <!-- Setup Guide Modal -->
   <div id="setup-guide-modal" class="modal hidden">
@@ -176,6 +186,7 @@
     </div>
   </div>
 
+  <script src="js/toast.js"></script>
   <script src="js/dashboard.js"></script>
   <script src="js/deployment-list.js"></script>
   <script src="js/deployment-form.js"></script>

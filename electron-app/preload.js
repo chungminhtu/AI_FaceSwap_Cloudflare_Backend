@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dialogLoadConfig: () => ipcRenderer.invoke('dialog:load-config'),
 
   // Command execution
-  executeCommand: (command, cwd) => ipcRenderer.invoke('command:execute', command, cwd)
+  executeCommand: (command, cwd) => ipcRenderer.invoke('command:execute', command, cwd),
+
+  // Helper functions
+  helperGetCloudflareInfo: () => ipcRenderer.invoke('helper:get-cloudflare-info'),
+  helperGetGCPProjects: () => ipcRenderer.invoke('helper:get-gcp-projects')
 });
 

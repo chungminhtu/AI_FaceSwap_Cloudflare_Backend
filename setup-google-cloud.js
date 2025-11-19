@@ -85,6 +85,260 @@ Or see: https://cloud.google.com/sdk/docs/install
   }
 }
 
+// Core setup function that can be imported programmatically
+async function setupGoogleCloud(config = {}) {
+  const {
+    projectId: providedProjectId,
+    accountEmail,
+    skipPrompts = false,
+    skipCloudflareSecret = false,
+    skipDocumentation = false
+  } = config;
+
+  if (!providedProjectId) {
+    throw new Error('projectId is required');
+  }
+
+  // Check for gcloud CLI
+  if (!commandExists('gcloud')) {
+    throw new Error('gcloud CLI not found. Please install Google Cloud SDK.');
+  }
+
+  const projectId = providedProjectId;
+
+  // Enable Vision API
+  try {
+    execCommand(`gcloud services enable vision.googleapis.com --project=${projectId}`, { 
+      stdio: skipPrompts ? 'pipe' : 'inherit' 
+    });
+  } catch (error) {
+    // API might already be enabled
+    if (!error.message.includes('already enabled')) {
+      throw new Error(`Failed to enable Vision API: ${error.message}`);
+    }
+  }
+
+  // Create service account
+  const serviceAccountName = 'faceswap-vision-sa';
+  const serviceAccountEmail = `${serviceAccountName}@${projectId}.iam.gserviceaccount.com`;
+  
+  try {
+    execCommand(
+      `gcloud iam service-accounts create ${serviceAccountName} --display-name="FaceSwap Vision API Service Account" --project=${projectId}`,
+      { throwOnError: false, stdio: skipPrompts ? 'pipe' : 'inherit' }
+    );
+  } catch (error) {
+    // Check if it already exists
+    const exists = execCommand(
+      `gcloud iam service-accounts describe ${serviceAccountEmail} --project=${projectId}`,
+      { throwOnError: false, silent: true }
+    );
+    if (!exists) {
+      throw new Error(`Failed to create service account: ${error.message}`);
+    }
+  }
+
+  // Grant Vision API role
+  try {
+    execCommand(
+      `gcloud projects add-iam-policy-binding ${projectId} --member="serviceAccount:${serviceAccountEmail}" --role="roles/editor"`,
+      { stdio: skipPrompts ? 'pipe' : 'inherit' }
+    );
+  } catch (error) {
+    // Check if the role is already granted
+    const checkRole = execCommand(
+      `gcloud projects get-iam-policy ${projectId} --filter="bindings.members:serviceAccount:${serviceAccountEmail}" --format="value(bindings.role)"`,
+      { throwOnError: false, silent: true }
+    );
+    if (!checkRole || !checkRole.includes('roles/editor')) {
+      throw new Error(`Failed to grant permissions: ${error.message}`);
+    }
+  }
+
+  // Create and download key
+  const keyFile = path.join(process.cwd(), 'temp-service-account-key.json');
+  try {
+    execCommand(
+      `gcloud iam service-accounts keys create ${keyFile} --iam-account=${serviceAccountEmail} --project=${projectId}`,
+      { stdio: skipPrompts ? 'pipe' : 'inherit' }
+    );
+  } catch (error) {
+    throw new Error(`Failed to create service account key: ${error.message}`);
+  }
+
+  // Read and encode key
+  let encodedKey;
+  try {
+    const keyContent = fs.readFileSync(keyFile, 'utf8');
+    encodedKey = Buffer.from(keyContent).toString('base64');
+  } catch (error) {
+    throw new Error(`Failed to read/encode key file: ${error.message}`);
+  }
+
+  // Set Cloudflare Workers secret (if not skipped)
+  if (!skipCloudflareSecret) {
+    try {
+      const wranglerProcess = spawn('wrangler', ['secret', 'put', 'GOOGLE_SERVICE_ACCOUNT_KEY'], {
+        stdio: ['pipe', skipPrompts ? 'pipe' : 'inherit', skipPrompts ? 'pipe' : 'inherit'],
+      });
+      
+      wranglerProcess.stdin.write(encodedKey);
+      wranglerProcess.stdin.end();
+      
+      await new Promise((resolve, reject) => {
+        wranglerProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`wrangler exited with code ${code}`));
+          }
+        });
+        wranglerProcess.on('error', reject);
+      });
+    } catch (error) {
+      // Non-fatal - secret can be set manually
+      if (!skipPrompts) {
+        log.warn('Failed to set Cloudflare secret automatically');
+        log.warn('You can set it manually with: wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY');
+        log.warn(`Then paste this value: ${encodedKey.substring(0, 50)}...`);
+      }
+    }
+  }
+
+  // Clean up key file
+  try {
+    fs.unlinkSync(keyFile);
+  } catch (error) {
+    // Non-fatal
+  }
+
+  // Get project name
+  let projectName = projectId;
+  try {
+    const projectInfo = execCommand(`gcloud projects describe ${projectId} --format="value(name)"`, { silent: true });
+    if (projectInfo && projectInfo.trim()) {
+      projectName = projectInfo.trim();
+    }
+  } catch (error) {
+    // Use projectId as fallback
+  }
+
+  // Create documentation file (if not skipped)
+  if (!skipDocumentation) {
+    const docPath = path.join(process.cwd(), 'google-cloud-setup.md');
+    const timestamp = new Date().toISOString();
+    const docContent = `# Google Cloud Vision API Setup Information
+
+**Generated:** ${timestamp}
+
+## Setup Summary
+
+✅ Google Cloud Vision API setup completed successfully
+
+## Project Information
+
+- **Project ID:** \`${projectId}\`
+- **Project Name:** \`${projectName}\`
+- **Service Account Email:** \`${serviceAccountEmail}\`
+- **Service Account Display Name:** FaceSwap Vision API Service Account
+
+## Configuration Details
+
+### IAM Role
+- **Role:** \`roles/editor\`
+- **Member:** \`serviceAccount:${serviceAccountEmail}\`
+
+### API Status
+- **Cloud Vision API:** ✅ Enabled
+
+### Cloudflare Integration
+- **Secret Name:** \`GOOGLE_SERVICE_ACCOUNT_KEY\`
+- **Status:** ${skipCloudflareSecret ? '⚠️ Not set (skipped)' : '✅ Set (Base64-encoded service account JSON)'}
+
+## Security Notes
+
+⚠️ **Important Security Reminders:**
+
+1. The service account key has been Base64-encoded${skipCloudflareSecret ? ' (not set as secret)' : ' and stored as a Cloudflare Workers secret'}
+2. The temporary key file has been deleted from your local system
+3. Never commit the service account key to version control
+4. The key provides access to Google Cloud Vision API - keep it secure
+5. If the key is compromised, delete it immediately in Google Cloud Console and create a new one
+
+## Next Steps
+
+1. **Deploy your Worker:**
+   \`\`\`bash
+   npm run deploy
+   # or
+   node deploy.js
+   \`\`\`
+
+2. **Test the setup:**
+   - Make a face swap request to your Worker
+   - The Worker will automatically use the service account to authenticate with Vision API
+
+## Troubleshooting
+
+### Error: "GOOGLE_SERVICE_ACCOUNT_KEY not set"
+- Run: \`wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY\`
+- Paste the Base64-encoded key (if you have it saved)
+
+### Error: "OAuth2 token exchange failed"
+- Verify the service account key is valid
+- Check that Vision API is enabled in the project
+- Ensure the service account has the correct IAM role
+
+### Error: "Permission denied"
+- Verify the service account has \`roles/editor\` role
+- Check project billing is enabled (required for Vision API)
+
+### Recreate Service Account Key
+If you need to recreate the key:
+\`\`\`bash
+gcloud iam service-accounts keys create key.json \\
+  --iam-account=${serviceAccountEmail} \\
+  --project=${projectId}
+base64 -i key.json  # macOS
+base64 key.json     # Linux
+# Then set as Cloudflare secret
+wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY
+\`\`\`
+
+## Quick Reference
+
+- **Google Cloud Console:** https://console.cloud.google.com/iam-admin/serviceaccounts?project=${projectId}
+- **Vision API Dashboard:** https://console.cloud.google.com/apis/api/vision.googleapis.com/overview?project=${projectId}
+- **IAM & Admin:** https://console.cloud.google.com/iam-admin/iam?project=${projectId}
+
+## Support
+
+For issues with:
+- **Google Cloud:** See [Google Cloud Documentation](https://cloud.google.com/vision/docs)
+- **Cloudflare Workers:** See [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
+`;
+
+    try {
+      fs.writeFileSync(docPath, docContent, 'utf8');
+      if (!skipPrompts) {
+        log.success(`Documentation written to: ${docPath}`);
+      }
+    } catch (error) {
+      if (!skipPrompts) {
+        log.warn('Failed to write documentation file');
+      }
+    }
+  }
+
+  return {
+    success: true,
+    projectId,
+    serviceAccountEmail,
+    encodedKey
+  };
+}
+
+// CLI main function
 async function main() {
   console.log('\n🚀 Google Cloud Vision API Setup\n');
   console.log('=====================================\n');
@@ -176,245 +430,32 @@ async function main() {
 
   log.success(`Using project: ${projectId}`);
 
-  // Enable Vision API
-  log.info('Enabling Cloud Vision API...');
   try {
-    execCommand(`gcloud services enable vision.googleapis.com --project=${projectId}`, { stdio: 'inherit' });
-    log.success('Cloud Vision API enabled');
-  } catch (error) {
-    log.error('Failed to enable Vision API');
-    process.exit(1);
-  }
-
-  // Create service account
-  const serviceAccountName = 'faceswap-vision-sa';
-  const serviceAccountEmail = `${serviceAccountName}@${projectId}.iam.gserviceaccount.com`;
-  
-  log.info('Creating service account...');
-  try {
-    execCommand(
-      `gcloud iam service-accounts create ${serviceAccountName} --display-name="FaceSwap Vision API Service Account" --project=${projectId}`,
-      { throwOnError: false, stdio: 'inherit' }
-    );
-    log.success('Service account created');
-  } catch (error) {
-    // Check if it already exists
-    const exists = execCommand(
-      `gcloud iam service-accounts describe ${serviceAccountEmail} --project=${projectId}`,
-      { throwOnError: false, silent: true }
-    );
-    if (exists) {
-      log.warn('Service account already exists, using existing one');
-    } else {
-      log.error('Failed to create service account');
-      process.exit(1);
-    }
-  }
-
-  // Grant Vision API role
-  log.info('Granting Vision API permissions...');
-  try {
-    execCommand(
-      `gcloud projects add-iam-policy-binding ${projectId} --member="serviceAccount:${serviceAccountEmail}" --role="roles/editor"`,
-      { stdio: 'inherit' }
-    );
-    log.success('Permissions granted');
-  } catch (error) {
-    // Check if the role is already granted
-    const checkRole = execCommand(
-      `gcloud projects get-iam-policy ${projectId} --filter="bindings.members:serviceAccount:${serviceAccountEmail}" --format="value(bindings.role)"`,
-      { throwOnError: false, silent: true }
-    );
-    if (checkRole && checkRole.includes('roles/editor')) {
-      log.warn('Role already granted, continuing...');
-    } else {
-      log.error('Failed to grant permissions');
-      process.exit(1);
-    }
-  }
-
-  // Create and download key
-  const keyFile = path.join(process.cwd(), 'temp-service-account-key.json');
-  log.info('Creating service account key...');
-  try {
-    execCommand(
-      `gcloud iam service-accounts keys create ${keyFile} --iam-account=${serviceAccountEmail} --project=${projectId}`,
-      { stdio: 'inherit' }
-    );
-    log.success('Service account key created');
-  } catch (error) {
-    log.error('Failed to create service account key');
-    process.exit(1);
-  }
-
-  // Read and encode key
-  log.info('Encoding service account key...');
-  let encodedKey;
-  try {
-    const keyContent = fs.readFileSync(keyFile, 'utf8');
-    encodedKey = Buffer.from(keyContent).toString('base64');
-    log.success('Key encoded');
-  } catch (error) {
-    log.error('Failed to read/encode key file');
-    process.exit(1);
-  }
-
-  // Set Cloudflare Workers secret
-  log.info('Setting Cloudflare Workers secret...');
-  try {
-    const wranglerProcess = spawn('wrangler', ['secret', 'put', 'GOOGLE_SERVICE_ACCOUNT_KEY'], {
-      stdio: ['pipe', 'inherit', 'inherit'],
+    const result = await setupGoogleCloud({
+      projectId,
+      skipPrompts: false,
+      skipCloudflareSecret: false,
+      skipDocumentation: false
     });
-    
-    wranglerProcess.stdin.write(encodedKey);
-    wranglerProcess.stdin.end();
-    
-    await new Promise((resolve, reject) => {
-      wranglerProcess.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`wrangler exited with code ${code}`));
-        }
-      });
-      wranglerProcess.on('error', reject);
-    });
-    
-    log.success('Cloudflare secret set');
+
+    console.log('\n' + '='.repeat(50));
+    log.success('Setup completed successfully!');
+    console.log('\n📄 Setup information saved to: google-cloud-setup.md');
+    console.log('\nNext step: Run `npm run deploy` to deploy your Worker\n');
   } catch (error) {
-    log.warn('Failed to set Cloudflare secret automatically');
-    log.warn('You can set it manually with: wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY');
-    log.warn(`Then paste this value: ${encodedKey.substring(0, 50)}...`);
+    log.error(`Setup failed: ${error.message}`);
+    process.exit(1);
   }
-
-  // Clean up key file
-  try {
-    fs.unlinkSync(keyFile);
-    log.success('Temporary key file cleaned up');
-  } catch (error) {
-    log.warn('Failed to clean up temporary key file. Please delete it manually for security.');
-  }
-
-  // Get project name
-  let projectName = projectId;
-  try {
-    const projectInfo = execCommand(`gcloud projects describe ${projectId} --format="value(name)"`, { silent: true });
-    if (projectInfo && projectInfo.trim()) {
-      projectName = projectInfo.trim();
-    }
-  } catch (error) {
-    // Use projectId as fallback
-  }
-
-  // Create documentation file
-  const docPath = path.join(process.cwd(), 'google-cloud-setup.md');
-  const timestamp = new Date().toISOString();
-  const docContent = `# Google Cloud Vision API Setup Information
-
-**Generated:** ${timestamp}
-
-## Setup Summary
-
-✅ Google Cloud Vision API setup completed successfully
-
-## Project Information
-
-- **Project ID:** \`${projectId}\`
-- **Project Name:** \`${projectName}\`
-- **Service Account Email:** \`${serviceAccountEmail}\`
-- **Service Account Display Name:** FaceSwap Vision API Service Account
-
-## Configuration Details
-
-### IAM Role
-- **Role:** \`roles/editor\`
-- **Member:** \`serviceAccount:${serviceAccountEmail}\`
-
-### API Status
-- **Cloud Vision API:** ✅ Enabled
-
-### Cloudflare Integration
-- **Secret Name:** \`GOOGLE_SERVICE_ACCOUNT_KEY\`
-- **Status:** ✅ Set (Base64-encoded service account JSON)
-
-## Security Notes
-
-⚠️ **Important Security Reminders:**
-
-1. The service account key has been Base64-encoded and stored as a Cloudflare Workers secret
-2. The temporary key file has been deleted from your local system
-3. Never commit the service account key to version control
-4. The key provides access to Google Cloud Vision API - keep it secure
-5. If the key is compromised, delete it immediately in Google Cloud Console and create a new one
-
-## Next Steps
-
-1. **Deploy your Worker:**
-   \`\`\`bash
-   npm run deploy
-   # or
-   node deploy.js
-   \`\`\`
-
-2. **Test the setup:**
-   - Make a face swap request to your Worker
-   - The Worker will automatically use the service account to authenticate with Vision API
-
-## Troubleshooting
-
-### Error: "GOOGLE_SERVICE_ACCOUNT_KEY not set"
-- Run: \`wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY\`
-- Paste the Base64-encoded key (if you have it saved)
-
-### Error: "OAuth2 token exchange failed"
-- Verify the service account key is valid
-- Check that Vision API is enabled in the project
-- Ensure the service account has the correct IAM role
-
-### Error: "Permission denied"
-- Verify the service account has \`roles/editor\` role
-- Check project billing is enabled (required for Vision API)
-
-### Recreate Service Account Key
-If you need to recreate the key:
-\`\`\`bash
-gcloud iam service-accounts keys create key.json \\
-  --iam-account=${serviceAccountEmail} \\
-  --project=${projectId}
-base64 -i key.json  # macOS
-base64 key.json     # Linux
-# Then set as Cloudflare secret
-wrangler secret put GOOGLE_SERVICE_ACCOUNT_KEY
-\`\`\`
-
-## Quick Reference
-
-- **Google Cloud Console:** https://console.cloud.google.com/iam-admin/serviceaccounts?project=${projectId}
-- **Vision API Dashboard:** https://console.cloud.google.com/apis/api/vision.googleapis.com/overview?project=${projectId}
-- **IAM & Admin:** https://console.cloud.google.com/iam-admin/iam?project=${projectId}
-
-## Support
-
-For issues with:
-- **Google Cloud:** See [Google Cloud Documentation](https://cloud.google.com/vision/docs)
-- **Cloudflare Workers:** See [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
-`;
-
-  try {
-    fs.writeFileSync(docPath, docContent, 'utf8');
-    log.success(`Documentation written to: ${docPath}`);
-  } catch (error) {
-    log.warn('Failed to write documentation file');
-  }
-
-  console.log('\n' + '='.repeat(50));
-  log.success('Setup completed successfully!');
-  console.log('\n📄 Setup information saved to: google-cloud-setup.md');
-  console.log('\nNext step: Run `npm run deploy` to deploy your Worker\n');
 }
 
-main().catch((error) => {
-  log.error(`Setup failed: ${error.message}`);
-  process.exit(1);
-});
+// Export the function for programmatic use
+module.exports = setupGoogleCloud;
+
+// Run CLI if executed directly
+if (require.main === module) {
+  main().catch((error) => {
+    log.error(`Setup failed: ${error.message}`);
+    process.exit(1);
+  });
+}
 

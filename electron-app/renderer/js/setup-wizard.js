@@ -1,6 +1,7 @@
 // Setup wizard management
 window.setupWizard = {
   currentTab: 'billing',
+  isExecutingCommand: false,
 
   show() {
     const modal = document.getElementById('setup-guide-modal');
@@ -8,8 +9,6 @@ window.setupWizard = {
       modal.classList.remove('hidden');
       this.render();
       this.setupListeners();
-      // Setup command listeners after a short delay to ensure DOM is ready
-      setTimeout(() => this.setupCommandListeners(), 100);
     }
   },
 
@@ -267,24 +266,51 @@ window.setupWizard = {
       });
     }
 
-    // Make commands clickable
+    // Make commands clickable - use event delegation to avoid duplicate listeners
     this.setupCommandListeners();
   },
 
   setupCommandListeners() {
-    // Setup command code click handlers
+    // Remove old listeners by cloning elements
     document.querySelectorAll('.command-code').forEach(cmd => {
-      cmd.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const command = cmd.dataset.command;
-        if (command) {
-          await this.executeCommand(command);
-        }
-      });
+      cmd.replaceWith(cmd.cloneNode(true));
     });
+    
+    // Setup command code click handlers using event delegation on the modal
+    const modal = document.getElementById('setup-guide-modal');
+    if (modal) {
+      // Remove old listener if exists
+      if (modal._commandClickHandler) {
+        modal.removeEventListener('click', modal._commandClickHandler);
+      }
+      
+      // Create new handler
+      modal._commandClickHandler = async (e) => {
+        const cmd = e.target.closest('.command-code');
+        if (cmd) {
+          e.stopPropagation();
+          e.preventDefault();
+          const command = cmd.dataset.command;
+          if (command) {
+            await this.executeCommand(command);
+          }
+        }
+      };
+      
+      // Add listener to modal (event delegation)
+      modal.addEventListener('click', modal._commandClickHandler);
+    }
   },
 
   async executeCommand(command) {
+    // Prevent multiple simultaneous executions
+    if (this.isExecutingCommand) {
+      console.log('Command already executing, ignoring duplicate click');
+      return;
+    }
+    
+    this.isExecutingCommand = true;
+    
     try {
       // Get codebase path from config
       const config = window.dashboard?.getCurrentConfig();
@@ -292,6 +318,7 @@ window.setupWizard = {
       
       if (!codebasePath) {
         alert('Vui lòng chọn đường dẫn codebase trước khi chạy lệnh!');
+        this.isExecutingCommand = false;
         return;
       }
 
@@ -311,6 +338,8 @@ window.setupWizard = {
     } catch (error) {
       console.error('Error executing command:', error);
       alert(`Lỗi: ${error.message}`);
+    } finally {
+      this.isExecutingCommand = false;
     }
   },
 
@@ -332,6 +361,13 @@ window.setupWizard = {
         content.classList.add('active');
       }
     });
+    
+    // Re-setup command listeners for the new tab content
+    // But use event delegation so we don't duplicate listeners
+    // The event delegation on modal should handle this, but ensure it's set up
+    if (!document.getElementById('setup-guide-modal')?._commandClickHandler) {
+      this.setupCommandListeners();
+    }
   }
 };
 

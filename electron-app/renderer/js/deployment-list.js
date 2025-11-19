@@ -35,6 +35,7 @@ window.deploymentList = {
         <div class="deployment-card-header">
           <div class="deployment-name">${this.escapeHtml(deployment.name)}</div>
           <div class="deployment-actions">
+            <button class="btn btn-small btn-secondary btn-export" data-id="${deployment.id}" title="Xuất deployment này">💾</button>
             <button class="btn btn-small btn-secondary btn-edit" data-id="${deployment.id}">Sửa</button>
             <button class="btn btn-small btn-secondary btn-delete" data-id="${deployment.id}">Xóa</button>
           </div>
@@ -67,6 +68,14 @@ window.deploymentList = {
   },
 
   attachDeploymentListeners(deploymentId) {
+    // Export button
+    const btnExport = document.querySelector(`.btn-export[data-id="${deploymentId}"]`);
+    if (btnExport) {
+      btnExport.addEventListener('click', async () => {
+        await this.exportDeployment(deploymentId);
+      });
+    }
+
     // Edit button
     const btnEdit = document.querySelector(`.btn-edit[data-id="${deploymentId}"]`);
     if (btnEdit) {
@@ -106,6 +115,28 @@ window.deploymentList = {
     }
   },
 
+  async exportDeployment(deploymentId) {
+    try {
+      const config = window.dashboard?.getCurrentConfig();
+      const deployment = config?.deployments?.find(d => d.id === deploymentId);
+      
+      if (!deployment) {
+        window.toast?.error('Không tìm thấy deployment');
+        return;
+      }
+
+      const deploymentJson = JSON.stringify(deployment, null, 2);
+      const fileName = `${deployment.name || deployment.id}-backup.json`;
+      
+      const result = await window.electronAPI.dialogSaveConfig(deploymentJson);
+      if (result.success) {
+        window.toast?.success(`Đã xuất "${deployment.name}" thành công!`);
+      }
+    } catch (error) {
+      window.toast?.error(`Lỗi xuất deployment: ${error.message}`);
+    }
+  },
+
   async deleteDeployment(deploymentId) {
     try {
       const config = window.dashboard?.getCurrentConfig();
@@ -121,11 +152,21 @@ window.deploymentList = {
 
   async startDeployment(deploymentId) {
     if (window.dashboard?.isDeploying()) {
-      alert('Đang có một triển khai đang chạy. Vui lòng đợi.');
+      window.toast?.warning('Đang có một triển khai đang chạy. Vui lòng đợi.');
       return;
     }
 
-    if (!confirm('Bắt đầu triển khai?')) {
+    // Check if codebase path is set
+    const config = window.dashboard?.getCurrentConfig();
+    if (!config?.codebasePath) {
+      window.toast?.error('Vui lòng chọn thư mục Codebase trước!\n\n📁 Click "Chọn..." ở sidebar để chọn thư mục chứa code của bạn.');
+      return;
+    }
+
+    const deployment = config.deployments?.find(d => d.id === deploymentId);
+    const deploymentName = deployment?.name || 'deployment này';
+    
+    if (!confirm(`Bắt đầu triển khai "${deploymentName}"?\n\n📁 Từ thư mục: ${config.codebasePath}`)) {
       return;
     }
 

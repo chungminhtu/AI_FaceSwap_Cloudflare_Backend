@@ -61,12 +61,19 @@ window.deploymentStatus = {
       warning: '⚠️'
     };
 
+    const logsHtml = step.logs && step.logs.length > 0 ? `
+      <div class="step-logs">
+        <pre class="logs-output">${this.escapeHtml(step.logs.join('\n'))}</pre>
+      </div>
+    ` : '';
+
     return `
       <div class="status-step ${step.status}">
         <div class="step-icon">${icons[step.status] || '○'}</div>
         <div class="step-content">
           <div class="step-title">${this.escapeHtml(step.step)}</div>
           <div class="step-details">${this.escapeHtml(step.details || '')}</div>
+          ${logsHtml}
         </div>
       </div>
     `;
@@ -83,7 +90,8 @@ window.deploymentStatus = {
       step = {
         step: data.step,
         status: data.status,
-        details: data.details
+        details: data.details,
+        logs: []
       };
       this.steps.push(step);
     } else {
@@ -91,7 +99,21 @@ window.deploymentStatus = {
       step.details = data.details;
     }
 
+    // Append logs if provided
+    if (data.log) {
+      if (!step.logs) step.logs = [];
+      step.logs.push(data.log);
+    }
+
     this.render();
+    
+    // Auto-scroll to bottom of logs
+    setTimeout(() => {
+      const logsElements = document.querySelectorAll('.logs-output');
+      logsElements.forEach(el => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }, 50);
   },
 
   updateResult(result) {

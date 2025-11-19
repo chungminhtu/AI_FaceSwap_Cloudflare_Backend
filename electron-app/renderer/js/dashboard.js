@@ -66,26 +66,19 @@ function setupEventListeners() {
     btnExportConfig.addEventListener('click', async () => {
       try {
         const configJson = JSON.stringify(currentConfig, null, 2);
+        const deploymentCount = currentConfig?.deployments?.length || 0;
         const result = await window.electronAPI.dialogSaveConfig(configJson);
         if (result.success) {
-          showSuccess('Đã xuất cấu hình thành công');
+          window.toast?.success(`Đã xuất ${deploymentCount} deployment(s) thành công!`);
         }
       } catch (error) {
-        showError('Không thể xuất cấu hình', error.message);
+        window.toast?.error(`Không thể xuất cấu hình: ${error.message}`);
       }
     });
   }
 
-  // Import config button - Show modal
-  const btnImportConfig = document.getElementById('btn-import-config');
-  if (btnImportConfig) {
-    btnImportConfig.addEventListener('click', () => {
-      showImportConfigModal();
-    });
-  }
-
-  // Import config modal handlers
-  setupImportConfigModal();
+  // Note: Import config functionality has been moved to individual deployment forms
+  // Users can now import secrets directly when creating/editing a deployment
 
   // Deployment progress listener
   window.electronAPI.deploymentProgress((event, data) => {

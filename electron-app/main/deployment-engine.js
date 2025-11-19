@@ -3,14 +3,109 @@ const fs = require('fs');
 const path = require('path');
 const CommandRunner = require('./command-runner');
 const AccountSwitcher = require('./account-switcher');
-const setupGoogleCloud = require('../../setup-google-cloud-refactored.js');
+const setupGoogleCloud = require('../../setup-google-cloud.js');
 
 class DeploymentEngine {
   constructor() {
     this.commandRunner = new CommandRunner(3, 1000);
+    this.reportProgress = null;
+    this.currentDeploymentId = null;
+    this.currentStep = null;
+    this.deploymentLogs = []; // Store all deployment steps and logs
+  }
+
+  async executeWithLogs(command, cwd, step) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(command, {
+        shell: true,
+        cwd: cwd,
+        env: process.env
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        
+        // Send each line to UI
+        const lines = output.split('\n').filter(line => line.trim());
+        lines.forEach(line => {
+          if (this.reportProgress) {
+            this.reportProgress(step, 'running', null, { 
+              deploymentId: this.currentDeploymentId,
+              step: step,
+              log: line.trim()
+            });
+          }
+        });
+      });
+
+      child.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        
+        // Send each line to UI (stderr often contains progress info)
+        const lines = output.split('\n').filter(line => line.trim());
+        lines.forEach(line => {
+          if (this.reportProgress) {
+            this.reportProgress(step, 'running', null, {
+              deploymentId: this.currentDeploymentId,
+              step: step,
+              log: line.trim()
+            });
+          }
+        });
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true, stdout, stderr });
+        } else {
+          reject(new Error(`Command exited with code ${code}\n${stderr}`));
+        }
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+    });
   }
 
   async deploy(deployment, config, reportProgress) {
+    // Reset deployment logs for this deployment
+    this.deploymentLogs = [];
+    const deploymentStartTime = new Date().toISOString();
+    
+    // Store callback for use in executeWithLogs
+    this.reportProgress = (step, status, details, data) => {
+      // Store in deployment history
+      let existingStep = this.deploymentLogs.find(s => s.step === step);
+      if (!existingStep) {
+        existingStep = {
+          step,
+          status,
+          details: details || '',
+          logs: []
+        };
+        this.deploymentLogs.push(existingStep);
+      } else {
+        existingStep.status = status;
+        if (details) existingStep.details = details;
+      }
+      
+      // Add log line if present
+      if (data && data.log) {
+        existingStep.logs.push(data.log);
+        // Pass log data directly
+        reportProgress(step, status, details || '', data);
+      } else {
+        reportProgress(step, status, details || '');
+      }
+    };
+    this.currentDeploymentId = deployment.id;
+    
     const errors = [];
     const results = {
       workerUrl: '',
@@ -74,7 +169,9 @@ class DeploymentEngine {
           await setupGoogleCloud({
             projectId: deployment.gcp.projectId,
             accountEmail: deployment.gcp.accountEmail,
-            skipPrompts: true
+            skipPrompts: true,
+            skipCloudflareSecret: true, // Secrets are handled separately in deploySecrets
+            skipDocumentation: true // Don't generate docs during automated deployment
           });
           reportProgress('setup-gcp', 'completed', 'GCP setup hoàn tất');
         } catch (error) {
@@ -144,19 +241,44 @@ class DeploymentEngine {
       }
 
       results.success = true;
+      
+      // Save deployment history
+      const deploymentHistory = {
+        timestamp: deploymentStartTime,
+        endTime: new Date().toISOString(),
+        status: 'success',
+        results,
+        errors: errors.length > 0 ? errors : undefined,
+        steps: this.deploymentLogs
+      };
+      
       return {
         success: true,
         results,
-        errors: errors.length > 0 ? errors : undefined
+        errors: errors.length > 0 ? errors : undefined,
+        history: deploymentHistory
       };
     } catch (error) {
       errors.push({ step: 'deployment', error: error.message, stack: error.stack });
+      
+      // Save deployment history even on failure
+      const deploymentHistory = {
+        timestamp: deploymentStartTime,
+        endTime: new Date().toISOString(),
+        status: 'failed',
+        error: error.message,
+        results,
+        errors,
+        steps: this.deploymentLogs
+      };
+      
       return {
         success: false,
         error: error.message,
         stack: error.stack,
         errors,
-        results
+        results,
+        history: deploymentHistory
       };
     }
   }
@@ -429,14 +551,10 @@ class DeploymentEngine {
       fs.writeFileSync(secretsPath, JSON.stringify(deployment.secrets, null, 2), 'utf8');
 
       // Deploy secrets using wrangler
-      const result = await this.commandRunner.execute(
+      const result = await this.executeWithLogs(
         'wrangler secret bulk temp-secrets.json',
-        {
-          cwd: codebasePath,
-          silent: false,
-          throwOnError: true,
-          timeout: 60000
-        }
+        codebasePath,
+        'deploy-secrets'
       );
 
       if (!result.success) {
@@ -455,12 +573,7 @@ class DeploymentEngine {
   }
 
   async deployWorker(codebasePath, workerName) {
-    const result = await this.commandRunner.execute('wrangler deploy', {
-      cwd: codebasePath,
-      silent: false,
-      throwOnError: true,
-      timeout: 300000 // 5 minutes
-    });
+    const result = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker');
 
     if (!result.success) {
       throw new Error(result.error || 'Worker deployment failed');
@@ -529,14 +642,10 @@ class DeploymentEngine {
     }
 
     try {
-      const result = await this.commandRunner.execute(
+      const result = await this.executeWithLogs(
         `wrangler pages deploy ${publicPageDir} --project-name=${pagesProjectName} --branch=main --commit-dirty=true`,
-        {
-          cwd: codebasePath,
-          silent: false,
-          throwOnError: false,
-          timeout: 300000 // 5 minutes
-        }
+        codebasePath,
+        'deploy-pages'
       );
 
       if (!result.success) {
