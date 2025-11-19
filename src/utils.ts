@@ -9,6 +9,8 @@ export const SAFETY_STATUS_CODES = {
 
 // Severity levels (higher = worse)
 const SEVERITY_LEVELS: Record<string, number> = {
+  VERY_UNLIKELY:-1,
+  UNLIKELY: 0,
   POSSIBLE: 1,
   LIKELY: 2,
   VERY_LIKELY: 3,

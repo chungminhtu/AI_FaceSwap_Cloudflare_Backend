@@ -572,6 +572,9 @@ export default {
         // Return success response in GenericApiResponse format
         return jsonResponse({
           data: {
+            resultImageUrl: resultUrl
+          },
+          debug: {
             ...faceSwapResult,
             ResultImageUrl: resultUrl,
             SafetyCheck: safetyCheckResult
