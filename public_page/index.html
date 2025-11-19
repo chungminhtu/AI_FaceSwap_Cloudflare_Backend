@@ -8,18 +8,24 @@
         @import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700;800;900&display=swap');
         
         :root {
-            --bg-primary: #FFFFFF;
-            --bg-secondary: #FAFAFA;
-            --bg-tertiary: #F5F5F5;
-            --accent: #FF006E;
-            --accent-hover: #FF1B7E;
-            --text-primary: #000000;
-            --text-secondary: #333333;
-            --text-muted: #999999;
-            --border: #E0E0E0;
-            --border-accent: #FF006E;
-            --danger: #FF3333;
-            --success: #00C853;
+            --bg-primary: #FDFBFF;
+            --bg-secondary: #F7F2FF;
+            --bg-tertiary: #EFE7FF;
+            --bg-card-gradient: linear-gradient(135deg, #FFFFFF 0%, #F4E9FF 100%);
+            --bg-panel-gradient: linear-gradient(135deg, #FFF7FB 0%, #EEF4FF 100%);
+            --accent: #F82387;
+            --accent-hover: #FF5D9A;
+            --accent-strong: #B215FF;
+            --accent-secondary: #12B0FF;
+            --text-primary: #0B0B2E;
+            --text-secondary: #3A345C;
+            --text-muted: #7B7695;
+            --border: rgba(131, 94, 255, 0.3);
+            --border-accent: #F82387;
+            --danger: #FF4D6D;
+            --success: #2BC990;
+            --shadow-soft: 0 10px 30px rgba(126, 78, 255, 0.15);
+            --shadow-strong: 0 15px 35px rgba(248, 35, 135, 0.25);
         }
 
         * {
@@ -30,19 +36,23 @@
 
         body {
             font-family: 'Lexend Deca', -apple-system, sans-serif;
-            background-color: var(--bg-primary);
+            background: radial-gradient(circle at top, #FFE0F0 0%, #F4E5FF 35%, #FDFBFF 70%);
             color: var(--text-primary);
-            line-height: 1.4;
+            line-height: 1.5;
+            font-size: 14px;
             font-weight: 400;
             -webkit-font-smoothing: antialiased;
             overflow-x: hidden;
-            border-top: 4px solid var(--accent);
+            border-top: 6px solid var(--accent);
         }
 
         .main-container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 12px;
+            padding: 16px 20px 40px;
+            background: var(--bg-panel-gradient);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid rgba(255, 255, 255, 0.4);
         }
 
         @media (max-width: 767px) {
@@ -53,17 +63,21 @@
 
         h1 {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 32px;
-            font-weight: 800;
-            line-height: 1;
+            font-size: 34px;
+            font-weight: 700;
+            line-height: 1.2;
             text-align: left;
-            margin-bottom: 16px;
-            color: var(--accent);
-            text-transform: uppercase;
+            margin-bottom: 20px;
+            color: var(--text-primary);
             letter-spacing: 2px;
-            border-bottom: 2px solid var(--accent);
-            padding-bottom: 8px;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 18px;
+            background: linear-gradient(120deg, rgba(248,35,135,0.12), rgba(18,176,255,0.08));
+            border: 2px solid rgba(248,35,135,0.25);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
+            text-transform: none;
         }
 
         .faceswap-zone {
@@ -93,11 +107,12 @@
         .preview-empty {
             text-align: center;
             color: var(--text-muted);
-            font-size: 12px;
-            padding: 40px 12px;
+            font-size: 14px;
+            padding: 40px 16px;
             font-family: 'Lexend Deca', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.3px;
+            line-height: 1.4;
+            text-transform: none;
         }
 
         .preview-empty .icon {
@@ -108,10 +123,12 @@
         }
 
         .section {
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
-            padding: 8px;
+            background: var(--bg-card-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            padding: 12px;
             position: relative;
+            box-shadow: var(--shadow-soft);
+            backdrop-filter: blur(8px);
         }
 
         .section::before {
@@ -120,8 +137,8 @@
             left: 0;
             top: 0;
             bottom: 0;
-            width: 2px;
-            background: var(--accent);
+            width: 3px;
+            background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
             opacity: 0;
             transition: opacity 0.2s;
         }
@@ -132,19 +149,19 @@
 
         .section-title {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 11px;
-            font-weight: 700;
-            line-height: 1;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.3;
             margin-bottom: 8px;
-            color: var(--accent);
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
+            color: var(--accent-strong);
+            letter-spacing: 0.4px;
+            text-transform: none;
         }
 
         .upload-area {
-            background-color: var(--bg-tertiary);
-            border: 1px dashed var(--border);
-            padding: 8px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px dashed rgba(248, 35, 135, 0.4);
+            padding: 10px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -153,33 +170,54 @@
             cursor: pointer;
             transition: all 0.15s;
             position: relative;
+            box-shadow: inset 0 0 30px rgba(248, 35, 135, 0.03);
+        }
+
+        .upload-area.loading {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .upload-area.loading::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(248, 35, 135, 0.3);
+            border-top: 2px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            top: 10px;
+            right: 10px;
         }
 
         .upload-area.gallery-upload {
-            padding: 4px;
-            min-height: 36px;
-            margin-bottom: 8px;
+            padding: 8px;
+            min-height: 70px;
+            margin-bottom: 10px;
         }
 
         .upload-area.gallery-upload .upload-icon {
-            font-size: 16px;
-            margin-bottom: 2px;
+            font-size: 28px;
+            margin-bottom: 6px;
         }
 
         .upload-area.gallery-upload .upload-text {
-            font-size: 8px;
-            margin-bottom: 1px;
-            line-height: 1.2;
+            font-size: 15px;
+            margin-bottom: 4px;
+            line-height: 1.4;
+            font-weight: 600;
         }
 
         .upload-area.gallery-upload .upload-subtext {
-            font-size: 7px;
-            line-height: 1.2;
+            font-size: 13px;
+            line-height: 1.4;
         }
 
         .upload-area:hover {
             border-color: var(--accent);
-            background-color: var(--bg-secondary);
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 12px 30px rgba(248, 35, 135, 0.12);
         }
 
         .upload-area.dragover {
@@ -191,25 +229,28 @@
 
         .upload-icon {
             font-size: 32px;
-            color: var(--text-muted);
+            color: var(--accent-strong);
             margin-bottom: 4px;
-            opacity: 0.5;
+            opacity: 0.8;
         }
 
         .upload-text {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 10px;
+            font-size: 14px;
             color: var(--text-secondary);
-            margin-bottom: 2px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            margin-bottom: 4px;
+            letter-spacing: 0.3px;
+            line-height: 1.35;
+            text-transform: none;
+            font-weight: 500;
         }
 
         .upload-subtext {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 9px;
+            font-size: 12px;
             color: var(--text-muted);
-            text-transform: uppercase;
+            text-transform: none;
+            line-height: 1.3;
         }
 
         .file-input {
@@ -243,20 +284,21 @@
             left: 0;
             background-color: var(--accent);
             color: #FFFFFF;
-            padding: 4px 8px;
+            padding: 6px 10px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 9px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            line-height: 1.2;
+            text-transform: none;
         }
 
         .delete-btn {
             position: absolute;
             top: 4px;
             right: 4px;
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
             background-color: var(--danger);
             color: #FFFFFF;
             border: none;
@@ -269,6 +311,7 @@
             z-index: 10;
             transition: all 0.15s;
             font-family: 'Lexend Deca', sans-serif;
+            line-height: 1;
         }
 
         .delete-btn:hover {
@@ -279,11 +322,13 @@
         .gallery-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 8px;
-            margin-top: 8px;
-            padding: 8px;
-            background-color: var(--bg-tertiary);
-            min-height: 200px;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            min-height: 220px;
+            box-shadow: inset 0 0 40px rgba(18, 176, 255, 0.08);
         }
 
         @media (max-width: 767px) {
@@ -319,15 +364,16 @@
             background-color: var(--bg-secondary);
             border: 1px solid var(--border);
             color: var(--text-primary);
-            padding: 6px 12px;
+            padding: 8px 14px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0.3px;
             cursor: pointer;
             transition: all 0.15s;
-            min-width: 40px;
+            min-width: 44px;
+            line-height: 1.2;
         }
 
         .pagination-btn:hover:not(:disabled) {
@@ -343,26 +389,35 @@
 
         .pagination-info {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 10px;
+            font-size: 12px;
             color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            text-transform: none;
+            letter-spacing: 0.2px;
             padding: 0 8px;
+            line-height: 1.2;
+        }
+
+        .action-row {
+            display: flex;
+            align-items: stretch;
+            gap: 16px;
+            margin-top: 16px;
         }
 
         .api-selector {
-            margin-bottom: 12px;
+            flex: 1;
         }
 
         .api-selector-label {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 600;
-            color: var(--accent);
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            color: var(--accent-strong);
+            letter-spacing: 0.4px;
             margin-bottom: 6px;
             display: block;
+            line-height: 1.2;
+            text-transform: none;
         }
 
         .api-select {
@@ -370,19 +425,20 @@
             background-color: var(--bg-secondary);
             border: 1px solid var(--border);
             color: var(--text-primary);
-            padding: 8px 10px;
+            padding: 10px 12px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 14px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0.3px;
             cursor: pointer;
             transition: all 0.15s;
             appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23FF006E' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
-            background-position: right 8px center;
-            padding-right: 30px;
+            background-position: right 10px center;
+            padding-right: 32px;
+            line-height: 1.3;
         }
 
         .api-select:hover {
@@ -399,22 +455,24 @@
         .gallery-item {
             aspect-ratio: 1;
             overflow: hidden;
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.8);
             cursor: pointer;
-            transition: all 0.15s;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
             position: relative;
+            box-shadow: 0 8px 18px rgba(10, 5, 35, 0.05);
         }
 
         .gallery-item.selected {
             border-color: var(--accent);
             border-width: 2px;
-            box-shadow: 0 0 0 1px var(--accent);
+            box-shadow: 0 10px 30px rgba(248, 35, 135, 0.2);
         }
 
         .gallery-item:hover {
-            border-color: var(--accent);
-            transform: scale(1.05);
+            border-color: var(--accent-secondary);
+            transform: translateY(-4px) scale(1.03);
+            box-shadow: var(--shadow-soft);
         }
 
         .gallery-item img {
@@ -426,23 +484,25 @@
 
         .gallery-delete-btn {
             position: absolute;
-            top: 2px;
-            right: 2px;
-            width: 16px;
-            height: 16px;
-            background-color: var(--danger);
+            top: 6px;
+            right: 6px;
+            width: 22px;
+            height: 22px;
+            background: linear-gradient(135deg, #FF5D6C, #FF3CAC);
             color: #FFFFFF;
             border: none;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 700;
             z-index: 10;
             opacity: 0;
             transition: all 0.15s;
             font-family: 'Lexend Deca', sans-serif;
+            line-height: 1;
+            box-shadow: 0 4px 12px rgba(255, 61, 108, 0.3);
         }
 
         .gallery-item:hover .gallery-delete-btn {
@@ -459,14 +519,15 @@
         }
 
         .right-column {
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
-            min-height: 300px;
+            background: var(--bg-card-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            min-height: 320px;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
-            padding: 8px;
+            padding: 12px;
+            box-shadow: var(--shadow-soft);
         }
 
         .result-display {
@@ -505,21 +566,23 @@
 
         .gallery-title {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--accent);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-strong);
             margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
+            letter-spacing: 0.4px;
+            line-height: 1.3;
+            text-transform: none;
         }
 
         .result-empty {
             text-align: center;
             color: var(--text-muted);
-            font-size: 11px;
+            font-size: 14px;
             font-family: 'Lexend Deca', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.3px;
+            line-height: 1.4;
+            text-transform: none;
         }
 
         .result-empty .icon {
@@ -536,23 +599,31 @@
             display: block;
         }
 
+        .action-row .generate-btn {
+            flex: 1;
+            width: auto;
+            margin-top: 0;
+        }
+
         .generate-btn {
-            background-color: var(--accent);
+            background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
             color: #FFFFFF;
-            padding: 10px 20px;
+            padding: 14px 28px;
             border: none;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 2px;
+            font-size: 15px;
+            font-weight: 600;
+            text-transform: none;
+            letter-spacing: 0.5px;
             cursor: pointer;
             width: 100%;
-            margin-top: 8px;
+            margin-top: 16px;
             display: block;
-            transition: all 0.15s;
+            transition: transform 0.2s, box-shadow 0.2s;
             position: relative;
             overflow: hidden;
+            line-height: 1.3;
+            box-shadow: var(--shadow-strong);
         }
 
         .generate-btn::before {
@@ -571,9 +642,8 @@
         }
 
         .generate-btn:hover:not(:disabled) {
-            background-color: var(--accent-hover);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(255, 0, 110, 0.3);
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 0 18px 40px rgba(248, 35, 135, 0.35);
         }
 
         .generate-btn:active:not(:disabled) {
@@ -581,10 +651,11 @@
         }
 
         .generate-btn:disabled {
-            background-color: var(--bg-tertiary);
+            background: rgba(255, 255, 255, 0.6);
             color: var(--text-muted);
             cursor: not-allowed;
-            opacity: 0.5;
+            opacity: 0.6;
+            box-shadow: none;
         }
 
         .generate-btn.loading {
@@ -608,12 +679,13 @@
         .empty-state {
             text-align: center;
             color: var(--text-muted);
-            font-size: 10px;
-            padding: 20px 8px;
+            font-size: 14px;
+            padding: 20px 12px;
             display: none;
             font-family: 'Lexend Deca', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.3px;
+            line-height: 1.4;
+            text-transform: none;
         }
 
         .empty-state .icon {
@@ -624,17 +696,19 @@
         }
 
         .status-message {
-            padding: 6px 10px;
-            margin: 4px 0;
-            font-size: 10px;
+            padding: 8px 12px;
+            margin: 6px 0;
+            font-size: 13px;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             font-family: 'Lexend Deca', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            text-transform: none;
+            letter-spacing: 0.3px;
             border-left: 2px solid;
             animation: slideIn 0.2s ease;
+            line-height: 1.4;
+            font-weight: 500;
         }
 
         @keyframes slideIn {
@@ -649,21 +723,120 @@
         }
 
         .status-success {
-            background-color: var(--bg-secondary);
+            background: rgba(43, 201, 144, 0.1);
             color: var(--success);
             border-color: var(--success);
         }
 
         .status-error {
-            background-color: var(--bg-secondary);
+            background: rgba(255, 77, 109, 0.1);
             color: var(--danger);
             border-color: var(--danger);
         }
 
         .status-info {
-            background-color: var(--bg-secondary);
+            background: rgba(248, 35, 135, 0.1);
             color: var(--accent);
             border-color: var(--accent);
+        }
+
+        .log-panel {
+            margin-top: 20px;
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: inset 0 0 30px rgba(18, 176, 255, 0.08), var(--shadow-soft);
+            padding: 16px;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .log-title {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent-strong);
+            letter-spacing: 0.4px;
+        }
+
+        .log-clear-btn {
+            background: transparent;
+            border: 1px solid rgba(248, 35, 135, 0.3);
+            color: var(--accent);
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 12px;
+            padding: 6px 12px;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0.3px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .log-clear-btn:hover {
+            background: rgba(248, 35, 135, 0.08);
+            border-color: var(--accent);
+        }
+
+        .api-log-list {
+            max-height: 260px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .api-log-entry {
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: inset 0 0 20px rgba(248, 35, 135, 0.05);
+            font-family: 'Lexend Deca', sans-serif;
+        }
+
+        .api-log-entry.log-error {
+            border-left: 3px solid var(--danger);
+        }
+
+        .api-log-entry.log-success {
+            border-left: 3px solid var(--success);
+        }
+
+        .api-log-entry.log-info {
+            border-left: 3px solid var(--accent);
+        }
+
+        .api-log-entry-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .api-log-action {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .api-log-detail {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .api-log-payload {
+            margin-top: 6px;
+            font-size: 11px;
+            background: rgba(0, 0, 0, 0.03);
+            padding: 8px;
+            overflow-x: auto;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
         }
 
         .loading-overlay {
@@ -672,8 +845,8 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(4px);
+            background: rgba(253, 251, 255, 0.92);
+            backdrop-filter: blur(10px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -681,39 +854,42 @@
         }
 
         .loading-content {
-            background-color: var(--bg-primary);
-            border: 2px solid var(--accent);
-            padding: 20px;
+            background: var(--bg-card-gradient);
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            padding: 24px;
             text-align: center;
-            min-width: 200px;
-            box-shadow: 0 8px 24px rgba(255, 0, 110, 0.2);
+            min-width: 240px;
+            box-shadow: var(--shadow-strong);
         }
 
         .spinner {
-            width: 32px;
-            height: 32px;
-            border: 2px solid var(--border);
-            border-top: 2px solid var(--accent);
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(248, 35, 135, 0.2);
+            border-top: 3px solid var(--accent);
             animation: spin 0.6s linear infinite;
             margin: 0 auto 12px;
+            border-radius: 50%;
         }
 
         .loading-text {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 11px;
+            font-size: 14px;
             color: var(--accent);
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: 700;
+            margin-bottom: 8px;
+            text-transform: none;
+            letter-spacing: 0.3px;
+            font-weight: 600;
+            line-height: 1.3;
         }
 
         .loading-subtext {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 9px;
+            font-size: 12px;
             color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            text-transform: none;
+            letter-spacing: 0.3px;
+            line-height: 1.3;
         }
 
         .confirmation-dialog {
@@ -722,8 +898,8 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(4px);
+            background: rgba(8, 9, 43, 0.35);
+            backdrop-filter: blur(12px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -731,27 +907,27 @@
         }
 
         .dialog-content {
-            background-color: var(--bg-primary);
-            border: 2px solid var(--accent);
-            padding: 16px;
-            min-width: 280px;
-            max-width: 360px;
-            box-shadow: 0 8px 24px rgba(255, 0, 110, 0.2);
+            background: var(--bg-card-gradient);
+            border: 2px solid rgba(248, 35, 135, 0.4);
+            padding: 20px;
+            min-width: 320px;
+            max-width: 420px;
+            box-shadow: var(--shadow-strong);
         }
 
         .dialog-title {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
-            font-weight: 700;
-            line-height: 1.2;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.3;
             color: var(--accent);
             margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
+            text-transform: none;
+            letter-spacing: 0.4px;
         }
 
         .dialog-message {
-            font-size: 11px;
+            font-size: 14px;
             color: var(--text-secondary);
             margin-bottom: 16px;
             line-height: 1.4;
@@ -765,21 +941,22 @@
         }
 
         .dialog-btn {
-            padding: 6px 12px;
-            font-size: 10px;
+            padding: 8px 14px;
+            font-size: 12px;
             font-family: 'Lexend Deca', sans-serif;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-weight: 600;
+            text-transform: none;
+            letter-spacing: 0.3px;
             cursor: pointer;
             border: 1px solid;
             transition: all 0.15s;
+            line-height: 1.2;
         }
 
         .dialog-btn-cancel {
             background-color: transparent;
             color: var(--text-secondary);
-            border-color: var(--border);
+            border-color: rgba(255, 255, 255, 0.5);
         }
 
         .dialog-btn-cancel:hover {
@@ -789,9 +966,10 @@
         }
 
         .dialog-btn-confirm {
-            background-color: var(--danger);
+            background: linear-gradient(120deg, var(--danger), var(--accent));
             color: #FFFFFF;
-            border-color: var(--danger);
+            border-color: transparent;
+            box-shadow: 0 8px 20px rgba(255, 77, 109, 0.3);
         }
 
         .dialog-btn-confirm:hover {
@@ -806,28 +984,48 @@
         }
 
         @media (max-width: 767px) {
+            .action-row {
+                flex-direction: column;
+            }
+
+            .action-row .generate-btn {
+                width: 100%;
+            }
+
             h1 {
                 font-size: 24px;
                 letter-spacing: 1px;
             }
 
             .section-title {
-                font-size: 10px;
+                font-size: 12px;
             }
 
             .upload-area {
-                padding: 6px;
-                min-height: 50px;
+                padding: 8px;
+                min-height: 64px;
             }
 
             .generate-btn {
-                padding: 8px 16px;
-                font-size: 10px;
+                padding: 12px 20px;
+                font-size: 14px;
             }
 
             .gallery-grid {
                 grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
                 gap: 6px;
+            }
+
+            .status-message {
+                font-size: 12px;
+            }
+
+            .dialog-title {
+                font-size: 14px;
+            }
+
+            .dialog-message {
+                font-size: 12px;
             }
         }
     </style>
@@ -851,9 +1049,9 @@
                     </div>
                     <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
                     <div class="pagination" id="preset-pagination" style="display: none;">
-                        <button class="pagination-btn" id="preset-prev" onclick="changePresetPage(-1)">‹</button>
+                        <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
                         <span class="pagination-info" id="preset-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="preset-next" onclick="changePresetPage(1)">›</button>
+                        <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
                     </div>
                     <div class="empty-state" id="preset-gallery-empty">
                         <div class="icon">🎭</div>
@@ -872,9 +1070,9 @@
                     </div>
                     <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
                     <div class="pagination" id="selfie-pagination" style="display: none;">
-                        <button class="pagination-btn" id="selfie-prev" onclick="changeSelfiePage(-1)">‹</button>
+                        <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
                         <span class="pagination-info" id="selfie-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="selfie-next" onclick="changeSelfiePage(1)">›</button>
+                        <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
                     </div>
                     <div class="empty-state" id="selfie-gallery-empty">
                         <div class="icon">📷</div>
@@ -921,38 +1119,38 @@
                 </div>
             </div>
 
-            <div class="api-selector">
-                <label class="api-selector-label" for="api-provider">API Provider</label>
-                <select class="api-select" id="api-provider">
-                    <option value="rapidapi">RapidAPI</option>
-                    <option value="google-nano-banana">Google Nano Banana</option>
-                </select>
-            </div>
+            <div class="action-row">
+                <div class="api-selector">
+                    <label class="api-selector-label" for="api-provider">API Provider</label>
+                    <select class="api-select" id="api-provider">
+                        <option value="rapidapi">RapidAPI</option>
+                        <option value="google-nano-banana">Google Nano Banana</option>
+                    </select>
+                </div>
 
-            <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
-                Tạo Đổi Mặt
-            </button>
+                <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
+                    Tạo Đổi Mặt
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Status Messages Container -->
     <div id="status-messages"></div>
 
+    <!-- API Log Panel -->
+    <div class="log-panel">
+        <div class="log-header">
+            <div class="log-title">Nhật Ký API (Realtime)</div>
+            <button class="log-clear-btn" onclick="clearApiLogs()">Dọn Log</button>
+        </div>
+        <div id="api-log-list" class="api-log-list"></div>
+    </div>
+
     <script>
         const WORKER_URL = 'https://ai-faceswap-backend.chungminhtu03.workers.dev';
-
-        // State variables
-        let selectedPreset = null;
-        let selectedSelfie = null;
-        let presets = [];
-        let selfies = [];
-        
-        // Pagination state
         const ITEMS_PER_PAGE = 12;
-        let presetCurrentPage = 1;
-        let selfieCurrentPage = 1;
 
-        // DOM elements
         const presetUpload = document.getElementById('preset-upload');
         const presetInput = document.getElementById('preset-input');
         const presetPreview = document.getElementById('preset-preview');
@@ -961,6 +1159,7 @@
         const presetPageInfo = document.getElementById('preset-page-info');
         const presetPrevBtn = document.getElementById('preset-prev');
         const presetNextBtn = document.getElementById('preset-next');
+        const presetGalleryEmpty = document.getElementById('preset-gallery-empty');
 
         const selfieUpload = document.getElementById('selfie-upload');
         const selfieInput = document.getElementById('selfie-input');
@@ -970,276 +1169,307 @@
         const selfiePageInfo = document.getElementById('selfie-page-info');
         const selfiePrevBtn = document.getElementById('selfie-prev');
         const selfieNextBtn = document.getElementById('selfie-next');
+        const selfieGalleryEmpty = document.getElementById('selfie-gallery-empty');
 
         const resultDisplay = document.getElementById('result-display');
         const generateBtn = document.getElementById('generate-btn');
         const statusMessages = document.getElementById('status-messages');
-        const presetGalleryEmpty = document.getElementById('preset-gallery-empty');
-        const selfieGalleryEmpty = document.getElementById('selfie-gallery-empty');
+        const apiLogList = document.getElementById('api-log-list');
+
+        function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
+            return {
+                key,
+                responseKey,
+                endpoints: { list: listEndpoint, delete: deleteEndpoint },
+                logName,
+                labels,
+                elements,
+                state: {
+                    items: [],
+                    selected: null,
+                    page: 1
+                }
+            };
+        }
+
+        const galleries = {
+            preset: createGalleryConfig({
+                key: 'preset',
+                responseKey: 'presets',
+                listEndpoint: '/presets',
+                deleteEndpoint: '/presets',
+                logName: 'Thư Viện Mẫu',
+                labels: {
+                    selectedTitle: 'Mẫu Đã Chọn',
+                    selectSuccess: 'Đã chọn mẫu thành công',
+                    deleteSuccess: 'Đã xóa mẫu thành công',
+                    deleteError: 'Không thể xóa mẫu',
+                    confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?',
+                    emptyMessage: 'Chọn một mẫu từ thư viện phía trên',
+                    emptyIcon: '🎭'
+                },
+                elements: {
+                    upload: presetUpload,
+                    input: presetInput,
+                    preview: presetPreview,
+                    gallery: presetGallery,
+                    pagination: presetPagination,
+                    pageInfo: presetPageInfo,
+                    prevBtn: presetPrevBtn,
+                    nextBtn: presetNextBtn,
+                    empty: presetGalleryEmpty
+                }
+            }),
+            selfie: createGalleryConfig({
+                key: 'selfie',
+                responseKey: 'selfies',
+                listEndpoint: '/selfies',
+                deleteEndpoint: '/selfies',
+                logName: 'Thư Viện Selfie',
+                labels: {
+                    selectedTitle: 'Selfie Đã Chọn',
+                    selectSuccess: 'Đã chọn selfie thành công',
+                    deleteSuccess: 'Đã xóa selfie thành công',
+                    deleteError: 'Không thể xóa selfie',
+                    confirmDelete: 'Bạn có chắc chắn muốn xóa selfie này không?',
+                    emptyMessage: 'Chọn một selfie từ thư viện phía trên',
+                    emptyIcon: '📷'
+                },
+                elements: {
+                    upload: selfieUpload,
+                    input: selfieInput,
+                    preview: selfiePreview,
+                    gallery: selfieGallery,
+                    pagination: selfiePagination,
+                    pageInfo: selfiePageInfo,
+                    prevBtn: selfiePrevBtn,
+                    nextBtn: selfieNextBtn,
+                    empty: selfieGalleryEmpty
+                }
+            })
+        };
+
+        const galleryKeys = Object.keys(galleries);
+        const MAX_LOG_ENTRIES = 30;
+
+        function logApiCall({ label, method, url, status = 'info', payload }) {
+            if (!apiLogList) return;
+
+            const timestamp = new Date().toLocaleTimeString('vi-VN');
+            const entry = document.createElement('div');
+            entry.className = `api-log-entry log-${status}`;
+
+            const statusLabel = status === 'success' ? 'Thành công' : status === 'error' ? 'Lỗi' : 'Thông tin';
+            const payloadHtml = payload !== undefined && payload !== null
+                ? `<pre class="api-log-payload">${escapeHtml(formatPayload(payload))}</pre>`
+                : '';
+
+            entry.innerHTML = `
+                <div class="api-log-entry-header">
+                    <span>${timestamp}</span>
+                    <span>${statusLabel}</span>
+                </div>
+                <div class="api-log-action">${label}</div>
+                <div class="api-log-detail">${method} ${url}</div>
+                ${payloadHtml}
+            `;
+
+            apiLogList.prepend(entry);
+
+            while (apiLogList.childElementCount > MAX_LOG_ENTRIES) {
+                apiLogList.removeChild(apiLogList.lastElementChild);
+            }
+        }
+
+        function clearApiLogs() {
+            if (apiLogList) {
+                apiLogList.innerHTML = '';
+            }
+        }
+
+        function formatPayload(payload) {
+            if (payload === undefined || payload === null) return '';
+            if (typeof payload === 'string') return payload;
+            try {
+                return JSON.stringify(payload, null, 2);
+            } catch {
+                return String(payload);
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
 
         // Initialize the application
         async function init() {
-            // Set initial empty states for previews
-            clearPresetSelection();
-            clearSelfieSelection();
-
-            await Promise.all([
-                loadPresets(),
-                loadSelfies()
-            ]);
+            galleryKeys.forEach(resetPreview);
+            await Promise.all(galleryKeys.map(loadGallery));
         }
 
-        // Load presets from API
-        async function loadPresets() {
+        async function loadGallery(type) {
+            const config = galleries[type];
             try {
-                const response = await fetch(`${WORKER_URL}/presets`);
-                const data = await response.json();
-                presets = data.presets || [];
-                renderPresetGallery();
+                const response = await fetch(`${WORKER_URL}${config.endpoints.list}`);
+                const data = await safeJson(response);
+                config.state.items = data[config.responseKey] || [];
+                config.state.page = 1;
+                renderGallery(type);
             } catch (error) {
-                console.error('Lỗi tải mẫu:', error);
-                showStatusMessage('Lỗi tải mẫu', 'error');
+                console.error(`Lỗi tải ${type}:`, error);
+                showStatusMessage(`Lỗi tải ${type === 'preset' ? 'mẫu' : 'selfie'}`, 'error');
             }
         }
 
-        // Load selfies from API
-        async function loadSelfies() {
-            try {
-                const response = await fetch(`${WORKER_URL}/selfies`);
-                const data = await response.json();
-                selfies = data.selfies || [];
-                renderSelfieGallery();
-            } catch (error) {
-                console.error('Lỗi tải selfie:', error);
-                showStatusMessage('Lỗi tải selfie', 'error');
-            }
-        }
+        function renderGallery(type) {
+            const config = galleries[type];
+            const { items, page, selected } = config.state;
+            const { gallery, pagination, empty, pageInfo, prevBtn, nextBtn } = config.elements;
 
-        // Render preset gallery with pagination
-        function renderPresetGallery() {
-            if (presets.length === 0) {
-                presetGallery.style.display = 'none';
-                presetPagination.style.display = 'none';
-                presetGalleryEmpty.style.display = 'block';
+            if (!items.length) {
+                gallery.style.display = 'none';
+                pagination.style.display = 'none';
+                empty.style.display = 'block';
                 return;
             }
 
-            const totalPages = Math.ceil(presets.length / ITEMS_PER_PAGE);
-            presetCurrentPage = Math.min(presetCurrentPage, Math.max(1, totalPages));
-            
-            const startIndex = (presetCurrentPage - 1) * ITEMS_PER_PAGE;
-            const endIndex = startIndex + ITEMS_PER_PAGE;
-            const pagePresets = presets.slice(startIndex, endIndex);
+            empty.style.display = 'none';
+            gallery.style.display = 'grid';
+            pagination.style.display = 'flex';
 
-            presetGallery.style.display = 'grid';
-            presetGalleryEmpty.style.display = 'none';
-            presetPagination.style.display = 'flex';
-            
-            presetGallery.innerHTML = pagePresets.map(preset => `
-                <div class="gallery-item ${selectedPreset?.id === preset.id ? 'selected' : ''}"
-                     onclick="selectPreset('${preset.id}')"
-                     data-preset-id="${preset.id}">
-                    <img src="${preset.image_url}" alt="${preset.filename}" loading="lazy"
-                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2VkZWQiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVycm9yPC90ZXh0Pjwvc3ZnPg=='">
-                    <button class="gallery-delete-btn" onclick="deletePreset('${preset.id}', event)">×</button>
+            const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
+            config.state.page = Math.min(page, Math.max(1, totalPages));
+            const startIndex = (config.state.page - 1) * ITEMS_PER_PAGE;
+            const pageItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+            gallery.innerHTML = pageItems.map(item => `
+                <div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}"
+                     onclick="handleSelect('${type}', '${item.id}', event)"
+                     data-item-id="${item.id}">
+                    <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
+                    <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                 </div>
             `).join('');
 
-            // Update pagination info and buttons
-            presetPageInfo.textContent = `${presetCurrentPage} / ${totalPages}`;
-            presetPrevBtn.disabled = presetCurrentPage === 1;
-            presetNextBtn.disabled = presetCurrentPage === totalPages;
+            pageInfo.textContent = `${config.state.page} / ${totalPages}`;
+            prevBtn.disabled = config.state.page === 1;
+            nextBtn.disabled = config.state.page === totalPages;
         }
 
-        // Render selfie gallery with pagination
-        function renderSelfieGallery() {
-            if (selfies.length === 0) {
-                selfieGallery.style.display = 'none';
-                selfiePagination.style.display = 'none';
-                selfieGalleryEmpty.style.display = 'block';
+        function changePage(type, delta) {
+            const config = galleries[type];
+            const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
+            const newPage = config.state.page + delta;
+            if (newPage < 1 || newPage > totalPages) {
+                return;
+            }
+            config.state.page = newPage;
+            renderGallery(type);
+        }
+
+        function handleSelect(type, itemId, event) {
+            event?.stopPropagation();
+            const config = galleries[type];
+            const item = config.state.items.find(entry => entry.id === itemId);
+            if (!item) return;
+            setSelectedItem(type, item, { showMessage: true });
+        }
+
+        function setSelectedItem(type, item, options = {}) {
+            const config = galleries[type];
+            config.state.selected = item || null;
+            updatePreview(type);
+            renderGallery(type);
+            updateGenerateButton();
+
+            if (options.showMessage && item) {
+                showStatusMessage(config.labels.selectSuccess, 'success');
+            }
+        }
+
+        function updatePreview(type) {
+            const config = galleries[type];
+            const { selected } = config.state;
+            const { upload, preview } = config.elements;
+
+            if (!selected) {
+                upload.style.display = 'block';
+                preview.style.display = 'block';
+                preview.innerHTML = `
+                    <div class="preview-empty">
+                        <div class="icon">${config.labels.emptyIcon}</div>
+                        ${config.labels.emptyMessage}
+                    </div>
+                `;
                 return;
             }
 
-            const totalPages = Math.ceil(selfies.length / ITEMS_PER_PAGE);
-            selfieCurrentPage = Math.min(selfieCurrentPage, Math.max(1, totalPages));
-            
-            const startIndex = (selfieCurrentPage - 1) * ITEMS_PER_PAGE;
-            const endIndex = startIndex + ITEMS_PER_PAGE;
-            const pageSelfies = selfies.slice(startIndex, endIndex);
-
-            selfieGallery.style.display = 'grid';
-            selfieGalleryEmpty.style.display = 'none';
-            selfiePagination.style.display = 'flex';
-            
-            selfieGallery.innerHTML = pageSelfies.map(selfie => `
-                <div class="gallery-item ${selectedSelfie?.id === selfie.id ? 'selected' : ''}"
-                     onclick="selectSelfie('${selfie.id}')"
-                     data-selfie-id="${selfie.id}">
-                    <img src="${selfie.image_url}" alt="${selfie.filename}" loading="lazy"
-                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2VkZWQiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVycm9yPC90ZXh0Pjwvc3ZnPg=='">
-                    <button class="gallery-delete-btn" onclick="deleteSelfie('${selfie.id}', event)">×</button>
-                </div>
-            `).join('');
-
-            // Update pagination info and buttons
-            selfiePageInfo.textContent = `${selfieCurrentPage} / ${totalPages}`;
-            selfiePrevBtn.disabled = selfieCurrentPage === 1;
-            selfieNextBtn.disabled = selfieCurrentPage === totalPages;
-        }
-
-        // Change preset page
-        function changePresetPage(delta) {
-            const totalPages = Math.ceil(presets.length / ITEMS_PER_PAGE);
-            const newPage = presetCurrentPage + delta;
-            if (newPage >= 1 && newPage <= totalPages) {
-                presetCurrentPage = newPage;
-                renderPresetGallery();
-            }
-        }
-
-        // Change selfie page
-        function changeSelfiePage(delta) {
-            const totalPages = Math.ceil(selfies.length / ITEMS_PER_PAGE);
-            const newPage = selfieCurrentPage + delta;
-            if (newPage >= 1 && newPage <= totalPages) {
-                selfieCurrentPage = newPage;
-                renderSelfieGallery();
-            }
-        }
-
-        // Select preset
-        function selectPreset(presetId) {
-            selectedPreset = presets.find(p => p.id === presetId);
-            if (!selectedPreset) return;
-
-            // Update gallery selection
-            document.querySelectorAll('#preset-gallery .gallery-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-            event.currentTarget.classList.add('selected');
-
-            // Show selected preview
-            presetUpload.style.display = 'none';
-            presetPreview.style.display = 'block';
-            presetPreview.innerHTML = `
-                <img src="${selectedPreset.image_url}" alt="${selectedPreset.filename}">
-                <div class="selected-label">Mẫu Đã Chọn</div>
-                <button class="delete-btn" onclick="deletePreset('${selectedPreset.id}', event)">×</button>
+            upload.style.display = 'none';
+            preview.style.display = 'block';
+            preview.innerHTML = `
+                <img src="${selected.image_url}" alt="${selected.filename || ''}">
+                <div class="selected-label">${config.labels.selectedTitle}</div>
+                <button class="delete-btn" onclick="clearSelection('${type}', event)">×</button>
             `;
-
-            updateGenerateButton();
-            showStatusMessage('Đã chọn mẫu thành công', 'success');
         }
 
-        // Select selfie
-        function selectSelfie(selfieId) {
-            selectedSelfie = selfies.find(s => s.id === selfieId);
-            if (!selectedSelfie) return;
-
-            // Update gallery selection
-            document.querySelectorAll('#selfie-gallery .gallery-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-            event.currentTarget.classList.add('selected');
-
-            // Show selected preview
-            selfieUpload.style.display = 'none';
-            selfiePreview.style.display = 'block';
-            selfiePreview.innerHTML = `
-                <img src="${selectedSelfie.image_url}" alt="${selectedSelfie.filename}">
-                <div class="selected-label">Selfie Đã Chọn</div>
-                <button class="delete-btn" onclick="deleteSelfie('${selectedSelfie.id}', event)">×</button>
-            `;
-
-            updateGenerateButton();
-            showStatusMessage('Đã chọn selfie thành công', 'success');
+        function resetPreview(type) {
+            const config = galleries[type];
+            config.state.selected = null;
+            updatePreview(type);
         }
 
-        // Delete preset
-        async function deletePreset(presetId, event) {
+        function clearSelection(type, event) {
             event?.stopPropagation();
+            const config = galleries[type];
+            config.state.selected = null;
+            updatePreview(type);
+            renderGallery(type);
+            updateGenerateButton();
+        }
 
-            if (!confirm('Bạn có chắc chắn muốn xóa mẫu này không?')) {
+        async function deleteItem(type, itemId, event) {
+            event?.stopPropagation();
+            const config = galleries[type];
+
+            if (!confirm(config.labels.confirmDelete)) {
                 return;
             }
 
             try {
-                const response = await fetch(`${WORKER_URL}/presets/${presetId}`, {
+                const response = await fetch(`${WORKER_URL}${config.endpoints.delete}/${itemId}`, {
                     method: 'DELETE'
                 });
+                const deleteData = await safeJson(response);
 
                 if (!response.ok) {
-                    throw new Error('Không thể xóa mẫu');
+                    throw new Error(deleteData.message || config.labels.deleteError);
                 }
 
-                // Remove from local state
-                presets = presets.filter(p => p.id !== presetId);
+                config.state.items = config.state.items.filter(item => item.id !== itemId);
+                const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
+                config.state.page = Math.min(config.state.page, totalPages);
 
-                // Reset to page 1 if current page becomes empty
-                const totalPages = Math.ceil(presets.length / ITEMS_PER_PAGE);
-                if (presetCurrentPage > totalPages && totalPages > 0) {
-                    presetCurrentPage = totalPages;
-                } else if (presets.length === 0) {
-                    presetCurrentPage = 1;
+                if (config.state.items.length === 0) {
+                    config.state.page = 1;
                 }
 
-                // Clear selection if deleted preset was selected
-                if (selectedPreset?.id === presetId) {
-                    selectedPreset = null;
-                    presetPreview.style.display = 'none';
-                    presetUpload.style.display = 'block';
+                if (config.state.selected?.id === itemId) {
+                    config.state.selected = null;
+                    updatePreview(type);
                 }
 
-                renderPresetGallery();
+                renderGallery(type);
                 updateGenerateButton();
-                showStatusMessage('Đã xóa mẫu thành công', 'success');
+                showStatusMessage(config.labels.deleteSuccess, 'success');
             } catch (error) {
-                console.error('Lỗi xóa mẫu:', error);
-                showStatusMessage('Không thể xóa mẫu', 'error');
-            }
-        }
-
-        // Delete selfie
-        async function deleteSelfie(selfieId, event) {
-            event?.stopPropagation();
-
-            if (!confirm('Bạn có chắc chắn muốn xóa selfie này không?')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`${WORKER_URL}/selfies/${selfieId}`, {
-                    method: 'DELETE'
-                });
-
-                if (!response.ok) {
-                    throw new Error('Không thể xóa selfie');
-                }
-
-                // Remove from local state
-                selfies = selfies.filter(s => s.id !== selfieId);
-
-                // Reset to page 1 if current page becomes empty
-                const totalPages = Math.ceil(selfies.length / ITEMS_PER_PAGE);
-                if (selfieCurrentPage > totalPages && totalPages > 0) {
-                    selfieCurrentPage = totalPages;
-                } else if (selfies.length === 0) {
-                    selfieCurrentPage = 1;
-                }
-
-                // Clear selection if deleted selfie was selected
-                if (selectedSelfie?.id === selfieId) {
-                    selectedSelfie = null;
-                    selfiePreview.style.display = 'none';
-                    selfieUpload.style.display = 'block';
-                }
-
-                renderSelfieGallery();
-                updateGenerateButton();
-                showStatusMessage('Đã xóa selfie thành công', 'success');
-            } catch (error) {
-                console.error('Lỗi xóa selfie:', error);
-                showStatusMessage('Không thể xóa selfie', 'error');
+                console.error(`Lỗi xóa ${type}:`, error);
+                showStatusMessage(config.labels.deleteError, 'error');
             }
         }
 
@@ -1259,8 +1489,15 @@
             await handleImageUpload(file, 'selfie');
         });
 
+        function addNewItem(type, item) {
+            const config = galleries[type];
+            config.state.items = [item, ...config.state.items.filter(existing => existing.id !== item.id)];
+            config.state.page = 1;
+        }
+
         // Handle image upload
         async function handleImageUpload(file, type) {
+            const config = galleries[type];
             // Validate file
             if (!file.type.match('image/(jpeg|jpg|png|webp)')) {
                 showStatusMessage('Loại tệp không hợp lệ. Vui lòng tải lên JPG, PNG hoặc WebP.', 'error');
@@ -1272,6 +1509,7 @@
                 return;
             }
 
+            setUploadLoading(type, true);
             try {
                 // Sanitize filename
                 const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
@@ -1287,36 +1525,26 @@
                     body: JSON.stringify({ filename, type })
                 });
 
-                if (!uploadUrlResponse.ok) {
-                    throw new Error('Không thể lấy URL tải lên');
+                let uploadData = {};
+                try {
+                    uploadData = await uploadUrlResponse.json();
+                } catch {
+                    uploadData = {};
                 }
 
-                const uploadData = await uploadUrlResponse.json();
+                if (!uploadUrlResponse.ok) {
+                    throw new Error(uploadData.message || 'Không thể lấy URL tải lên');
+                }
 
                 if (uploadData.exists) {
-                    // File already exists, use existing URL
                     const existingImage = {
                         id: uploadData.id || filename,
-                        filename: filename,
+                        filename,
                         image_url: uploadData.url,
                         created_at: new Date().toISOString()
                     };
-
-                    if (type === 'preset') {
-                        selectedPreset = existingImage;
-                        presets.unshift(existingImage);
-                        presetCurrentPage = 1; // Reset to first page to show new item
-                        renderPresetGallery();
-                        showSelectedPreset(existingImage);
-                    } else {
-                        selectedSelfie = existingImage;
-                        selfies.unshift(existingImage);
-                        selfieCurrentPage = 1; // Reset to first page to show new item
-                        renderSelfieGallery();
-                        showSelectedSelfie(existingImage);
-                    }
-
-                    updateGenerateButton();
+                    addNewItem(type, existingImage);
+                    setSelectedItem(type, existingImage);
                     showStatusMessage('Hình ảnh đã tồn tại. Sử dụng phiên bản hiện có.', 'info');
                     return;
                 }
@@ -1328,11 +1556,16 @@
                     headers: { 'Content-Type': file.type }
                 });
 
+                let uploadResult = {};
+                try {
+                    uploadResult = await uploadResponse.json();
+                } catch {
+                    uploadResult = {};
+                }
+
                 if (!uploadResponse.ok) {
                     throw new Error('Tải lên thất bại');
                 }
-
-                const uploadResult = await uploadResponse.json();
 
                 // Add to local state
                 const newImage = {
@@ -1342,82 +1575,37 @@
                     created_at: new Date().toISOString()
                 };
 
-                if (type === 'preset') {
-                    selectedPreset = newImage;
-                    presets.unshift(newImage);
-                    presetCurrentPage = 1; // Reset to first page to show new item
-                    renderPresetGallery();
-                    showSelectedPreset(newImage);
-                } else {
-                    selectedSelfie = newImage;
-                    selfies.unshift(newImage);
-                    selfieCurrentPage = 1; // Reset to first page to show new item
-                    renderSelfieGallery();
-                    showSelectedSelfie(newImage);
-                }
-
-                updateGenerateButton();
+                addNewItem(type, newImage);
+                setSelectedItem(type, newImage);
                 showStatusMessage('Tải lên hình ảnh thành công', 'success');
 
             } catch (error) {
                 console.error('Lỗi tải lên:', error);
                 showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
+            } finally {
+                setUploadLoading(type, false);
             }
         }
 
-        // Show selected preset
-        function showSelectedPreset(preset) {
-            presetPreview.innerHTML = `
-                <img src="${preset.image_url}" alt="${preset.filename}">
-                <div class="selected-label">Mẫu Đã Chọn</div>
-                <button class="delete-btn" onclick="clearPresetSelection(event)">×</button>
-            `;
-        }
-
-        // Show selected selfie
-        function showSelectedSelfie(selfie) {
-            selfiePreview.innerHTML = `
-                <img src="${selfie.image_url}" alt="${selfie.filename}">
-                <div class="selected-label">Selfie Đã Chọn</div>
-                <button class="delete-btn" onclick="clearSelfieSelection(event)">×</button>
-            `;
-        }
-
-        // Clear preset selection
-        function clearPresetSelection(event) {
-            event?.stopPropagation();
-            selectedPreset = null;
-            presetPreview.innerHTML = `
-                <div class="preview-empty">
-                    <div class="icon">🎭</div>
-                    Chọn một mẫu từ thư viện phía trên
-                </div>
-            `;
-            updateGenerateButton();
-        }
-
-        // Clear selfie selection
-        function clearSelfieSelection(event) {
-            event?.stopPropagation();
-            selectedSelfie = null;
-            selfiePreview.innerHTML = `
-                <div class="preview-empty">
-                    <div class="icon">📷</div>
-                    Chọn một selfie từ thư viện phía trên
-                </div>
-            `;
-            updateGenerateButton();
+        function setUploadLoading(type, isLoading) {
+            const target = galleries[type]?.elements.upload;
+            if (!target) return;
+            target.classList.toggle('loading', isLoading);
         }
 
         // Update generate button state
         function updateGenerateButton() {
-            const isEnabled = selectedPreset && selectedSelfie;
-            generateBtn.disabled = !isEnabled;
+            const hasPreset = Boolean(galleries.preset.state.selected);
+            const hasSelfie = Boolean(galleries.selfie.state.selected);
+            generateBtn.disabled = !(hasPreset && hasSelfie);
         }
 
         // Generate face swap
         async function generateFaceSwap() {
-            if (!selectedPreset || !selectedSelfie) {
+            const presetSelection = galleries.preset.state.selected;
+            const selfieSelection = galleries.selfie.state.selected;
+
+            if (!presetSelection || !selfieSelection) {
                 showStatusMessage('Vui lòng chọn cả hình mẫu và selfie', 'error');
                 return;
             }
@@ -1444,13 +1632,18 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        target_url: selectedPreset.image_url,
-                        source_url: selectedSelfie.image_url,
+                        target_url: presetSelection.image_url,
+                        source_url: selfieSelection.image_url,
                         api_provider: apiProvider
                     })
                 });
 
-                const data = await response.json();
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch {
+                    data = {};
+                }
 
                 if (!response.ok || data.status === 'error') {
                     throw new Error(data.message || 'Đổi mặt thất bại');
@@ -1543,6 +1736,14 @@
 
         // Initialize the app
         init();
+
+        async function safeJson(response) {
+            try {
+                return await response.json();
+            } catch {
+                return {};
+            }
+        }
     </script>
 </body>
 </html>
