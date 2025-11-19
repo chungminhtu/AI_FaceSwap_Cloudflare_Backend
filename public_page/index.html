@@ -1,1684 +1,1548 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Đổi Mặt AI - RoosterX Global Viet Nam</title>
-<style>
-* {
-margin: 0;
-padding: 0;
-box-sizing: border-box;
-}
-
-body {
-font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-min-height: 100vh;
-color: #333;
-}
-
-.app {
-width: 100%;
-padding: 10px;
-}
-
-.reset-btn {
-background: rgba(255,255,255,0.2);
-color: white;
-border: 2px solid rgba(255,255,255,0.3);
-padding: 8px 16px;
-border-radius: 25px;
-cursor: pointer;
-font-size: 14px;
-position: absolute;
-top: 10px;
-right: 10px;
-}
-
-.header {
-text-align: center;
-margin-bottom: 20px;
-color: white;
-}
-
-.header h1 {
-font-size: 2rem;
-margin-bottom: 10px;
-}
-
-.header .subtitle {
-font-size: 1rem;
-opacity: 0.9;
-}
-
-.progress-steps {
-display: flex;
-justify-content: center;
-margin: 15px 0;
-gap: 8px;
-}
-
-.step {
-display: flex;
-align-items: center;
-gap: 6px;
-padding: 6px 12px;
-border-radius: 15px;
-font-size: 0.85rem;
-}
-
-.step.completed {
-background: #28a745;
-color: white;
-}
-
-.step.active {
-background: #667eea;
-color: white;
-}
-
-.step.pending {
-background: #f8f9fa;
-color: #666;
-}
-
-.step-icon {
-width: 14px;
-height: 14px;
-border-radius: 50%;
-background: currentColor;
-display: flex;
-align-items: center;
-justify-content: center;
-font-size: 9px;
-font-weight: bold;
-}
-
-.comparison-grid {
-display: grid;
-grid-template-columns: 1fr 1fr;
-grid-template-rows: auto auto;
-gap: 15px;
-margin-bottom: 20px;
-}
-
-.grid-item {
-background: white;
-border-radius: 10px;
-box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-overflow: hidden;
-}
-
-.selfie-panel, .preset-panel {
-grid-column: span 1;
-}
-
-.result-panel {
-grid-column: span 2;
-min-height: 400px;
-}
-
-.panel-header {
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-color: white;
-padding: 12px 16px;
-display: flex;
-justify-content: space-between;
-align-items: center;
-}
-
-.panel-title {
-font-size: 1rem;
-font-weight: 600;
-}
-
-.panel-status {
-font-size: 0.8rem;
-opacity: 0.8;
-}
-
-.preset-options {
-display: grid;
-grid-template-columns: 1fr 1fr;
-gap: 10px;
-margin: 15px;
-}
-
-.preset-option {
-padding: 20px 10px;
-text-align: center;
-border: 2px dashed #ddd;
-border-radius: 8px;
-cursor: pointer;
-min-height: 120px;
-display: flex;
-flex-direction: column;
-justify-content: center;
-align-items: center;
-}
-
-.preset-option:hover {
-border-color: #667eea;
-background: rgba(102, 126, 234, 0.05);
-}
-
-.upload-zone {
-padding: 30px 15px;
-text-align: center;
-border: 2px dashed #ddd;
-border-radius: 8px;
-margin: 15px;
-cursor: pointer;
-min-height: 150px;
-display: flex;
-flex-direction: column;
-justify-content: center;
-align-items: center;
-}
-
-.upload-zone:hover, .upload-zone.dragover {
-border-color: #667eea;
-background: rgba(102, 126, 234, 0.05);
-}
-
-.upload-icon {
-font-size: 2rem;
-margin-bottom: 10px;
-opacity: 0.6;
-}
-
-.upload-text {
-font-size: 0.9rem;
-margin-bottom: 6px;
-color: #666;
-}
-
-.upload-subtext {
-font-size: 0.7rem;
-color: #999;
-}
-
-.image-preview {
-padding: 15px;
-text-align: center;
-}
-
-.image-preview img {
-max-width: 100%;
-max-height: 250px;
-border-radius: 8px;
-object-fit: cover;
-}
-
-.collections-grid {
-display: grid;
-grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-gap: 12px;
-padding: 15px;
-}
-
-.collection-card {
-background: white;
-border-radius: 8px;
-overflow: hidden;
-box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-cursor: pointer;
-}
-
-.collection-image {
-width: 100%;
-height: 120px;
-object-fit: cover;
-}
-
-.collection-info {
-padding: 15px;
-}
-
-.collection-name {
-font-weight: 600;
-margin-bottom: 5px;
-font-size: 0.9rem;
-}
-
-.collection-count {
-color: #666;
-font-size: 0.8rem;
-}
-
-.modal {
-display: none;
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background: rgba(0,0,0,0.8);
-z-index: 1000;
-}
-
-.modal.show {
-display: flex;
-justify-content: center;
-align-items: center;
-}
-
-.modal-content {
-background: white;
-border-radius: 10px;
-max-width: 95vw;
-max-height: 95vh;
-overflow: hidden;
-width: 100%;
-margin: 10px;
-}
-
-.modal-header {
-padding: 15px;
-border-bottom: 1px solid #eee;
-display: flex;
-justify-content: space-between;
-align-items: center;
-}
-
-.modal-title {
-font-size: 1.3rem;
-font-weight: 600;
-}
-
-.modal-close {
-background: none;
-border: none;
-font-size: 1.5rem;
-cursor: pointer;
-padding: 5px;
-border-radius: 50%;
-width: 30px;
-height: 30px;
-display: flex;
-align-items: center;
-justify-content: center;
-}
-
-.modal-close:hover {
-background: #f5f5f5;
-}
-
-.modal-body {
-padding: 15px;
-max-height: 75vh;
-overflow-y: auto;
-}
-
-.preset-grid {
-display: grid;
-grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-gap: 12px;
-}
-
-.preset-item {
-border-radius: 8px;
-overflow: hidden;
-cursor: pointer;
-border: 3px solid transparent;
-}
-
-.preset-item.selected {
-border-color: #667eea;
-transform: scale(1.05);
-box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-.preset-image {
-width: 100%;
-height: 120px;
-object-fit: cover;
-}
-
-/* New styles for preset collections */
-.preset-images-stack {
-position: relative;
-width: 100%;
-height: 120px;
-overflow: hidden;
-border-radius: 6px;
-}
-
-.preset-images-stack img {
-position: absolute;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-object-fit: cover;
-transition: opacity 0.3s ease;
-}
-
-.preset-images-stack img:nth-child(1) { z-index: 3; }
-.preset-images-stack img:nth-child(2) {
-z-index: 2;
-transform: rotate(-2deg) scale(0.95);
-opacity: 0.8;
-}
-.preset-images-stack img:nth-child(3) {
-z-index: 1;
-transform: rotate(2deg) scale(0.9);
-opacity: 0.6;
-}
-
-.preset-overlay {
-position: absolute;
-bottom: 0;
-left: 0;
-right: 0;
-background: linear-gradient(transparent, rgba(0,0,0,0.8));
-color: white;
-padding: 8px;
-text-align: center;
-border-radius: 0 0 6px 6px;
-}
-
-.preset-name {
-font-size: 0.85rem;
-font-weight: 600;
-margin-bottom: 2px;
-}
-
-.preset-count {
-font-size: 0.7rem;
-opacity: 0.9;
-}
-
-/* Pagination styles */
-.pagination-controls {
-margin-top: 20px;
-padding: 15px;
-background: white;
-border-radius: 8px;
-box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-text-align: center;
-}
-
-.pagination-info {
-font-size: 0.9rem;
-color: #666;
-margin-bottom: 10px;
-font-weight: 500;
-}
-
-.pagination-buttons {
-display: flex;
-justify-content: center;
-align-items: center;
-gap: 5px;
-flex-wrap: wrap;
-}
-
-.pagination-buttons button {
-padding: 8px 12px;
-border: 1px solid #ddd;
-background: white;
-color: #333;
-border-radius: 4px;
-cursor: pointer;
-font-size: 0.9rem;
-min-width: 40px;
-transition: all 0.2s ease;
-}
-
-.pagination-buttons button:hover:not(:disabled) {
-background: #f8f9fa;
-border-color: #667eea;
-color: #667eea;
-}
-
-.pagination-buttons button:disabled {
-opacity: 0.5;
-cursor: not-allowed;
-}
-
-.pagination-buttons button.active {
-background: #667eea;
-color: white;
-border-color: #667eea;
-font-weight: 600;
-}
-
-/* Mobile pagination styles */
-@media (max-width: 768px) {
-.pagination-controls {
-padding: 10px;
-margin-top: 15px;
-}
-
-.pagination-info {
-font-size: 0.8rem;
-margin-bottom: 8px;
-}
-
-.pagination-buttons {
-gap: 3px;
-}
-
-.pagination-buttons button {
-padding: 6px 8px;
-font-size: 0.8rem;
-min-width: 35px;
-}
-}
-
-.generate-btn {
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-color: white;
-border: none;
-padding: 12px 30px;
-border-radius: 20px;
-font-size: 1rem;
-font-weight: 600;
-cursor: pointer;
-margin: 15px auto;
-display: block;
-}
-
-.generate-btn:disabled {
-opacity: 0.6;
-cursor: not-allowed;
-}
-
-.loading-overlay {
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background: rgba(0,0,0,0.8);
-display: none;
-justify-content: center;
-align-items: center;
-z-index: 2000;
-}
-
-.loading-overlay.show {
-display: flex;
-}
-
-.loading-content {
-background: white;
-padding: 30px;
-border-radius: 10px;
-text-align: center;
-}
-
-.loading-spinner {
-width: 40px;
-height: 40px;
-border: 3px solid #f3f3f3;
-border-top: 3px solid #667eea;
-border-radius: 50%;
-animation: spin 1s linear infinite;
-margin: 0 auto 15px;
-}
-
-.history-section {
-background: white;
-border-radius: 10px;
-padding: 20px;
-box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-margin-top: 20px;
-}
-
-.history-header {
-display: flex;
-justify-content: space-between;
-align-items: center;
-margin-bottom: 15px;
-}
-
-.history-title {
-font-size: 1.3rem;
-font-weight: 600;
-color: #333;
-}
-
-.history-grid {
-display: grid;
-grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-gap: 12px;
-}
-
-.history-item {
-border-radius: 8px;
-overflow: hidden;
-cursor: pointer;
-position: relative;
-}
-
-.history-image {
-width: 100%;
-height: 120px;
-object-fit: cover;
-}
-
-.history-overlay {
-position: absolute;
-bottom: 0;
-left: 0;
-right: 0;
-background: linear-gradient(transparent, rgba(0,0,0,0.7));
-color: white;
-padding: 10px;
-font-size: 0.8rem;
-}
-
-.preset-name-modal {
-display: none;
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100%;
-background: rgba(0,0,0,0.8);
-z-index: 1000;
-justify-content: center;
-align-items: center;
-}
-
-.preset-name-modal.show {
-display: flex;
-}
-
-.preset-name-content {
-background: white;
-border-radius: 10px;
-padding: 30px;
-max-width: 500px;
-width: 90%;
-position: relative;
-}
-
-.preset-name-input {
-width: 100%;
-padding: 10px;
-border: 2px solid #ddd;
-border-radius: 6px;
-font-size: 1rem;
-}
-
-.preview-placeholder {
-color: #999;
-font-size: 0.85em;
-padding: 20px;
-border: 2px dashed #ddd;
-border-radius: 8px;
-margin-top: 10px;
-text-align: center;
-}
-
-@keyframes spin {
-0% { transform: rotate(0deg); }
-100% { transform: rotate(360deg); }
-}
-
-@media (min-width: 769px) {
-/* Desktop: Make selected preset items bigger */
-.preset-item.selected {
-transform: scale(1.15) !important;
-width: calc(130px * 1.15);
-height: calc(140px * 1.15);
-margin: 10px;
-}
-
-.preset-item.selected .preset-images-stack {
-height: calc(120px * 1.15);
-}
-
-.preset-item.selected .preset-overlay {
-padding: calc(8px * 1.15);
-}
-
-.preset-item.selected .preset-name {
-font-size: calc(0.85rem * 1.15);
-}
-
-.preset-item.selected .preset-count {
-font-size: calc(0.7rem * 1.15);
-}
-}
-
-@media (max-width: 768px) {
-.app {
-padding: 5px;
-}
-
-.comparison-grid {
-grid-template-columns: 1fr;
-grid-template-rows: auto auto auto;
-gap: 10px;
-}
-
-.selfie-panel, .preset-panel, .result-panel {
-grid-column: span 1;
-}
-
-.header h1 {
-font-size: 1.8rem;
-}
-
-.header {
-margin-bottom: 15px;
-}
-
-.collections-grid, .preset-grid {
-grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-gap: 10px;
-}
-
-.preset-options {
-grid-template-columns: 1fr;
-gap: 8px;
-}
-
-.modal-content {
-margin: 5px;
-max-width: 98vw;
-}
-
-.progress-steps {
-margin: 10px 0;
-gap: 5px;
-}
-
-.step {
-font-size: 0.8rem;
-padding: 5px 10px;
-}
-}
-
-/* Modern drag-and-drop file upload styles */
-.file-upload-zone {
-border: 2px dashed #ccc;
-border-radius: 12px;
-padding: 40px 20px;
-text-align: center;
-cursor: pointer;
-transition: all 0.3s ease;
-background: #fafafa;
-margin-bottom: 15px;
-}
-
-.file-upload-zone:hover {
-border-color: #667eea;
-background: #f0f8ff;
-transform: translateY(-2px);
-}
-
-.file-upload-zone.dragover {
-border-color: #667eea;
-background: #e3f2fd;
-transform: scale(1.02);
-}
-
-.upload-icon-large {
-font-size: 48px;
-margin-bottom: 15px;
-opacity: 0.7;
-}
-
-.upload-text-large {
-font-size: 18px;
-font-weight: 600;
-color: #333;
-margin-bottom: 8px;
-}
-
-.upload-subtext-large {
-font-size: 14px;
-color: #666;
-margin-bottom: 5px;
-}
-
-.upload-hint {
-font-size: 12px;
-color: #888;
-font-style: italic;
-}
-
-/* File preview styles */
-.file-preview-container {
-background: #f8f9fa;
-border-radius: 8px;
-padding: 15px;
-border: 1px solid #e9ecef;
-}
-
-.file-preview-header {
-display: flex;
-justify-content: space-between;
-align-items: center;
-margin-bottom: 10px;
-font-size: 14px;
-font-weight: 600;
-}
-
-.clear-files-btn {
-background: none;
-border: none;
-color: #dc3545;
-cursor: pointer;
-font-size: 12px;
-text-decoration: underline;
-}
-
-.clear-files-btn:hover {
-color: #c82333;
-}
-
-.file-preview-grid {
-display: grid;
-grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-gap: 10px;
-max-height: 200px;
-overflow-y: auto;
-}
-
-.file-preview-item {
-position: relative;
-border-radius: 6px;
-overflow: hidden;
-aspect-ratio: 1;
-background: #fff;
-border: 1px solid #ddd;
-}
-
-.file-preview-item img {
-width: 100%;
-height: 100%;
-object-fit: cover;
-}
-
-.file-preview-item .remove-file {
-position: absolute;
-top: 2px;
-right: 2px;
-background: rgba(0, 0, 0, 0.7);
-color: white;
-border: none;
-border-radius: 50%;
-width: 20px;
-height: 20px;
-font-size: 12px;
-cursor: pointer;
-display: flex;
-align-items: center;
-justify-content: center;
-}
-
-.file-preview-item .remove-file:hover {
-background: rgba(220, 53, 69, 0.9);
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Swap AI</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700;800;900&display=swap');
+        
+        :root {
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #FAFAFA;
+            --bg-tertiary: #F5F5F5;
+            --accent: #FF006E;
+            --accent-hover: #FF1B7E;
+            --text-primary: #000000;
+            --text-secondary: #333333;
+            --text-muted: #999999;
+            --border: #E0E0E0;
+            --border-accent: #FF006E;
+            --danger: #FF3333;
+            --success: #00C853;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Lexend Deca', -apple-system, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.4;
+            font-weight: 400;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            border-top: 4px solid var(--accent);
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 12px;
+        }
+
+        @media (max-width: 767px) {
+            .main-container {
+                padding: 8px;
+            }
+        }
+
+        h1 {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1;
+            text-align: left;
+            margin-bottom: 16px;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 8px;
+            display: inline-block;
+        }
+
+        .faceswap-zone {
+            margin-top: 20px;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        @media (max-width: 767px) {
+            .workspace {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+        }
+
+        .left-column {
+            display: grid;
+            grid-template-rows: auto auto;
+            gap: 12px;
+        }
+
+        .preview-empty {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+            padding: 40px 12px;
+            font-family: 'Lexend Deca', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .preview-empty .icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+            opacity: 0.3;
+            display: block;
+        }
+
+        .section {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 8px;
+            position: relative;
+        }
+
+        .section::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--accent);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .section:hover::before {
+            opacity: 1;
+        }
+
+        .section-title {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 8px;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .upload-area {
+            background-color: var(--bg-tertiary);
+            border: 1px dashed var(--border);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+            cursor: pointer;
+            transition: all 0.15s;
+            position: relative;
+        }
+
+        .upload-area.gallery-upload {
+            padding: 4px;
+            min-height: 36px;
+            margin-bottom: 8px;
+        }
+
+        .upload-area.gallery-upload .upload-icon {
+            font-size: 16px;
+            margin-bottom: 2px;
+        }
+
+        .upload-area.gallery-upload .upload-text {
+            font-size: 8px;
+            margin-bottom: 1px;
+            line-height: 1.2;
+        }
+
+        .upload-area.gallery-upload .upload-subtext {
+            font-size: 7px;
+            line-height: 1.2;
+        }
+
+        .upload-area:hover {
+            border-color: var(--accent);
+            background-color: var(--bg-secondary);
+        }
+
+        .upload-area.dragover {
+            border-color: var(--accent);
+            background-color: var(--bg-secondary);
+            border-style: solid;
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .upload-icon {
+            font-size: 32px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            opacity: 0.5;
+        }
+
+        .upload-text {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .upload-subtext {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .selected-preview {
+            position: relative;
+            overflow: hidden;
+            background-color: var(--bg-tertiary);
+            min-height: 350px;
+            max-height: 450px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            margin-top: 8px;
+        }
+
+        .selected-preview img {
+            width: 100%;
+            height: 100%;
+            max-height: 450px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .selected-label {
+            position: absolute;
+            top: 0;
+            left: 0;
+            background-color: var(--accent);
+            color: #FFFFFF;
+            padding: 4px 8px;
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 24px;
+            height: 24px;
+            background-color: var(--danger);
+            color: #FFFFFF;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+            z-index: 10;
+            transition: all 0.15s;
+            font-family: 'Lexend Deca', sans-serif;
+        }
+
+        .delete-btn:hover {
+            background-color: var(--accent);
+            color: #FFFFFF;
+        }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+            padding: 8px;
+            background-color: var(--bg-tertiary);
+            min-height: 200px;
+        }
+
+        @media (max-width: 767px) {
+            .gallery-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+                gap: 6px;
+            }
+        }
+
+        .gallery-grid::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .gallery-grid::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        .gallery-grid::-webkit-scrollbar-thumb {
+            background: var(--accent);
+        }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 12px;
+            padding: 8px;
+        }
+
+        .pagination-btn {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.15s;
+            min-width: 40px;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background-color: var(--accent);
+            color: #FFFFFF;
+            border-color: var(--accent);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .pagination-info {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 8px;
+        }
+
+        .api-selector {
+            margin-bottom: 12px;
+        }
+
+        .api-selector-label {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .api-select {
+            width: 100%;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 10px;
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.15s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23FF006E' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            padding-right: 30px;
+        }
+
+        .api-select:hover {
+            border-color: var(--accent);
+            background-color: var(--bg-tertiary);
+        }
+
+        .api-select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .gallery-item {
+            aspect-ratio: 1;
+            overflow: hidden;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.15s;
+            position: relative;
+        }
+
+        .gallery-item.selected {
+            border-color: var(--accent);
+            border-width: 2px;
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .gallery-item:hover {
+            border-color: var(--accent);
+            transform: scale(1.05);
+        }
+
+        .gallery-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .gallery-delete-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 16px;
+            height: 16px;
+            background-color: var(--danger);
+            color: #FFFFFF;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 700;
+            z-index: 10;
+            opacity: 0;
+            transition: all 0.15s;
+            font-family: 'Lexend Deca', sans-serif;
+        }
+
+        .gallery-item:hover .gallery-delete-btn {
+            opacity: 1;
+        }
+
+        .gallery-delete-btn:hover {
+            background-color: var(--accent);
+            color: #FFFFFF;
+        }
+
+        .result-section {
+            margin-bottom: 12px;
+        }
+
+        .right-column {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 8px;
+        }
+
+        .result-display {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 8px;
+        }
+
+        .galleries-section {
+            margin-bottom: 12px;
+        }
+
+        .galleries-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 767px) {
+            .galleries-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+        }
+
+        .gallery-section {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 8px;
+        }
+
+        .gallery-title {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .result-empty {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-family: 'Lexend Deca', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .result-empty .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+            opacity: 0.2;
+            display: block;
+        }
+
+        .result-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .generate-btn {
+            background-color: var(--accent);
+            color: #FFFFFF;
+            padding: 10px 20px;
+            border: none;
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 8px;
+            display: block;
+            transition: all 0.15s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .generate-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s;
+        }
+
+        .generate-btn:hover:not(:disabled)::before {
+            left: 100%;
+        }
+
+        .generate-btn:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(255, 0, 110, 0.3);
+        }
+
+        .generate-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .generate-btn:disabled {
+            background-color: var(--bg-tertiary);
+            color: var(--text-muted);
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .generate-btn.loading {
+            position: relative;
+        }
+
+        .generate-btn.loading::after {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 2px solid transparent;
+            border-top-color: #FFFFFF;
+            animation: spin 0.6s linear infinite;
+        }
+
+
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 10px;
+            padding: 20px 8px;
+            display: none;
+            font-family: 'Lexend Deca', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .empty-state .icon {
+            font-size: 20px;
+            margin-bottom: 6px;
+            opacity: 0.2;
+            display: block;
+        }
+
+        .status-message {
+            padding: 6px 10px;
+            margin: 4px 0;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Lexend Deca', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-left: 2px solid;
+            animation: slideIn 0.2s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .status-success {
+            background-color: var(--bg-secondary);
+            color: var(--success);
+            border-color: var(--success);
+        }
+
+        .status-error {
+            background-color: var(--bg-secondary);
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .status-info {
+            background-color: var(--bg-secondary);
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .loading-content {
+            background-color: var(--bg-primary);
+            border: 2px solid var(--accent);
+            padding: 20px;
+            text-align: center;
+            min-width: 200px;
+            box-shadow: 0 8px 24px rgba(255, 0, 110, 0.2);
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 2px solid var(--border);
+            border-top: 2px solid var(--accent);
+            animation: spin 0.6s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        .loading-text {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 11px;
+            color: var(--accent);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+        }
+
+        .loading-subtext {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .confirmation-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .dialog-content {
+            background-color: var(--bg-primary);
+            border: 2px solid var(--accent);
+            padding: 16px;
+            min-width: 280px;
+            max-width: 360px;
+            box-shadow: 0 8px 24px rgba(255, 0, 110, 0.2);
+        }
+
+        .dialog-title {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.2;
+            color: var(--accent);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .dialog-message {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            line-height: 1.4;
+            font-family: 'Lexend Deca', sans-serif;
+        }
+
+        .dialog-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .dialog-btn {
+            padding: 6px 12px;
+            font-size: 10px;
+            font-family: 'Lexend Deca', sans-serif;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            border: 1px solid;
+            transition: all 0.15s;
+        }
+
+        .dialog-btn-cancel {
+            background-color: transparent;
+            color: var(--text-secondary);
+            border-color: var(--border);
+        }
+
+        .dialog-btn-cancel:hover {
+            background-color: var(--bg-tertiary);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .dialog-btn-confirm {
+            background-color: var(--danger);
+            color: #FFFFFF;
+            border-color: var(--danger);
+        }
+
+        .dialog-btn-confirm:hover {
+            background-color: var(--accent);
+            border-color: var(--accent);
+            color: #FFFFFF;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 767px) {
+            h1 {
+                font-size: 24px;
+                letter-spacing: 1px;
+            }
+
+            .section-title {
+                font-size: 10px;
+            }
+
+            .upload-area {
+                padding: 6px;
+                min-height: 50px;
+            }
+
+            .generate-btn {
+                padding: 8px 16px;
+                font-size: 10px;
+            }
+
+            .gallery-grid {
+                grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+                gap: 6px;
+            }
+        }
+    </style>
 </head>
 <body>
-<div class="app">
-<div class="header">
-<h1>🎭 Đổi Mặt AI</h1>
-<div class="subtitle">So sánh ảnh gốc với kết quả AI</div>
-</div>
-
-
-<div class="comparison-grid">
-<div class="grid-item selfie-panel">
-<div class="panel-header">
-<div class="panel-title">📸 Ảnh Selfie</div>
-<div class="panel-status" id="selfie-status">Chưa chọn</div>
-</div>
-<div class="upload-zone" id="selfie-upload" onclick="triggerFileInput('selfie-input')">
-<div class="upload-icon">📷</div>
-<div class="upload-text">Nhấn để tải lên hoặc kéo thả</div>
-<div class="upload-subtext">JPG, PNG, WebP tối đa 10MB</div>
-<input type="file" id="selfie-input" accept="image/*" style="display: none;">
-</div>
-<div class="preset-grid" id="selfies-grid" style="margin-top: 15px; display: none;">
-<!-- Previously uploaded selfies will be shown here -->
-</div>
-<div class="image-preview" id="selfie-preview" style="display: none;"></div>
-</div>
-
-<div class="grid-item preset-panel">
-<div class="panel-header">
-<div class="panel-title">🎭 Ảnh Preset</div>
-<div class="panel-status" id="preset-status">Chưa chọn</div>
-</div>
-<div class="preset-options">
-<div class="preset-option" onclick="showPresetUpload()">
-<div class="upload-icon-large">📤</div>
-<div class="upload-text-large">Tải lên Preset</div>
-<div class="upload-subtext-large">Thêm ảnh mới vào bộ sưu tập</div>
-<div class="upload-hint">JPG, PNG, WebP tối đa 10MB</div>
-</div>
-<div class="preset-option" onclick="showExistingPresets()">
-<div class="upload-icon-large">🎭</div>
-<div class="upload-text-large">Chọn Preset</div>
-<div class="upload-subtext-large">Từ bộ sưu tập hiện có</div>
-<div class="upload-hint">Ảnh đã tải lên trước đó</div>
-</div>
-</div>
-<div class="preset-grid" id="presets-grid" style="margin-top: 15px; display: none;">
-<!-- Presets will be shown here -->
-</div>
-<div class="image-preview" id="preset-preview" style="display: none;"></div>
-</div>
-
-<div class="grid-item result-panel">
-<div class="panel-header">
-<div class="panel-title">✨ Kết Quả Đổi Mặt</div>
-<div class="panel-status" id="result-status">Đang chờ tạo</div>
-</div>
-<div class="image-preview" id="result-preview" style="display: none;">
-<div style="padding: 60px; color: #999; font-style: italic;">
-Kết quả sẽ hiển thị ở đây sau khi tạo
-</div>
-</div>
-</div>
-</div>
-
-<button class="generate-btn" id="generate-btn" onclick="generateFaceSwap()" disabled>
-🚀 Tạo Đổi Mặt
-</button>
-
-<div class="history-section">
-<div class="history-header">
-<div class="history-title">📚 Kết Quả Gần Đây</div>
-<button class="reset-btn" style="position: static; margin: 0;" onclick="clearHistory()">🗑️ Xóa Tất Cả</button>
-</div>
-<div class="history-grid" id="history-grid">
-<!-- History items will be populated here -->
-</div>
-</div>
-</div>
-
-
-<!-- Preset Upload Modal -->
-<div class="preset-name-modal" id="preset-upload-modal">
-<div class="preset-name-content">
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-<h3 style="margin: 0;">Tải lên Preset mới</h3>
-<button class="modal-close" onclick="closePresetUploadModal()">×</button>
-</div>
-
-<div class="file-upload-zone" onclick="triggerFileInput('preset-input')">
-<div class="upload-icon-large">📤</div>
-<div class="upload-text-large">Nhấn để chọn ảnh</div>
-<div class="upload-subtext-large">hoặc kéo thả vào đây</div>
-<div class="upload-hint">JPG, PNG, WebP tối đa 10MB</div>
-<input type="file" id="preset-input" accept="image/*" multiple style="display: none;">
-</div>
-
-<div class="file-preview-container" id="preset-file-preview" style="display: none;">
-<div class="file-preview-header">
-<span>Ảnh đã chọn</span>
-<button class="clear-files-btn" onclick="clearPresetFiles()">Xóa tất cả</button>
-</div>
-<div class="file-preview-grid" id="preset-preview-grid"></div>
-</div>
-
-<div style="margin-top: 20px;">
-<label for="preset-name-input" style="display: block; margin-bottom: 8px; font-weight: 600;">Tên bộ sưu tập:</label>
-<input type="text" id="preset-name-input" class="preset-name-input" placeholder="Nhập tên cho bộ preset này..." required>
-</div>
-
-<div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-<button onclick="closePresetUploadModal()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;">Hủy</button>
-<button onclick="uploadPresetImages()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;" id="upload-preset-btn">Tải lên</button>
-</div>
-</div>
-</div>
-
-<!-- Loading Overlay -->
-<div class="loading-overlay" id="loading-overlay">
-<div class="loading-content">
-<div class="loading-spinner"></div>
-<div id="loading-text">Đang xử lý đổi mặt...</div>
-<div style="margin-top: 10px; color: #666; font-size: 0.9rem;">
-Có thể mất 10-30 giây
-</div>
-</div>
-</div>
-
-<script>
-const WORKER_URL = 'https://ai-faceswap-backend.chungminhtu03.workers.dev';
-
-let selectedPreset = null;
-let selfieImageUrl = null;
-let selectedSelfieId = null;
-let presets = [];
-let results = [];
-let selfies = [];
-
-// Pagination variables
-let currentPage = 1;
-const itemsPerPage = 12; // Show 12 preset collections per page
-
-// Helper function to safely extract image URL from images array
-function getImageUrl(imageData) {
-if (!imageData) return '';
-let url = '';
-if (typeof imageData === 'string') {
-url = imageData;
-} else if (typeof imageData === 'object' && imageData !== null) {
-url = imageData.url || imageData.image_url || imageData.imageUrl || '';
-} else {
-url = String(imageData || '');
-}
-
-// Ensure it's a full URL - if it's a relative path, make it absolute
-if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-// If it starts with /, it's a path on the worker
-if (url.startsWith('/')) {
-url = `${WORKER_URL}${url}`;
-} else {
-// Otherwise, assume it's an R2 path
-url = `${WORKER_URL}/r2/${url}`;
-}
-}
-
-return url;
-}
-
-// Global functions for HTML onclick handlers
-function triggerFileInput(inputId) {
-document.getElementById(inputId).click();
-}
-
-async function loadPresets() {
-try {
-console.log('Loading presets from:', `${WORKER_URL}/presets`);
-const response = await fetch(`${WORKER_URL}/presets`);
-
-if (!response.ok) {
-throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-}
-
-const data = await response.json();
-console.log('Presets data:', data);
-presets = data.preset_collections || [];
-console.log(`Loaded ${presets.length} presets`);
-renderPresetsGrid();
-} catch (error) {
-console.error('Error loading presets:', error);
-renderPresetsGrid();
-}
-}
-
-function renderPresetsGrid() {
-const grid = document.getElementById('presets-grid');
-if (!grid) return;
-
-if (presets.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có ảnh preset.</div>';
-return;
-}
-
-const validPresets = presets.filter(preset => preset.images && preset.images.length > 0);
-
-if (validPresets.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có ảnh preset hợp lệ.</div>';
-return;
-}
-
-// Calculate pagination
-const totalPages = Math.ceil(validPresets.length / itemsPerPage);
-const startIndex = (currentPage - 1) * itemsPerPage;
-const endIndex = startIndex + itemsPerPage;
-const currentPresets = validPresets.slice(startIndex, endIndex);
-
-// Render current page items
-grid.innerHTML = currentPresets.map(preset => {
-// Show all images in the collection, not just the first one
-const imageElements = preset.images.slice(0, 5).map((image, index) => { // Show max 5 images to avoid performance issues
-let imageUrl = getImageUrl(image);
-if (imageUrl && imageUrl.includes('/upload-proxy/')) {
-imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
-}
-
-return `<img src="${imageUrl}" alt="${preset.name} ${index + 1}" class="preset-image"
-onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';" style="width: 100%; height: 100%; object-fit: cover;">`;
-}).join('');
-
-return `
-<div class="preset-item ${selectedPreset?.id === preset.id ? 'selected' : ''}"
-onclick="selectPreset('${preset.id}')"
-title="${preset.name} (${preset.images.length} ảnh)">
-<div class="preset-images-stack">
-${imageElements}
-</div>
-<div class="preset-overlay">
-<div class="preset-name">${preset.name}</div>
-<div class="preset-count">${preset.images.length} ảnh</div>
-</div>
-</div>
-`;
-}).join('');
-
-// Add pagination controls if needed
-if (totalPages > 1) {
-const paginationControls = document.createElement('div');
-paginationControls.className = 'pagination-controls';
-paginationControls.innerHTML = `
-<div class="pagination-info">
-Trang ${currentPage} / ${totalPages} (${validPresets.length} bộ sưu tập)
-</div>
-<div class="pagination-buttons">
-<button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>⬅️ Trước</button>
-${generatePageButtons(totalPages)}
-<button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Tiếp ➡️</button>
-</div>
-`;
-
-// Insert pagination after the grid
-grid.parentNode.insertBefore(paginationControls, grid.nextSibling);
-}
-}
-
-function generatePageButtons(totalPages) {
-let buttons = '';
-const maxVisiblePages = 5;
-let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-// Adjust start page if we're near the end
-if (endPage - startPage + 1 < maxVisiblePages) {
-startPage = Math.max(1, endPage - maxVisiblePages + 1);
-}
-
-for (let i = startPage; i <= endPage; i++) {
-buttons += `<button onclick="changePage(${i})" class="${i === currentPage ? 'active' : ''}">${i}</button>`;
-}
-
-return buttons;
-}
-
-function changePage(page) {
-if (page < 1 || page > Math.ceil(presets.filter(p => p.images && p.images.length > 0).length / itemsPerPage)) {
-return;
-}
-
-currentPage = page;
-
-// Remove existing pagination controls
-const existingControls = document.querySelector('.pagination-controls');
-if (existingControls) {
-existingControls.remove();
-}
-
-renderPresetsGrid();
-}
-
-function selectPreset(presetId) {
-selectedPreset = presets.find(p => p.id === presetId);
-if (!selectedPreset || !selectedPreset.images || selectedPreset.images.length === 0) {
-alert('Ảnh preset này không hợp lệ');
-return;
-}
-
-// Update grid selection
-document.querySelectorAll('#presets-grid .preset-item').forEach(item => {
-item.classList.remove('selected');
-});
-event.currentTarget.classList.add('selected');
-
-// Show selected preset - show first image as preview
-const preview = document.getElementById('preset-preview');
-if (preview) {
-preview.style.display = 'block';
-let imageUrl = getImageUrl(selectedPreset.images[0]);
-if (imageUrl && imageUrl.includes('/upload-proxy/')) {
-imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
-}
-preview.innerHTML = `<img src="${imageUrl}" alt="${selectedPreset.name}" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
-document.getElementById('preset-status').textContent = `✓ Đã chọn: ${selectedPreset.name} (${selectedPreset.images.length} ảnh)`;
-}
-
-updateGenerateButton();
-}
-
-async function loadResults() {
-try {
-const response = await fetch(`${WORKER_URL}/results`);
-const data = await response.json();
-results = data.results || [];
-renderHistory();
-} catch (error) {
-console.error('Error loading results:', error);
-}
-}
-
-function renderHistory() {
-const grid = document.getElementById('history-grid');
-if (results.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có kết quả</div>';
-return;
-}
-
-grid.innerHTML = results.map(result => {
-const date = new Date(result.created_at).toLocaleDateString('vi-VN');
-return `
-<div class="history-item">
-<img src="${result.result_url}" alt="Kết quả" class="history-image">
-<div class="history-overlay">
-<div>${result.preset_name}</div>
-<div>${date}</div>
-</div>
-</div>
-`;
-}).join('');
-}
-
-// Selfie upload
-document.getElementById('selfie-input').addEventListener('change', async function(e) {
-const file = e.target.files[0];
-if (!file) return;
-
-const preview = document.getElementById('selfie-preview');
-const uploadZone = document.getElementById('selfie-upload');
-
-uploadZone.style.display = 'none';
-preview.style.display = 'block';
-preview.innerHTML = `<img src="" alt="Selfie" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
-
-const reader = new FileReader();
-reader.onload = function(e) {
-preview.querySelector('img').src = e.target.result;
-document.getElementById('selfie-status').textContent = 'Đang tải lên...';
-};
-reader.readAsDataURL(file);
-
-try {
-// Sanitize filename
-const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-const timestamp = Date.now();
-const randomStr = Math.random().toString(36).substring(2, 15);
-const extension = originalName.split('.').pop() || 'jpg';
-const filename = `selfie-${timestamp}-${randomStr}.${extension}`;
-
-const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ filename, type: 'selfie' })
-});
-
-if (!uploadUrlResponse.ok) throw new Error('Không thể lấy URL upload');
-
-const { uploadUrl, publicUrl } = await uploadUrlResponse.json();
-
-const uploadResponse = await fetch(uploadUrl, {
-method: 'PUT',
-body: file,
-headers: { 'Content-Type': file.type }
-});
-
-if (!uploadResponse.ok) throw new Error('Upload thất bại');
-
-// Get response which may include selfieId
-const uploadResult = await uploadResponse.json();
-console.log('Upload response:', uploadResult);
-
-// Construct the full URL for the uploaded selfie
-// uploadUrl is like: https://...workers.dev/upload-proxy/selfie/filename.jpg
-// We need: https://...workers.dev/r2/selfie/filename.jpg
-let uploadedKey = uploadUrl.replace(/^https?:\/\/[^\/]+/, ''); // Remove domain, keep path
-uploadedKey = uploadedKey.replace('/upload-proxy/', '/r2/'); // Convert to R2 path
-selfieImageUrl = `${WORKER_URL}${uploadedKey}`;
-
-// Store selfieId if returned from backend
-if (uploadResult.selfieId) {
-selectedSelfieId = uploadResult.selfieId;
-}
-
-console.log('Selfie uploaded successfully:', {
-uploadUrl: uploadUrl,
-constructedUrl: selfieImageUrl,
-selfieId: selectedSelfieId,
-key: uploadedKey
-});
-
-// Reload selfies list to include the new upload
-await loadSelfies();
-
-// Update UI after successful upload
-document.getElementById('selfie-status').textContent = '✓ Đã tải lên';
-document.getElementById('selfies-grid').style.display = 'grid';
-updateGenerateButton();
-
-} catch (error) {
-document.getElementById('selfie-status').textContent = `✗ Lỗi: ${error.message}`;
-}
-});
-
-
-// Generate face swap
-function generateFaceSwap() {
-if (!selectedPreset || !selfieImageUrl) {
-alert('Vui lòng chọn cả selfie và preset');
-return;
-}
-
-const loading = document.getElementById('loading-overlay');
-loading.classList.add('show');
-
-generateFaceSwapLogic();
-}
-
-async function generateFaceSwapLogic() {
-const loading = document.getElementById('loading-overlay');
-try {
-if (!selectedPreset || !selectedPreset.images || selectedPreset.images.length === 0) {
-throw new Error('Preset không hợp lệ');
-}
-
-if (!selfieImageUrl) {
-throw new Error('Selfie chưa được tải lên');
-}
-
-const targetUrl = getImageUrl(selectedPreset.images[0]);
-
-// Ensure both URLs are full URLs
-const finalTargetUrl = targetUrl.startsWith('http') ? targetUrl : `${WORKER_URL}${targetUrl.startsWith('/') ? '' : '/'}${targetUrl}`;
-const finalSourceUrl = selfieImageUrl.startsWith('http') ? selfieImageUrl : `${WORKER_URL}${selfieImageUrl.startsWith('/') ? '' : '/'}${selfieImageUrl}`;
-
-const requestBody = {
-target_url: finalTargetUrl,
-source_url: finalSourceUrl
-};
-
-console.log('Generating face swap API call:', {
-url: `${WORKER_URL}/faceswap`,
-requestBody: requestBody,
-preset_id: selectedPreset.id,
-preset_name: selectedPreset.name
-});
-
-const response = await fetch(`${WORKER_URL}/faceswap`, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(requestBody)
-});
-
-const data = await response.json();
-console.log('Face swap response:', data);
-
-// Handle new GenericApiResponse format
-if (data.status === 'error') {
-throw new Error(data.message || 'Đổi mặt thất bại');
-}
-
-// For success case, use data.resultImageUrl (new format)
-const resultImageUrl = data.data?.resultImageUrl;
-
-if (!response.ok || !resultImageUrl) {
-throw new Error(data.message || 'Đổi mặt thất bại');
-}
-
-if (resultImageUrl) {
-const preview = document.getElementById('result-preview');
-preview.style.display = 'block';
-let resultUrl = resultImageUrl;
-// Transform URL if needed (upload-proxy to /r2/)
-if (resultUrl.includes('/upload-proxy/')) {
-resultUrl = resultUrl.replace('/upload-proxy/', '/r2/');
-}
-preview.innerHTML = `<img src="${resultUrl}" alt="Kết quả" style="max-width: 100%; max-height: 400px; border-radius: 8px; object-fit: cover;">`;
-document.getElementById('result-status').textContent = '✓ Hoàn thành';
-await loadResults();
-} else {
-throw new Error('Không nhận được ảnh kết quả');
-}
-} catch (error) {
-console.error('Face swap error:', error);
-document.getElementById('result-status').textContent = `✗ Lỗi: ${error.message}`;
-alert(`Lỗi: ${error.message}`);
-} finally {
-loading.classList.remove('show');
-}
-}
-
-function clearHistory() {
-if (confirm('Bạn có chắc muốn xóa tất cả kết quả?')) {
-document.getElementById('history-grid').innerHTML = '<div class="preview-placeholder">Chưa có kết quả</div>';
-}
-}
-
-async function loadResults() {
-try {
-const response = await fetch(`${WORKER_URL}/results`);
-const data = await response.json();
-results = data.results || [];
-renderHistory();
-} catch (error) {
-console.error('Error loading results:', error);
-}
-}
-
-function renderHistory() {
-const grid = document.getElementById('history-grid');
-if (results.length === 0) {
-grid.innerHTML = '<div class="preview-placeholder">Chưa có kết quả</div>';
-return;
-}
-
-grid.innerHTML = results.map(result => {
-const date = new Date(result.created_at).toLocaleDateString('vi-VN');
-return `
-<div class="history-item">
-<img src="${result.result_url}" alt="Kết quả" class="history-image">
-<div class="history-overlay">
-<div>${result.preset_name}</div>
-<div>${date}</div>
-</div>
-</div>
-`;
-}).join('');
-}
-
-// Utility functions
-function updateGenerateButton() {
-const isEnabled = !!(selectedPreset && selfieImageUrl);
-console.log('Update generate button:', {
-hasPreset: !!selectedPreset,
-hasSelfieUrl: !!selfieImageUrl,
-enabled: isEnabled
-});
-document.getElementById('generate-btn').disabled = !isEnabled;
-}
-
-// Load previously uploaded selfies from database
-async function loadSelfies() {
-try {
-const response = await fetch(`${WORKER_URL}/selfies`);
-const data = await response.json();
-selfies = data.selfies || [];
-console.log(`Loaded ${selfies.length} selfies`);
-renderSelfiesGrid();
-} catch (error) {
-console.error('Error loading selfies:', error);
-selfies = [];
-renderSelfiesGrid();
-}
-}
-
-function renderSelfiesGrid() {
-const grid = document.getElementById('selfies-grid');
-if (!grid) return;
-
-if (selfies.length === 0) {
-grid.style.display = 'none';
-return;
-}
-
-grid.style.display = 'grid';
-grid.innerHTML = selfies.map(selfie => {
-let imageUrl = selfie.image_url;
-if (imageUrl.includes('/upload-proxy/')) {
-imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
-}
-if (!imageUrl.startsWith('http')) {
-imageUrl = `${WORKER_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
-}
-
-return `
-<div class="preset-item ${selectedSelfieId === selfie.id ? 'selected' : ''}"
-onclick="selectSelfie('${selfie.id}')"
-title="${selfie.filename}">
-<img src="${imageUrl}" alt="${selfie.filename}" class="preset-image"
-onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect fill=\'%23ddd\' width=\'100\' height=\'100\'%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3ELỗi%3C/text%3E%3C/svg%3E';">
-</div>
-`;
-}).join('');
-}
-
-function selectSelfie(selfieId) {
-const selfie = selfies.find(s => s.id === selfieId);
-if (!selfie) return;
-
-selectedSelfieId = selfieId;
-selfieImageUrl = selfie.image_url;
-
-// Ensure full URL for API calls
-if (!selfieImageUrl.startsWith('http')) {
-selfieImageUrl = `${WORKER_URL}${selfieImageUrl.startsWith('/') ? '' : '/'}${selfieImageUrl}`;
-}
-
-// Update grid selection
-document.querySelectorAll('#selfies-grid .preset-item').forEach(item => {
-item.classList.remove('selected');
-});
-event.currentTarget.classList.add('selected');
-
-// Update preview
-const preview = document.getElementById('selfie-preview');
-const uploadZone = document.getElementById('selfie-upload');
-
-if (preview && uploadZone) {
-uploadZone.style.display = 'none';
-preview.style.display = 'block';
-
-let imageUrl = selfie.image_url;
-if (imageUrl.includes('/upload-proxy/')) {
-imageUrl = imageUrl.replace('/upload-proxy/', '/r2/');
-}
-if (!imageUrl.startsWith('http')) {
-imageUrl = `${WORKER_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
-}
-
-preview.innerHTML = `<img src="${imageUrl}" alt="Selfie" style="max-width: 100%; max-height: 250px; border-radius: 8px; object-fit: cover;">`;
-document.getElementById('selfie-status').textContent = '✓ Đã chọn';
-}
-
-updateGenerateButton();
-}
-
-// Preset upload functionality
-let selectedPresetFiles = [];
-
-function showPresetUpload() {
-document.getElementById('preset-upload-modal').classList.add('show');
-document.getElementById('preset-input').value = '';
-selectedPresetFiles = [];
-updatePresetPreview();
-}
-
-function closePresetUploadModal() {
-document.getElementById('preset-upload-modal').classList.remove('show');
-document.getElementById('preset-name-input').value = '';
-selectedPresetFiles = [];
-updatePresetPreview();
-}
-
-function showExistingPresets() {
-document.getElementById('presets-grid').style.display = 'grid';
-document.getElementById('preset-status').textContent = 'Chọn từ bộ sưu tập';
-
-// Reset pagination when switching to selection mode
-currentPage = 1;
-
-// Remove existing pagination controls
-const existingControls = document.querySelector('.pagination-controls');
-if (existingControls) {
-existingControls.remove();
-}
-
-loadPresets();
-}
-
-// Handle preset file selection
-document.getElementById('preset-input').addEventListener('change', function(e) {
-const files = Array.from(e.target.files);
-if (files.length > 0) {
-selectedPresetFiles = files;
-updatePresetPreview();
-}
-});
-
-// Drag and drop support for preset upload
-const presetUploadZone = document.querySelector('#preset-upload-modal .file-upload-zone');
-if (presetUploadZone) {
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-presetUploadZone.addEventListener(eventName, preventDefaults, false);
-});
-
-['dragenter', 'dragover'].forEach(eventName => {
-presetUploadZone.addEventListener(eventName, highlight, false);
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-presetUploadZone.addEventListener(eventName, unhighlight, false);
-});
-
-presetUploadZone.addEventListener('drop', handleDrop, false);
-
-function preventDefaults(e) {
-e.preventDefault();
-e.stopPropagation();
-}
-
-function highlight() {
-presetUploadZone.classList.add('dragover');
-}
-
-function unhighlight() {
-presetUploadZone.classList.remove('dragover');
-}
-
-function handleDrop(e) {
-const dt = e.dataTransfer;
-const files = dt.files;
-if (files.length > 0) {
-selectedPresetFiles = Array.from(files);
-updatePresetPreview();
-}
-}
-}
-
-function updatePresetPreview() {
-const previewContainer = document.getElementById('preset-file-preview');
-const previewGrid = document.getElementById('preset-preview-grid');
-
-if (selectedPresetFiles.length === 0) {
-previewContainer.style.display = 'none';
-return;
-}
-
-previewContainer.style.display = 'block';
-previewGrid.innerHTML = selectedPresetFiles.map((file, index) => `
-<div class="file-preview-item">
-<img src="${URL.createObjectURL(file)}" alt="${file.name}">
-<button class="remove-file" onclick="removePresetFile(${index})">×</button>
-</div>
-`).join('');
-
-updateUploadButton();
-}
-
-function removePresetFile(index) {
-selectedPresetFiles.splice(index, 1);
-updatePresetPreview();
-}
-
-function clearPresetFiles() {
-selectedPresetFiles = [];
-updatePresetPreview();
-}
-
-function updateUploadButton() {
-const uploadBtn = document.getElementById('upload-preset-btn');
-const nameInput = document.getElementById('preset-name-input');
-const hasFiles = selectedPresetFiles.length > 0;
-const hasName = nameInput.value.trim().length > 0;
-
-uploadBtn.disabled = !hasFiles || !hasName;
-uploadBtn.textContent = hasFiles ? `Tải lên ${selectedPresetFiles.length} ảnh` : 'Tải lên';
-}
-
-document.getElementById('preset-name-input').addEventListener('input', updateUploadButton);
-
-async function uploadPresetImages() {
-if (selectedPresetFiles.length === 0) {
-alert('Vui lòng chọn ít nhất một ảnh');
-return;
-}
-
-const presetName = document.getElementById('preset-name-input').value.trim();
-if (!presetName) {
-alert('Vui lòng nhập tên cho bộ preset');
-return;
-}
-
-const uploadBtn = document.getElementById('upload-preset-btn');
-uploadBtn.disabled = true;
-uploadBtn.textContent = 'Đang tải lên...';
-
-try {
-const uploadedCount = { success: 0, total: selectedPresetFiles.length };
-
-for (let i = 0; i < selectedPresetFiles.length; i++) {
-const file = selectedPresetFiles[i];
-
-// Sanitize filename
-const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-const timestamp = Date.now();
-const randomStr = Math.random().toString(36).substring(2, 15);
-const extension = originalName.split('.').pop() || 'jpg';
-const filename = `preset-${timestamp}-${randomStr}.${extension}`;
-
-// Get upload URL
-const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ filename, type: 'preset' })
-});
-
-if (!uploadUrlResponse.ok) {
-throw new Error(`Không thể lấy URL upload cho ${file.name}`);
-}
-
-const { uploadUrl, publicUrl } = await uploadUrlResponse.json();
-
-// Upload file
-const uploadResponse = await fetch(uploadUrl, {
-method: 'PUT',
-body: file,
-headers: {
-'Content-Type': file.type,
-'X-Preset-Name': btoa(encodeURIComponent(presetName)),
-'X-Preset-Name-Encoded': 'base64'
-}
-});
-
-if (!uploadResponse.ok) {
-throw new Error(`Upload thất bại cho ${file.name}`);
-}
-
-uploadedCount.success++;
-uploadBtn.textContent = `Đã tải lên ${uploadedCount.success}/${uploadedCount.total}...`;
-}
-
-alert(`Thành công! Đã tải lên ${uploadedCount.success} ảnh vào bộ "${presetName}"`);
-closePresetUploadModal();
-loadPresets(); // Refresh the presets list
-
-} catch (error) {
-alert(`Lỗi tải lên: ${error.message}`);
-} finally {
-uploadBtn.disabled = false;
-uploadBtn.textContent = 'Tải lên';
-}
-}
-
-// Initialize
-loadPresets();
-loadResults();
-loadSelfies();
-</script>
+    <div class="main-container">
+        <h1>Đổi Mặt AI</h1>
+
+        <!-- Image Galleries Section (Top) -->
+        <div class="galleries-section">
+            <div class="section-title">Thư Viện Hình Ảnh</div>
+            <div class="galleries-grid">
+                <!-- Preset Gallery -->
+                <div class="gallery-section">
+                    <div class="gallery-title">Thư Viện Mẫu</div>
+                    <div class="upload-area gallery-upload" id="preset-upload">
+                        <div class="upload-icon">📤</div>
+                        <div class="upload-text">Nhấp để tải lên hình mẫu</div>
+                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
+                        <input type="file" class="file-input" id="preset-input" accept="image/*">
+                    </div>
+                    <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
+                    <div class="pagination" id="preset-pagination" style="display: none;">
+                        <button class="pagination-btn" id="preset-prev" onclick="changePresetPage(-1)">‹</button>
+                        <span class="pagination-info" id="preset-page-info">1 / 1</span>
+                        <button class="pagination-btn" id="preset-next" onclick="changePresetPage(1)">›</button>
+                    </div>
+                    <div class="empty-state" id="preset-gallery-empty">
+                        <div class="icon">🎭</div>
+                        Chưa có mẫu nào được tải lên
+                    </div>
+                </div>
+
+                <!-- Selfie Gallery -->
+                <div class="gallery-section">
+                    <div class="gallery-title">Thư Viện Selfie</div>
+                    <div class="upload-area gallery-upload" id="selfie-upload">
+                        <div class="upload-icon">📷</div>
+                        <div class="upload-text">Nhấp để tải lên hình selfie</div>
+                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
+                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                    </div>
+                    <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
+                    <div class="pagination" id="selfie-pagination" style="display: none;">
+                        <button class="pagination-btn" id="selfie-prev" onclick="changeSelfiePage(-1)">‹</button>
+                        <span class="pagination-info" id="selfie-page-info">1 / 1</span>
+                        <button class="pagination-btn" id="selfie-next" onclick="changeSelfiePage(1)">›</button>
+                    </div>
+                    <div class="empty-state" id="selfie-gallery-empty">
+                        <div class="icon">📷</div>
+                        Chưa có selfie nào được tải lên
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Face Swap Zone (Bottom) -->
+        <div class="faceswap-zone">
+            <div class="section-title">Đổi Mặt</div>
+            <div class="workspace">
+                <div class="left-column">
+                    <!-- Preset Section (Top) -->
+                    <div class="section">
+                        <div class="section-title">Mẫu Đã Chọn</div>
+                        <div id="preset-preview" class="selected-preview">
+                            <div class="preview-empty">
+                                <div class="icon">🎭</div>
+                                Chọn một mẫu từ thư viện phía trên
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Selfie Section (Bottom) -->
+                    <div class="section">
+                        <div class="section-title">Selfie Đã Chọn</div>
+                        <div id="selfie-preview" class="selected-preview">
+                            <div class="preview-empty">
+                                <div class="icon">📷</div>
+                                Chọn một selfie từ thư viện phía trên
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result Display -->
+                <div class="right-column" id="result-display">
+                    <div class="result-empty">
+                        <div class="icon">🖼️</div>
+                        Kết quả sẽ xuất hiện ở đây
+                    </div>
+                </div>
+            </div>
+
+            <div class="api-selector">
+                <label class="api-selector-label" for="api-provider">API Provider</label>
+                <select class="api-select" id="api-provider">
+                    <option value="rapidapi">RapidAPI</option>
+                    <option value="google-nano-banana">Google Nano Banana</option>
+                </select>
+            </div>
+
+            <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
+                Tạo Đổi Mặt
+            </button>
+        </div>
+    </div>
+
+    <!-- Status Messages Container -->
+    <div id="status-messages"></div>
+
+    <script>
+        const WORKER_URL = 'https://ai-faceswap-backend.chungminhtu03.workers.dev';
+
+        // State variables
+        let selectedPreset = null;
+        let selectedSelfie = null;
+        let presets = [];
+        let selfies = [];
+        
+        // Pagination state
+        const ITEMS_PER_PAGE = 12;
+        let presetCurrentPage = 1;
+        let selfieCurrentPage = 1;
+
+        // DOM elements
+        const presetUpload = document.getElementById('preset-upload');
+        const presetInput = document.getElementById('preset-input');
+        const presetPreview = document.getElementById('preset-preview');
+        const presetGallery = document.getElementById('preset-gallery');
+        const presetPagination = document.getElementById('preset-pagination');
+        const presetPageInfo = document.getElementById('preset-page-info');
+        const presetPrevBtn = document.getElementById('preset-prev');
+        const presetNextBtn = document.getElementById('preset-next');
+
+        const selfieUpload = document.getElementById('selfie-upload');
+        const selfieInput = document.getElementById('selfie-input');
+        const selfiePreview = document.getElementById('selfie-preview');
+        const selfieGallery = document.getElementById('selfie-gallery');
+        const selfiePagination = document.getElementById('selfie-pagination');
+        const selfiePageInfo = document.getElementById('selfie-page-info');
+        const selfiePrevBtn = document.getElementById('selfie-prev');
+        const selfieNextBtn = document.getElementById('selfie-next');
+
+        const resultDisplay = document.getElementById('result-display');
+        const generateBtn = document.getElementById('generate-btn');
+        const statusMessages = document.getElementById('status-messages');
+        const presetGalleryEmpty = document.getElementById('preset-gallery-empty');
+        const selfieGalleryEmpty = document.getElementById('selfie-gallery-empty');
+
+        // Initialize the application
+        async function init() {
+            // Set initial empty states for previews
+            clearPresetSelection();
+            clearSelfieSelection();
+
+            await Promise.all([
+                loadPresets(),
+                loadSelfies()
+            ]);
+        }
+
+        // Load presets from API
+        async function loadPresets() {
+            try {
+                const response = await fetch(`${WORKER_URL}/presets`);
+                const data = await response.json();
+                presets = data.presets || [];
+                renderPresetGallery();
+            } catch (error) {
+                console.error('Lỗi tải mẫu:', error);
+                showStatusMessage('Lỗi tải mẫu', 'error');
+            }
+        }
+
+        // Load selfies from API
+        async function loadSelfies() {
+            try {
+                const response = await fetch(`${WORKER_URL}/selfies`);
+                const data = await response.json();
+                selfies = data.selfies || [];
+                renderSelfieGallery();
+            } catch (error) {
+                console.error('Lỗi tải selfie:', error);
+                showStatusMessage('Lỗi tải selfie', 'error');
+            }
+        }
+
+        // Render preset gallery with pagination
+        function renderPresetGallery() {
+            if (presets.length === 0) {
+                presetGallery.style.display = 'none';
+                presetPagination.style.display = 'none';
+                presetGalleryEmpty.style.display = 'block';
+                return;
+            }
+
+            const totalPages = Math.ceil(presets.length / ITEMS_PER_PAGE);
+            presetCurrentPage = Math.min(presetCurrentPage, Math.max(1, totalPages));
+            
+            const startIndex = (presetCurrentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const pagePresets = presets.slice(startIndex, endIndex);
+
+            presetGallery.style.display = 'grid';
+            presetGalleryEmpty.style.display = 'none';
+            presetPagination.style.display = 'flex';
+            
+            presetGallery.innerHTML = pagePresets.map(preset => `
+                <div class="gallery-item ${selectedPreset?.id === preset.id ? 'selected' : ''}"
+                     onclick="selectPreset('${preset.id}')"
+                     data-preset-id="${preset.id}">
+                    <img src="${preset.image_url}" alt="${preset.filename}" loading="lazy"
+                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2VkZWQiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVycm9yPC90ZXh0Pjwvc3ZnPg=='">
+                    <button class="gallery-delete-btn" onclick="deletePreset('${preset.id}', event)">×</button>
+                </div>
+            `).join('');
+
+            // Update pagination info and buttons
+            presetPageInfo.textContent = `${presetCurrentPage} / ${totalPages}`;
+            presetPrevBtn.disabled = presetCurrentPage === 1;
+            presetNextBtn.disabled = presetCurrentPage === totalPages;
+        }
+
+        // Render selfie gallery with pagination
+        function renderSelfieGallery() {
+            if (selfies.length === 0) {
+                selfieGallery.style.display = 'none';
+                selfiePagination.style.display = 'none';
+                selfieGalleryEmpty.style.display = 'block';
+                return;
+            }
+
+            const totalPages = Math.ceil(selfies.length / ITEMS_PER_PAGE);
+            selfieCurrentPage = Math.min(selfieCurrentPage, Math.max(1, totalPages));
+            
+            const startIndex = (selfieCurrentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const pageSelfies = selfies.slice(startIndex, endIndex);
+
+            selfieGallery.style.display = 'grid';
+            selfieGalleryEmpty.style.display = 'none';
+            selfiePagination.style.display = 'flex';
+            
+            selfieGallery.innerHTML = pageSelfies.map(selfie => `
+                <div class="gallery-item ${selectedSelfie?.id === selfie.id ? 'selected' : ''}"
+                     onclick="selectSelfie('${selfie.id}')"
+                     data-selfie-id="${selfie.id}">
+                    <img src="${selfie.image_url}" alt="${selfie.filename}" loading="lazy"
+                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2VkZWQiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkVycm9yPC90ZXh0Pjwvc3ZnPg=='">
+                    <button class="gallery-delete-btn" onclick="deleteSelfie('${selfie.id}', event)">×</button>
+                </div>
+            `).join('');
+
+            // Update pagination info and buttons
+            selfiePageInfo.textContent = `${selfieCurrentPage} / ${totalPages}`;
+            selfiePrevBtn.disabled = selfieCurrentPage === 1;
+            selfieNextBtn.disabled = selfieCurrentPage === totalPages;
+        }
+
+        // Change preset page
+        function changePresetPage(delta) {
+            const totalPages = Math.ceil(presets.length / ITEMS_PER_PAGE);
+            const newPage = presetCurrentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                presetCurrentPage = newPage;
+                renderPresetGallery();
+            }
+        }
+
+        // Change selfie page
+        function changeSelfiePage(delta) {
+            const totalPages = Math.ceil(selfies.length / ITEMS_PER_PAGE);
+            const newPage = selfieCurrentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                selfieCurrentPage = newPage;
+                renderSelfieGallery();
+            }
+        }
+
+        // Select preset
+        function selectPreset(presetId) {
+            selectedPreset = presets.find(p => p.id === presetId);
+            if (!selectedPreset) return;
+
+            // Update gallery selection
+            document.querySelectorAll('#preset-gallery .gallery-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+
+            // Show selected preview
+            presetUpload.style.display = 'none';
+            presetPreview.style.display = 'block';
+            presetPreview.innerHTML = `
+                <img src="${selectedPreset.image_url}" alt="${selectedPreset.filename}">
+                <div class="selected-label">Mẫu Đã Chọn</div>
+                <button class="delete-btn" onclick="deletePreset('${selectedPreset.id}', event)">×</button>
+            `;
+
+            updateGenerateButton();
+            showStatusMessage('Đã chọn mẫu thành công', 'success');
+        }
+
+        // Select selfie
+        function selectSelfie(selfieId) {
+            selectedSelfie = selfies.find(s => s.id === selfieId);
+            if (!selectedSelfie) return;
+
+            // Update gallery selection
+            document.querySelectorAll('#selfie-gallery .gallery-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+
+            // Show selected preview
+            selfieUpload.style.display = 'none';
+            selfiePreview.style.display = 'block';
+            selfiePreview.innerHTML = `
+                <img src="${selectedSelfie.image_url}" alt="${selectedSelfie.filename}">
+                <div class="selected-label">Selfie Đã Chọn</div>
+                <button class="delete-btn" onclick="deleteSelfie('${selectedSelfie.id}', event)">×</button>
+            `;
+
+            updateGenerateButton();
+            showStatusMessage('Đã chọn selfie thành công', 'success');
+        }
+
+        // Delete preset
+        async function deletePreset(presetId, event) {
+            event?.stopPropagation();
+
+            if (!confirm('Bạn có chắc chắn muốn xóa mẫu này không?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${WORKER_URL}/presets/${presetId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Không thể xóa mẫu');
+                }
+
+                // Remove from local state
+                presets = presets.filter(p => p.id !== presetId);
+
+                // Reset to page 1 if current page becomes empty
+                const totalPages = Math.ceil(presets.length / ITEMS_PER_PAGE);
+                if (presetCurrentPage > totalPages && totalPages > 0) {
+                    presetCurrentPage = totalPages;
+                } else if (presets.length === 0) {
+                    presetCurrentPage = 1;
+                }
+
+                // Clear selection if deleted preset was selected
+                if (selectedPreset?.id === presetId) {
+                    selectedPreset = null;
+                    presetPreview.style.display = 'none';
+                    presetUpload.style.display = 'block';
+                }
+
+                renderPresetGallery();
+                updateGenerateButton();
+                showStatusMessage('Đã xóa mẫu thành công', 'success');
+            } catch (error) {
+                console.error('Lỗi xóa mẫu:', error);
+                showStatusMessage('Không thể xóa mẫu', 'error');
+            }
+        }
+
+        // Delete selfie
+        async function deleteSelfie(selfieId, event) {
+            event?.stopPropagation();
+
+            if (!confirm('Bạn có chắc chắn muốn xóa selfie này không?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${WORKER_URL}/selfies/${selfieId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Không thể xóa selfie');
+                }
+
+                // Remove from local state
+                selfies = selfies.filter(s => s.id !== selfieId);
+
+                // Reset to page 1 if current page becomes empty
+                const totalPages = Math.ceil(selfies.length / ITEMS_PER_PAGE);
+                if (selfieCurrentPage > totalPages && totalPages > 0) {
+                    selfieCurrentPage = totalPages;
+                } else if (selfies.length === 0) {
+                    selfieCurrentPage = 1;
+                }
+
+                // Clear selection if deleted selfie was selected
+                if (selectedSelfie?.id === selfieId) {
+                    selectedSelfie = null;
+                    selfiePreview.style.display = 'none';
+                    selfieUpload.style.display = 'block';
+                }
+
+                renderSelfieGallery();
+                updateGenerateButton();
+                showStatusMessage('Đã xóa selfie thành công', 'success');
+            } catch (error) {
+                console.error('Lỗi xóa selfie:', error);
+                showStatusMessage('Không thể xóa selfie', 'error');
+            }
+        }
+
+        // Handle preset file upload
+        presetInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            await handleImageUpload(file, 'preset');
+        });
+
+        // Handle selfie file upload
+        selfieInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            await handleImageUpload(file, 'selfie');
+        });
+
+        // Handle image upload
+        async function handleImageUpload(file, type) {
+            // Validate file
+            if (!file.type.match('image/(jpeg|jpg|png|webp)')) {
+                showStatusMessage('Loại tệp không hợp lệ. Vui lòng tải lên JPG, PNG hoặc WebP.', 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showStatusMessage('Tệp vượt quá giới hạn 10MB. Vui lòng chọn tệp nhỏ hơn.', 'error');
+                return;
+            }
+
+            try {
+                // Sanitize filename
+                const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const timestamp = Date.now();
+                const randomStr = Math.random().toString(36).substring(2, 15).slice(2, 8);
+                const extension = sanitizedName.split('.').pop().toLowerCase();
+                const filename = `${type}-${timestamp}-${randomStr}.${extension}`;
+
+                // Get upload URL
+                const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename, type })
+                });
+
+                if (!uploadUrlResponse.ok) {
+                    throw new Error('Không thể lấy URL tải lên');
+                }
+
+                const uploadData = await uploadUrlResponse.json();
+
+                if (uploadData.exists) {
+                    // File already exists, use existing URL
+                    const existingImage = {
+                        id: uploadData.id || filename,
+                        filename: filename,
+                        image_url: uploadData.url,
+                        created_at: new Date().toISOString()
+                    };
+
+                    if (type === 'preset') {
+                        selectedPreset = existingImage;
+                        presets.unshift(existingImage);
+                        presetCurrentPage = 1; // Reset to first page to show new item
+                        renderPresetGallery();
+                        showSelectedPreset(existingImage);
+                    } else {
+                        selectedSelfie = existingImage;
+                        selfies.unshift(existingImage);
+                        selfieCurrentPage = 1; // Reset to first page to show new item
+                        renderSelfieGallery();
+                        showSelectedSelfie(existingImage);
+                    }
+
+                    updateGenerateButton();
+                    showStatusMessage('Hình ảnh đã tồn tại. Sử dụng phiên bản hiện có.', 'info');
+                    return;
+                }
+
+                // Upload new file
+                const uploadResponse = await fetch(uploadData.uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: { 'Content-Type': file.type }
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error('Tải lên thất bại');
+                }
+
+                const uploadResult = await uploadResponse.json();
+
+                // Add to local state
+                const newImage = {
+                    id: uploadResult.id || filename,
+                    filename: filename,
+                    image_url: uploadResult.url,
+                    created_at: new Date().toISOString()
+                };
+
+                if (type === 'preset') {
+                    selectedPreset = newImage;
+                    presets.unshift(newImage);
+                    presetCurrentPage = 1; // Reset to first page to show new item
+                    renderPresetGallery();
+                    showSelectedPreset(newImage);
+                } else {
+                    selectedSelfie = newImage;
+                    selfies.unshift(newImage);
+                    selfieCurrentPage = 1; // Reset to first page to show new item
+                    renderSelfieGallery();
+                    showSelectedSelfie(newImage);
+                }
+
+                updateGenerateButton();
+                showStatusMessage('Tải lên hình ảnh thành công', 'success');
+
+            } catch (error) {
+                console.error('Lỗi tải lên:', error);
+                showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
+            }
+        }
+
+        // Show selected preset
+        function showSelectedPreset(preset) {
+            presetPreview.innerHTML = `
+                <img src="${preset.image_url}" alt="${preset.filename}">
+                <div class="selected-label">Mẫu Đã Chọn</div>
+                <button class="delete-btn" onclick="clearPresetSelection(event)">×</button>
+            `;
+        }
+
+        // Show selected selfie
+        function showSelectedSelfie(selfie) {
+            selfiePreview.innerHTML = `
+                <img src="${selfie.image_url}" alt="${selfie.filename}">
+                <div class="selected-label">Selfie Đã Chọn</div>
+                <button class="delete-btn" onclick="clearSelfieSelection(event)">×</button>
+            `;
+        }
+
+        // Clear preset selection
+        function clearPresetSelection(event) {
+            event?.stopPropagation();
+            selectedPreset = null;
+            presetPreview.innerHTML = `
+                <div class="preview-empty">
+                    <div class="icon">🎭</div>
+                    Chọn một mẫu từ thư viện phía trên
+                </div>
+            `;
+            updateGenerateButton();
+        }
+
+        // Clear selfie selection
+        function clearSelfieSelection(event) {
+            event?.stopPropagation();
+            selectedSelfie = null;
+            selfiePreview.innerHTML = `
+                <div class="preview-empty">
+                    <div class="icon">📷</div>
+                    Chọn một selfie từ thư viện phía trên
+                </div>
+            `;
+            updateGenerateButton();
+        }
+
+        // Update generate button state
+        function updateGenerateButton() {
+            const isEnabled = selectedPreset && selectedSelfie;
+            generateBtn.disabled = !isEnabled;
+        }
+
+        // Generate face swap
+        async function generateFaceSwap() {
+            if (!selectedPreset || !selectedSelfie) {
+                showStatusMessage('Vui lòng chọn cả hình mẫu và selfie', 'error');
+                return;
+            }
+
+            // Show loading state
+            generateBtn.disabled = true;
+            generateBtn.classList.add('loading');
+            generateBtn.textContent = 'Đang tạo...';
+
+            const loadingOverlay = document.createElement('div');
+            loadingOverlay.className = 'loading-overlay';
+            loadingOverlay.innerHTML = `
+                <div class="loading-content">
+                    <div class="spinner"></div>
+                    <div class="loading-text">Đang xử lý đổi mặt...</div>
+                    <div class="loading-subtext">Quá trình này có thể mất 10-30 giây</div>
+                </div>
+            `;
+            document.body.appendChild(loadingOverlay);
+
+            try {
+                const apiProvider = document.getElementById('api-provider').value;
+                const response = await fetch(`${WORKER_URL}/faceswap`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_url: selectedPreset.image_url,
+                        source_url: selectedSelfie.image_url,
+                        api_provider: apiProvider
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || 'Đổi mặt thất bại');
+                }
+
+                const resultUrl = data.data?.resultImageUrl;
+                if (!resultUrl) {
+                    throw new Error('Không nhận được hình ảnh kết quả');
+                }
+
+                // Show result
+                resultDisplay.innerHTML = `<img src="${resultUrl}" alt="Kết quả đổi mặt" class="result-image">`;
+
+                showStatusMessage('Đã hoàn thành đổi mặt thành công', 'success');
+
+            } catch (error) {
+                console.error('Lỗi đổi mặt:', error);
+                showStatusMessage(`Đổi mặt thất bại: ${error.message}`, 'error');
+            } finally {
+                // Hide loading state
+                generateBtn.disabled = false;
+                generateBtn.classList.remove('loading');
+                generateBtn.textContent = 'Tạo Đổi Mặt';
+                document.body.removeChild(loadingOverlay);
+            }
+        }
+
+        // Show status message
+        function showStatusMessage(message, type) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `status-message status-${type}`;
+            messageEl.innerHTML = `
+                <span>${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span>
+                ${message}
+            `;
+
+            statusMessages.appendChild(messageEl);
+
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (messageEl.parentNode) {
+                    messageEl.parentNode.removeChild(messageEl);
+                }
+            }, 5000);
+        }
+
+        // Handle drag and drop
+        function setupDragAndDrop(element, type) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                element.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                element.addEventListener(eventName, () => {
+                    element.classList.add('dragover');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                element.addEventListener(eventName, () => {
+                    element.classList.remove('dragover');
+                }, false);
+            });
+
+            element.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    handleImageUpload(files[0], type);
+                }
+            }, false);
+
+            element.addEventListener('click', () => {
+                if (type === 'preset') {
+                    presetInput.click();
+                } else {
+                    selfieInput.click();
+                }
+            });
+        }
+
+        // Setup drag and drop for upload areas
+        setupDragAndDrop(presetUpload, 'preset');
+        setupDragAndDrop(selfieUpload, 'selfie');
+
+        // Initialize the app
+        init();
+    </script>
 </body>
 </html>

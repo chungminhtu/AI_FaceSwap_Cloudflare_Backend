@@ -157,11 +157,8 @@ export default {
             }
           }
 
-          const presetId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          console.log('Generated preset ID:', presetId);
-          console.log('Public URL:', publicUrl);
-
           // Try to save to database, but don't fail the upload if DB fails
+          let imageId: string | undefined;
           try {
             // First, check if a collection with this name already exists
             let collectionResult = await env.DB.prepare(
@@ -181,7 +178,7 @@ export default {
             }
 
             // Add image to collection
-            const imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+            imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             const result = await env.DB.prepare(
               'INSERT INTO preset_images (id, collection_id, image_url, created_at) VALUES (?, ?, ?, ?)'
             ).bind(imageId, collectionId, publicUrl, Math.floor(Date.now() / 1000)).run();
@@ -191,13 +188,15 @@ export default {
             console.error('Database save error (non-fatal):', dbError);
             // Still return success since file was uploaded to R2
             // Database might not be initialized yet
+            // Generate a temporary ID if DB save failed
+            imageId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           }
 
           return jsonResponse({ 
             success: true, 
             url: publicUrl,
-            presetId: presetId,
-            presetName: presetName
+            id: imageId || `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
+            filename: key.replace('preset/', '')
           });
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);
@@ -243,7 +242,8 @@ export default {
           return jsonResponse({
             success: true,
             url: publicUrl,
-            selfieId: selfieId
+            id: selfieId,
+            filename: filename
           });
         }
 
@@ -278,55 +278,92 @@ export default {
     // Handle preset listing
     if (path === '/presets' && request.method === 'GET') {
       try {
-        // Get all collections with their images
-        const collectionsResult = await env.DB.prepare(`
+        console.log('Fetching presets from database...');
+        // Get all preset images as a flat list
+        const imagesResult = await env.DB.prepare(`
           SELECT
-            c.id,
-            c.name,
-            c.created_at as collection_created_at,
-            i.id as image_id,
+            i.id,
             i.image_url,
-            i.created_at as image_created_at
-          FROM preset_collections c
-          LEFT JOIN preset_images i ON c.id = i.collection_id
-          ORDER BY c.created_at DESC, i.created_at DESC
+            i.created_at,
+            c.name as collection_name
+          FROM preset_images i
+          LEFT JOIN preset_collections c ON i.collection_id = c.id
+          ORDER BY i.created_at DESC
         `).all();
 
-        if (!collectionsResult || !collectionsResult.results) {
-          return jsonResponse({ preset_collections: [] });
+        console.log('Presets query result:', {
+          success: imagesResult.success,
+          resultsCount: imagesResult.results?.length || 0,
+          meta: imagesResult.meta
+        });
+
+        if (!imagesResult || !imagesResult.results) {
+          console.log('No presets found in database');
+          return jsonResponse({ presets: [] });
         }
 
-        // Group images by collection
-        const collectionsMap = new Map();
+        // Flatten to match frontend expectations
+        const presets = imagesResult.results.map((row: any) => ({
+          id: row.id || '',
+          image_url: row.image_url || '',
+          filename: row.image_url?.split('/').pop() || `preset_${row.id}.jpg`,
+          collection_name: row.collection_name || 'Unnamed',
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+        }));
 
-        for (const row of collectionsResult.results as any[]) {
-          const collectionId = row.id;
-          if (!collectionsMap.has(collectionId)) {
-            collectionsMap.set(collectionId, {
-              id: collectionId,
-          name: row.name || 'Unnamed',
-              created_at: row.collection_created_at ? new Date(row.collection_created_at * 1000).toISOString() : new Date().toISOString(),
-              images: []
-            });
-          }
-
-          if (row.image_id && row.image_url) {
-            collectionsMap.get(collectionId).images.push({
-              id: row.image_id,
-              collection_id: collectionId,
-              image_url: row.image_url,
-              created_at: row.image_created_at ? new Date(row.image_created_at * 1000).toISOString() : new Date().toISOString()
-            });
-          }
-        }
-
-        const presetCollections = Array.from(collectionsMap.values());
-
-        return jsonResponse({ preset_collections: presetCollections });
+        console.log(`Returning ${presets.length} presets`);
+        return jsonResponse({ presets });
       } catch (error) {
         console.error('List presets error:', error);
+        console.error('Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
         // Return empty array instead of error to prevent UI breaking
-        return jsonResponse({ preset_collections: [] });
+        return jsonResponse({ presets: [] });
+      }
+    }
+
+    // Handle preset deletion
+    if (path.startsWith('/presets/') && request.method === 'DELETE') {
+      try {
+        const presetId = path.replace('/presets/', '');
+        console.log(`Deleting preset: ${presetId}`);
+
+        // Get the image URL before deleting
+        const imageResult = await env.DB.prepare(
+          'SELECT image_url FROM preset_images WHERE id = ?'
+        ).bind(presetId).first();
+
+        // Delete from database
+        const deleteResult = await env.DB.prepare(
+          'DELETE FROM preset_images WHERE id = ?'
+        ).bind(presetId).run();
+
+        console.log(`Preset deleted from database: ${presetId}`, {
+          success: deleteResult.success,
+          meta: deleteResult.meta
+        });
+
+        // Try to delete from R2 (non-fatal if it fails)
+        if (imageResult && (imageResult as any).image_url) {
+          try {
+            const imageUrl = (imageResult as any).image_url;
+            // Extract key from URL (remove domain part)
+            const urlParts = imageUrl.split('/');
+            const key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "preset/filename.jpg")
+            
+            await env.FACESWAP_IMAGES.delete(key);
+            console.log(`Preset deleted from R2: ${key}`);
+          } catch (r2Error) {
+            console.warn('R2 delete error (non-fatal):', r2Error);
+          }
+        }
+
+        return jsonResponse({ success: true, message: 'Preset deleted successfully' });
+      } catch (error) {
+        console.error('Delete preset error:', error);
+        return errorResponse(`Failed to delete preset: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
 
@@ -366,6 +403,49 @@ export default {
         });
         // Return empty array instead of error to prevent UI breaking
         return jsonResponse({ selfies: [] });
+      }
+    }
+
+    // Handle selfie deletion
+    if (path.startsWith('/selfies/') && request.method === 'DELETE') {
+      try {
+        const selfieId = path.replace('/selfies/', '');
+        console.log(`Deleting selfie: ${selfieId}`);
+
+        // Get the image URL before deleting
+        const selfieResult = await env.DB.prepare(
+          'SELECT image_url FROM selfies WHERE id = ?'
+        ).bind(selfieId).first();
+
+        // Delete from database
+        const deleteResult = await env.DB.prepare(
+          'DELETE FROM selfies WHERE id = ?'
+        ).bind(selfieId).run();
+
+        console.log(`Selfie deleted from database: ${selfieId}`, {
+          success: deleteResult.success,
+          meta: deleteResult.meta
+        });
+
+        // Try to delete from R2 (non-fatal if it fails)
+        if (selfieResult && (selfieResult as any).image_url) {
+          try {
+            const imageUrl = (selfieResult as any).image_url;
+            // Extract key from URL (remove domain part)
+            const urlParts = imageUrl.split('/');
+            const key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "selfie/filename.jpg")
+            
+            await env.FACESWAP_IMAGES.delete(key);
+            console.log(`Selfie deleted from R2: ${key}`);
+          } catch (r2Error) {
+            console.warn('R2 delete error (non-fatal):', r2Error);
+          }
+        }
+
+        return jsonResponse({ success: true, message: 'Selfie deleted successfully' });
+      } catch (error) {
+        console.error('Delete selfie error:', error);
+        return errorResponse(`Failed to delete selfie: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
 
