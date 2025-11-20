@@ -277,7 +277,7 @@ code, pre, .code-textarea, .command-code {
 .content-area {
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 64px);
+  height: calc(100vh - 70px);
   overflow-y: auto;
   padding: var(--spacing-lg);
   background: var(--bg-secondary);
@@ -995,7 +995,7 @@ code, pre, .code-textarea, .command-code {
 
 .history-grid {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 240px 1fr;
   gap: var(--spacing-sm);
   flex: 1;
   min-height: 0;
@@ -1162,7 +1162,6 @@ code, pre, .code-textarea, .command-code {
   font-family: 'Google Sans Code', 'Fira Code', monospace;
   font-size: 12px;
   padding: var(--spacing-sm);
-  max-height: 260px;
   overflow-y: auto;
 }
 

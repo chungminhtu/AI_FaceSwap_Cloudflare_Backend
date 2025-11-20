@@ -182,14 +182,16 @@ window.deploymentStatus = {
       return `<p class="history-detail-empty">Không có log CLI để hiển thị.</p>`;
     }
 
+    const logsText = logs.map(log => `[${log.step || 'step'}] ${log.log}`).join('\n');
+
     return `
-      <div class="history-detail-logs">
-        ${logs.map(log => `
-          <div class="history-log-line">
-            <span class="history-log-step">[${this.escapeHtml(log.step || 'step')}]</span>
-            <span class="history-log-text">${this.escapeHtml(log.log)}</span>
+      <div class="status-step completed">
+        <div class="step-content">
+          <div class="step-title">🔧 Toàn bộ log CLI</div>
+          <div class="step-logs">
+            <pre class="logs-output">${this.escapeHtml(logsText)}</pre>
           </div>
-        `).join('')}
+        </div>
       </div>
     `;
   },
