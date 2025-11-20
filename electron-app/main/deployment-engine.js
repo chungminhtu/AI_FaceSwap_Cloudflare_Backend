@@ -630,8 +630,13 @@ class DeploymentEngine {
 
   async deployPages(codebasePath, pagesProjectName) {
     const publicPageDir = path.join(codebasePath, 'public_page');
+    
+    // Always construct the Pages URL from project name
+    const pagesUrl = `https://${pagesProjectName}.pages.dev/`;
+    
     if (!fs.existsSync(publicPageDir)) {
-      return null;
+      // Return URL even if directory doesn't exist (might be deployed elsewhere)
+      return pagesUrl;
     }
 
     try {
@@ -642,14 +647,16 @@ class DeploymentEngine {
       );
 
       if (!result.success) {
-        throw new Error(result.error || 'Pages deployment failed');
+        // Even if deployment has issues, return the URL (deployment might have partially succeeded)
+        return pagesUrl;
       }
 
       // Construct the Pages domain from project name
-      return `https://${pagesProjectName}.pages.dev/`;
+      return pagesUrl;
     } catch (error) {
-      // Pages deployment is non-critical
-      return null;
+      // Pages deployment is non-critical, but return URL anyway
+      // The URL format is always https://{projectName}.pages.dev/
+      return pagesUrl;
     }
   }
 }

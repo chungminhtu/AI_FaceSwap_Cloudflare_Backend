@@ -22,13 +22,6 @@ window.deploymentList = {
   },
 
   renderDeploymentCard(deployment) {
-    const status = deployment.status || 'idle';
-    const statusText = {
-      idle: 'Sẵn sàng',
-      deploying: 'Đang triển khai...',
-      success: 'Thành công',
-      error: 'Lỗi'
-    };
 
     return `
       <div class="deployment-card" data-deployment-id="${deployment.id}">
@@ -54,7 +47,6 @@ window.deploymentList = {
             <span>${deployment.cloudflare?.email || 'N/A'}</span>
           </div>
         </div>
-        <div class="deployment-status-badge ${status}">${statusText[status] || status}</div>
         <div class="deployment-card-footer">
           <button class="btn btn-primary btn-deploy" data-id="${deployment.id}" ${window.dashboard?.isDeploying() ? 'disabled' : ''}>
             Deploy
