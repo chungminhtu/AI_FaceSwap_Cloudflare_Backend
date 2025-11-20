@@ -6,7 +6,6 @@ export interface Env {
   GOOGLE_VISION_ENDPOINT: string;
   FACESWAP_IMAGES: R2Bucket;
   DB: D1Database;
-  R2_PUBLIC_URL?: string; // Optional: Custom domain or public R2 URL
   R2_ACCOUNT_ID?: string; // Optional: Cloudflare account ID for auto URL generation (e.g., 32 hex characters)
   CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
   ACCOUNT_ID?: string; // Fallback alias
@@ -81,6 +80,7 @@ export interface GoogleVisionResponse {
 export interface UploadUrlRequest {
   filename: string;
   type: 'preset' | 'selfie';
+  presetName?: string; // Optional: Name for preset collection
 }
 
 export interface UploadUrlResponse {

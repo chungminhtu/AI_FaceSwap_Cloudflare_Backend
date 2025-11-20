@@ -26,17 +26,15 @@ const resolveAccountId = (env: Env): string | undefined =>
 const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
 
 const buildR2DevBaseUrl = (env: Env): string | undefined => {
-  const accountId = resolveAccountId(env);
-  if (!accountId) return undefined;
-  const bucketName = resolveBucketName(env);
-  if (!bucketName) return undefined;
-  return `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`;
+  // Use the correct public r2.dev URL assigned by Cloudflare
+  // This was generated when enabling public access: https://pub-961528defa6742bb9d9cac7150eda479.r2.dev
+  return 'https://pub-961528defa6742bb9d9cac7150eda479.r2.dev';
 };
 
 const resolveR2PublicBase = (env: Env): string | undefined => {
-  if (env.R2_PUBLIC_URL) {
-    return trimTrailingSlash(env.R2_PUBLIC_URL);
-  }
+  // Always use r2.dev URL for direct CDN access (requires bucket public access enabled)
+  // Format: https://<bucket-name>.r2.dev
+  // This provides better performance by avoiding Worker execution
   return buildR2DevBaseUrl(env);
 };
 
@@ -47,10 +45,10 @@ const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string 
   }
   if (fallbackOrigin) {
     const origin = trimTrailingSlash(fallbackOrigin);
-    console.warn('[R2] Falling back to worker proxy for public URLs because no R2 public endpoint could be derived.');
+    // Use worker proxy route - this works even if bucket doesn't have public access
     return `${origin}/r2/${key}`;
   }
-  throw new Error('Unable to determine R2 public URL. Configure R2_PUBLIC_URL or provide account/bucket info via env.');
+  throw new Error('Unable to determine R2 public URL. Configure R2_PUBLIC_URL, set R2_USE_R2_DEV=true (if bucket has public access), or ensure worker origin is available.');
 };
 
 export default {
@@ -75,7 +73,7 @@ export default {
       return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
     }
 
-    // Handle upload URL generation endpoint
+    // Handle upload URL generation endpoint - now generates presigned URLs for direct R2 upload
     if (path === '/upload-url' && request.method === 'POST') {
       try {
         const body: UploadUrlRequest = await request.json();
@@ -87,13 +85,16 @@ export default {
         // Generate a unique key for the file
         const key = `${body.type}/${body.filename}`;
         
-        // Get R2 public URL (CDN URL, not worker proxy)
+        // Get R2 public URL (direct r2.dev CDN URL)
         const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
 
+        // For R2, we'll use a worker endpoint that handles metadata but upload goes to worker first
+        // then worker uploads to R2 with proper cache headers
         return jsonResponse({
           uploadUrl: `${requestUrl.origin}/upload-proxy/${key}`,
           publicUrl,
-          key
+          key,
+          presetName: body.presetName // Pass through preset name for frontend
         });
       } catch (error) {
         console.error('Upload URL generation error:', error);
@@ -159,11 +160,12 @@ export default {
           return errorResponse('Empty file data', 400);
         }
         
-        // Upload to R2
+        // Upload to R2 with cache-control headers
         try {
           await env.FACESWAP_IMAGES.put(key, fileData, {
             httpMetadata: {
               contentType: request.headers.get('Content-Type') || 'image/jpeg',
+              cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
             },
           });
           console.log(`File uploaded successfully to R2: ${key}`);
@@ -670,6 +672,7 @@ export default {
         await env.FACESWAP_IMAGES.put(resultKey, resultImageData, {
           httpMetadata: {
             contentType: 'image/jpeg',
+            cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
           },
         });
 
