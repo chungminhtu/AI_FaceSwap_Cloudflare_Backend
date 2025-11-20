@@ -173,6 +173,29 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
     };
 
     const result = await DeploymentEngine.deploy(deployment, config, reportProgress);
+    
+    // Save deployment history to config
+    if (result.history) {
+      const config = ConfigManager.read();
+      const deployment = config.deployments.find(d => d.id === deploymentId);
+      
+      if (deployment) {
+        // Initialize history array if not exists
+        if (!deployment.history) {
+          deployment.history = [];
+        }
+        
+        // Add new deployment history (keep last 50 deployments)
+        deployment.history.unshift(result.history);
+        if (deployment.history.length > 50) {
+          deployment.history = deployment.history.slice(0, 50);
+        }
+        
+        // Save updated config
+        ConfigManager.write(config);
+      }
+    }
+    
     return result;
   } catch (error) {
     return {

@@ -5,10 +5,58 @@ import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
 import { callFaceSwap, checkSafeSearch } from './services';
 import { validateEnv, validateRequest } from './validators';
 
+const DEFAULT_R2_BUCKET_NAME = 'faceswap-images';
+
+const globalScopeWithAccount = globalThis as typeof globalThis & {
+  ACCOUNT_ID?: string;
+  __CF_ACCOUNT_ID?: string;
+  __ACCOUNT_ID?: string;
+};
+
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const resolveAccountId = (env: Env): string | undefined =>
+  env.R2_ACCOUNT_ID ||
+  env.CF_ACCOUNT_ID ||
+  env.ACCOUNT_ID ||
+  globalScopeWithAccount.ACCOUNT_ID ||
+  globalScopeWithAccount.__CF_ACCOUNT_ID ||
+  globalScopeWithAccount.__ACCOUNT_ID;
+
+const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
+
+const buildR2DevBaseUrl = (env: Env): string | undefined => {
+  const accountId = resolveAccountId(env);
+  if (!accountId) return undefined;
+  const bucketName = resolveBucketName(env);
+  if (!bucketName) return undefined;
+  return `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`;
+};
+
+const resolveR2PublicBase = (env: Env): string | undefined => {
+  if (env.R2_PUBLIC_URL) {
+    return trimTrailingSlash(env.R2_PUBLIC_URL);
+  }
+  return buildR2DevBaseUrl(env);
+};
+
+const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
+  const baseUrl = resolveR2PublicBase(env);
+  if (baseUrl) {
+    return `${baseUrl}/${key}`;
+  }
+  if (fallbackOrigin) {
+    const origin = trimTrailingSlash(fallbackOrigin);
+    console.warn('[R2] Falling back to worker proxy for public URLs because no R2 public endpoint could be derived.');
+    return `${origin}/r2/${key}`;
+  }
+  throw new Error('Unable to determine R2 public URL. Configure R2_PUBLIC_URL or provide account/bucket info via env.');
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
+    const requestUrl = new URL(request.url);
+    const path = requestUrl.pathname;
 
     // Handle OPTIONS (CORS preflight) - must be before other handlers
     if (request.method === 'OPTIONS') {
@@ -27,18 +75,6 @@ export default {
       return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
     }
 
-    // Helper function to get R2 public URL
-    function getR2PublicUrl(key: string): string {
-      if (!env.R2_PUBLIC_URL) {
-        throw new Error('R2_PUBLIC_URL environment variable is not set. Please configure your R2 public URL in Cloudflare Dashboard or set R2_PUBLIC_URL secret.');
-      }
-      // Ensure R2_PUBLIC_URL doesn't end with /
-      const baseUrl = env.R2_PUBLIC_URL.endsWith('/') 
-        ? env.R2_PUBLIC_URL.slice(0, -1) 
-        : env.R2_PUBLIC_URL;
-      return `${baseUrl}/${key}`;
-    }
-
     // Handle upload URL generation endpoint
     if (path === '/upload-url' && request.method === 'POST') {
       try {
@@ -52,12 +88,12 @@ export default {
         const key = `${body.type}/${body.filename}`;
         
         // Get R2 public URL (CDN URL, not worker proxy)
-        const publicUrl = getR2PublicUrl(key);
+        const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
 
         return jsonResponse({
-          uploadUrl: `${url.origin}/upload-proxy/${key}`,
-          publicUrl: publicUrl,
-          key: key
+          uploadUrl: `${requestUrl.origin}/upload-proxy/${key}`,
+          publicUrl,
+          key
         });
       } catch (error) {
         console.error('Upload URL generation error:', error);
@@ -137,7 +173,7 @@ export default {
         }
 
         // Get the public URL (R2 CDN URL, not worker proxy)
-        const publicUrl = getR2PublicUrl(key);
+        const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
 
         // Save upload metadata to database based on type
         if (key.startsWith('preset/')) {
@@ -637,7 +673,7 @@ export default {
           },
         });
 
-            resultUrl = getR2PublicUrl(resultKey);
+            resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
           } else {
             console.warn('Failed to download result image, using original URL');
           }

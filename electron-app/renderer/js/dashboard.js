@@ -313,11 +313,11 @@ function showConfigPreview(config, containerId, contentId) {
   if (config.deployments && config.deployments.length > 0) {
     html += `
       <div class="config-preview-item">
-        <div class="config-preview-label">Số lượng Triển khai:</div>
+        <div class="config-preview-label">Số lượng Deploy:</div>
         <div class="config-preview-value">${config.deployments.length}</div>
       </div>
       <div class="config-preview-deployments">
-        <h4>Danh sách Triển khai:</h4>
+        <h4>Danh sách Deploy:</h4>
     `;
     
     config.deployments.forEach((deployment, index) => {

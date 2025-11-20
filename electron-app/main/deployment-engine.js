@@ -29,6 +29,9 @@ class DeploymentEngine {
         const output = data.toString();
         stdout += output;
         
+        // Write to terminal (Electron CLI)
+        process.stdout.write(output);
+        
         // Send each line to UI
         const lines = output.split('\n').filter(line => line.trim());
         lines.forEach(line => {
@@ -45,6 +48,9 @@ class DeploymentEngine {
       child.stderr.on('data', (data) => {
         const output = data.toString();
         stderr += output;
+        
+        // Write to terminal (Electron CLI)
+        process.stderr.write(output);
         
         // Send each line to UI (stderr often contains progress info)
         const lines = output.split('\n').filter(line => line.trim());
@@ -335,19 +341,11 @@ class DeploymentEngine {
 
   async ensureR2Bucket(codebasePath) {
     try {
-      const output = execSync('wrangler r2 bucket list', {
-        encoding: 'utf8',
-        stdio: 'pipe',
-        timeout: 10000,
-        cwd: codebasePath
-      });
+      const listResult = await this.executeWithLogs('wrangler r2 bucket list', codebasePath, 'check-r2');
+      const output = listResult.stdout || '';
 
       if (!output || !output.includes('faceswap-images')) {
-        execSync('wrangler r2 bucket create faceswap-images', {
-          stdio: 'inherit',
-          timeout: 30000,
-          cwd: codebasePath
-        });
+        await this.executeWithLogs('wrangler r2 bucket create faceswap-images', codebasePath, 'check-r2');
       }
     } catch (error) {
       // Bucket might already exist or command might fail - non-fatal
@@ -528,12 +526,7 @@ class DeploymentEngine {
     const corsPath = path.join(codebasePath, 'r2-cors.json');
     if (fs.existsSync(corsPath)) {
       try {
-        execSync(`wrangler r2 bucket cors set faceswap-images --file=${corsPath}`, {
-          stdio: 'inherit',
-          timeout: 30000,
-          cwd: codebasePath,
-          throwOnError: false
-        });
+        await this.executeWithLogs(`wrangler r2 bucket cors set faceswap-images --file=${corsPath}`, codebasePath, 'configure-cors');
       } catch (error) {
         // CORS configuration is non-critical
       }
@@ -652,8 +645,8 @@ class DeploymentEngine {
         throw new Error(result.error || 'Pages deployment failed');
       }
 
-      // Use fixed Pages domain
-      return 'https://ai-faceswap-frontend.pages.dev/';
+      // Construct the Pages domain from project name
+      return `https://${pagesProjectName}.pages.dev/`;
     } catch (error) {
       // Pages deployment is non-critical
       return null;

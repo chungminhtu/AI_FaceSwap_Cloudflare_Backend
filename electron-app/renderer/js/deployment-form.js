@@ -9,7 +9,7 @@ window.deploymentForm = {
 
     const formTitle = document.getElementById('form-title');
     if (formTitle) {
-      formTitle.textContent = deployment ? 'Chỉnh sửa Triển khai' : 'Thêm Triển khai Mới';
+      formTitle.textContent = deployment ? 'Chỉnh sửa Deploy' : 'Deploy store mới';
     }
 
     await this.renderForm(deployment);
@@ -578,7 +578,7 @@ window.deploymentForm = {
     modal.innerHTML = `
       <div class="modal-content" style="max-width: 700px;">
         <div class="modal-header">
-          <h2>Nhập Cấu hình Triển khai</h2>
+          <h2>Nhập Cấu hình Deploy</h2>
           <button class="btn-close" onclick="this.closest('.modal').remove()">&times;</button>
         </div>
         <div class="modal-body">
@@ -837,12 +837,12 @@ window.deploymentForm = {
       // Fill basic fields (only if they exist in data)
       if (setValue('form-name', deployment.name)) {
         filledCount++;
-        filledFields.push('Tên Triển khai');
+        filledFields.push('Tên Deploy');
       }
       
       if (setValue('form-id', deployment.id)) {
         filledCount++;
-        filledFields.push('ID Triển khai');
+        filledFields.push('ID Deploy');
       }
       
       if (setValue('form-gcp-project', deployment.gcp?.projectId)) {

@@ -47,6 +47,13 @@ GOOGLE_VISION_ENDPOINT=https://vision.googleapis.com/v1/images:annotate
 
 **For production:** Set secrets using Wrangler CLI (see Deployment section below).
 
+### 4. R2 Public URL (optional)
+
+- `R2_PUBLIC_URL` can still be set to point to a custom domain or CDN endpoint (e.g., `https://cdn.example.com`). When present, that value is used verbatim.
+- When `R2_PUBLIC_URL` is omitted, the worker automatically builds URLs using the `faceswap-images` bucket and your Cloudflare account ID (`ACCOUNT_ID` global, or any of the optional secrets `R2_ACCOUNT_ID`, `CF_ACCOUNT_ID`, or `ACCOUNT_ID`).
+- If the account ID is not available, the code falls back to serving objects through the `/r2/` proxy route on your worker.
+- You can override the bucket name with the optional `R2_BUCKET_NAME` secret if you need to point to a different bucket.
+
 ### 3. Get Google Cloud Vision API Key
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
@@ -259,6 +266,10 @@ The backend automatically checks all FaceSwap results using Google Cloud Vision 
 ### CORS Issues
 - The worker includes CORS headers for all origins (`*`)
 - If you need to restrict origins, modify the `Access-Control-Allow-Origin` header in `src/index.ts`
+
+### R2 Public URL generation
+- The worker now tries to compute `https://<bucket>.<account>.r2.cloudflarestorage.com/<key>` automatically. Provide `R2_ACCOUNT_ID`, `CF_ACCOUNT_ID`, or `ACCOUNT_ID` secrets if the worker cannot detect your account ID.
+- If all of the above are missing and `R2_PUBLIC_URL` is not configured, uploaded files are still accessible via the `/r2/{key}` route on your worker.
 
 ## License
 

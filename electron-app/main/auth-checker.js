@@ -13,7 +13,12 @@ class AuthChecker {
       // Parse whoami output to extract email
       const lines = output.trim().split('\n');
       const emailMatch = output.match(/([^\s]+@[^\s]+)/);
-      const email = emailMatch ? emailMatch[1] : null;
+      let email = emailMatch ? emailMatch[1] : null;
+      
+      // Remove trailing punctuation (period, comma, etc.) from email
+      if (email) {
+        email = email.replace(/[.,;:!?]+$/, '');
+      }
 
       return {
         authenticated: true,
@@ -40,11 +45,14 @@ class AuthChecker {
       });
 
       const accounts = output.trim().split('\n').filter(a => a);
-      const currentAccount = accounts[0] || null;
+      
+      // Remove trailing punctuation from all accounts
+      const cleanedAccounts = accounts.map(account => account.replace(/[.,;:!?]+$/, ''));
+      const currentAccount = cleanedAccounts[0] || null;
 
       return {
-        authenticated: accounts.length > 0,
-        accounts: accounts,
+        authenticated: cleanedAccounts.length > 0,
+        accounts: cleanedAccounts,
         currentAccount: currentAccount,
         details: output.trim()
       };

@@ -7,7 +7,7 @@ window.deploymentList = {
     if (deployments.length === 0) {
       container.innerHTML = `
         <div class="text-center" style="padding: 3rem; color: #999;">
-          <p>Chưa có triển khai nào. Nhấn "Thêm Triển khai" để bắt đầu.</p>
+          <p>Chưa có deploy nào. Nhấn "Thêm Deploy" để bắt đầu.</p>
         </div>
       `;
       return;
@@ -35,7 +35,7 @@ window.deploymentList = {
         <div class="deployment-card-header">
           <div class="deployment-name">${this.escapeHtml(deployment.name)}</div>
           <div class="deployment-actions">
-            <button class="btn btn-small btn-secondary btn-export" data-id="${deployment.id}" title="Xuất deployment này">💾</button>
+            <button class="btn btn-small btn-secondary btn-export" data-id="${deployment.id}" title="Xuất deployment này">Xuất</button>
             <button class="btn btn-small btn-secondary btn-edit" data-id="${deployment.id}">Sửa</button>
             <button class="btn btn-small btn-secondary btn-delete" data-id="${deployment.id}">Xóa</button>
           </div>
@@ -57,10 +57,10 @@ window.deploymentList = {
         <div class="deployment-status-badge ${status}">${statusText[status] || status}</div>
         <div class="deployment-card-footer">
           <button class="btn btn-primary btn-deploy" data-id="${deployment.id}" ${window.dashboard?.isDeploying() ? 'disabled' : ''}>
-            Triển khai
+            Deploy
           </button>
-          <button class="btn btn-secondary btn-view-status" data-id="${deployment.id}">
-            Xem Trạng thái
+          <button class="btn btn-secondary btn-view-history" data-id="${deployment.id}">
+            Lịch sử triển khai
           </button>
         </div>
       </div>
@@ -68,6 +68,14 @@ window.deploymentList = {
   },
 
   attachDeploymentListeners(deploymentId) {
+    // History button
+    const btnHistory = document.querySelector(`.btn-history[data-id="${deploymentId}"]`);
+    if (btnHistory) {
+      btnHistory.addEventListener('click', () => {
+        window.deploymentStatus.showHistory(deploymentId);
+      });
+    }
+
     // Export button
     const btnExport = document.querySelector(`.btn-export[data-id="${deploymentId}"]`);
     if (btnExport) {
@@ -106,13 +114,14 @@ window.deploymentList = {
       });
     }
 
-    // View status button
-    const btnViewStatus = document.querySelector(`.btn-view-status[data-id="${deploymentId}"]`);
-    if (btnViewStatus) {
-      btnViewStatus.addEventListener('click', () => {
-        window.deploymentStatus.show(deploymentId);
+    const btnViewHistory = document.querySelector(`.btn-view-history[data-id="${deploymentId}"]`);
+    if (btnViewHistory) {
+      btnViewHistory.addEventListener('click', () => {
+        window.deploymentStatus.showHistory(deploymentId);
       });
     }
+
+
   },
 
   async exportDeployment(deploymentId) {

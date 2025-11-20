@@ -7,6 +7,10 @@ export interface Env {
   FACESWAP_IMAGES: R2Bucket;
   DB: D1Database;
   R2_PUBLIC_URL?: string; // Optional: Custom domain or public R2 URL
+  R2_ACCOUNT_ID?: string; // Optional: Cloudflare account ID for auto URL generation (e.g., 32 hex characters)
+  CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
+  ACCOUNT_ID?: string; // Fallback alias
+  R2_BUCKET_NAME?: string; // Optional override for the R2 bucket name used to build public URLs
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
   SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
 }

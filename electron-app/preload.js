@@ -23,7 +23,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deploymentStart: (deploymentId) => ipcRenderer.invoke('deployment:start', deploymentId),
   deploymentCheckStatus: () => ipcRenderer.invoke('deployment:check-status'),
   deploymentProgress: (callback) => {
-    ipcRenderer.on('deployment:progress', (event, data) => callback(data));
+    ipcRenderer.on('deployment:progress', (event, data) => {
+      callback(event, data);
+    });
   },
   deploymentRemoveListener: () => {
     ipcRenderer.removeAllListeners('deployment:progress');
