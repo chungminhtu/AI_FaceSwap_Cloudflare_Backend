@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS preset_images (
   id TEXT PRIMARY KEY,
   collection_id TEXT NOT NULL,
   image_url TEXT NOT NULL,
+  prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (collection_id) REFERENCES preset_collections(id) ON DELETE CASCADE
 );

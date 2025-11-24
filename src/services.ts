@@ -166,3 +166,113 @@ export const checkSafeSearch = async (
   }
 };
 
+// Google Gemini API integration for automatic prompt generation
+export const generateGeminiPrompt = async (
+  imageUrl: string,
+  env: Env
+): Promise<{ success: boolean; prompt?: any; error?: string }> => {
+  try {
+    // Use Gemini API to analyze the image and generate prompt
+    const apiKey = env.GOOGLE_CLOUD_API_KEY;
+    if (!apiKey) {
+      return { success: false, error: 'GOOGLE_CLOUD_API_KEY not set' };
+    }
+
+    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=${apiKey}`;
+
+    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
+
+    const requestBody = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: await fetchImageAsBase64(imageUrl)
+            }
+          }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        topK: 1,
+        topP: 1,
+        maxOutputTokens: 2048,
+      }
+    };
+
+    const response = await fetch(geminiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: `Gemini API error: ${response.status} ${errorText}` };
+    }
+
+    const data = await response.json();
+
+    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return { success: false, error: 'No response from Gemini API' };
+    }
+
+    const generatedText = data.candidates[0].content.parts[0].text;
+
+    // Extract JSON from the response (Gemini might wrap it in markdown)
+    let jsonText = generatedText;
+    if (generatedText.includes('```json')) {
+      const jsonMatch = generatedText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+    } else if (generatedText.includes('```')) {
+      const jsonMatch = generatedText.match(/```\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+    }
+
+    try {
+      const promptJson = JSON.parse(jsonText);
+
+      // Validate required keys
+      const requiredKeys = ['prompt', 'style', 'lighting', 'composition', 'camera', 'background'];
+      const missingKeys = requiredKeys.filter(key => !promptJson[key]);
+
+      if (missingKeys.length > 0) {
+        return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
+      }
+
+      console.log('[Gemini] Generated prompt successfully');
+      return { success: true, prompt: promptJson };
+
+    } catch (parseError) {
+      console.error('[Gemini] JSON parse error:', parseError, 'Raw response:', generatedText);
+      return { success: false, error: 'Failed to parse JSON from Gemini response' };
+    }
+
+  } catch (error) {
+    console.error('[Gemini] Exception:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+// Helper function to fetch image and convert to base64
+const fetchImageAsBase64 = async (imageUrl: string): Promise<string> => {
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binary = '';
+  uint8Array.forEach(byte => binary += String.fromCharCode(byte));
+  return btoa(binary);
+};
+

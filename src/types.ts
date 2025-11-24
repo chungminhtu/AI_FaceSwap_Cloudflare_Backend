@@ -18,6 +18,7 @@ export interface FaceSwapRequest {
   target_url: string;
   source_url: string;
   selfie_id?: string;
+  mode?: 'rapidapi' | 'gemini'; // Optional: Face swap mode
 }
 
 export interface FaceSwapResponse {
@@ -81,6 +82,7 @@ export interface UploadUrlRequest {
   filename: string;
   type: 'preset' | 'selfie';
   presetName?: string; // Optional: Name for preset collection
+  enableGeminiPrompt?: boolean; // Optional: Generate Gemini prompt automatically
 }
 
 export interface UploadUrlResponse {

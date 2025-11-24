@@ -58,6 +58,80 @@ function checkWrangler() {
   }
 }
 
+// Check if gcloud is installed
+function checkGcloud() {
+  try {
+    execSync('gcloud --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Check GCP authentication
+function checkGcpAuth() {
+  try {
+    const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
+    return authList && authList.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Fix GCP authentication
+function fixGcpAuth() {
+  try {
+    log.info('Checking GCP authentication status...');
+
+    // Check if authenticated accounts exist
+    const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
+    if (!authList || authList.trim().length === 0) {
+      log.warn('No GCP accounts authenticated. Starting login process...');
+      execCommand('gcloud auth login', { stdio: 'inherit' });
+      log.success('GCP login completed');
+    } else {
+      log.success('GCP accounts found');
+    }
+
+    // Check active account
+    const activeAccount = execCommand('gcloud auth list --filter=status:ACTIVE --format="value(account)"', { silent: true, throwOnError: false });
+    if (!activeAccount || activeAccount.trim().length === 0) {
+      log.info('Setting active account...');
+      const accounts = authList.trim().split('\n').filter(Boolean);
+      if (accounts.length > 0) {
+        execCommand(`gcloud config set account ${accounts[0]}`, { stdio: 'inherit' });
+        log.success(`Active account set to: ${accounts[0]}`);
+      }
+    }
+
+    // Check current project
+    const currentProject = execCommand('gcloud config get-value project', { silent: true, throwOnError: false });
+    if (!currentProject || currentProject.trim() !== 'ai-photo-office') {
+      log.info('Setting GCP project to ai-photo-office...');
+      execCommand('gcloud config set project ai-photo-office', { stdio: 'inherit' });
+      log.success('GCP project set to ai-photo-office');
+    } else {
+      log.success('GCP project already set to ai-photo-office');
+    }
+
+    // Try to refresh application default credentials
+    log.info('Refreshing application default credentials...');
+    try {
+      execCommand('gcloud auth application-default login --quiet', { stdio: 'inherit', timeout: 30000 });
+      log.success('Application default credentials refreshed');
+    } catch (adcError) {
+      log.warn('Application default credentials refresh failed (may require manual browser auth)');
+      log.info('You may need to run: gcloud auth application-default login');
+    }
+
+    return true;
+  } catch (error) {
+    log.error(`GCP authentication fix failed: ${error.message}`);
+    log.warn('GCP authentication may need manual intervention');
+    return false;
+  }
+}
+
 // Check if user is authenticated
 function checkAuth() {
   try {
@@ -105,6 +179,31 @@ async function main() {
       log.error('Failed to install wrangler. Please install manually: npm install -g wrangler');
       process.exit(1);
     }
+  }
+
+  // Check gcloud
+  if (!checkGcloud()) {
+    log.error('gcloud CLI not found. Please install Google Cloud SDK first.');
+    log.info('Download from: https://cloud.google.com/sdk/docs/install');
+    process.exit(1);
+  }
+
+  // Check and fix GCP authentication
+  log.info('Checking GCP authentication...');
+  if (!checkGcpAuth()) {
+    log.warn('GCP authentication required');
+    if (!fixGcpAuth()) {
+      log.error('GCP authentication setup failed');
+      log.warn('Please run the following commands manually:');
+      log.warn('  gcloud auth login');
+      log.warn('  gcloud config set project ai-photo-office');
+      log.warn('  gcloud auth application-default login');
+      process.exit(1);
+    }
+  } else {
+    log.success('GCP authentication OK');
+    // Still try to ensure correct project is set
+    fixGcpAuth();
   }
 
   // Check authentication
@@ -269,11 +368,34 @@ async function main() {
   const corsPath = path.join(process.cwd(), 'r2-cors.json');
   if (fs.existsSync(corsPath)) {
     try {
+      // Fix CORS format - ensure it's an array
+      let corsContent = fs.readFileSync(corsPath, 'utf8');
+      let corsData;
+      try {
+        corsData = JSON.parse(corsContent);
+        // If it's an object with "AllowedOrigins", convert to array format
+        if (corsData.AllowedOrigins && !Array.isArray(corsData)) {
+          corsData = [corsData];
+          fs.writeFileSync(corsPath, JSON.stringify(corsData, null, 2));
+        }
+      } catch (parseError) {
+        log.warn('CORS file format error, recreating...');
+        corsData = [{
+          "AllowedOrigins": ["*"],
+          "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+          "AllowedHeaders": ["*"],
+          "ExposeHeaders": ["ETag"],
+          "MaxAgeSeconds": 3600
+        }];
+        fs.writeFileSync(corsPath, JSON.stringify(corsData, null, 2));
+      }
+
       execCommand(`wrangler r2 bucket cors set faceswap-images --file=${corsPath}`, { throwOnError: false, stdio: 'inherit' });
       log.success('R2 CORS configured');
-    } catch {
+    } catch (corsError) {
       log.warn('CORS configuration via wrangler failed (this is common - not critical)');
       log.warn('CORS can be configured later via Cloudflare Dashboard');
+      log.info('Error details:', corsError.message);
     }
   }
 
@@ -405,6 +527,13 @@ async function main() {
     console.log(`   ✅ Pages (Frontend): https://ai-faceswap-frontend.pages.dev/`);
   }
   console.log('\n');
+
+  // Check if final setup is needed
+  const setupScript = path.join(process.cwd(), 'complete-setup.js');
+  if (fs.existsSync(setupScript)) {
+    log.info('💡 Optional: Run ./complete-setup.js to enable full GCP integration');
+    log.info('   This enables Application Default Credentials for advanced GCP features');
+  }
 }
 
 main().catch((error) => {
