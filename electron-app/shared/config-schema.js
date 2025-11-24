@@ -45,12 +45,14 @@ function validateDeployment(deployment, index) {
       'RAPIDAPI_KEY',
       'RAPIDAPI_HOST',
       'RAPIDAPI_ENDPOINT',
-      'GOOGLE_CLOUD_API_KEY',
+      'GOOGLE_VISION_API_KEY',
+      'GOOGLE_GEMINI_API_KEY',
       'GOOGLE_VISION_ENDPOINT'
     ];
 
     for (const secret of requiredSecrets) {
-      if (!deployment.secrets[secret] || typeof deployment.secrets[secret] !== 'string') {
+      const value = deployment.secrets[secret];
+      if (value === undefined || value === null || value === '' || typeof value !== 'string') {
         return { valid: false, error: `${prefix}: Missing or invalid secret: ${secret}` };
       }
     }

@@ -4,26 +4,57 @@ class AccountSwitcher {
   // Switch GCP project
   async switchGCPProject(projectId) {
     try {
-      execSync(`gcloud config set project ${projectId}`, {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 10000
-      });
-
-      // Verify the switch
+      // First check if we're already in the correct project (avoid unnecessary operations)
       const currentProject = execSync('gcloud config get-value project', {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 5000
       }).trim();
 
-      if (currentProject !== projectId) {
-        throw new Error(`Failed to switch project. Current project: ${currentProject}`);
+      if (currentProject === projectId) {
+        return {
+          success: true,
+          projectId: currentProject,
+          message: 'Already in correct project'
+        };
+      }
+
+      // Try to switch project (may fail if auth issues)
+      try {
+        execSync(`gcloud config set project ${projectId}`, {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 10000
+        });
+      } catch (setError) {
+        // Handle authentication errors gracefully
+        if (setError.message.includes('reauthentication') ||
+            setError.message.includes('auth tokens') ||
+            setError.message.includes('cannot prompt during non-interactive')) {
+          return {
+            success: false,
+            error: 'GCP authentication expired. Run: gcloud auth login',
+            needsAuth: true,
+            currentProject: currentProject || 'unknown'
+          };
+        }
+        throw setError;
+      }
+
+      // Verify the switch
+      const verifyProject = execSync('gcloud config get-value project', {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5000
+      }).trim();
+
+      if (verifyProject !== projectId) {
+        throw new Error(`Failed to switch project. Current project: ${verifyProject}`);
       }
 
       return {
         success: true,
-        projectId: currentProject
+        projectId: verifyProject
       };
     } catch (error) {
       return {

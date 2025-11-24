@@ -191,7 +191,7 @@ Google Vision API returns these levels for each category:
 - To enable: Remove or set `DISABLE_SAFE_SEARCH=false`
 
 ### If `error` is present:
-- Check `GOOGLE_CLOUD_API_KEY` is set correctly
+- Check `GOOGLE_VISION_API_KEY` is set correctly
 - Verify API key has Vision API permissions
 - Check Google Cloud Console for API quota/limits
 

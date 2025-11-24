@@ -2,10 +2,14 @@ export interface Env {
   RAPIDAPI_KEY: string;
   RAPIDAPI_HOST: string;
   RAPIDAPI_ENDPOINT: string;
-  GOOGLE_CLOUD_API_KEY: string;
+  GOOGLE_VISION_API_KEY: string;
+  GOOGLE_GEMINI_API_KEY: string;
   GOOGLE_VISION_ENDPOINT: string;
   FACESWAP_IMAGES: R2Bucket;
   DB: D1Database;
+  GEMINI_REFERER?: string;
+  NANO_BANANA_API_URL?: string;
+  NANO_BANANA_API_KEY?: string;
   R2_ACCOUNT_ID?: string; // Optional: Cloudflare account ID for auto URL generation (e.g., 32 hex characters)
   CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
   ACCOUNT_ID?: string; // Fallback alias

@@ -105,13 +105,18 @@ class ConfigManager {
         'RAPIDAPI_KEY',
         'RAPIDAPI_HOST',
         'RAPIDAPI_ENDPOINT',
-        'GOOGLE_CLOUD_API_KEY',
+        'GOOGLE_VISION_API_KEY',
+        'GOOGLE_GEMINI_API_KEY',
         'GOOGLE_VISION_ENDPOINT'
       ];
 
       for (const secret of requiredSecrets) {
-        if (!deployment.secrets[secret]) {
+        const value = deployment.secrets[secret];
+        if (value === undefined || value === null || value === '') {
           return { valid: false, error: `Missing required secret: ${secret}` };
+        }
+        if (typeof value !== 'string') {
+          return { valid: false, error: `Secret ${secret} must be a string` };
         }
       }
     }

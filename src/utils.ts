@@ -34,7 +34,8 @@ export const getUnsafeLevels = (strictness: 'strict' | 'lenient' = 'lenient'): s
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Gemini-Prompt, Authorization',
+  'Access-Control-Allow-Credentials': 'true',
 };
 
 export const jsonResponse = (data: any, status = 200): Response =>

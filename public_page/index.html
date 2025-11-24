@@ -482,6 +482,21 @@
             display: block;
         }
 
+        .gemini-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: linear-gradient(135deg, rgba(248, 35, 135, 0.9), rgba(123, 93, 255, 0.9));
+            color: #ffffff;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
+            pointer-events: none;
+        }
+
         .gallery-delete-btn {
             position: absolute;
             top: 6px;
@@ -1173,6 +1188,7 @@
 
         const resultDisplay = document.getElementById('result-display');
         const generateBtn = document.getElementById('generate-btn');
+        const apiProviderSelect = document.getElementById('api-provider');
         const statusMessages = document.getElementById('status-messages');
         const apiLogList = document.getElementById('api-log-list');
 
@@ -1370,6 +1386,7 @@
                      onclick="handleSelect('${type}', '${item.id}', event)"
                      data-item-id="${item.id}">
                     <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
+                    ${item.hasPrompt ? '<span class="gemini-badge" title="Đã có Gemini prompt">Gemini</span>' : ''}
                     <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                 </div>
             `).join('');
@@ -1611,10 +1628,18 @@
                 }
 
                 // Upload new file
+                const headers = { 'Content-Type': file.type };
+
+                // Add Gemini prompt header for preset uploads
+                if (type === 'preset') {
+                    headers['X-Enable-Gemini-Prompt'] = 'true';
+                    headers['X-Preset-Name'] = filename; // Use filename as preset name
+                }
+
                 const uploadResponse = await fetch(uploadData.uploadUrl, {
                     method: 'PUT',
                     body: file,
-                    headers: { 'Content-Type': file.type }
+                    headers: headers
                 });
 
                 let uploadResult = {};
@@ -1693,9 +1718,13 @@
 
         // Update generate button state
         function updateGenerateButton() {
-            const hasPreset = Boolean(galleries.preset.state.selected);
-            const hasSelfie = Boolean(galleries.selfie.state.selected);
-            generateBtn.disabled = !(hasPreset && hasSelfie);
+            const presetSelection = galleries.preset.state.selected;
+            const selfieSelection = galleries.selfie.state.selected;
+            const hasPreset = Boolean(presetSelection);
+            const hasSelfie = Boolean(selfieSelection);
+            const requiresGeminiPrompt = apiProviderSelect?.value === 'google-nano-banana';
+            const hasGeminiPrompt = requiresGeminiPrompt ? Boolean(presetSelection?.hasPrompt) : true;
+            generateBtn.disabled = !(hasPreset && hasSelfie && hasGeminiPrompt);
         }
 
         // Generate face swap
@@ -1726,14 +1755,35 @@
 
             try {
                 const apiProvider = document.getElementById('api-provider').value;
+                const mode = apiProvider === 'google-nano-banana' ? 'gemini' : 'rapidapi';
+
+                if (mode === 'gemini' && !presetSelection.hasPrompt) {
+                    throw new Error('Mẫu chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) sau khi bật Gemini.');
+                }
+
+                const payload = {
+                    target_url: presetSelection.image_url,
+                    source_url: selfieSelection.image_url,
+                    mode,
+                    api_provider: apiProvider,
+                    preset_image_id: presetSelection.id,
+                    preset_collection_id: presetSelection.collection_id || null,
+                };
+
+                if (presetSelection.collection_name) {
+                    payload.preset_name = presetSelection.collection_name;
+                } else if (presetSelection.filename) {
+                    payload.preset_name = presetSelection.filename;
+                }
+
+                if (selfieSelection.id) {
+                    payload.selfie_id = selfieSelection.id;
+                }
+
                 const response = await fetch(`${WORKER_URL}/faceswap`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        target_url: presetSelection.image_url,
-                        source_url: selfieSelection.image_url,
-                        api_provider: apiProvider
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 let data = {};
@@ -1833,18 +1883,47 @@
                 }
             }, false);
 
-            element.addEventListener('click', () => {
+            element.addEventListener('click', (e) => {
+                // Don't prevent default on click - let the file dialog open
+                e.stopPropagation();
                 if (type === 'preset') {
-                    presetInput.click();
+                    if (presetInput) {
+                        presetInput.click();
+                    } else {
+                        console.error('presetInput not found');
+                    }
                 } else {
-                    selfieInput.click();
+                    if (selfieInput) {
+                        selfieInput.click();
+                    } else {
+                        console.error('selfieInput not found');
+                    }
                 }
             });
         }
 
         // Setup drag and drop for upload areas
-        setupDragAndDrop(presetUpload, 'preset');
-        setupDragAndDrop(selfieUpload, 'selfie');
+        if (presetUpload && presetInput) {
+            setupDragAndDrop(presetUpload, 'preset');
+        } else {
+            console.error('presetUpload or presetInput not found');
+        }
+        
+        if (selfieUpload && selfieInput) {
+            setupDragAndDrop(selfieUpload, 'selfie');
+        } else {
+            console.error('selfieUpload or selfieInput not found');
+        }
+
+        if (apiProviderSelect) {
+            apiProviderSelect.addEventListener('change', () => {
+                updateGenerateButton();
+                const currentPreset = galleries.preset.state.selected;
+                if (apiProviderSelect.value === 'google-nano-banana' && currentPreset && !currentPreset.hasPrompt) {
+                    showStatusMessage('Mẫu hiện tại chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) để tạo prompt tự động.', 'info');
+                }
+            });
+        }
 
         // Initialize the app
         init();

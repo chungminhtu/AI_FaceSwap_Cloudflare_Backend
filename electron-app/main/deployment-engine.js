@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const CommandRunner = require('./command-runner');
 const AccountSwitcher = require('./account-switcher');
-const setupGoogleCloud = require('../../setup-google-cloud.js');
 
 class DeploymentEngine {
   constructor() {
@@ -146,7 +145,23 @@ class DeploymentEngine {
         if (deployment.gcp.projectId) {
           const projectSwitch = await AccountSwitcher.switchGCPProject(deployment.gcp.projectId);
           if (!projectSwitch.success) {
-            throw new Error(`Failed to switch GCP project: ${projectSwitch.error}`);
+            if (projectSwitch.needsAuth) {
+              // GCP authentication issue - show warning but don't fail deployment
+              errors.push({
+                step: 'verify-gcp',
+                error: `GCP authentication expired. Please run: gcloud auth login`
+              });
+              reportProgress('verify-gcp', 'warning',
+                'GCP authentication expired. Deployment will continue without GCP verification.');
+            } else {
+              // Other GCP error - also non-fatal
+              errors.push({ step: 'verify-gcp', error: projectSwitch.error });
+              reportProgress('verify-gcp', 'warning',
+                `GCP verification failed: ${projectSwitch.error}`);
+            }
+          } else {
+            reportProgress('verify-gcp', 'completed',
+              projectSwitch.message || `GCP project: ${projectSwitch.projectId}`);
           }
         }
       }
@@ -168,21 +183,29 @@ class DeploymentEngine {
       }
       reportProgress('check-auth', 'completed', 'Xác thực OK');
 
-      // Step 4: Setup GCP (if needed)
+      // Step 4: Verify GCP setup (handled automatically by deploy.js)
       if (deployment.gcp && deployment.gcp.projectId) {
-        reportProgress('setup-gcp', 'running', 'Đang thiết lập GCP...');
+        reportProgress('verify-gcp', 'running', 'Đang xác minh GCP...');
         try {
-          await setupGoogleCloud({
-            projectId: deployment.gcp.projectId,
-            accountEmail: deployment.gcp.accountEmail,
-            skipPrompts: true,
-            skipCloudflareSecret: true, // Secrets are handled separately in deploySecrets
-            skipDocumentation: true // Don't generate docs during automated deployment
-          });
-          reportProgress('setup-gcp', 'completed', 'GCP setup hoàn tất');
+          // GCP setup is now handled automatically by deploy.js
+          // Just verify the configuration is correct
+          const gcpProject = execSync('gcloud config get-value project', {
+            encoding: 'utf8',
+            timeout: 10000
+          }).trim();
+
+          if (gcpProject === deployment.gcp.projectId) {
+            reportProgress('verify-gcp', 'completed', 'GCP đã được cấu hình đúng');
+          } else {
+            // Try to set the correct project
+            execSync(`gcloud config set project ${deployment.gcp.projectId}`, {
+              timeout: 10000
+            });
+            reportProgress('verify-gcp', 'completed', `Đã chuyển GCP project thành: ${deployment.gcp.projectId}`);
+          }
         } catch (error) {
-          errors.push({ step: 'setup-gcp', error: error.message });
-          reportProgress('setup-gcp', 'warning', `GCP setup warning: ${error.message}`);
+          // GCP verification failed, but deployment can continue
+          reportProgress('verify-gcp', 'warning', 'Không thể xác minh GCP (có thể chưa được cấu hình)');
         }
       }
 
@@ -523,14 +546,9 @@ class DeploymentEngine {
   }
 
   async configureR2CORS(codebasePath) {
-    const corsPath = path.join(codebasePath, 'r2-cors.json');
-    if (fs.existsSync(corsPath)) {
-      try {
-        await this.executeWithLogs(`wrangler r2 bucket cors set faceswap-images --file=${corsPath}`, codebasePath, 'configure-cors');
-      } catch (error) {
-        // CORS configuration is non-critical
-      }
-    }
+    // CORS is now handled automatically by r2.dev public access
+    // No manual CORS configuration needed
+    return Promise.resolve();
   }
 
   async deploySecrets(deployment, codebasePath) {

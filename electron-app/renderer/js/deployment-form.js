@@ -85,7 +85,8 @@ window.deploymentForm = {
           RAPIDAPI_KEY: savedDraft?.secrets?.RAPIDAPI_KEY || lastDeployment?.secrets?.RAPIDAPI_KEY || '',
           RAPIDAPI_HOST: savedDraft?.secrets?.RAPIDAPI_HOST || lastDeployment?.secrets?.RAPIDAPI_HOST || '',
           RAPIDAPI_ENDPOINT: savedDraft?.secrets?.RAPIDAPI_ENDPOINT || lastDeployment?.secrets?.RAPIDAPI_ENDPOINT || '',
-          GOOGLE_CLOUD_API_KEY: savedDraft?.secrets?.GOOGLE_CLOUD_API_KEY || lastDeployment?.secrets?.GOOGLE_CLOUD_API_KEY || '',
+          GOOGLE_VISION_API_KEY: savedDraft?.secrets?.GOOGLE_VISION_API_KEY || lastDeployment?.secrets?.GOOGLE_VISION_API_KEY || '',
+          GOOGLE_GEMINI_API_KEY: savedDraft?.secrets?.GOOGLE_GEMINI_API_KEY || lastDeployment?.secrets?.GOOGLE_GEMINI_API_KEY || '',
           GOOGLE_VISION_ENDPOINT: savedDraft?.secrets?.GOOGLE_VISION_ENDPOINT || lastDeployment?.secrets?.GOOGLE_VISION_ENDPOINT || ''
         },
         workerName: savedDraft?.workerName || lastDeployment?.workerName || 'ai-faceswap-backend',
@@ -189,8 +190,14 @@ window.deploymentForm = {
           <div class="secrets-column" style="margin-top: var(--spacing-md);">
             <h4 class="secrets-column-title">☁️ Google Cloud</h4>
             <div class="form-group">
-              <label class="form-label">API Key *</label>
-              <input type="password" class="form-input" id="form-secret-google-key" value="${this.escapeHtml(deploymentData.secrets?.GOOGLE_CLOUD_API_KEY || '')}" required>
+              <label class="form-label">Vision API Key *</label>
+              <input type="password" class="form-input" id="form-secret-google-vision-key" value="${this.escapeHtml(deploymentData.secrets?.GOOGLE_VISION_API_KEY || '')}" required>
+              <small class="form-hint">For SafeSearch (Vision API)</small>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Gemini API Key *</label>
+              <input type="password" class="form-input" id="form-secret-google-gemini-key" value="${this.escapeHtml(deploymentData.secrets?.GOOGLE_GEMINI_API_KEY || '')}" required>
+              <small class="form-hint">For prompt generation (Gemini API)</small>
             </div>
             <div class="form-group">
               <label class="form-label">Vision Endpoint *</label>
@@ -202,6 +209,7 @@ window.deploymentForm = {
         <!-- Form Actions -->
         <div class="form-actions full-width">
           <button type="button" id="btn-cancel-form" class="btn btn-secondary">Hủy</button>
+          <button type="button" id="btn-debug-form" class="btn btn-info" style="margin-right: 8px;">🔍 Debug</button>
           <button type="submit" class="btn btn-primary">Lưu</button>
         </div>
       </form>
@@ -209,6 +217,14 @@ window.deploymentForm = {
   },
 
   setupFormListeners(deployment) {
+    // Debug button
+    const debugBtn = document.getElementById('btn-debug-form');
+    if (debugBtn) {
+      debugBtn.addEventListener('click', () => {
+        this.debugFormValues();
+      });
+    }
+
     // Cancel button
     const btnCancel = document.getElementById('btn-cancel-form');
     if (btnCancel) {
@@ -278,7 +294,8 @@ window.deploymentForm = {
       'form-secret-rapidapi-key',
       'form-secret-rapidapi-host',
       'form-secret-rapidapi-endpoint',
-      'form-secret-google-key',
+      'form-secret-google-vision-key',
+      'form-secret-google-gemini-key',
       'form-secret-google-endpoint'
     ];
 
@@ -314,7 +331,8 @@ window.deploymentForm = {
         RAPIDAPI_KEY: document.getElementById('form-secret-rapidapi-key')?.value || '',
         RAPIDAPI_HOST: document.getElementById('form-secret-rapidapi-host')?.value || '',
         RAPIDAPI_ENDPOINT: document.getElementById('form-secret-rapidapi-endpoint')?.value || '',
-        GOOGLE_CLOUD_API_KEY: document.getElementById('form-secret-google-key')?.value || '',
+        GOOGLE_VISION_API_KEY: document.getElementById('form-secret-google-vision-key')?.value || '',
+        GOOGLE_GEMINI_API_KEY: document.getElementById('form-secret-google-gemini-key')?.value || '',
         GOOGLE_VISION_ENDPOINT: document.getElementById('form-secret-google-endpoint')?.value || ''
       },
       savedAt: new Date().toISOString()
@@ -679,7 +697,7 @@ window.deploymentForm = {
               // It's either a single deployment object or a secrets-only file
               // Check if it looks like a secrets-only file
               const isSecretsOnly = !deployment.id && !deployment.name && !deployment.gcp && !deployment.cloudflare &&
-                (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_CLOUD_API_KEY);
+                (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_VISION_API_KEY || deployment.GOOGLE_GEMINI_API_KEY);
               
               if (isSecretsOnly) {
                 console.log('Detected secrets-only file');
@@ -783,7 +801,7 @@ window.deploymentForm = {
     
     // Check if this is a secrets-only file (flat object with secret keys)
     const isSecretsOnly = !deployment.id && !deployment.name && !deployment.gcp && !deployment.cloudflare &&
-      (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_CLOUD_API_KEY);
+      (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_VISION_API_KEY || deployment.GOOGLE_GEMINI_API_KEY);
     
     // If it's secrets-only, wrap it in a secrets object
     if (isSecretsOnly) {
@@ -890,9 +908,13 @@ window.deploymentForm = {
           filledCount++;
           filledFields.push('RAPIDAPI_ENDPOINT');
         }
-        if (setValue('form-secret-google-key', secrets.GOOGLE_CLOUD_API_KEY)) {
+        if (setValue('form-secret-google-vision-key', secrets.GOOGLE_VISION_API_KEY)) {
           filledCount++;
-          filledFields.push('GOOGLE_CLOUD_API_KEY');
+          filledFields.push('GOOGLE_VISION_API_KEY');
+        }
+        if (setValue('form-secret-google-gemini-key', secrets.GOOGLE_GEMINI_API_KEY)) {
+          filledCount++;
+          filledFields.push('GOOGLE_GEMINI_API_KEY');
         }
         if (setValue('form-secret-google-endpoint', secrets.GOOGLE_VISION_ENDPOINT)) {
           filledCount++;
@@ -916,11 +938,68 @@ window.deploymentForm = {
     });
   },
 
+  debugFormValues() {
+    console.log('[DEBUG] Form Values Check:');
+
+    const formElements = [
+      'form-id', 'form-name', 'form-gcp-project', 'form-gcp-email',
+      'form-cf-account-id', 'form-cf-email',
+      'form-secret-rapidapi-key', 'form-secret-rapidapi-host', 'form-secret-rapidapi-endpoint',
+      'form-secret-google-vision-key', 'form-secret-google-gemini-key', 'form-secret-google-endpoint',
+      'form-worker-name', 'form-pages-name'
+    ];
+
+    const values = {};
+    for (const id of formElements) {
+      const element = document.getElementById(id);
+      if (element) {
+        values[id] = element.value ? '***SET***' : 'EMPTY';
+      } else {
+        values[id] = 'ELEMENT_NOT_FOUND';
+      }
+    }
+
+    console.log('[DEBUG] Form element values:', values);
+
+    // Also check if form container exists
+    const formContainer = document.getElementById('deployment-form');
+    console.log('[DEBUG] Form container exists:', !!formContainer);
+
+    const form = document.getElementById('deployment-form-form');
+    console.log('[DEBUG] Form element exists:', !!form);
+
+    alert('Check console for form debug info');
+  },
+
   async saveDeployment(existingDeployment) {
     try {
+      console.log('[Save] Starting deployment save...');
+
       const config = window.dashboard?.getCurrentConfig();
       if (!config) {
         throw new Error('Không thể tải cấu hình');
+      }
+
+      // Debug: Check if form elements exist
+      const formElements = [
+        'form-id', 'form-name', 'form-gcp-project', 'form-gcp-email',
+        'form-cf-account-id', 'form-cf-email',
+        'form-secret-rapidapi-key', 'form-secret-rapidapi-host', 'form-secret-rapidapi-endpoint',
+        'form-secret-google-vision-key', 'form-secret-google-gemini-key', 'form-secret-google-endpoint',
+        'form-worker-name', 'form-pages-name'
+      ];
+
+      const missingElements = [];
+      for (const id of formElements) {
+        const element = document.getElementById(id);
+        if (!element) {
+          missingElements.push(id);
+        }
+      }
+
+      if (missingElements.length > 0) {
+        console.error('[Save] Missing form elements:', missingElements);
+        throw new Error(`Missing form elements: ${missingElements.join(', ')}`);
       }
 
       const deployment = {
@@ -938,13 +1017,21 @@ window.deploymentForm = {
           RAPIDAPI_KEY: document.getElementById('form-secret-rapidapi-key').value,
           RAPIDAPI_HOST: document.getElementById('form-secret-rapidapi-host').value,
           RAPIDAPI_ENDPOINT: document.getElementById('form-secret-rapidapi-endpoint').value,
-          GOOGLE_CLOUD_API_KEY: document.getElementById('form-secret-google-key').value,
+          GOOGLE_VISION_API_KEY: document.getElementById('form-secret-google-vision-key').value,
+          GOOGLE_GEMINI_API_KEY: document.getElementById('form-secret-google-gemini-key').value,
           GOOGLE_VISION_ENDPOINT: document.getElementById('form-secret-google-endpoint').value
         },
         workerName: document.getElementById('form-worker-name').value || 'ai-faceswap-backend',
         pagesProjectName: document.getElementById('form-pages-name').value || 'ai-faceswap-frontend',
         status: existingDeployment?.status || 'idle'
       };
+
+      console.log('[Save] Collected deployment data:', {
+        id: deployment.id,
+        name: deployment.name,
+        secretsKeys: Object.keys(deployment.secrets),
+        secretsValues: Object.entries(deployment.secrets).map(([k, v]) => [k, v ? '***SET***' : 'EMPTY'])
+      });
 
       // Validate
       const validation = await window.electronAPI.configValidate({ ...config, deployments: [deployment] });

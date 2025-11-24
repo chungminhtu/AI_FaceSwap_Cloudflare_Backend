@@ -114,14 +114,14 @@ function fixGcpAuth() {
       log.success('GCP project already set to ai-photo-office');
     }
 
-    // Try to refresh application default credentials
-    log.info('Refreshing application default credentials...');
+    // Check if application default credentials are needed
+    // Only attempt refresh if they don't exist and we're in interactive mode
     try {
-      execCommand('gcloud auth application-default login --quiet', { stdio: 'inherit', timeout: 30000 });
-      log.success('Application default credentials refreshed');
-    } catch (adcError) {
-      log.warn('Application default credentials refresh failed (may require manual browser auth)');
-      log.info('You may need to run: gcloud auth application-default login');
+      execCommand('gcloud auth application-default print-access-token', { silent: true, throwOnError: false });
+      log.success('Application default credentials available');
+    } catch {
+      log.info('Application default credentials not configured (optional)');
+      log.info('Run "gcloud auth application-default login" if you need advanced GCP features');
     }
 
     return true;
@@ -363,45 +363,12 @@ async function main() {
     log.warn('Could not verify D1 database (may already exist)');
   }
 
-  // Configure R2 CORS
-  log.info('Configuring R2 CORS...');
-  const corsPath = path.join(process.cwd(), 'r2-cors.json');
-  if (fs.existsSync(corsPath)) {
-    try {
-      // Fix CORS format - ensure it's an array
-      let corsContent = fs.readFileSync(corsPath, 'utf8');
-      let corsData;
-      try {
-        corsData = JSON.parse(corsContent);
-        // If it's an object with "AllowedOrigins", convert to array format
-        if (corsData.AllowedOrigins && !Array.isArray(corsData)) {
-          corsData = [corsData];
-          fs.writeFileSync(corsPath, JSON.stringify(corsData, null, 2));
-        }
-      } catch (parseError) {
-        log.warn('CORS file format error, recreating...');
-        corsData = [{
-          "AllowedOrigins": ["*"],
-          "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-          "AllowedHeaders": ["*"],
-          "ExposeHeaders": ["ETag"],
-          "MaxAgeSeconds": 3600
-        }];
-        fs.writeFileSync(corsPath, JSON.stringify(corsData, null, 2));
-      }
-
-      execCommand(`wrangler r2 bucket cors set faceswap-images --file=${corsPath}`, { throwOnError: false, stdio: 'inherit' });
-      log.success('R2 CORS configured');
-    } catch (corsError) {
-      log.warn('CORS configuration via wrangler failed (this is common - not critical)');
-      log.warn('CORS can be configured later via Cloudflare Dashboard');
-      log.info('Error details:', corsError.message);
-    }
-  }
+  // CORS is handled by Worker responses - no R2 bucket CORS needed
+  log.info('CORS: Handled automatically by Worker (no R2 configuration needed)');
 
   // Check secrets
   log.info('Checking environment variables...');
-  const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_CLOUD_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
+  const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
   const secretsPath = path.join(process.cwd(), 'secrets.json');
 
   // Auto-deploy secrets if secrets.json exists

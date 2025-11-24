@@ -41,7 +41,8 @@ npm install
 RAPIDAPI_KEY=a6c4db0ee6msh0dc524a0797828dp1a04bcjsnc80ab176f0ef
 RAPIDAPI_HOST=ai-face-swap2.p.rapidapi.com
 RAPIDAPI_ENDPOINT=https://ai-face-swap2.p.rapidapi.com/public/process/urls
-GOOGLE_CLOUD_API_KEY=your_google_cloud_vision_api_key_here
+GOOGLE_VISION_API_KEY=your_google_vision_api_key_here
+GOOGLE_GEMINI_API_KEY=your_google_gemini_api_key_here
 GOOGLE_VISION_ENDPOINT=https://vision.googleapis.com/v1/images:annotate
 ```
 
@@ -136,7 +137,8 @@ npx wrangler login
 npx wrangler secret put RAPIDAPI_KEY
 npx wrangler secret put RAPIDAPI_HOST
 npx wrangler secret put RAPIDAPI_ENDPOINT
-npx wrangler secret put GOOGLE_CLOUD_API_KEY
+npx wrangler secret put GOOGLE_VISION_API_KEY
+npx wrangler secret put GOOGLE_GEMINI_API_KEY
 npx wrangler secret put GOOGLE_VISION_ENDPOINT
 ```
 
@@ -254,8 +256,10 @@ The backend automatically checks all FaceSwap results using Google Cloud Vision 
 - Make sure you've set the secret using `wrangler secret put RAPIDAPI_KEY` (for production)
 - For local dev, check your `.dev.vars` file has all required variables
 
-### Error: "GOOGLE_CLOUD_API_KEY not set"
-- Make sure you've set the secret using `wrangler secret put GOOGLE_CLOUD_API_KEY`
+### Error: "GOOGLE_VISION_API_KEY not set" or "GOOGLE_GEMINI_API_KEY not set"
+- Make sure you've set both secrets:
+  - `wrangler secret put GOOGLE_VISION_API_KEY` (for SafeSearch/Vision API)
+  - `wrangler secret put GOOGLE_GEMINI_API_KEY` (for Gemini prompt generation)
 - Verify your Google Cloud Vision API is enabled
 
 ### Error: "Google Vision API error: 403"
