@@ -347,7 +347,8 @@ export default {
             url: publicUrl,
             id: imageId,
             filename: key.replace('preset/', ''),
-            hasPrompt: !!promptJson
+            hasPrompt: !!promptJson,
+            prompt_json: promptJson ? JSON.parse(promptJson) : null
           });
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);

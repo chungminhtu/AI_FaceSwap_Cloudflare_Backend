@@ -73,34 +73,69 @@ export const callNanoBanana = async (
   sourceUrl: string,
   env: Env
 ): Promise<FaceSwapResponse> => {
-  if (!env.NANO_BANANA_API_URL || !env.NANO_BANANA_API_KEY) {
+  // Use Gemini API key (same as prompt generation)
+  const apiKey = env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
     return {
       Success: false,
-      Message: 'Nano Banana provider not configured. Please set NANO_BANANA_API_URL and NANO_BANANA_API_KEY.',
+      Message: 'GOOGLE_GEMINI_API_KEY not set',
       StatusCode: 500,
     };
   }
 
   try {
-    const response = await fetch(env.NANO_BANANA_API_URL, {
+    const geminiModel = 'models/gemini-2.5-flash';
+    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent`;
+
+    // Build the prompt text from the stored prompt JSON (this describes the preset scene)
+    let promptText = '';
+    if (prompt && typeof prompt === 'object') {
+      const promptObj = prompt as any;
+      promptText = promptObj.prompt || JSON.stringify(promptObj);
+    } else if (typeof prompt === 'string') {
+      promptText = prompt;
+    } else {
+      promptText = JSON.stringify(prompt);
+    }
+
+    // Only use the stored prompt_json text - no images sent
+    // The prompt_json already contains the full scene description from the preset image
+    console.log('[Gemini-NanoBanana] Using stored prompt_json text only (no images)');
+    console.log('[Gemini-NanoBanana] Prompt length:', promptText.length);
+
+    // Call Gemini API with ONLY the stored prompt text (no images)
+    const requestBody = {
+      contents: [{
+        parts: [
+          { text: promptText }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        topK: 1,
+        topP: 1,
+        maxOutputTokens: 2048,
+      }
+    };
+
+    // Call Gemini API with only text (no images)
+    const response = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.NANO_BANANA_API_KEY}`,
+        'x-goog-api-key': apiKey
       },
-      body: JSON.stringify({
-        prompt,
-        target_url: targetUrl,
-        source_url: sourceUrl,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     const rawResponse = await response.text();
+    console.log('[Gemini-NanoBanana] Response status:', response.status);
 
     if (!response.ok) {
+      console.error('[Gemini-NanoBanana] API error:', rawResponse.substring(0, 500));
       return {
         Success: false,
-        Message: `Nano Banana API error: ${response.status} ${response.statusText}`,
+        Message: `Gemini API error: ${response.status} ${response.statusText}`,
         StatusCode: response.status,
         Error: rawResponse.substring(0, 500),
       };
@@ -109,25 +144,55 @@ export const callNanoBanana = async (
     try {
       const data = JSON.parse(rawResponse);
 
+      // Gemini API returns text, not image URLs
+      // Check if response contains image data or URL
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      
+      // Look for image data in response (if Gemini returns images)
+      let resultImageUrl: string | undefined;
+      let resultMessage = 'Gemini face swap completed';
+
+      // Try to extract image from response
+      for (const part of parts) {
+        if (part.inline_data?.data) {
+          // If Gemini returns base64 image data, we'd need to upload it to R2 first
+          // For now, return error indicating Gemini doesn't generate images directly
+          return {
+            Success: false,
+            Message: 'Gemini API does not generate images directly. It only returns text descriptions. Please use a proper image generation API.',
+            StatusCode: 501,
+            Error: 'Gemini generateContent endpoint returns text, not images',
+          };
+        }
+        if (part.text) {
+          resultMessage = part.text;
+        }
+      }
+
+      // Check if there's a URL in the text response
+      const urlMatch = resultMessage.match(/https?:\/\/[^\s]+\.(?:jpg|jpeg|png|webp)/i);
+      if (urlMatch) {
+        resultImageUrl = urlMatch[0];
+      }
+
       const result: FaceSwapResponse = {
-        Success: data.Success === true || data.success === true,
-        ResultImageUrl: data.ResultImageUrl || data.result_url || data.file_url,
-        Message: data.Message || data.message || 'Nano Banana generation completed',
+        Success: !!resultImageUrl,
+        ResultImageUrl: resultImageUrl,
+        Message: resultMessage || 'Gemini generation completed',
         StatusCode: response.status,
-        ProcessingTime: data.ProcessingTime?.toString() || data.processing_time?.toString(),
       };
 
       if (!result.Success || !result.ResultImageUrl) {
         result.Success = false;
-        result.Message = result.Message || 'Nano Banana API did not return a result image URL';
-        result.Error = rawResponse.substring(0, 500);
+        result.Message = 'Gemini API did not return an image URL. Gemini generateContent returns text descriptions, not images.';
+        result.Error = 'Use a proper image generation service for face swap operations.';
       }
 
       return result;
     } catch (parseError) {
       return {
         Success: false,
-        Message: 'Failed to parse Nano Banana API response',
+        Message: 'Failed to parse Gemini API response',
         StatusCode: 500,
         Error: rawResponse.substring(0, 500),
       };
@@ -135,7 +200,7 @@ export const callNanoBanana = async (
   } catch (error) {
     return {
       Success: false,
-      Message: `Nano Banana request failed: ${error instanceof Error ? error.message : String(error)}`,
+      Message: `Gemini face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
     };
   }
@@ -261,17 +326,21 @@ export const generateGeminiPrompt = async (
     const referer = env.GEMINI_REFERER || 'https://ai-faceswap-frontend.pages.dev/';
     const origin = referer.endsWith('/') ? referer.slice(0, -1) : referer;
 
-    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character’s pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: “Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene.” The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
+    // Exact prompt text as specified by user
+    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
+    // Fetch image as base64
+    const imageData = await fetchImageAsBase64(imageUrl);
+
+    // Build request body following official Gemini REST API format
     const requestBody = {
       contents: [{
-        role: 'user',
         parts: [
           { text: prompt },
           {
             inline_data: {
               mime_type: "image/jpeg",
-              data: await fetchImageAsBase64(imageUrl)
+              data: imageData
             }
           }
         ]
@@ -281,6 +350,37 @@ export const generateGeminiPrompt = async (
         topK: 1,
         topP: 1,
         maxOutputTokens: 2048,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            prompt: {
+              type: "string",
+              description: "Detailed HDR scene description including character pose, outfit, environment, atmosphere, visual mood, and face-swap rule"
+            },
+            style: {
+              type: "string",
+              description: "Visual style description"
+            },
+            lighting: {
+              type: "string",
+              description: "HDR lighting description"
+            },
+            composition: {
+              type: "string",
+              description: "Composition details"
+            },
+            camera: {
+              type: "string",
+              description: "Camera settings and lens information"
+            },
+            background: {
+              type: "string",
+              description: "Background environment description"
+            }
+          },
+          required: ["prompt", "style", "lighting", "composition", "camera", "background"]
+        }
       }
     };
 
@@ -318,46 +418,65 @@ export const generateGeminiPrompt = async (
             }
 
     const data = await response.json();
+    console.log('[Gemini] Response structure:', JSON.stringify(data).substring(0, 300));
 
+    // With structured outputs (responseMimeType: "application/json"), Gemini returns JSON directly
     const parts = data.candidates?.[0]?.content?.parts;
-    const responseText = parts?.find((part: any) => typeof part.text === 'string')?.text;
-
-    if (!responseText) {
-      return { success: false, error: 'No response from Gemini API' };
+    if (!parts || parts.length === 0) {
+      return { success: false, error: 'No response parts from Gemini API' };
     }
 
-    // Extract JSON from the response (Gemini might wrap it in markdown fences)
-    let jsonText = responseText;
-    if (responseText.includes('```json')) {
-      const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[1];
-      }
-    } else if (responseText.includes('```')) {
-      const jsonMatch = responseText.match(/```\s*(\{[\s\S]*?\})\s*```/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[1];
+    let promptJson: any = null;
+
+    // Try to get JSON directly from structured output
+    for (const part of parts) {
+      // Structured output returns text containing JSON
+      if (part.text) {
+        try {
+          promptJson = JSON.parse(part.text);
+          break;
+        } catch (e) {
+          // If parse fails, try extracting from markdown code blocks
+          let jsonText = part.text;
+          if (jsonText.includes('```json')) {
+            const jsonMatch = jsonText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+            if (jsonMatch) {
+              jsonText = jsonMatch[1];
+            }
+          } else if (jsonText.includes('```')) {
+            const jsonMatch = jsonText.match(/```\s*(\{[\s\S]*?\})\s*```/);
+            if (jsonMatch) {
+              jsonText = jsonMatch[1];
+            }
+          }
+          try {
+            promptJson = JSON.parse(jsonText);
+            break;
+          } catch (parseError) {
+            console.warn('[Gemini] Failed to parse JSON from text:', parseError);
+          }
+        }
       }
     }
 
-    try {
-      const promptJson = JSON.parse(jsonText);
-
-      // Validate required keys
-      const requiredKeys = ['prompt', 'style', 'lighting', 'composition', 'camera', 'background'];
-      const missingKeys = requiredKeys.filter(key => !promptJson[key]);
-
-      if (missingKeys.length > 0) {
-        return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
-      }
-
-      console.log('[Gemini] Generated prompt successfully');
-      return { success: true, prompt: promptJson };
-
-    } catch (parseError) {
-      console.error('[Gemini] JSON parse error:', parseError, 'Raw response:', responseText);
-      return { success: false, error: 'Failed to parse JSON from Gemini response' };
+    if (!promptJson) {
+      console.error('[Gemini] Could not extract JSON from response. Parts:', JSON.stringify(parts));
+      return { success: false, error: 'No valid JSON response from Gemini API' };
     }
+
+    // Validate required keys
+    const requiredKeys = ['prompt', 'style', 'lighting', 'composition', 'camera', 'background'];
+    const missingKeys = requiredKeys.filter(key => !promptJson[key] || promptJson[key] === '');
+
+    if (missingKeys.length > 0) {
+      console.error('[Gemini] Missing required keys:', missingKeys);
+      console.error('[Gemini] Received JSON:', JSON.stringify(promptJson));
+      return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
+    }
+
+    console.log('[Gemini] Generated prompt successfully with all required keys');
+    console.log('[Gemini] Prompt preview:', promptJson.prompt?.substring(0, 200));
+    return { success: true, prompt: promptJson };
 
   } catch (error) {
     console.error('[Gemini] Exception:', error);

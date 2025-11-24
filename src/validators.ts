@@ -7,10 +7,8 @@ export const validateEnv = (env: Env, mode: 'rapidapi' | 'gemini' = 'rapidapi'):
     if (!env.RAPIDAPI_ENDPOINT) return 'RAPIDAPI_ENDPOINT not set';
   }
 
-  if (mode === 'gemini') {
-    if (!env.NANO_BANANA_API_URL) return 'NANO_BANANA_API_URL not set';
-    if (!env.NANO_BANANA_API_KEY) return 'NANO_BANANA_API_KEY not set';
-  }
+  // Gemini mode uses GOOGLE_GEMINI_API_KEY (same as prompt generation)
+  // No separate Nano Banana API required - uses Gemini endpoint directly
 
   // Vision API key (for SafeSearch)
   if (!env.GOOGLE_VISION_API_KEY) return 'GOOGLE_VISION_API_KEY not set';
