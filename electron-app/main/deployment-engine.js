@@ -126,25 +126,10 @@ class DeploymentEngine {
       // Step 1: Check prerequisites
       reportProgress('check-prerequisites', 'running', 'Đang kiểm tra prerequisites...');
       const prerequisites = await this.checkPrerequisites();
-      
-      // Wrangler is always required
-      if (!prerequisites.wrangler) {
-        throw new Error(`Missing prerequisites: wrangler is required. ${JSON.stringify(prerequisites)}`);
+      if (!prerequisites.wrangler || !prerequisites.gcloud) {
+        throw new Error(`Missing prerequisites: ${JSON.stringify(prerequisites)}`);
       }
-      
-      // Gcloud is only required if GCP is configured in deployment
-      const needsGcloud = deployment.gcp && (deployment.gcp.accountEmail || deployment.gcp.projectId);
-      if (needsGcloud && !prerequisites.gcloud) {
-        throw new Error(`Missing prerequisites: gcloud is required for GCP deployment. ${JSON.stringify(prerequisites)}`);
-      }
-      
-      if (!prerequisites.gcloud && needsGcloud) {
-        reportProgress('check-prerequisites', 'warning', 'gcloud not found but GCP is configured - GCP features may not work');
-      } else if (!prerequisites.gcloud) {
-        reportProgress('check-prerequisites', 'completed', 'Prerequisites OK (gcloud optional, not configured)');
-      } else {
-        reportProgress('check-prerequisites', 'completed', 'Prerequisites OK');
-      }
+      reportProgress('check-prerequisites', 'completed', 'Prerequisites OK');
 
       // Step 2: Switch accounts
       reportProgress('switch-accounts', 'running', 'Đang chuyển đổi tài khoản...');
@@ -183,29 +168,8 @@ class DeploymentEngine {
 
       if (deployment.cloudflare) {
         const cfSwitch = await AccountSwitcher.switchCloudflare(deployment.cloudflare);
-        if (!cfSwitch.success) {
-          if (cfSwitch.needsLogin) {
-            throw new Error(`Cloudflare authentication required: ${cfSwitch.error}`);
-          } else if (cfSwitch.isTimeout) {
-            // Timeout is not fatal - just warn and continue
-            errors.push({
-              step: 'switch-accounts',
-              error: `Cloudflare account verification timed out: ${cfSwitch.error}`
-            });
-            reportProgress('switch-cloudflare', 'warning', 
-              'Cloudflare account verification timed out - deployment will continue');
-          } else {
-            // Other errors - warn but continue
-            errors.push({
-              step: 'switch-accounts',
-              error: `Cloudflare account verification failed: ${cfSwitch.error}`
-            });
-            reportProgress('switch-cloudflare', 'warning', 
-              `Cloudflare account verification failed: ${cfSwitch.error} - deployment will continue`);
-          }
-        } else {
-          reportProgress('switch-cloudflare', 'completed', 
-            cfSwitch.message || 'Cloudflare account verified');
+        if (!cfSwitch.success && cfSwitch.needsLogin) {
+          throw new Error(`Cloudflare authentication required: ${cfSwitch.error}`);
         }
       }
 
@@ -214,27 +178,10 @@ class DeploymentEngine {
       // Step 3: Check authentication
       reportProgress('check-auth', 'running', 'Đang kiểm tra xác thực...');
       const authCheck = await this.checkAuthentication();
-      
-      // Cloudflare is always required
-      if (!authCheck.cloudflare) {
-        throw new Error(`Authentication failed: Cloudflare authentication required`);
+      if (!authCheck.cloudflare || !authCheck.gcp) {
+        throw new Error(`Authentication failed: Cloudflare=${authCheck.cloudflare}, GCP=${authCheck.gcp}`);
       }
-      
-      // GCP auth is only required if GCP is configured
-      const needsGcpAuth = deployment.gcp && (deployment.gcp.accountEmail || deployment.gcp.projectId);
-      if (needsGcpAuth && !authCheck.gcp) {
-        errors.push({
-          step: 'check-auth',
-          error: 'GCP authentication required but not found'
-        });
-        reportProgress('check-auth', 'warning', 'GCP authentication not found (deployment will continue)');
-      } else if (!authCheck.gcp && needsGcpAuth) {
-        reportProgress('check-auth', 'warning', 'GCP authentication not found but GCP is configured');
-      } else if (!authCheck.gcp) {
-        reportProgress('check-auth', 'completed', 'Cloudflare authentication OK (GCP not configured)');
-      } else {
-        reportProgress('check-auth', 'completed', 'Xác thực OK');
-      }
+      reportProgress('check-auth', 'completed', 'Xác thực OK');
 
       // Step 4: Verify GCP setup (handled automatically by deploy.js)
       if (deployment.gcp && deployment.gcp.projectId) {
@@ -253,7 +200,7 @@ class DeploymentEngine {
             // Try to set the correct project
             execSync(`gcloud config set project ${deployment.gcp.projectId}`, {
               timeout: 10000
-            });
+          });
             reportProgress('verify-gcp', 'completed', `Đã chuyển GCP project thành: ${deployment.gcp.projectId}`);
           }
         } catch (error) {
@@ -710,43 +657,7 @@ class DeploymentEngine {
       return pagesUrl;
     }
 
-    // Force deployment by updating HTML with deployment timestamp
-    // This ensures Pages always detects changes and uploads files
-    const htmlPath = path.join(publicPageDir, 'index.html');
-    if (fs.existsSync(htmlPath)) {
-      try {
-        let htmlContent = fs.readFileSync(htmlPath, 'utf8');
-        const timestamp = new Date().toISOString();
-        const buildId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-        
-        // Remove old deployment build ID if exists
-        htmlContent = htmlContent.replace(/const DEPLOYMENT_BUILD_ID = ['"].*?['"];?\n?/g, '');
-        htmlContent = htmlContent.replace(/<!-- Deployment: .*? -->\n?/g, '');
-        
-        // Add deployment build ID as a JavaScript variable (ensures hash changes)
-        const buildIdScript = `        const DEPLOYMENT_BUILD_ID = '${buildId}'; // Deployment: ${timestamp}\n`;
-        
-        // Find the WORKER_URL line and add build ID right after it
-        const workerUrlPattern = /(const WORKER_URL = ['"].*?['"];)/;
-        if (workerUrlPattern.test(htmlContent)) {
-          htmlContent = htmlContent.replace(workerUrlPattern, `$1\n${buildIdScript}`);
-        } else {
-          // If WORKER_URL not found, add at the beginning of script section
-          htmlContent = htmlContent.replace(/(<script>)/, `$1\n${buildIdScript}`);
-        }
-        
-        fs.writeFileSync(htmlPath, htmlContent, 'utf8');
-      } catch (error) {
-        // Non-fatal - continue with deployment
-      }
-    }
-
     try {
-      // Log that we're starting Pages deployment
-      if (this.reportProgress) {
-        this.reportProgress('deploy-pages', 'running', `Executing: wrangler pages deploy ${publicPageDir}...`);
-      }
-      
       const result = await this.executeWithLogs(
         `wrangler pages deploy ${publicPageDir} --project-name=${pagesProjectName} --branch=main --commit-dirty=true`,
         codebasePath,
@@ -754,19 +665,16 @@ class DeploymentEngine {
       );
 
       if (!result.success) {
-        const errorMsg = result.stderr || result.error || 'Unknown error';
-        throw new Error(`Pages deployment failed: ${errorMsg}`);
+        // Even if deployment has issues, return the URL (deployment might have partially succeeded)
+        return pagesUrl;
       }
 
       // Construct the Pages domain from project name
       return pagesUrl;
     } catch (error) {
-      // Log the error but don't fail the entire deployment
-      if (this.reportProgress) {
-        this.reportProgress('deploy-pages', 'error', `Pages deployment error: ${error.message}`);
-      }
-      // Re-throw so the caller can see the error
-      throw error;
+      // Pages deployment is non-critical, but return URL anyway
+      // The URL format is always https://{projectName}.pages.dev/
+      return pagesUrl;
     }
   }
 }

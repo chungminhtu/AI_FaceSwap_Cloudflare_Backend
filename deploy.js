@@ -48,35 +48,6 @@ function prompt(question) {
   });
 }
 
-// Execute command with real-time output (non-blocking for output, but waits for completion)
-function execCommandRealtime(command, options = {}) {
-  return new Promise((resolve, reject) => {
-    const [cmd, ...args] = command.split(/\s+/);
-    const child = spawn(cmd, args, {
-      stdio: 'inherit',
-      shell: true,
-      ...options
-    });
-    
-    child.on('error', (error) => {
-      if (options.throwOnError !== false) {
-        reject(error);
-      } else {
-        resolve(null);
-      }
-    });
-    
-    child.on('exit', (code) => {
-      if (code !== 0 && options.throwOnError !== false) {
-        reject(new Error(`Command failed with exit code ${code}`));
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-
 // Check if wrangler is installed
 function checkWrangler() {
   try {
@@ -431,7 +402,7 @@ async function main() {
   log.info(`Deploying Worker: ${WORKER_NAME}...`);
   log.info('📌 Using fixed worker name - URL will NEVER change!');
   try {
-    await execCommandRealtime('wrangler deploy');
+    execCommand('wrangler deploy', { silent: false });
     log.success('Worker deployed');
 
     // Try to get Worker URL from deployments
@@ -493,51 +464,12 @@ async function main() {
 
   if (fs.existsSync(publicPageDir)) {
     try {
-      // Force deployment by updating HTML with deployment timestamp
-      // This ensures Pages always detects changes and uploads files
-      const htmlPath = path.join(publicPageDir, 'index.html');
-      if (fs.existsSync(htmlPath)) {
-        try {
-          let htmlContent = fs.readFileSync(htmlPath, 'utf8');
-          const timestamp = new Date().toISOString();
-          const buildId = Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-          
-          // Remove old deployment build ID if exists
-          htmlContent = htmlContent.replace(/const DEPLOYMENT_BUILD_ID = ['"].*?['"];?\n?/g, '');
-          htmlContent = htmlContent.replace(/<!-- Deployment: .*? -->\n?/g, '');
-          
-          // Add deployment build ID as a JavaScript variable (ensures hash changes)
-          const buildIdScript = `        const DEPLOYMENT_BUILD_ID = '${buildId}'; // Deployment: ${timestamp}\n`;
-          
-          // Find the WORKER_URL line and add build ID right after it
-          const workerUrlPattern = /(const WORKER_URL = ['"].*?['"];)/;
-          if (workerUrlPattern.test(htmlContent)) {
-            htmlContent = htmlContent.replace(workerUrlPattern, `$1\n${buildIdScript}`);
-          } else {
-            // If WORKER_URL not found, add at the beginning of script section
-            htmlContent = htmlContent.replace(/(<script>)/, `$1\n${buildIdScript}`);
-          }
-          
-          fs.writeFileSync(htmlPath, htmlContent, 'utf8');
-          log.info(`Updated HTML with deployment build ID (${buildId}) to force upload...`);
-        } catch (error) {
-          log.warn('Could not update HTML timestamp, continuing anyway...');
-        }
-      }
-      
       // ALWAYS use the same project name
-      log.info('Starting Pages deployment command...');
-      try {
-        await execCommandRealtime(
-          `wrangler pages deploy ${publicPageDir} --project-name=${PAGES_PROJECT_NAME} --branch=main --commit-dirty=true`,
-          { throwOnError: false }
-        );
-        log.success('Pages deployed');
-      } catch (error) {
-        log.error(`Pages deployment error: ${error.message}`);
-        log.warn('Pages deployment failed, but continuing...');
-        throw error; // Re-throw to see the error
-      }
+      const pagesResult = execCommand(
+        `wrangler pages deploy ${publicPageDir} --project-name=${PAGES_PROJECT_NAME} --branch=main --commit-dirty=true`,
+        { throwOnError: false, stdio: 'inherit' }
+      );
+      log.success('Pages deployed');
       
       // Use fixed Pages domain
       pagesUrl = 'https://ai-faceswap-frontend.pages.dev/';

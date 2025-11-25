@@ -21,11 +21,11 @@ class AccountSwitcher {
 
       // Try to switch project (may fail if auth issues)
       try {
-        execSync(`gcloud config set project ${projectId}`, {
-          encoding: 'utf8',
-          stdio: ['pipe', 'pipe', 'pipe'],
-          timeout: 10000
-        });
+      execSync(`gcloud config set project ${projectId}`, {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000
+      });
       } catch (setError) {
         // Handle authentication errors gracefully
         if (setError.message.includes('reauthentication') ||
@@ -123,27 +123,12 @@ class AccountSwitcher {
   // This is a placeholder - actual implementation depends on how wrangler handles multi-account
   async switchCloudflare(accountConfig) {
     try {
-      // Verify current account with longer timeout and better error handling
-      let whoamiOutput;
-      try {
-        whoamiOutput = execSync('wrangler whoami', {
-          encoding: 'utf8',
-          stdio: ['pipe', 'pipe', 'pipe'],
-          timeout: 30000 // Increased to 30 seconds
-        });
-      } catch (timeoutError) {
-        // If timeout or network issue, check if it's an auth issue or network issue
-        if (timeoutError.message.includes('ETIMEDOUT') || timeoutError.message.includes('timeout')) {
-          return {
-            success: false,
-            error: 'wrangler whoami timed out - network issue or Cloudflare API slow',
-            needsLogin: false, // Don't treat timeout as login issue
-            isTimeout: true
-          };
-        }
-        // Re-throw if it's a different error
-        throw timeoutError;
-      }
+      // Verify current account
+      const whoamiOutput = execSync('wrangler whoami', {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000
+      });
 
       // Check if we need to switch
       // Wrangler uses account_id in wrangler.jsonc or wrangler.toml

@@ -2,9 +2,9 @@ import type { Env, FaceSwapRequest } from './types';
 
 export const validateEnv = (env: Env, mode: 'rapidapi' | 'gemini' = 'rapidapi'): string | null => {
   if (mode !== 'gemini') {
-    if (!env.RAPIDAPI_KEY) return 'RAPIDAPI_KEY not set';
-    if (!env.RAPIDAPI_HOST) return 'RAPIDAPI_HOST not set';
-    if (!env.RAPIDAPI_ENDPOINT) return 'RAPIDAPI_ENDPOINT not set';
+  if (!env.RAPIDAPI_KEY) return 'RAPIDAPI_KEY not set';
+  if (!env.RAPIDAPI_HOST) return 'RAPIDAPI_HOST not set';
+  if (!env.RAPIDAPI_ENDPOINT) return 'RAPIDAPI_ENDPOINT not set';
   }
 
   // Gemini mode uses GOOGLE_GEMINI_API_KEY (same as prompt generation)
