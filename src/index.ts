@@ -342,13 +342,29 @@ export default {
             }, 500);
           }
 
+          // Parse prompt_json for response (it's stored as string in DB)
+          let promptJsonObject = null;
+          if (promptJson) {
+            try {
+              promptJsonObject = JSON.parse(promptJson);
+              console.log('[Upload] Returning prompt_json in response:', {
+                hasPrompt: true,
+                keys: Object.keys(promptJsonObject)
+              });
+            } catch (parseError) {
+              console.error('[Upload] Failed to parse prompt_json for response:', parseError);
+            }
+          } else {
+            console.log('[Upload] No prompt_json to return');
+          }
+
           return jsonResponse({
             success: true,
             url: publicUrl,
             id: imageId,
             filename: key.replace('preset/', ''),
             hasPrompt: !!promptJson,
-            prompt_json: promptJson ? JSON.parse(promptJson) : null
+            prompt_json: promptJsonObject
           });
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);
@@ -514,41 +530,68 @@ export default {
     if (path.startsWith('/presets/') && request.method === 'DELETE') {
       try {
         const presetId = path.replace('/presets/', '');
-        console.log(`Deleting preset: ${presetId}`);
+        if (!presetId) {
+          return errorResponse('Preset ID is required', 400);
+        }
 
-        // Get the image URL before deleting
-        const imageResult = await env.DB.prepare(
-          'SELECT image_url FROM preset_images WHERE id = ?'
+        console.log(`[DELETE] Deleting preset: ${presetId}`);
+
+        // First, check if preset exists
+        const checkResult = await env.DB.prepare(
+          'SELECT id, image_url FROM preset_images WHERE id = ?'
         ).bind(presetId).first();
+
+        if (!checkResult) {
+          console.warn(`[DELETE] Preset not found: ${presetId}`);
+          return errorResponse('Preset not found', 404);
+        }
+
+        const imageUrl = (checkResult as any).image_url;
 
         // Delete from database
         const deleteResult = await env.DB.prepare(
           'DELETE FROM preset_images WHERE id = ?'
         ).bind(presetId).run();
 
-        console.log(`Preset deleted from database: ${presetId}`, {
+        console.log(`[DELETE] Database delete result:`, {
+          presetId,
           success: deleteResult.success,
-          meta: deleteResult.meta
+          meta: deleteResult.meta,
+          changes: deleteResult.meta?.changes
         });
 
+        // Verify deletion succeeded
+        if (!deleteResult.success) {
+          console.error(`[DELETE] Database delete failed for preset: ${presetId}`);
+          return errorResponse('Failed to delete preset from database', 500);
+        }
+
+        // Check if any rows were actually deleted
+        if (deleteResult.meta?.changes === 0) {
+          console.warn(`[DELETE] No rows deleted for preset: ${presetId}`);
+          return errorResponse('Preset not found or already deleted', 404);
+        }
+
+        console.log(`[DELETE] Successfully deleted preset from database: ${presetId}`);
+
         // Try to delete from R2 (non-fatal if it fails)
-        if (imageResult && (imageResult as any).image_url) {
+        if (imageUrl) {
           try {
-            const imageUrl = (imageResult as any).image_url;
-            // Extract key from URL (remove domain part)
+            // Extract key from URL (handle both r2.dev and worker proxy URLs)
             const urlParts = imageUrl.split('/');
             const key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "preset/filename.jpg")
             
             await env.FACESWAP_IMAGES.delete(key);
-            console.log(`Preset deleted from R2: ${key}`);
+            console.log(`[DELETE] Successfully deleted from R2: ${key}`);
           } catch (r2Error) {
-            console.warn('R2 delete error (non-fatal):', r2Error);
+            console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
+            // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
 
         return jsonResponse({ success: true, message: 'Preset deleted successfully' });
       } catch (error) {
-        console.error('Delete preset error:', error);
+        console.error('[DELETE] Delete preset exception:', error);
         return errorResponse(`Failed to delete preset: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
@@ -596,41 +639,68 @@ export default {
     if (path.startsWith('/selfies/') && request.method === 'DELETE') {
       try {
         const selfieId = path.replace('/selfies/', '');
-        console.log(`Deleting selfie: ${selfieId}`);
+        if (!selfieId) {
+          return errorResponse('Selfie ID is required', 400);
+        }
 
-        // Get the image URL before deleting
-        const selfieResult = await env.DB.prepare(
-          'SELECT image_url FROM selfies WHERE id = ?'
+        console.log(`[DELETE] Deleting selfie: ${selfieId}`);
+
+        // First, check if selfie exists
+        const checkResult = await env.DB.prepare(
+          'SELECT id, image_url FROM selfies WHERE id = ?'
         ).bind(selfieId).first();
+
+        if (!checkResult) {
+          console.warn(`[DELETE] Selfie not found: ${selfieId}`);
+          return errorResponse('Selfie not found', 404);
+        }
+
+        const imageUrl = (checkResult as any).image_url;
 
         // Delete from database
         const deleteResult = await env.DB.prepare(
           'DELETE FROM selfies WHERE id = ?'
         ).bind(selfieId).run();
 
-        console.log(`Selfie deleted from database: ${selfieId}`, {
+        console.log(`[DELETE] Database delete result:`, {
+          selfieId,
           success: deleteResult.success,
-          meta: deleteResult.meta
+          meta: deleteResult.meta,
+          changes: deleteResult.meta?.changes
         });
 
+        // Verify deletion succeeded
+        if (!deleteResult.success) {
+          console.error(`[DELETE] Database delete failed for selfie: ${selfieId}`);
+          return errorResponse('Failed to delete selfie from database', 500);
+        }
+
+        // Check if any rows were actually deleted
+        if (deleteResult.meta?.changes === 0) {
+          console.warn(`[DELETE] No rows deleted for selfie: ${selfieId}`);
+          return errorResponse('Selfie not found or already deleted', 404);
+        }
+
+        console.log(`[DELETE] Successfully deleted selfie from database: ${selfieId}`);
+
         // Try to delete from R2 (non-fatal if it fails)
-        if (selfieResult && (selfieResult as any).image_url) {
+        if (imageUrl) {
           try {
-            const imageUrl = (selfieResult as any).image_url;
-            // Extract key from URL (remove domain part)
+            // Extract key from URL (handle both r2.dev and worker proxy URLs)
             const urlParts = imageUrl.split('/');
             const key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "selfie/filename.jpg")
             
             await env.FACESWAP_IMAGES.delete(key);
-            console.log(`Selfie deleted from R2: ${key}`);
+            console.log(`[DELETE] Successfully deleted from R2: ${key}`);
           } catch (r2Error) {
-            console.warn('R2 delete error (non-fatal):', r2Error);
+            console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
+            // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
 
         return jsonResponse({ success: true, message: 'Selfie deleted successfully' });
       } catch (error) {
-        console.error('Delete selfie error:', error);
+        console.error('[DELETE] Delete selfie exception:', error);
         return errorResponse(`Failed to delete selfie: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
@@ -720,16 +790,10 @@ export default {
         }
 
         console.log('[Test-Gemini] Testing Gemini API connectivity...');
-        console.log('[Test-Gemini] Test mode enabled:', env.GEMINI_TEST_MODE === 'true');
-
-        const referer = env.GEMINI_REFERER || 'https://ai-faceswap-frontend.pages.dev/';
-        const origin = referer.endsWith('/') ? referer.slice(0, -1) : referer;
 
         const listResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
           headers: {
-            'x-goog-api-key': env.GOOGLE_GEMINI_API_KEY,
-            'Referer': referer,
-            'Origin': origin
+            'x-goog-api-key': env.GOOGLE_GEMINI_API_KEY
           }
         });
 
@@ -744,27 +808,6 @@ export default {
           } catch {
             // Ignore JSON parse errors for the list response
           }
-        }
-
-        // TEMPORARY: If test mode and location error, provide success response
-        console.log('[Test-Gemini] Check conditions:', {
-          testMode: env.GEMINI_TEST_MODE,
-          isTestModeTrue: env.GEMINI_TEST_MODE === 'true',
-          responseOk: listResponse.ok,
-          hasLocationError: rawBody.includes('User location is not supported')
-        });
-
-        if (env.GEMINI_TEST_MODE === 'true' && !listResponse.ok && rawBody.includes('User location is not supported')) {
-          console.log('[Test-Gemini] Test mode: Simulating successful response');
-          return jsonResponse({
-            message: "Gemini API test mode active - simulating success",
-            hasApiKey: true,
-            status: 200,
-            ok: true,
-            models: ["models/gemini-2.5-flash", "models/gemini-1.5-pro"],
-            testMode: true,
-            note: "This is a test response. Real Gemini API has location restrictions."
-          });
         }
 
         console.log('[Test-Gemini] Response status:', listResponse.status);

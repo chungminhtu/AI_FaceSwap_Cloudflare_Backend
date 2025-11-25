@@ -1840,16 +1840,12 @@
             messageEl.innerHTML = `
                 <span>${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span>
                 ${message}
+                <button onclick="this.parentElement.remove()" style="margin-left: 10px; background: none; border: none; color: inherit; cursor: pointer; font-size: 16px; opacity: 0.7;">×</button>
             `;
 
             statusMessages.appendChild(messageEl);
 
-            // Auto remove after 5 seconds
-            setTimeout(() => {
-                if (messageEl.parentNode) {
-                    messageEl.parentNode.removeChild(messageEl);
-                }
-            }, 5000);
+            // No auto-close - user must manually close messages
         }
 
         // Handle drag and drop

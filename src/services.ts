@@ -311,10 +311,6 @@ export const generateGeminiPrompt = async (
   env: Env
 ): Promise<{ success: boolean; prompt?: any; error?: string }> => {
   try {
-    // TEMPORARY TEST MODE: If Gemini API fails with location error, provide test response
-    // This allows testing the database storage/retrieval logic while you resolve API key location issues
-    const useTestMode = env.GEMINI_TEST_MODE === 'true';
-
     // Use Gemini API key (separate from Vision)
     const apiKey = env.GOOGLE_GEMINI_API_KEY;
     if (!apiKey) {
@@ -323,8 +319,6 @@ export const generateGeminiPrompt = async (
 
     const geminiModel = 'models/gemini-2.5-flash';
     const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent`;
-    const referer = env.GEMINI_REFERER || 'https://ai-faceswap-frontend.pages.dev/';
-    const origin = referer.endsWith('/') ? referer.slice(0, -1) : referer;
 
     // Exact prompt text as specified by user
     const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
@@ -388,34 +382,20 @@ export const generateGeminiPrompt = async (
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-        'Referer': referer,
-        'Origin': origin
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify(requestBody),
     });
 
-            if (!response.ok) {
-              const errorText = await response.text();
-
-              // TEMPORARY: If location error and test mode enabled, provide test response
-              if (useTestMode && errorText.includes('User location is not supported')) {
-                console.log('[Gemini-TEST] Location error detected, providing test response');
-                return {
-                  success: true,
-                  prompt: {
-                    prompt: "A beautiful young woman with long dark hair, wearing a professional business suit, standing in a modern office with city skyline visible through large windows. HDR lighting with golden hour sunlight casting soft shadows, cinematic composition with shallow depth of field. Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene.",
-                    style: "Photorealistic, cinematic, high detail",
-                    lighting: "Golden hour HDR with soft rim lighting and natural shadows",
-                    composition: "Portrait orientation, centered subject with office background",
-                    camera: "85mm lens, f/1.8 aperture, professional DSLR",
-                    background: "Modern corporate office with floor-to-ceiling windows showing city skyline"
-                  }
-                };
-              }
-
-              return { success: false, error: `Gemini API error: ${response.status} ${errorText}` };
-            }
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Gemini] API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText.substring(0, 500)
+      });
+      return { success: false, error: `Gemini API error: ${response.status} ${errorText.substring(0, 500)}` };
+    }
 
     const data = await response.json();
     console.log('[Gemini] Response structure:', JSON.stringify(data).substring(0, 300));
