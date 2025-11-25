@@ -229,6 +229,24 @@ export default {
           // Save to database - ensure this always happens
           let imageId: string | undefined;
           let promptJson: string | null = null;
+          
+          // Track Gemini API call details for response (declared outside try block for access in return)
+          let geminiCallInfo: { 
+            success: boolean; 
+            error?: string; 
+            promptKeys?: string[];
+            debug?: {
+              endpoint?: string;
+              model?: string;
+              requestSent?: boolean;
+              httpStatus?: number;
+              httpStatusText?: string;
+              responseTimeMs?: number;
+              responseStructure?: string;
+              errorDetails?: string;
+              rawError?: string;
+            };
+          } = { success: false };
 
           try {
             // First, check if a collection with this name already exists
@@ -250,29 +268,57 @@ export default {
               console.log(`Using existing collection: ${collectionId}`);
             }
 
-            // Generate Gemini prompt automatically using Gemini API if enabled
-            if (enableGeminiPrompt) {
-              console.log('[Gemini] Generating prompt for uploaded preset image:', publicUrl);
-              console.log('[Gemini] Using exact prompt text provided by user');
-              try {
-                const promptResult = await generateGeminiPrompt(publicUrl, env);
-                if (promptResult.success && promptResult.prompt) {
-                  promptJson = JSON.stringify(promptResult.prompt);
-                  console.log('[Gemini] Generated prompt successfully, length:', promptJson.length);
-                  console.log('[Gemini] Prompt keys:', Object.keys(promptResult.prompt));
-                  console.log('[Gemini] Stored prompt_json in database');
-                } else {
-                  console.error('[Gemini] Failed to generate prompt:', promptResult.error);
-                  console.error('[Gemini] This is likely due to API key location restrictions. Please enable Gemini API for your region or use a different API key.');
-                  // Continue without prompt - image will still be saved
+            // ALWAYS generate Gemini prompt automatically for preset images
+            // This sends the exact prompt to Gemini API with the preset image
+            console.log('[Gemini] ALWAYS generating prompt for uploaded preset image:', publicUrl);
+            console.log('[Gemini] Calling Gemini API with exact prompt text and preset image');
+            
+            try {
+              const promptResult = await generateGeminiPrompt(publicUrl, env);
+              if (promptResult.success && promptResult.prompt) {
+                promptJson = JSON.stringify(promptResult.prompt);
+                const promptKeys = Object.keys(promptResult.prompt);
+                geminiCallInfo = { 
+                  success: true, 
+                  promptKeys,
+                  debug: promptResult.debug 
+                };
+                console.log('[Gemini] ✅ Generated prompt successfully, length:', promptJson.length);
+                console.log('[Gemini] Prompt keys:', promptKeys);
+                console.log('[Gemini] ✅ Will store prompt_json in database');
+                if (promptResult.debug) {
+                  console.log('[Gemini] Debug info:', JSON.stringify(promptResult.debug));
                 }
-              } catch (geminiError) {
-                console.error('[Gemini] Exception during prompt generation:', geminiError);
-                console.error('[Gemini] Stack trace:', geminiError instanceof Error ? geminiError.stack : 'No stack trace');
+              } else {
+                geminiCallInfo = { 
+                  success: false, 
+                  error: promptResult.error || 'Unknown error',
+                  debug: promptResult.debug 
+                };
+                console.error('[Gemini] ❌ Failed to generate prompt:', promptResult.error);
+                console.error('[Gemini] Error details:', promptResult.error);
+                if (promptResult.debug) {
+                  console.error('[Gemini] Debug info:', JSON.stringify(promptResult.debug));
+                }
+                console.error('[Gemini] ⚠️ Image will be saved without prompt_json. Please check your GOOGLE_GEMINI_API_KEY and ensure Gemini API is enabled.');
                 // Continue without prompt - image will still be saved
               }
-            } else {
-              console.log('[Gemini] Prompt generation disabled for this upload');
+            } catch (geminiError) {
+              const errorMsg = geminiError instanceof Error ? geminiError.message : String(geminiError);
+              const errorStack = geminiError instanceof Error ? geminiError.stack : undefined;
+              geminiCallInfo = { 
+                success: false, 
+                error: errorMsg,
+                debug: {
+                  errorDetails: errorMsg,
+                  rawError: errorStack || String(geminiError)
+                }
+              };
+              console.error('[Gemini] ❌ Exception during prompt generation:', geminiError);
+              console.error('[Gemini] Error type:', geminiError instanceof Error ? geminiError.constructor.name : typeof geminiError);
+              console.error('[Gemini] Stack trace:', errorStack || 'No stack trace');
+              console.error('[Gemini] ⚠️ Image will be saved without prompt_json due to exception.');
+              // Continue without prompt - image will still be saved
             }
 
             // Always save image to database (even if Gemini prompt generation failed)
@@ -364,7 +410,8 @@ export default {
             id: imageId,
             filename: key.replace('preset/', ''),
             hasPrompt: !!promptJson,
-            prompt_json: promptJsonObject
+            prompt_json: promptJsonObject,
+            gemini_info: geminiCallInfo  // Include Gemini API call details for frontend logging
           });
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);
@@ -548,7 +595,15 @@ export default {
 
         const imageUrl = (checkResult as any).image_url;
 
-        // Delete from database
+        // First, delete all related results (to avoid foreign key constraint error)
+        const deleteResultsResult = await env.DB.prepare(
+          'DELETE FROM results WHERE preset_image_id = ?'
+        ).bind(presetId).run();
+        
+        const resultsDeleted = deleteResultsResult.meta?.changes || 0;
+        console.log(`[DELETE] Deleted ${resultsDeleted} related result(s) for preset: ${presetId}`);
+
+        // Then delete from database
         const deleteResult = await env.DB.prepare(
           'DELETE FROM preset_images WHERE id = ?'
         ).bind(presetId).run();
@@ -575,24 +630,50 @@ export default {
         console.log(`[DELETE] Successfully deleted preset from database: ${presetId}`);
 
         // Try to delete from R2 (non-fatal if it fails)
+        let r2Deleted = false;
+        let r2Key = null;
+        let r2Error = null;
         if (imageUrl) {
           try {
             // Extract key from URL (handle both r2.dev and worker proxy URLs)
             const urlParts = imageUrl.split('/');
-            const key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "preset/filename.jpg")
+            r2Key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "preset/filename.jpg")
             
-            await env.FACESWAP_IMAGES.delete(key);
-            console.log(`[DELETE] Successfully deleted from R2: ${key}`);
-          } catch (r2Error) {
+            await env.FACESWAP_IMAGES.delete(r2Key);
+            r2Deleted = true;
+            console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
+          } catch (r2DeleteError) {
+            r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
             console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
             // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
 
-        return jsonResponse({ success: true, message: 'Preset deleted successfully' });
+        return jsonResponse({ 
+          success: true, 
+          message: 'Preset deleted successfully',
+          debug: {
+            presetId,
+            resultsDeleted,
+            databaseDeleted: deleteResult.meta?.changes || 0,
+            r2Deleted,
+            r2Key,
+            r2Error: r2Error || null,
+            imageUrl
+          }
+        });
       } catch (error) {
         console.error('[DELETE] Delete preset exception:', error);
-        return errorResponse(`Failed to delete preset: ${error instanceof Error ? error.message : String(error)}`, 500);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ 
+          success: false, 
+          message: `Failed to delete preset: ${errorMessage}`,
+          debug: {
+            presetId: path.replace('/presets/', ''),
+            error: errorMessage,
+            errorType: error instanceof Error ? error.constructor.name : typeof error
+          }
+        }, 500);
       }
     }
 
@@ -657,7 +738,15 @@ export default {
 
         const imageUrl = (checkResult as any).image_url;
 
-        // Delete from database
+        // First, delete all related results (to avoid foreign key constraint error)
+        const deleteResultsResult = await env.DB.prepare(
+          'DELETE FROM results WHERE selfie_id = ?'
+        ).bind(selfieId).run();
+        
+        const resultsDeleted = deleteResultsResult.meta?.changes || 0;
+        console.log(`[DELETE] Deleted ${resultsDeleted} related result(s) for selfie: ${selfieId}`);
+
+        // Then delete from database
         const deleteResult = await env.DB.prepare(
           'DELETE FROM selfies WHERE id = ?'
         ).bind(selfieId).run();
@@ -684,24 +773,50 @@ export default {
         console.log(`[DELETE] Successfully deleted selfie from database: ${selfieId}`);
 
         // Try to delete from R2 (non-fatal if it fails)
+        let r2Deleted = false;
+        let r2Key = null;
+        let r2Error = null;
         if (imageUrl) {
           try {
             // Extract key from URL (handle both r2.dev and worker proxy URLs)
             const urlParts = imageUrl.split('/');
-            const key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "selfie/filename.jpg")
+            r2Key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "selfie/filename.jpg")
             
-            await env.FACESWAP_IMAGES.delete(key);
-            console.log(`[DELETE] Successfully deleted from R2: ${key}`);
-          } catch (r2Error) {
+            await env.FACESWAP_IMAGES.delete(r2Key);
+            r2Deleted = true;
+            console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
+          } catch (r2DeleteError) {
+            r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
             console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
             // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
 
-        return jsonResponse({ success: true, message: 'Selfie deleted successfully' });
+        return jsonResponse({ 
+          success: true, 
+          message: 'Selfie deleted successfully',
+          debug: {
+            selfieId,
+            resultsDeleted,
+            databaseDeleted: deleteResult.meta?.changes || 0,
+            r2Deleted,
+            r2Key,
+            r2Error: r2Error || null,
+            imageUrl
+          }
+        });
       } catch (error) {
         console.error('[DELETE] Delete selfie exception:', error);
-        return errorResponse(`Failed to delete selfie: ${error instanceof Error ? error.message : String(error)}`, 500);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ 
+          success: false, 
+          message: `Failed to delete selfie: ${errorMessage}`,
+          debug: {
+            selfieId: path.replace('/selfies/', ''),
+            error: errorMessage,
+            errorType: error instanceof Error ? error.constructor.name : typeof error
+          }
+        }, 500);
       }
     }
 

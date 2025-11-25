@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS results (
   preset_name TEXT NOT NULL,
   result_url TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-  FOREIGN KEY (selfie_id) REFERENCES selfies(id),
-  FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id),
-  FOREIGN KEY (preset_image_id) REFERENCES preset_images(id)
+  FOREIGN KEY (selfie_id) REFERENCES selfies(id) ON DELETE CASCADE,
+  FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id) ON DELETE CASCADE,
+  FOREIGN KEY (preset_image_id) REFERENCES preset_images(id) ON DELETE CASCADE
 );
 
 -- Indexes for better query performance

@@ -1268,18 +1268,126 @@
         const galleryKeys = Object.keys(galleries);
         const MAX_LOG_ENTRIES = 30;
 
-        function logApiCall({ label, method, url, status = 'info', payload }) {
+        function logApiCall({ label, method, url, status = 'info', payload, geminiInfo, deleteInfo }) {
             if (!apiLogList) return;
+            // Log POST, PUT, and DELETE requests (exclude GET, etc.)
             const normalizedMethod = (method || '').toUpperCase();
-            if (normalizedMethod !== 'POST') {
+            if (normalizedMethod !== 'POST' && normalizedMethod !== 'PUT' && normalizedMethod !== 'DELETE') {
                 return;
             }
-
+            
             const timestamp = new Date().toLocaleTimeString('vi-VN');
             const entry = document.createElement('div');
             entry.className = `api-log-entry log-${status}`;
 
             const statusLabel = status === 'success' ? 'Thành công' : status === 'error' ? 'Lỗi' : 'Thông tin';
+            
+            // Build Gemini info HTML if present
+            let geminiHtml = '';
+            if (geminiInfo) {
+                const geminiStatus = geminiInfo.success ? '✅ SUCCESS' : '❌ FAILED';
+                const statusColor = geminiInfo.success ? '#2bc990' : '#ff4d6d';
+                
+                let geminiDetails = '';
+                
+                // Basic status
+                if (geminiInfo.error) {
+                    geminiDetails += `<div style="color: #ff4d6d; margin-top: 8px;"><strong>❌ Error:</strong> ${escapeHtml(geminiInfo.error)}</div>`;
+                } else if (geminiInfo.promptKeys) {
+                    geminiDetails += `<div style="color: #2bc990; margin-top: 8px;"><strong>✅ Generated prompt with keys:</strong> ${geminiInfo.promptKeys.join(', ')}</div>`;
+                }
+                
+                // Debug information
+                if (geminiInfo.debug) {
+                    const debug = geminiInfo.debug;
+                    geminiDetails += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">`;
+                    geminiDetails += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 12px;">🔍 Debug Information:</div>`;
+                    
+                    if (debug.endpoint) {
+                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Endpoint:</strong> ${escapeHtml(debug.endpoint)}</div>`;
+                    }
+                    if (debug.model) {
+                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Model:</strong> ${escapeHtml(debug.model)}</div>`;
+                    }
+                    if (debug.requestSent !== undefined) {
+                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Request Sent:</strong> ${debug.requestSent ? '✅ Yes' : '❌ No'}</div>`;
+                    }
+                    if (debug.httpStatus) {
+                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>HTTP Status:</strong> ${debug.httpStatus} ${debug.httpStatusText || ''}</div>`;
+                    }
+                    if (debug.responseTimeMs !== undefined) {
+                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Response Time:</strong> ${debug.responseTimeMs}ms</div>`;
+                    }
+                    if (debug.errorDetails) {
+                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0; color: #ff4d6d;"><strong>Error Details:</strong> ${escapeHtml(debug.errorDetails.substring(0, 300))}</div>`;
+                    }
+                    if (debug.responseStructure) {
+                        geminiDetails += `<details style="margin-top: 8px;"><summary style="cursor: pointer; font-size: 11px; color: #666;">Show Response Structure</summary><pre style="font-size: 10px; max-height: 200px; overflow: auto; background: rgba(0,0,0,0.05); padding: 8px; margin-top: 4px; border-radius: 4px;">${escapeHtml(debug.responseStructure)}</pre></details>`;
+                    }
+                    if (debug.rawError && debug.rawError.length > 0) {
+                        geminiDetails += `<details style="margin-top: 8px;"><summary style="cursor: pointer; font-size: 11px; color: #ff4d6d;">Show Full Error</summary><pre style="font-size: 10px; max-height: 200px; overflow: auto; background: rgba(255,77,109,0.1); padding: 8px; margin-top: 4px; border-radius: 4px;">${escapeHtml(debug.rawError.substring(0, 1000))}</pre></details>`;
+                    }
+                    
+                    geminiDetails += `</div>`;
+                }
+                
+                geminiHtml = `
+                    <div style="background: rgba(248, 35, 135, 0.05); padding: 12px; margin-top: 8px; border-left: 3px solid ${statusColor}; border-radius: 4px;">
+                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">🔮 Gemini API: ${geminiStatus}</div>
+                        ${geminiDetails}
+                    </div>
+                `;
+            }
+            
+            // Build Delete info HTML if present
+            let deleteHtml = '';
+            if (deleteInfo && normalizedMethod === 'DELETE') {
+                const deleteStatus = deleteInfo.success ? '✅ SUCCESS' : '❌ FAILED';
+                const statusColor = deleteInfo.success ? '#2bc990' : '#ff4d6d';
+                
+                let deleteDetails = '';
+                
+                if (deleteInfo.debug) {
+                    const debug = deleteInfo.debug;
+                    deleteDetails += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">`;
+                    deleteDetails += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 12px;">🔍 Delete Debug Information:</div>`;
+                    
+                    if (debug.presetId) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Preset ID:</strong> ${escapeHtml(debug.presetId)}</div>`;
+                    }
+                    if (debug.selfieId) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Selfie ID:</strong> ${escapeHtml(debug.selfieId)}</div>`;
+                    }
+                    if (debug.resultsDeleted !== undefined) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: ${debug.resultsDeleted > 0 ? '#ff9800' : '#666'};"><strong>Related Results Deleted:</strong> ${debug.resultsDeleted}</div>`;
+                    }
+                    if (debug.databaseDeleted !== undefined) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: ${debug.databaseDeleted > 0 ? '#2bc990' : '#ff4d6d'};"><strong>Database Records Deleted:</strong> ${debug.databaseDeleted}</div>`;
+                    }
+                    if (debug.r2Deleted !== undefined) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: ${debug.r2Deleted ? '#2bc990' : '#ff9800'};"><strong>R2 File Deleted:</strong> ${debug.r2Deleted ? '✅ Yes' : '❌ No'}</div>`;
+                    }
+                    if (debug.r2Key) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>R2 Key:</strong> ${escapeHtml(debug.r2Key)}</div>`;
+                    }
+                    if (debug.r2Error) {
+                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: #ff4d6d;"><strong>R2 Error:</strong> ${escapeHtml(debug.r2Error)}</div>`;
+                    }
+                    if (debug.imageUrl) {
+                        deleteDetails += `<details style="margin-top: 8px;"><summary style="cursor: pointer; font-size: 11px; color: #666;">Show Image URL</summary><div style="font-size: 10px; word-break: break-all; margin-top: 4px;">${escapeHtml(debug.imageUrl)}</div></details>`;
+                    }
+                    
+                    deleteDetails += `</div>`;
+                }
+                
+                deleteHtml = `
+                    <div style="background: rgba(43, 201, 144, 0.05); padding: 12px; margin-top: 8px; border-left: 3px solid ${statusColor}; border-radius: 4px;">
+                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">🗑️ Delete Operation: ${deleteStatus}</div>
+                        ${deleteDetails}
+                    </div>
+                `;
+            }
+            
             const payloadHtml = payload !== undefined && payload !== null
                 ? `<pre class="api-log-payload">${escapeHtml(formatPayload(payload))}</pre>`
                 : '';
@@ -1291,6 +1399,8 @@
                 </div>
                 <div class="api-log-action">${label}</div>
                 <div class="api-log-detail">${method} ${url}</div>
+                ${geminiHtml}
+                ${deleteHtml}
                 ${payloadHtml}
             `;
 
@@ -1340,23 +1450,11 @@
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
                 renderGallery(type);
-                logApiCall({
-                    label: `Tải ${config.logName}`,
-                    method: 'GET',
-                    url: config.endpoints.list,
-                    status: 'success',
-                    payload: data
-                });
+                // GET requests are not logged (only POST and PUT)
             } catch (error) {
                 console.error(`Lỗi tải ${type}:`, error);
                 showStatusMessage(`Lỗi tải ${type === 'preset' ? 'mẫu' : 'selfie'}`, 'error');
-                logApiCall({
-                    label: `Tải ${config.logName}`,
-                    method: 'GET',
-                    url: config.endpoints.list,
-                    status: 'error',
-                    payload: { message: error?.message || String(error) }
-                });
+                // GET requests are not logged (only POST and PUT)
             }
         }
 
@@ -1481,15 +1579,33 @@
                 const deleteData = await safeJson(response);
 
                 if (!response.ok) {
+                    // Log error with detailed info
+                    logApiCall({
+                        label: `Xóa ${config.logName}`,
+                        method: 'DELETE',
+                        url: `${WORKER_URL}${config.endpoints.delete}/${itemId}`,
+                        status: 'error',
+                        payload: deleteData,
+                        deleteInfo: {
+                            success: false,
+                            error: deleteData.message || config.labels.deleteError,
+                            statusCode: response.status,
+                            statusText: response.statusText
+                        }
+                    });
                     throw new Error(deleteData.message || config.labels.deleteError);
                 }
 
                 logApiCall({
                     label: `Xóa ${config.logName}`,
                     method: 'DELETE',
-                    url: `${config.endpoints.delete}/${itemId}`,
+                    url: `${WORKER_URL}${config.endpoints.delete}/${itemId}`,
                     status: 'success',
-                    payload: deleteData
+                    payload: deleteData,
+                    deleteInfo: {
+                        success: true,
+                        debug: deleteData.debug || null
+                    }
                 });
 
                 config.state.items = config.state.items.filter(item => item.id !== itemId);
@@ -1514,9 +1630,13 @@
                 logApiCall({
                     label: `Xóa ${config.logName}`,
                     method: 'DELETE',
-                    url: `${config.endpoints.delete}/${itemId}`,
+                    url: `${WORKER_URL}${config.endpoints.delete}/${itemId}`,
                     status: 'error',
-                    payload: { message: error?.message || String(error) }
+                    payload: { message: error?.message || String(error) },
+                    deleteInfo: {
+                        success: false,
+                        error: error?.message || String(error)
+                    }
                 });
             }
         }
@@ -1675,12 +1795,14 @@
                     uploadResult = {};
                 }
 
+                // Log with Gemini info if present (for preset uploads)
                 logApiCall({
                     label: `Tải Lên Hình Ảnh (${config.logName})`,
                     method: 'PUT',
                     url: uploadData.uploadUrl,
-                    status: 'success',
-                    payload: uploadResult
+                    status: uploadResult.success ? 'success' : 'error',
+                    payload: uploadResult,
+                    geminiInfo: uploadResult.gemini_info || null  // Include Gemini API call details
                 });
 
                 // Add to local state
@@ -1688,7 +1810,9 @@
                     id: uploadResult.id || filename,
                     filename: filename,
                     image_url: uploadResult.url,
-                    created_at: new Date().toISOString()
+                    created_at: new Date().toISOString(),
+                    hasPrompt: uploadResult.hasPrompt || false,
+                    prompt_json: uploadResult.prompt_json || null
                 };
 
                 addNewItem(type, newImage);
@@ -1807,20 +1931,21 @@
 
                 showStatusMessage('Đã hoàn thành đổi mặt thành công', 'success');
                 logApiCall({
-                    label: 'FaceSwap',
+                    label: `FaceSwap (${mode})`,
                     method: 'POST',
-                    url: '/faceswap',
+                    url: `${WORKER_URL}/faceswap`,
                     status: 'success',
-                    payload: data
+                    payload: data,
+                    geminiInfo: data.gemini_info || null
                 });
 
             } catch (error) {
                 console.error('Lỗi đổi mặt:', error);
                 showStatusMessage(`Đổi mặt thất bại: ${error.message}`, 'error');
                 logApiCall({
-                    label: 'FaceSwap',
+                    label: `FaceSwap (${mode || 'unknown'})`,
                     method: 'POST',
-                    url: '/faceswap',
+                    url: `${WORKER_URL}/faceswap`,
                     status: 'error',
                     payload: { message: error?.message || String(error) }
                 });

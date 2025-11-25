@@ -309,24 +309,59 @@ export const checkSafeSearch = async (
 export const generateGeminiPrompt = async (
   imageUrl: string,
   env: Env
-): Promise<{ success: boolean; prompt?: any; error?: string }> => {
+): Promise<{ 
+  success: boolean; 
+  prompt?: any; 
+  error?: string;
+  debug?: {
+    endpoint?: string;
+    model?: string;
+    requestSent?: boolean;
+    httpStatus?: number;
+    httpStatusText?: string;
+    responseTimeMs?: number;
+    responseStructure?: string;
+    errorDetails?: string;
+    rawError?: string;
+  }
+}> => {
+  const startTime = Date.now();
+  console.log('[Gemini] ========== STARTING GEMINI PROMPT GENERATION ==========');
+  console.log('[Gemini] Image URL:', imageUrl);
+  console.log('[Gemini] Function called at:', new Date().toISOString());
+  
+  const debugInfo: any = {};
+  
   try {
     // Use Gemini API key (separate from Vision)
     const apiKey = env.GOOGLE_GEMINI_API_KEY;
     if (!apiKey) {
-      return { success: false, error: 'GOOGLE_GEMINI_API_KEY not set' };
+      console.error('[Gemini] ❌ ERROR: GOOGLE_GEMINI_API_KEY not set');
+      return { 
+        success: false, 
+        error: 'GOOGLE_GEMINI_API_KEY not set',
+        debug: { errorDetails: 'API key is missing from environment variables' }
+      };
     }
+    console.log('[Gemini] ✅ API key found (length:', apiKey.length, ')');
 
     const geminiModel = 'models/gemini-2.5-flash';
     const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent`;
+    debugInfo.endpoint = geminiEndpoint;
+    debugInfo.model = geminiModel;
+    console.log('[Gemini] Using endpoint:', geminiEndpoint);
+    console.log('[Gemini] Using model:', geminiModel);
 
     // Exact prompt text as specified by user
     const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
     // Fetch image as base64
+    console.log('[Gemini] Fetching image as base64 from:', imageUrl);
     const imageData = await fetchImageAsBase64(imageUrl);
+    console.log('[Gemini] ✅ Image fetched, base64 length:', imageData.length);
 
     // Build request body following official Gemini REST API format
+    console.log('[Gemini] Building request body with exact prompt text...');
     const requestBody = {
       contents: [{
         parts: [
@@ -377,7 +412,11 @@ export const generateGeminiPrompt = async (
         }
       }
     };
+    console.log('[Gemini] Request body prepared, sending to Gemini API...');
+    console.log('[Gemini] Request URL:', geminiEndpoint);
+    console.log('[Gemini] Prompt text length:', prompt.length);
 
+    debugInfo.requestSent = true;
     const response = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
@@ -386,24 +425,47 @@ export const generateGeminiPrompt = async (
       },
       body: JSON.stringify(requestBody),
     });
+    
+    const responseTime = Date.now() - startTime;
+    debugInfo.httpStatus = response.status;
+    debugInfo.httpStatusText = response.statusText;
+    debugInfo.responseTimeMs = responseTime;
+    
+    console.log('[Gemini] ✅ API request sent, received status:', response.status, response.statusText);
+    console.log('[Gemini] Response time:', responseTime, 'ms');
 
     if (!response.ok) {
       const errorText = await response.text();
+      const errorPreview = errorText.substring(0, 1000);
+      debugInfo.errorDetails = errorPreview;
+      debugInfo.rawError = errorText;
       console.error('[Gemini] API error:', {
         status: response.status,
         statusText: response.statusText,
-        error: errorText.substring(0, 500)
+        error: errorPreview
       });
-      return { success: false, error: `Gemini API error: ${response.status} ${errorText.substring(0, 500)}` };
+      return { 
+        success: false, 
+        error: `Gemini API error: ${response.status} ${response.statusText}`,
+        debug: debugInfo
+      };
     }
 
-    const data = await response.json();
-    console.log('[Gemini] Response structure:', JSON.stringify(data).substring(0, 300));
+    const data = await response.json() as any;
+    const responseStructure = JSON.stringify(data).substring(0, 500);
+    debugInfo.responseStructure = responseStructure;
+    console.log('[Gemini] Response structure:', responseStructure);
 
     // With structured outputs (responseMimeType: "application/json"), Gemini returns JSON directly
     const parts = data.candidates?.[0]?.content?.parts;
     if (!parts || parts.length === 0) {
-      return { success: false, error: 'No response parts from Gemini API' };
+      debugInfo.errorDetails = 'Response received but no parts found in candidates[0].content.parts';
+      debugInfo.responseStructure = JSON.stringify(data);
+      return { 
+        success: false, 
+        error: 'No response parts from Gemini API',
+        debug: debugInfo
+      };
     }
 
     let promptJson: any = null;
@@ -440,8 +502,15 @@ export const generateGeminiPrompt = async (
     }
 
     if (!promptJson) {
-      console.error('[Gemini] Could not extract JSON from response. Parts:', JSON.stringify(parts));
-      return { success: false, error: 'No valid JSON response from Gemini API' };
+      const partsDebug = JSON.stringify(parts).substring(0, 500);
+      console.error('[Gemini] Could not extract JSON from response. Parts:', partsDebug);
+      debugInfo.errorDetails = 'Could not extract valid JSON from response parts';
+      debugInfo.responseStructure = partsDebug;
+      return { 
+        success: false, 
+        error: 'No valid JSON response from Gemini API',
+        debug: debugInfo
+      };
     }
 
     // Validate required keys
@@ -454,13 +523,26 @@ export const generateGeminiPrompt = async (
       return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
     }
 
-    console.log('[Gemini] Generated prompt successfully with all required keys');
+    console.log('[Gemini] ✅ Generated prompt successfully with all required keys');
     console.log('[Gemini] Prompt preview:', promptJson.prompt?.substring(0, 200));
-    return { success: true, prompt: promptJson };
+    console.log('[Gemini] ========== GEMINI PROMPT GENERATION SUCCESS ==========');
+    debugInfo.responseTimeMs = Date.now() - startTime;
+    return { success: true, prompt: promptJson, debug: debugInfo };
 
   } catch (error) {
+    const responseTime = Date.now() - startTime;
+    console.error('[Gemini] ========== GEMINI PROMPT GENERATION FAILED ==========');
     console.error('[Gemini] Exception:', error);
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    debugInfo.errorDetails = errorMessage;
+    debugInfo.rawError = errorStack || String(error);
+    debugInfo.responseTimeMs = responseTime;
+    return { 
+      success: false, 
+      error: errorMessage,
+      debug: debugInfo
+    };
   }
 };
 
