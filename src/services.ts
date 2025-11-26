@@ -1,5 +1,5 @@
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { isUnsafe, getWorstViolation } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken } from './utils';
 
 export const callFaceSwap = async (
   targetUrl: string,
@@ -85,7 +85,20 @@ export const callNanoBanana = async (
 
   try {
     const geminiModel = 'models/gemini-2.5-flash';
-    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent`;
+    // Use configurable endpoint, defaulting to regular Gemini API
+    const baseEndpoint = env.GOOGLE_GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta';
+    const isVertexAI = baseEndpoint.includes('aiplatform');
+
+    let geminiEndpoint: string;
+    if (isVertexAI) {
+      const projectId = env.GOOGLE_PROJECT_ID;
+      if (!projectId) {
+        throw new Error('GOOGLE_PROJECT_ID is required when using Vertex AI endpoint');
+      }
+      geminiEndpoint = `${baseEndpoint}/projects/${projectId}/locations/us-central1/publishers/google/models/${geminiModel}:generateContent`;
+    } else {
+      geminiEndpoint = `${baseEndpoint}/${geminiModel}:generateContent`;
+    }
 
     // Build the prompt text from the stored prompt JSON (this describes the preset scene)
     let promptText = '';
@@ -118,12 +131,48 @@ export const callNanoBanana = async (
       }
     };
 
+    // Determine authentication method
+    let authHeader: string;
+    if (isVertexAI) {
+      // Vertex AI requires JWT/OAuth token
+      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+        return {
+          Success: false,
+          Message: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+          StatusCode: 500,
+        };
+      }
+      
+      try {
+        console.log('[Gemini-NanoBanana] Generating OAuth access token for Vertex AI...');
+        const accessToken = await getAccessToken(
+          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        );
+        authHeader = `Bearer ${accessToken}`;
+        console.log('[Gemini-NanoBanana] ✅ OAuth token obtained successfully');
+      } catch (tokenError) {
+        console.error('[Gemini-NanoBanana] ❌ Failed to get OAuth token:', tokenError);
+        return {
+          Success: false,
+          Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+          StatusCode: 500,
+        };
+      }
+    } else {
+      // Regular Gemini API uses API key
+      authHeader = apiKey;
+    }
+
     // Call Gemini API with only text (no images)
     const response = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
+        ...(isVertexAI 
+          ? { 'Authorization': authHeader }
+          : { 'x-goog-api-key': authHeader }
+        )
       },
       body: JSON.stringify(requestBody),
     });
@@ -346,7 +395,27 @@ export const generateGeminiPrompt = async (
     console.log('[Gemini] ✅ API key found (length:', apiKey.length, ')');
 
     const geminiModel = 'models/gemini-2.5-flash';
-    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent`;
+    // Use configurable endpoint, defaulting to regular Gemini API
+    const baseEndpoint = env.GOOGLE_GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta';
+
+    // Check if it's a Vertex AI endpoint (contains 'aiplatform')
+    const isVertexAI = baseEndpoint.includes('aiplatform');
+
+    let geminiEndpoint: string;
+    if (isVertexAI) {
+      // Vertex AI format: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT_ID/locations/REGION/publishers/google/models/MODEL:METHOD
+      const projectId = env.GOOGLE_PROJECT_ID;
+      if (!projectId) {
+        throw new Error('GOOGLE_PROJECT_ID is required when using Vertex AI endpoint');
+      }
+      geminiEndpoint = `${baseEndpoint}/projects/${projectId}/locations/us-central1/publishers/google/models/${geminiModel}:generateContent`;
+      console.log('[Gemini] Using Vertex AI endpoint:', geminiEndpoint);
+    } else {
+      // Regular Gemini API format
+      geminiEndpoint = `${baseEndpoint}/${geminiModel}:generateContent`;
+      console.log('[Gemini] Using regular Gemini API endpoint');
+    }
+
     debugInfo.endpoint = geminiEndpoint;
     debugInfo.model = geminiModel;
     console.log('[Gemini] Using endpoint:', geminiEndpoint);
@@ -417,11 +486,49 @@ export const generateGeminiPrompt = async (
     console.log('[Gemini] Prompt text length:', prompt.length);
 
     debugInfo.requestSent = true;
+    
+    // Determine authentication method
+    let authHeader: string;
+    if (isVertexAI) {
+      // Vertex AI requires JWT/OAuth token
+      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+        console.error('[Gemini] ❌ Vertex AI requires service account credentials');
+        return {
+          success: false,
+          error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+          debug: { errorDetails: 'Service account credentials missing' }
+        };
+      }
+      
+      try {
+        console.log('[Gemini] Generating OAuth access token for Vertex AI...');
+        const accessToken = await getAccessToken(
+          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        );
+        authHeader = `Bearer ${accessToken}`;
+        console.log('[Gemini] ✅ OAuth token obtained successfully');
+      } catch (tokenError) {
+        console.error('[Gemini] ❌ Failed to get OAuth token:', tokenError);
+        return {
+          success: false,
+          error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+          debug: { errorDetails: String(tokenError) }
+        };
+      }
+    } else {
+      // Regular Gemini API uses API key
+      authHeader = apiKey;
+    }
+    
     const response = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
+        ...(isVertexAI 
+          ? { 'Authorization': authHeader }
+          : { 'x-goog-api-key': authHeader }
+        )
       },
       body: JSON.stringify(requestBody),
     });

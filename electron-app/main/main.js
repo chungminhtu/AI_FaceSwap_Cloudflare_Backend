@@ -4,8 +4,8 @@ const fs = require('fs');
 const ConfigManager = require('./config-manager');
 const AuthChecker = require('./auth-checker');
 const AccountSwitcher = require('./account-switcher');
-const DeploymentEngine = require('./deployment-engine');
-const CommandRunner = require('./command-runner');
+// Import unified deployment utilities
+const { deployFromConfig } = require('../../deploy.js');
 
 // Auto-reload in development
 if (process.argv.includes('--dev')) {
@@ -66,6 +66,13 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  // Close database connection before quitting
+  if (ConfigManager && typeof ConfigManager.close === 'function') {
+    ConfigManager.close();
   }
 });
 
@@ -139,7 +146,7 @@ ipcMain.handle('account:switch-cloudflare', async (event, accountConfig) => {
   return await AccountSwitcher.switchCloudflare(accountConfig);
 });
 
-// Deployment
+// Deployment from secrets.json
 ipcMain.handle('deployment:start', async (event, deploymentId) => {
   if (isDeploying) {
     return { success: false, error: 'Another deployment is already in progress' };
@@ -148,17 +155,10 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
   isDeploying = true;
   
   try {
-    const config = ConfigManager.read();
-    const deployment = config.deployments.find(d => d.id === deploymentId);
-    
-    if (!deployment) {
-      throw new Error('Deployment not found');
-    }
-
     // Set up progress reporting
     const reportProgress = (step, status, details, data) => {
       const progressData = {
-        deploymentId,
+        deploymentId: deploymentId || 'secrets-deployment',
         step,
         status,
         details
@@ -172,29 +172,12 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
       mainWindow.webContents.send('deployment:progress', progressData);
     };
 
-    const result = await DeploymentEngine.deploy(deployment, config, reportProgress);
-    
-    // Save deployment history to config
-    if (result.history) {
+    // Get codebase path from config
       const config = ConfigManager.read();
-      const deployment = config.deployments.find(d => d.id === deploymentId);
-      
-      if (deployment) {
-        // Initialize history array if not exists
-        if (!deployment.history) {
-          deployment.history = [];
-        }
-        
-        // Add new deployment history (keep last 50 deployments)
-        deployment.history.unshift(result.history);
-        if (deployment.history.length > 50) {
-          deployment.history = deployment.history.slice(0, 50);
-        }
-        
-        // Save updated config
-        ConfigManager.write(config);
-      }
-    }
+    const codebasePath = config.codebasePath || process.cwd();
+
+    // Load and deploy from secrets.json directly
+    const result = await deployFromConfig(null, reportProgress);
     
     return result;
   } catch (error) {
@@ -210,6 +193,48 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
 
 ipcMain.handle('deployment:check-status', async () => {
   return { isDeploying };
+});
+
+// Deploy from JSON configuration (same as CLI)
+ipcMain.handle('deployment:from-config', async (event, configObject, deploymentId) => {
+  if (isDeploying) {
+    return { success: false, error: 'Another deployment is already in progress' };
+  }
+
+  isDeploying = true;
+
+  try {
+    // Set up progress reporting
+    const reportProgress = (step, status, details, data) => {
+      const progressData = {
+        deploymentId: deploymentId || 'direct-deployment',
+        step,
+        status,
+        details
+      };
+
+      if (data && data.log) {
+        progressData.log = data.log;
+      }
+
+      mainWindow.webContents.send('deployment:progress', progressData);
+    };
+
+    const result = await deployFromConfig(configObject, reportProgress);
+
+    return {
+      success: true,
+      result
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  } finally {
+    isDeploying = false;
+  }
 });
 
 // File dialogs
@@ -545,29 +570,4 @@ ipcMain.handle('helper:get-gcp-projects', async () => {
   }
 });
 
-// Command Execution
-const commandRunner = new CommandRunner();
-
-ipcMain.handle('command:execute', async (event, command, cwd) => {
-  try {
-    const result = await commandRunner.execute(command, {
-      cwd: cwd || process.cwd(),
-      silent: false,
-      throwOnError: false,
-      timeout: 120000 // 2 minutes
-    });
-    
-    return {
-      success: result.success,
-      output: result.output || '',
-      error: result.error || null
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error: error.message || 'Command execution failed',
-      output: ''
-    };
-  }
-});
 

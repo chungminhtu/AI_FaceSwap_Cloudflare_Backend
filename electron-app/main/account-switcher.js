@@ -141,7 +141,7 @@ class AccountSwitcher {
 
       if (accountConfig && accountConfig.accountId) {
         // If accountId is specified in config, we need to ensure wrangler.jsonc has it
-        // This is handled by the deployment engine when it uses the correct config
+        // This is handled by deploy.js when it uses the correct config
         if (currentAccountId && currentAccountId !== accountConfig.accountId) {
           return {
             success: false,

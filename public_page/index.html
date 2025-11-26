@@ -1317,117 +1317,117 @@
         <div class="app-layout">
             <!-- Main Content (Left Side) -->
             <div class="main-content">
-                <!-- Image Galleries Section (Top) -->
-                <div class="galleries-section">
-                    <div class="section-title">Thư Viện Hình Ảnh</div>
-                    <div class="galleries-grid">
-                        <!-- Preset Gallery -->
-                        <div class="gallery-section">
-                            <div class="gallery-title">Thư Viện Mẫu</div>
-                            <div class="upload-area gallery-upload" id="preset-upload">
-                                <div class="upload-icon">📤</div>
-                                <div class="upload-text">Nhấp để tải lên hình mẫu</div>
-                                <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                                <input type="file" class="file-input" id="preset-input" accept="image/*">
-                            </div>
-                            <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
-                            <div class="pagination" id="preset-pagination" style="display: none;">
-                                <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
-                                <span class="pagination-info" id="preset-page-info">1 / 1</span>
-                                <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
-                            </div>
-                            <div class="empty-state" id="preset-gallery-empty">
+        <!-- Image Galleries Section (Top) -->
+        <div class="galleries-section">
+            <div class="section-title">Thư Viện Hình Ảnh</div>
+            <div class="galleries-grid">
+                <!-- Preset Gallery -->
+                <div class="gallery-section">
+                    <div class="gallery-title">Thư Viện Mẫu</div>
+                    <div class="upload-area gallery-upload" id="preset-upload">
+                        <div class="upload-icon">📤</div>
+                        <div class="upload-text">Nhấp để tải lên hình mẫu</div>
+                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
+                        <input type="file" class="file-input" id="preset-input" accept="image/*">
+                    </div>
+                    <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
+                    <div class="pagination" id="preset-pagination" style="display: none;">
+                        <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
+                        <span class="pagination-info" id="preset-page-info">1 / 1</span>
+                        <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
+                    </div>
+                    <div class="empty-state" id="preset-gallery-empty">
+                        <div class="icon">🎭</div>
+                        Chưa có mẫu nào được tải lên
+                    </div>
+                </div>
+
+                <!-- Selfie Gallery -->
+                <div class="gallery-section">
+                    <div class="gallery-title">Thư Viện Selfie</div>
+                    <div class="upload-area gallery-upload" id="selfie-upload">
+                        <div class="upload-icon">📷</div>
+                        <div class="upload-text">Nhấp để tải lên hình selfie</div>
+                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
+                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                    </div>
+                    <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
+                    <div class="pagination" id="selfie-pagination" style="display: none;">
+                        <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
+                        <span class="pagination-info" id="selfie-page-info">1 / 1</span>
+                        <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
+                    </div>
+                    <div class="empty-state" id="selfie-gallery-empty">
+                        <div class="icon">📷</div>
+                        Chưa có selfie nào được tải lên
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Face Swap Zone (Bottom) -->
+        <div class="faceswap-zone">
+            <div class="section-title">Đổi Mặt</div>
+            <div class="workspace">
+                <div class="left-column">
+                    <!-- Preset Section (Top) -->
+                    <div class="section">
+                        <div class="section-title">Mẫu Đã Chọn</div>
+                        <div id="preset-preview" class="selected-preview">
+                            <div class="preview-empty">
                                 <div class="icon">🎭</div>
-                                Chưa có mẫu nào được tải lên
+                                Chọn một mẫu từ thư viện phía trên
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Selfie Gallery -->
-                        <div class="gallery-section">
-                            <div class="gallery-title">Thư Viện Selfie</div>
-                            <div class="upload-area gallery-upload" id="selfie-upload">
-                                <div class="upload-icon">📷</div>
-                                <div class="upload-text">Nhấp để tải lên hình selfie</div>
-                                <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                                <input type="file" class="file-input" id="selfie-input" accept="image/*">
-                            </div>
-                            <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
-                            <div class="pagination" id="selfie-pagination" style="display: none;">
-                                <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
-                                <span class="pagination-info" id="selfie-page-info">1 / 1</span>
-                                <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
-                            </div>
-                            <div class="empty-state" id="selfie-gallery-empty">
+                    <!-- Selfie Section (Bottom) -->
+                    <div class="section">
+                        <div class="section-title">Selfie Đã Chọn</div>
+                        <div id="selfie-preview" class="selected-preview">
+                            <div class="preview-empty">
                                 <div class="icon">📷</div>
-                                Chưa có selfie nào được tải lên
+                                Chọn một selfie từ thư viện phía trên
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Face Swap Zone (Bottom) -->
-                <div class="faceswap-zone">
-                    <div class="section-title">Đổi Mặt</div>
-                    <div class="workspace">
-                        <div class="left-column">
-                            <!-- Preset Section (Top) -->
-                            <div class="section">
-                                <div class="section-title">Mẫu Đã Chọn</div>
-                                <div id="preset-preview" class="selected-preview">
-                                    <div class="preview-empty">
-                                        <div class="icon">🎭</div>
-                                        Chọn một mẫu từ thư viện phía trên
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Selfie Section (Bottom) -->
-                            <div class="section">
-                                <div class="section-title">Selfie Đã Chọn</div>
-                                <div id="selfie-preview" class="selected-preview">
-                                    <div class="preview-empty">
-                                        <div class="icon">📷</div>
-                                        Chọn một selfie từ thư viện phía trên
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Result Display -->
-                        <div class="right-column" id="result-display">
-                            <div class="result-empty">
-                                <div class="icon">🖼️</div>
-                                Kết quả sẽ xuất hiện ở đây
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="action-row">
-                        <div class="api-selector">
-                            <label class="api-selector-label" for="api-provider">API Provider</label>
-                            <select class="api-select" id="api-provider">
-                                <option value="rapidapi">RapidAPI</option>
-                                <option value="google-nano-banana">Google Nano Banana</option>
-                            </select>
-                        </div>
-
-                        <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
-                            Tạo Đổi Mặt
-                        </button>
+                <!-- Result Display -->
+                <div class="right-column" id="result-display">
+                    <div class="result-empty">
+                        <div class="icon">🖼️</div>
+                        Kết quả sẽ xuất hiện ở đây
                     </div>
                 </div>
             </div>
 
+            <div class="action-row">
+                <div class="api-selector">
+                    <label class="api-selector-label" for="api-provider">API Provider</label>
+                    <select class="api-select" id="api-provider">
+                        <option value="rapidapi">RapidAPI</option>
+                        <option value="google-nano-banana">Google Nano Banana</option>
+                    </select>
+                </div>
+
+                <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
+                    Tạo Đổi Mặt
+                </button>
+            </div>
+        </div>
+    </div>
+
             <!-- API Log Panel (Right Side - Full Height) -->
-            <div class="log-panel">
-                <div class="log-header">
-                    <div class="log-title">Nhật Ký API (Realtime)</div>
+    <div class="log-panel">
+        <div class="log-header">
+            <div class="log-title">Nhật Ký API (Realtime)</div>
                     <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn/Hiện Log">
                         <span id="log-toggle-icon">◀</span>
                     </button>
-                    <button class="log-clear-btn" onclick="clearApiLogs()">Dọn Log</button>
-                </div>
-                <div id="api-log-list" class="api-log-list"></div>
+            <button class="log-clear-btn" onclick="clearApiLogs()">Dọn Log</button>
+        </div>
+        <div id="api-log-list" class="api-log-list"></div>
             </div>
         </div>
     </div>

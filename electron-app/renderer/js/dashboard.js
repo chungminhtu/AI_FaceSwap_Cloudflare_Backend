@@ -1,12 +1,11 @@
 // Main dashboard controller
 let currentConfig = null;
-let isDeploying = false;
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
-  await refreshAuthStatus();
   setupEventListeners();
+  await refreshAuthStatus();
 });
 
 // Load configuration
@@ -14,7 +13,6 @@ async function loadConfig() {
   try {
     currentConfig = await window.electronAPI.configRead();
     updateCodebasePath();
-    window.deploymentList.render(currentConfig.deployments || []);
   } catch (error) {
     console.error('Failed to load config:', error);
     showError('Không thể tải cấu hình', error.message);
@@ -44,19 +42,83 @@ function setupEventListeners() {
     });
   }
 
-  // Add deployment button
-  const btnAddDeployment = document.getElementById('btn-add-deployment');
-  if (btnAddDeployment) {
-    btnAddDeployment.addEventListener('click', () => {
-      window.deploymentForm.show(null);
+  // Deploy from secrets.json button
+  const btnDeployFromSecrets = document.getElementById('btn-add-deployment');
+  if (btnDeployFromSecrets) {
+    btnDeployFromSecrets.addEventListener('click', async () => {
+      try {
+        // Check if codebase path is set
+        const codebasePath = currentConfig?.codebasePath;
+        if (!codebasePath) {
+          window.toast?.error('Please set a codebase path in the sidebar first');
+          return;
+        }
+
+        // Start deployment directly from secrets.json
+        window.toast?.info('🚀 Starting deployment from secrets.json...');
+
+        // Switch to deployment status view
+        const statusSection = document.getElementById('deployment-status-section');
+        const listSection = document.getElementById('deployment-section');
+
+        if (statusSection) statusSection.classList.remove('hidden');
+        if (listSection) listSection.classList.add('hidden');
+
+        const statusTitle = document.getElementById('status-header-title');
+        if (statusTitle) {
+          statusTitle.textContent = 'Deployment from secrets.json';
+        }
+
+        // Generate deployment ID
+        const deploymentId = `secrets-deployment-${Date.now()}`;
+
+        // Start deployment
+        const result = await window.electronAPI.deploymentStart(deploymentId);
+
+        if (result.success) {
+          window.toast?.success('✅ Deployment completed successfully!');
+        } else {
+          window.toast?.error(`❌ Deployment failed: ${result.error}`);
+        }
+
+      } catch (error) {
+        window.toast?.error(`❌ Error: ${error.message}`);
+      }
     });
   }
 
-  // Setup guide button
-  const btnSetupGuide = document.getElementById('btn-setup-guide');
-  if (btnSetupGuide) {
-    btnSetupGuide.addEventListener('click', () => {
-      window.setupWizard.show();
+  // Setup auth buttons
+  const btnLoginCf = document.getElementById('btn-login-cf');
+  if (btnLoginCf) {
+    btnLoginCf.addEventListener('click', async () => {
+      try {
+        const result = await window.electronAPI.authLoginCloudflare();
+        if (result.success) {
+          window.toast?.success('Cloudflare authentication successful');
+          await refreshAuthStatus();
+        } else {
+          window.toast?.error(`Cloudflare authentication failed: ${result.error}`);
+        }
+      } catch (error) {
+        window.toast?.error(`Authentication error: ${error.message}`);
+      }
+    });
+  }
+
+  const btnLoginGcp = document.getElementById('btn-login-gcp');
+  if (btnLoginGcp) {
+    btnLoginGcp.addEventListener('click', async () => {
+      try {
+        const result = await window.electronAPI.authLoginGCP();
+        if (result.success) {
+          window.toast?.success('GCP authentication successful');
+          await refreshAuthStatus();
+        } else {
+          window.toast?.error(`GCP authentication failed: ${result.error}`);
+        }
+      } catch (error) {
+        window.toast?.error(`Authentication error: ${error.message}`);
+      }
     });
   }
 
@@ -65,8 +127,56 @@ function setupEventListeners() {
   if (btnExportConfig) {
     btnExportConfig.addEventListener('click', async () => {
       try {
-        const configJson = JSON.stringify(currentConfig, null, 2);
         const deploymentCount = currentConfig?.deployments?.length || 0;
+
+        if (deploymentCount === 0) {
+          window.toast?.warning('Không có deployment nào để xuất');
+          return;
+        }
+
+        // Export in flat format compatible with CLI secrets.json
+        let exportData;
+        if (deploymentCount === 1) {
+          // Single deployment - export as flat object
+          const deployment = currentConfig.deployments[0];
+          exportData = {
+            workerName: deployment.workerName,
+            pagesProjectName: deployment.pagesProjectName,
+            databaseName: deployment.databaseName,
+            bucketName: deployment.bucketName,
+            RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY,
+            RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
+            RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
+            GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
+            GOOGLE_GEMINI_API_KEY: deployment.GOOGLE_GEMINI_API_KEY || deployment.secrets?.GOOGLE_GEMINI_API_KEY,
+            GOOGLE_PROJECT_ID: deployment.GOOGLE_PROJECT_ID || deployment.secrets?.GOOGLE_PROJECT_ID,
+            GOOGLE_GEMINI_ENDPOINT: deployment.GOOGLE_GEMINI_ENDPOINT || deployment.secrets?.GOOGLE_GEMINI_ENDPOINT,
+            GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+            GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT
+          };
+        } else {
+          // Multiple deployments - export as array
+          exportData = currentConfig.deployments.map(deployment => ({
+            name: deployment.name,
+            workerName: deployment.workerName,
+            pagesProjectName: deployment.pagesProjectName,
+            databaseName: deployment.databaseName,
+            bucketName: deployment.bucketName,
+            RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY,
+            RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
+            RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
+            GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
+            GOOGLE_GEMINI_API_KEY: deployment.GOOGLE_GEMINI_API_KEY || deployment.secrets?.GOOGLE_GEMINI_API_KEY,
+            GOOGLE_PROJECT_ID: deployment.GOOGLE_PROJECT_ID || deployment.secrets?.GOOGLE_PROJECT_ID,
+            GOOGLE_GEMINI_ENDPOINT: deployment.GOOGLE_GEMINI_ENDPOINT || deployment.secrets?.GOOGLE_GEMINI_ENDPOINT,
+            GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+            GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT
+          }));
+        }
+
+        const configJson = JSON.stringify(exportData, null, 2);
         const result = await window.electronAPI.dialogSaveConfig(configJson);
         if (result.success) {
           window.toast?.success(`Đã xuất ${deploymentCount} deployment(s) thành công!`);
@@ -85,6 +195,66 @@ function setupEventListeners() {
     window.deploymentStatus.updateProgress(data);
   });
 }
+
+// Save configuration
+async function saveConfig() {
+  try {
+    await window.electronAPI.configWrite(currentConfig);
+  } catch (error) {
+    console.error('Failed to save config:', error);
+    showError('Không thể lưu cấu hình', error.message);
+  }
+}
+
+// Show error message
+function showError(title, message) {
+  const errorModal = document.getElementById('error-modal');
+  const errorTitle = document.getElementById('error-title');
+  const errorMessage = document.getElementById('error-message');
+
+  if (errorTitle) errorTitle.textContent = title;
+  if (errorMessage) errorMessage.textContent = message;
+  if (errorModal) errorModal.classList.remove('hidden');
+}
+
+// Refresh auth status
+async function refreshAuthStatus() {
+  try {
+    const cfAuth = await window.electronAPI.authCheckCloudflare();
+    const gcpAuth = await window.electronAPI.authCheckGCP();
+
+    updateAuthStatus('cf', cfAuth);
+    updateAuthStatus('gcp', gcpAuth);
+  } catch (error) {
+    console.error('Failed to refresh auth status:', error);
+  }
+}
+
+// Update auth status display
+function updateAuthStatus(provider, authData) {
+  const statusElement = document.getElementById(`${provider}-status`);
+  const loginButton = document.getElementById(`btn-login-${provider}`);
+
+  if (!statusElement) return;
+
+  if (authData.authenticated) {
+    statusElement.textContent = authData.email || 'Authenticated';
+    statusElement.className = 'status-indicator status-success';
+    if (loginButton) loginButton.style.display = 'none';
+  } else {
+    statusElement.textContent = 'Not authenticated';
+    statusElement.className = 'status-indicator status-error';
+    if (loginButton) loginButton.style.display = 'inline-block';
+  }
+}
+
+// Export functions for use by other modules
+window.dashboard = {
+  getCurrentConfig: () => currentConfig,
+  saveConfig,
+  refreshAuthStatus,
+  updateAuthStatus
+};
 
 // Save configuration
 async function saveConfig() {

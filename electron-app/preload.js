@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Deployment
   deploymentStart: (deploymentId) => ipcRenderer.invoke('deployment:start', deploymentId),
+  deploymentFromConfig: (configObject, deploymentId) => ipcRenderer.invoke('deployment:from-config', configObject, deploymentId),
   deploymentCheckStatus: () => ipcRenderer.invoke('deployment:check-status'),
   deploymentProgress: (callback) => {
     ipcRenderer.on('deployment:progress', (event, data) => {
@@ -35,9 +36,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dialogSelectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
   dialogSaveConfig: (configJson) => ipcRenderer.invoke('dialog:save-config', configJson),
   dialogLoadConfig: () => ipcRenderer.invoke('dialog:load-config'),
-
-  // Command execution
-  executeCommand: (command, cwd) => ipcRenderer.invoke('command:execute', command, cwd),
 
   // Helper functions
   helperGetCloudflareInfo: () => ipcRenderer.invoke('helper:get-cloudflare-info'),

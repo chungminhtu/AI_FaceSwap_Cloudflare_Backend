@@ -1,6 +1,6 @@
 // Toast notification system
 window.toast = {
-  show(message, type = 'info', duration = 4000) {
+  show(message, type = 'info', duration = 300000) {
     const container = document.getElementById('toast-container');
     if (!container) {
       console.warn('Toast container not found');
@@ -61,19 +61,19 @@ window.toast = {
     }
   },
 
-  success(message, duration = 3000) {
+  success(message, duration = 300000) {
     return this.show(message, 'success', duration);
   },
 
-  error(message, duration = 5000) {
+  error(message, duration = 300000) {
     return this.show(message, 'error', duration);
   },
 
-  warning(message, duration = 4000) {
+  warning(message, duration = 300000) {
     return this.show(message, 'warning', duration);
   },
 
-  info(message, duration = 3000) {
+  info(message, duration = 300000) {
     return this.show(message, 'info', duration);
   },
 

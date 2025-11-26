@@ -48,6 +48,22 @@ GOOGLE_VISION_ENDPOINT=https://vision.googleapis.com/v1/images:annotate
 
 **For production:** Set secrets using Wrangler CLI (see Deployment section below).
 
+#### Gemini API Configuration for EU Users
+
+If you're in the EU and experiencing location restrictions with the Gemini API, configure Vertex AI:
+
+```json
+"GOOGLE_PROJECT_ID": "your-google-project-id",
+"GOOGLE_GEMINI_ENDPOINT": "https://us-central1-aiplatform.googleapis.com/v1beta1"
+```
+
+**Default (regular Gemini API):**
+```json
+"GOOGLE_GEMINI_ENDPOINT": "https://generativelanguage.googleapis.com/v1beta"
+```
+
+**Note:** For Vertex AI, you'll need to set up proper authentication. Vertex AI typically requires JWT authentication with service account keys. You'll need to proxy Vertex AI through your own service that handles JWT authentication, as Cloudflare Workers cannot access service account key files.
+
 ### 4. R2 Public URL (optional)
 
 - `R2_PUBLIC_URL` can still be set to point to a custom domain or CDN endpoint (e.g., `https://cdn.example.com`). When present, that value is used verbatim.

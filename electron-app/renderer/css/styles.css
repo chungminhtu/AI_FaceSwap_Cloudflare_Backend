@@ -444,18 +444,6 @@ code, pre, .code-textarea, .command-code {
   color: var(--text-primary);
 }
 
-/* Deployment List */
-.deployment-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-md);
-}
-
-@media (max-width: 768px) {
-  .deployment-list {
-    grid-template-columns: 1fr;
-  }
-}
 
 .deployment-card {
   background: var(--bg-primary);
@@ -559,25 +547,6 @@ code, pre, .code-textarea, .command-code {
 }
 
 /* Deployment Form - 2 Columns */
-.deployment-form {
-  width: 100%;
-}
-
-.deployment-form form,
-#deployment-form-form {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  column-gap: var(--spacing-lg);
-  row-gap: var(--spacing-lg);
-  align-items: start;
-}
-
-@media (max-width: 768px) {
-  .deployment-form form,
-  #deployment-form-form {
-    grid-template-columns: 1fr;
-  }
-}
 
 .form-group {
   display: flex;
@@ -702,7 +671,7 @@ code, pre, .code-textarea, .command-code {
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
-.form-input[type="password"] {
+.form-input[id*="secret"] {
   font-family: 'Google Sans Code', monospace;
   letter-spacing: 2px;
 }
@@ -761,6 +730,53 @@ code, pre, .code-textarea, .command-code {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+
+/* Deployment Info Cards */
+.deployment-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.info-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--spacing-md);
+}
+
+.info-card h3 {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.info-card p {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.info-card ul {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  color: var(--text-secondary);
+}
+
+.info-card li {
+  margin-bottom: 4px;
+}
+
+.info-card code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Google Sans Code', monospace;
+  font-size: 14px;
+  color: var(--accent);
 }
 
 .status-step {
