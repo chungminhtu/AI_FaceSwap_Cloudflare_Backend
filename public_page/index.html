@@ -34,6 +34,12 @@
             box-sizing: border-box;
         }
 
+        html, body {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: 'Lexend Deca', -apple-system, sans-serif;
             background: radial-gradient(circle at top, #FFE0F0 0%, #F4E5FF 35%, #FDFBFF 70%);
@@ -47,18 +53,51 @@
         }
 
         .main-container {
-            max-width: 1400px;
-            margin: 0 auto;
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
             padding: 16px 20px 40px;
             background: var(--bg-panel-gradient);
             box-shadow: var(--shadow-soft);
             border: 1px solid rgba(255, 255, 255, 0.4);
         }
 
+        .app-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .app-layout.log-hidden {
+            grid-template-columns: 1fr 0;
+            gap: 0;
+        }
+
+        .app-layout.log-hidden .log-panel {
+            display: none !important;
+        }
+
+        @media (max-width: 1200px) {
+            .app-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .app-layout.log-hidden {
+                grid-template-columns: 1fr;
+            }
+        }
+
         @media (max-width: 767px) {
             .main-container {
                 padding: 8px;
             }
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
 
         h1 {
@@ -81,7 +120,7 @@
         }
 
         .faceswap-zone {
-            margin-top: 20px;
+            margin-top: 0;
         }
 
         .workspace {
@@ -756,11 +795,34 @@
         }
 
         .log-panel {
-            margin-top: 20px;
             background: rgba(255, 255, 255, 0.85);
             border: 1px solid rgba(255, 255, 255, 0.6);
             box-shadow: inset 0 0 30px rgba(18, 176, 255, 0.08), var(--shadow-soft);
             padding: 16px;
+            height: calc(100vh - 120px);
+            min-height: 600px;
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 20px;
+            overflow: hidden;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .app-layout.log-hidden .log-panel {
+            opacity: 0;
+            transform: translateX(20px);
+            pointer-events: none;
+        }
+
+        @media (max-width: 1200px) {
+            .log-panel {
+                position: relative;
+                top: 0;
+                height: auto;
+                min-height: 400px;
+                max-height: 600px;
+            }
         }
 
         .log-header {
@@ -768,6 +830,7 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 12px;
+            gap: 8px;
         }
 
         .log-title {
@@ -776,6 +839,76 @@
             font-weight: 600;
             color: var(--accent-strong);
             letter-spacing: 0.4px;
+            flex: 1;
+        }
+
+        .log-toggle-btn {
+            background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            border: none;
+            color: #FFFFFF;
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 12px;
+            padding: 6px 12px;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0.3px;
+            transition: all 0.2s;
+            font-weight: 500;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(248, 35, 135, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .log-toggle-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
+        }
+
+        .log-toggle-btn.hidden {
+            background: rgba(248, 35, 135, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(248, 35, 135, 0.3);
+        }
+
+        .log-toggle-btn.hidden:hover {
+            background: rgba(248, 35, 135, 0.15);
+        }
+
+        .log-toggle-float {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            border: none;
+            color: #FFFFFF;
+            font-size: 20px;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 4px 16px rgba(248, 35, 135, 0.4);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: all 0.3s ease;
+        }
+
+        .log-toggle-float:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(248, 35, 135, 0.5);
+        }
+
+        .app-layout.log-hidden .log-toggle-float {
+            display: flex !important;
+        }
+
+        @media (max-width: 1200px) {
+            .log-toggle-float {
+                display: none !important;
+            }
         }
 
         .log-clear-btn {
@@ -790,6 +923,7 @@
             letter-spacing: 0.3px;
             transition: all 0.2s;
             font-weight: 500;
+            border-radius: 4px;
         }
 
         .log-clear-btn:hover {
@@ -798,11 +932,12 @@
         }
 
         .api-log-list {
-            max-height: 260px;
+            flex: 1;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            min-height: 0;
         }
 
         .api-log-entry {
@@ -998,6 +1133,127 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+        }
+
+        .toast {
+            pointer-events: auto;
+            min-width: 300px;
+            max-width: 500px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            animation: toastSlideIn 0.3s ease-out;
+            position: relative;
+            backdrop-filter: blur(10px);
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .toast.toast-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border-left: 4px solid #34d399;
+        }
+
+        .toast.toast-error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            border-left: 4px solid #f87171;
+        }
+
+        .toast.toast-warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            border-left: 4px solid #fbbf24;
+        }
+
+        .toast.toast-info {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border-left: 4px solid #60a5fa;
+        }
+
+        .toast-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .toast-content {
+            flex: 1;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .toast-message {
+            font-size: 13px;
+            opacity: 0.95;
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            flex-shrink: 0;
+        }
+
+        .toast-close:hover {
+            opacity: 1;
+        }
+
+        .toast-exiting {
+            animation: toastSlideOut 0.3s ease-in forwards;
+        }
+
+        @keyframes toastSlideOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
+
         @media (max-width: 767px) {
             .action-row {
                 flex-direction: column;
@@ -1042,6 +1298,15 @@
             .dialog-message {
                 font-size: 12px;
             }
+
+            .app-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .toast {
+                min-width: 280px;
+                max-width: 90%;
+            }
         }
     </style>
 </head>
@@ -1049,118 +1314,131 @@
     <div class="main-container">
         <h1>Đổi Mặt AI</h1>
 
-        <!-- Image Galleries Section (Top) -->
-        <div class="galleries-section">
-            <div class="section-title">Thư Viện Hình Ảnh</div>
-            <div class="galleries-grid">
-                <!-- Preset Gallery -->
-                <div class="gallery-section">
-                    <div class="gallery-title">Thư Viện Mẫu</div>
-                    <div class="upload-area gallery-upload" id="preset-upload">
-                        <div class="upload-icon">📤</div>
-                        <div class="upload-text">Nhấp để tải lên hình mẫu</div>
-                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                        <input type="file" class="file-input" id="preset-input" accept="image/*">
-                    </div>
-                    <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
-                    <div class="pagination" id="preset-pagination" style="display: none;">
-                        <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
-                        <span class="pagination-info" id="preset-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
-                    </div>
-                    <div class="empty-state" id="preset-gallery-empty">
-                        <div class="icon">🎭</div>
-                        Chưa có mẫu nào được tải lên
-                    </div>
-                </div>
-
-                <!-- Selfie Gallery -->
-                <div class="gallery-section">
-                    <div class="gallery-title">Thư Viện Selfie</div>
-                    <div class="upload-area gallery-upload" id="selfie-upload">
-                        <div class="upload-icon">📷</div>
-                        <div class="upload-text">Nhấp để tải lên hình selfie</div>
-                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
-                    </div>
-                    <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
-                    <div class="pagination" id="selfie-pagination" style="display: none;">
-                        <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
-                        <span class="pagination-info" id="selfie-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
-                    </div>
-                    <div class="empty-state" id="selfie-gallery-empty">
-                        <div class="icon">📷</div>
-                        Chưa có selfie nào được tải lên
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Face Swap Zone (Bottom) -->
-        <div class="faceswap-zone">
-            <div class="section-title">Đổi Mặt</div>
-            <div class="workspace">
-                <div class="left-column">
-                    <!-- Preset Section (Top) -->
-                    <div class="section">
-                        <div class="section-title">Mẫu Đã Chọn</div>
-                        <div id="preset-preview" class="selected-preview">
-                            <div class="preview-empty">
+        <div class="app-layout">
+            <!-- Main Content (Left Side) -->
+            <div class="main-content">
+                <!-- Image Galleries Section (Top) -->
+                <div class="galleries-section">
+                    <div class="section-title">Thư Viện Hình Ảnh</div>
+                    <div class="galleries-grid">
+                        <!-- Preset Gallery -->
+                        <div class="gallery-section">
+                            <div class="gallery-title">Thư Viện Mẫu</div>
+                            <div class="upload-area gallery-upload" id="preset-upload">
+                                <div class="upload-icon">📤</div>
+                                <div class="upload-text">Nhấp để tải lên hình mẫu</div>
+                                <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
+                                <input type="file" class="file-input" id="preset-input" accept="image/*">
+                            </div>
+                            <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
+                            <div class="pagination" id="preset-pagination" style="display: none;">
+                                <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
+                                <span class="pagination-info" id="preset-page-info">1 / 1</span>
+                                <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
+                            </div>
+                            <div class="empty-state" id="preset-gallery-empty">
                                 <div class="icon">🎭</div>
-                                Chọn một mẫu từ thư viện phía trên
+                                Chưa có mẫu nào được tải lên
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Selfie Section (Bottom) -->
-                    <div class="section">
-                        <div class="section-title">Selfie Đã Chọn</div>
-                        <div id="selfie-preview" class="selected-preview">
-                            <div class="preview-empty">
+                        <!-- Selfie Gallery -->
+                        <div class="gallery-section">
+                            <div class="gallery-title">Thư Viện Selfie</div>
+                            <div class="upload-area gallery-upload" id="selfie-upload">
+                                <div class="upload-icon">📷</div>
+                                <div class="upload-text">Nhấp để tải lên hình selfie</div>
+                                <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
+                                <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                            </div>
+                            <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
+                            <div class="pagination" id="selfie-pagination" style="display: none;">
+                                <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
+                                <span class="pagination-info" id="selfie-page-info">1 / 1</span>
+                                <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
+                            </div>
+                            <div class="empty-state" id="selfie-gallery-empty">
                                 <div class="icon">📷</div>
-                                Chọn một selfie từ thư viện phía trên
+                                Chưa có selfie nào được tải lên
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Result Display -->
-                <div class="right-column" id="result-display">
-                    <div class="result-empty">
-                        <div class="icon">🖼️</div>
-                        Kết quả sẽ xuất hiện ở đây
+                <!-- Face Swap Zone (Bottom) -->
+                <div class="faceswap-zone">
+                    <div class="section-title">Đổi Mặt</div>
+                    <div class="workspace">
+                        <div class="left-column">
+                            <!-- Preset Section (Top) -->
+                            <div class="section">
+                                <div class="section-title">Mẫu Đã Chọn</div>
+                                <div id="preset-preview" class="selected-preview">
+                                    <div class="preview-empty">
+                                        <div class="icon">🎭</div>
+                                        Chọn một mẫu từ thư viện phía trên
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Selfie Section (Bottom) -->
+                            <div class="section">
+                                <div class="section-title">Selfie Đã Chọn</div>
+                                <div id="selfie-preview" class="selected-preview">
+                                    <div class="preview-empty">
+                                        <div class="icon">📷</div>
+                                        Chọn một selfie từ thư viện phía trên
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Result Display -->
+                        <div class="right-column" id="result-display">
+                            <div class="result-empty">
+                                <div class="icon">🖼️</div>
+                                Kết quả sẽ xuất hiện ở đây
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-row">
+                        <div class="api-selector">
+                            <label class="api-selector-label" for="api-provider">API Provider</label>
+                            <select class="api-select" id="api-provider">
+                                <option value="rapidapi">RapidAPI</option>
+                                <option value="google-nano-banana">Google Nano Banana</option>
+                            </select>
+                        </div>
+
+                        <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
+                            Tạo Đổi Mặt
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <div class="action-row">
-                <div class="api-selector">
-                    <label class="api-selector-label" for="api-provider">API Provider</label>
-                    <select class="api-select" id="api-provider">
-                        <option value="rapidapi">RapidAPI</option>
-                        <option value="google-nano-banana">Google Nano Banana</option>
-                    </select>
+            <!-- API Log Panel (Right Side - Full Height) -->
+            <div class="log-panel">
+                <div class="log-header">
+                    <div class="log-title">Nhật Ký API (Realtime)</div>
+                    <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn/Hiện Log">
+                        <span id="log-toggle-icon">◀</span>
+                    </button>
+                    <button class="log-clear-btn" onclick="clearApiLogs()">Dọn Log</button>
                 </div>
-
-                <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
-                    Tạo Đổi Mặt
-                </button>
+                <div id="api-log-list" class="api-log-list"></div>
             </div>
         </div>
     </div>
 
-    <!-- Status Messages Container -->
-    <div id="status-messages"></div>
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
 
-    <!-- API Log Panel -->
-    <div class="log-panel">
-        <div class="log-header">
-            <div class="log-title">Nhật Ký API (Realtime)</div>
-            <button class="log-clear-btn" onclick="clearApiLogs()">Dọn Log</button>
-        </div>
-        <div id="api-log-list" class="api-log-list"></div>
-    </div>
+    <!-- Floating Toggle Button (shown when log is hidden) -->
+    <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký API">
+        📋
+    </button>
 
     <script>
         const WORKER_URL = 'https://ai-faceswap-backend.chungminhtu03.workers.dev';
@@ -1189,7 +1467,6 @@
         const resultDisplay = document.getElementById('result-display');
         const generateBtn = document.getElementById('generate-btn');
         const apiProviderSelect = document.getElementById('api-provider');
-        const statusMessages = document.getElementById('status-messages');
         const apiLogList = document.getElementById('api-log-list');
 
         function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
@@ -1414,6 +1691,63 @@
         function clearApiLogs() {
             if (apiLogList) {
                 apiLogList.innerHTML = '';
+            }
+        }
+
+        function toggleLogPanel() {
+            const appLayout = document.querySelector('.app-layout');
+            const toggleBtn = document.getElementById('log-toggle-btn');
+            const toggleIcon = document.getElementById('log-toggle-icon');
+            const toggleFloat = document.getElementById('log-toggle-float');
+            const logPanel = document.querySelector('.log-panel');
+            
+            if (!appLayout) {
+                console.error('app-layout not found');
+                return;
+            }
+            
+            const isHidden = appLayout.classList.contains('log-hidden');
+            
+            if (isHidden) {
+                // Show the log panel - restore grid columns first
+                appLayout.classList.remove('log-hidden');
+                
+                // Force reflow to ensure grid updates
+                void appLayout.offsetWidth;
+                
+                // Show the panel
+                if (logPanel) {
+                    logPanel.style.display = 'flex';
+                }
+                
+                if (toggleIcon) {
+                    toggleIcon.textContent = '◀';
+                }
+                if (toggleBtn) {
+                    toggleBtn.classList.remove('hidden');
+                    toggleBtn.title = 'Ẩn Log';
+                }
+                if (toggleFloat) {
+                    toggleFloat.style.display = 'none';
+                }
+            } else {
+                // Hide the log panel
+                appLayout.classList.add('log-hidden');
+                
+                if (logPanel) {
+                    logPanel.style.display = 'none';
+                }
+                
+                if (toggleIcon) {
+                    toggleIcon.textContent = '▶';
+                }
+                if (toggleBtn) {
+                    toggleBtn.classList.add('hidden');
+                    toggleBtn.title = 'Hiện Log';
+                }
+                if (toggleFloat) {
+                    toggleFloat.style.display = 'flex';
+                }
             }
         }
 
@@ -1958,19 +2292,97 @@
             }
         }
 
-        // Show status message
+        // Toast notification system
+        window.toast = {
+            show(message, type = 'info', duration = 4000) {
+                const container = document.getElementById('toast-container');
+                if (!container) {
+                    console.warn('Toast container not found');
+                    return;
+                }
+
+                const toast = document.createElement('div');
+                toast.className = `toast toast-${type}`;
+                
+                const icons = {
+                    success: '✅',
+                    error: '❌',
+                    warning: '⚠️',
+                    info: 'ℹ️'
+                };
+
+                const titles = {
+                    success: 'Thành công',
+                    error: 'Lỗi',
+                    warning: 'Cảnh báo',
+                    info: 'Thông tin'
+                };
+
+                // Split message into title and content if it contains newlines
+                const parts = message.split('\n');
+                const title = parts.length > 1 ? parts[0] : titles[type];
+                const content = parts.length > 1 ? parts.slice(1).join('\n') : message;
+
+                toast.innerHTML = `
+                    <div class="toast-icon">${icons[type] || icons.info}</div>
+                    <div class="toast-content">
+                        <div class="toast-title">${this.escapeHtml(title)}</div>
+                        ${content ? `<div class="toast-message">${this.escapeHtml(content)}</div>` : ''}
+                    </div>
+                    <button class="toast-close" onclick="window.toast.remove(this.closest('.toast'))">&times;</button>
+                `;
+
+                container.appendChild(toast);
+
+                // Auto remove after duration
+                if (duration > 0) {
+                    setTimeout(() => {
+                        this.remove(toast);
+                    }, duration);
+                }
+
+                return toast;
+            },
+
+            remove(toast) {
+                if (toast && toast.parentNode) {
+                    toast.classList.add('toast-exiting');
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.remove();
+                        }
+                    }, 300);
+                }
+            },
+
+            success(message, duration = 3000) {
+                return this.show(message, 'success', duration);
+            },
+
+            error(message, duration = 5000) {
+                return this.show(message, 'error', duration);
+            },
+
+            warning(message, duration = 4000) {
+                return this.show(message, 'warning', duration);
+            },
+
+            info(message, duration = 3000) {
+                return this.show(message, 'info', duration);
+            },
+
+            escapeHtml(text) {
+                if (text === null || text === undefined) return '';
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        };
+
+        // Show status message (now using toast)
         function showStatusMessage(message, type) {
-            const messageEl = document.createElement('div');
-            messageEl.className = `status-message status-${type}`;
-            messageEl.innerHTML = `
-                <span>${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span>
-                ${message}
-                <button onclick="this.parentElement.remove()" style="margin-left: 10px; background: none; border: none; color: inherit; cursor: pointer; font-size: 16px; opacity: 0.7;">×</button>
-            `;
-
-            statusMessages.appendChild(messageEl);
-
-            // No auto-close - user must manually close messages
+            const toastType = type === 'success' ? 'success' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info';
+            window.toast[toastType](message);
         }
 
         // Handle drag and drop

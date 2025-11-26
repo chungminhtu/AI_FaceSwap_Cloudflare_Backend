@@ -1,9 +1,9 @@
 const { execSync, spawn } = require('child_process');
 
 class CommandRunner {
-  constructor(maxRetries = 3, retryDelay = 1000) {
+  constructor(maxRetries = 3, retryDelay = 0) {
     this.maxRetries = maxRetries;
-    this.baseRetryDelay = retryDelay;
+    this.baseRetryDelay = retryDelay; // Set to 0 for instant retries (no delay)
   }
 
   // Check if error is a network error
@@ -72,9 +72,12 @@ class CommandRunner {
           };
         }
 
-        // Wait before retrying (exponential backoff)
-        const delay = retryDelay * Math.pow(2, attempt);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        // Retry immediately (no delay for faster deployment)
+        // If retryDelay is 0, skip the delay entirely
+        if (retryDelay > 0) {
+          const delay = retryDelay * Math.pow(2, attempt);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
         attempt++;
       }
     }

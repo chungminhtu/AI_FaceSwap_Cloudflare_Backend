@@ -6,7 +6,7 @@ const AccountSwitcher = require('./account-switcher');
 
 class DeploymentEngine {
   constructor() {
-    this.commandRunner = new CommandRunner(3, 1000);
+    this.commandRunner = new CommandRunner(3, 0); // No retry delay for faster deployment
     this.reportProgress = null;
     this.currentDeploymentId = null;
     this.currentStep = null;
@@ -15,7 +15,9 @@ class DeploymentEngine {
 
   async executeWithLogs(command, cwd, step) {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, {
+      // Use shell: true to properly execute commands with paths and arguments
+      // This matches the behavior of execSync in deploy.js
+      const child = spawn(command, [], {
         shell: true,
         cwd: cwd,
         env: process.env
@@ -653,27 +655,53 @@ class DeploymentEngine {
     const pagesUrl = `https://${pagesProjectName}.pages.dev/`;
     
     if (!fs.existsSync(publicPageDir)) {
-      // Return URL even if directory doesn't exist (might be deployed elsewhere)
+      // Log warning if directory doesn't exist
+      if (this.reportProgress) {
+        this.reportProgress('deploy-pages', 'warning', 'public_page directory not found, skipping Pages deployment');
+      }
       return pagesUrl;
     }
 
     try {
+      // Use executeWithLogs to properly stream output and handle the deployment
+      // This matches the behavior of deploy.js - use absolute path and proper quoting
+      // Convert to absolute path to avoid any path resolution issues
+      const absolutePublicPageDir = path.resolve(publicPageDir);
+      
+      // Build the command exactly like deploy.js does
+      const command = `wrangler pages deploy "${absolutePublicPageDir}" --project-name=${pagesProjectName} --branch=main --commit-dirty=true`;
+      
+      if (this.reportProgress) {
+        this.reportProgress('deploy-pages', 'running', `Executing: ${command}`);
+      }
+      
       const result = await this.executeWithLogs(
-        `wrangler pages deploy ${publicPageDir} --project-name=${pagesProjectName} --branch=main --commit-dirty=true`,
+        command,
         codebasePath,
         'deploy-pages'
       );
 
-      if (!result.success) {
-        // Even if deployment has issues, return the URL (deployment might have partially succeeded)
+      // Check if command succeeded (exit code 0)
+      if (result.success) {
+        if (this.reportProgress) {
+          this.reportProgress('deploy-pages', 'completed', `Pages deployed successfully: ${pagesUrl}`);
+        }
+        return pagesUrl;
+      } else {
+        // Command failed but we still return the URL (deployment might have partially succeeded)
+        if (this.reportProgress) {
+          this.reportProgress('deploy-pages', 'warning', `Pages deployment may have issues, but URL is: ${pagesUrl}`);
+        }
         return pagesUrl;
       }
-
-      // Construct the Pages domain from project name
-      return pagesUrl;
     } catch (error) {
-      // Pages deployment is non-critical, but return URL anyway
+      // Pages deployment failed, but return URL anyway (non-critical)
       // The URL format is always https://{projectName}.pages.dev/
+      // Log the error but don't fail the entire deployment
+      if (this.reportProgress) {
+        this.reportProgress('deploy-pages', 'warning', `Pages deployment error: ${error.message}. URL: ${pagesUrl}`);
+      }
+      // Still return the URL as Pages deployment is non-critical
       return pagesUrl;
     }
   }
