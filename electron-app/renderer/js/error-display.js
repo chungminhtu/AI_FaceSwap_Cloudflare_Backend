@@ -89,7 +89,7 @@ window.errorDisplay = {
         this.hide();
         // Get deployment ID from current error context if available
         // For now, user needs to manually retry from deployment list
-        alert('Vui lòng thử lại từ danh sách triển khai.');
+        window.toast?.info('ℹ️ Vui lòng thử lại từ danh sách triển khai.');
       });
     }
   },

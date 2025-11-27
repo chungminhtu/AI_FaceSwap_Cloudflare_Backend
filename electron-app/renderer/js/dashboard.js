@@ -206,14 +206,12 @@ async function refreshAuthStatus() {
 
 // Show error message
 function showError(title, message) {
-  // Simple alert for now - can be enhanced with a toast notification
-  alert(`${title}: ${message}`);
+  window.toast?.error(`❌ ${title}: ${message}`);
 }
 
 // Show success message
 function showSuccess(message) {
-  // Simple alert for now - can be enhanced with a toast notification
-  alert(message);
+  window.toast?.success(`✅ ${message}`);
 }
 
 // Import Config Modal

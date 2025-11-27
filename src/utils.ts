@@ -34,7 +34,7 @@ export const getUnsafeLevels = (strictness: 'strict' | 'lenient' = 'lenient'): s
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, X-Enable-Gemini-Prompt, Authorization',
   'Access-Control-Allow-Credentials': 'true',
 };
 
@@ -120,4 +120,93 @@ export const base64UrlEncode = (str: string): string => {
 // Base64 decode
 export const base64Decode = (str: string): string => {
   return atob(str);
+};
+
+// Generate OAuth access token for Google Service Account
+// This is used for Vertex AI authentication
+export const getAccessToken = async (
+  serviceAccountEmail: string,
+  privateKey: string
+): Promise<string> => {
+  const now = Math.floor(Date.now() / 1000);
+  const expiry = now + 3600; // Token valid for 1 hour
+
+  // Create JWT header
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT',
+  };
+
+  // Create JWT claim set
+  const claimSet = {
+    iss: serviceAccountEmail,
+    sub: serviceAccountEmail,
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: expiry,
+    iat: now,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+  };
+
+  // Encode header and claim set
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedClaimSet = base64UrlEncode(JSON.stringify(claimSet));
+
+  // Create the signature input
+  const signatureInput = `${encodedHeader}.${encodedClaimSet}`;
+
+  // Import the private key and sign
+  // Note: Cloudflare Workers support Web Crypto API
+  const keyData = privateKey
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s/g, '');
+
+  const keyBuffer = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
+
+  // Import RSA private key
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    keyBuffer,
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign']
+  );
+
+  // Sign the JWT
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(signatureInput)
+  );
+
+  // Encode signature
+  const encodedSignature = base64UrlEncode(
+    String.fromCharCode(...new Uint8Array(signature))
+  );
+
+  // Create final JWT
+  const jwt = `${signatureInput}.${encodedSignature}`;
+
+  // Exchange JWT for access token
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    throw new Error(`Failed to get access token: ${tokenResponse.status} ${errorText}`);
+  }
+
+  const tokenData = await tokenResponse.json() as { access_token: string };
+  return tokenData.access_token;
 };

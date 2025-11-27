@@ -164,7 +164,7 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
   isDeploying = true;
   
   try {
-    const config = ConfigManager.read();
+    let config = ConfigManager.read();
     const deployment = config.deployments.find(d => d.id === deploymentId);
     
     if (!deployment) {
@@ -246,8 +246,9 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
     const result = await deployFromConfig(deploymentConfig, reportProgress, codebasePath);
     
     // Save deployment history to config
-     config = ConfigManager.read();
-    const deploymentRecord = config.deployments.find(d => d.id === deploymentId);
+    // Re-read config to get latest state before saving history
+    const updatedConfig = ConfigManager.read();
+    const deploymentRecord = updatedConfig.deployments.find(d => d.id === deploymentId);
       
     if (deploymentRecord) {
         // Initialize history array if not exists
@@ -265,8 +266,13 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
         results: {
           workerUrl: result.workerUrl,
           pagesUrl: result.pagesUrl
-        }
+        },
+        steps: [], // Steps will be populated by frontend
+        fullLogs: [] // Logs will be populated by frontend
       };
+        
+      // Save to database table
+      ConfigManager.saveDeploymentHistory(deploymentId, historyEntry);
         
         // Add new deployment history (keep last 50 deployments)
       deploymentRecord.history.unshift(historyEntry);
@@ -275,7 +281,7 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
         }
         
         // Save updated config
-        ConfigManager.write(config);
+      ConfigManager.write(updatedConfig);
     }
     
     return result;
@@ -405,49 +411,94 @@ ipcMain.handle('helper:get-cloudflare-info', async () => {
     const { execSync } = require('child_process');
     const os = require('os');
     let accountId = null;
+    let whoamiOutput = '';
     
-    // Method 1: Try to get account ID from wrangler whoami output (PRIORITY - most reliable)
+    // Method 1: Try JSON format first (most reliable, available in newer wrangler versions)
     try {
-      const whoamiOutput = execSync('wrangler whoami', {
+      try {
+        // Try JSON format first
+        whoamiOutput = execSync('wrangler whoami --format json', {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000
       });
       
-      // Parse table format: │ Account Name │ Account ID │
-      // The Account ID is in the second column of the data row
+        try {
+          const jsonData = JSON.parse(whoamiOutput);
+          if (jsonData.accountId) {
+            accountId = jsonData.accountId.toLowerCase();
+          } else if (jsonData.account && jsonData.account.id) {
+            accountId = jsonData.account.id.toLowerCase();
+          }
+        } catch (jsonError) {
+          // JSON parsing failed, fall through to text parsing
+          console.log('[helper:get-cloudflare-info] JSON parsing failed, trying text format');
+        }
+      } catch (jsonCmdError) {
+        // JSON format not available, try regular whoami
+        console.log('[helper:get-cloudflare-info] JSON format not available, using text format');
+        whoamiOutput = execSync('wrangler whoami', {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 10000
+        });
+      }
+      
+      // Method 2: Parse table format from text output
+      if (!accountId && whoamiOutput) {
       const lines = whoamiOutput.split('\n');
       for (const line of lines) {
+          // Skip header lines and separator lines
+          if (line.includes('Account Name') || line.includes('Account ID') || line.trim().match(/^[│\s\-]+$/)) {
+            continue;
+          }
+          
         // Look for table row with Account ID (contains │ and hex string)
         if (line.includes('│') && /[a-f0-9]{32}/i.test(line)) {
           // Split by │ and find the hex string (32 chars)
-          const parts = line.split('│').map(p => p.trim());
+            // Filter out empty strings and pipe characters
+            const parts = line.split('│')
+              .map(p => p.trim())
+              .filter(p => p && p !== '│' && p.length > 0);
+            
           for (const part of parts) {
+              // Look for 32-character hex string
             const idMatch = part.match(/([a-f0-9]{32})/i);
             if (idMatch && idMatch[1].length === 32) {
-              accountId = idMatch[1];
+                accountId = idMatch[1].toLowerCase();
               break;
             }
           }
           if (accountId) break;
+          }
         }
       }
       
-      // Fallback: Try simple regex patterns
-      if (!accountId) {
+      // Method 3: Fallback - Try simple regex patterns
+      if (!accountId && whoamiOutput) {
         // Pattern 1: "Account ID: 72474c350e3f55d96195536a5d39e00d"
         const accountIdMatch1 = whoamiOutput.match(/account\s+id:?\s*([a-f0-9]{32})/i);
         if (accountIdMatch1) {
-          accountId = accountIdMatch1[1];
+          accountId = accountIdMatch1[1].toLowerCase();
         }
       }
       
-      // Fallback: Pattern 2: Any 32-char hex string
-      if (!accountId) {
+      // Method 4: Fallback - Any 32-char hex string (but filter out common false positives)
+      if (!accountId && whoamiOutput) {
         const hexMatches = whoamiOutput.match(/\b([a-f0-9]{32})\b/gi);
         if (hexMatches && hexMatches.length > 0) {
+          // Filter out matches that are clearly not account IDs (e.g., in URLs, paths)
+          const validMatches = hexMatches.filter(match => {
+            const lowerMatch = match.toLowerCase();
+            // Account IDs are typically lowercase and not part of URLs
+            return !whoamiOutput.toLowerCase().includes(`http://${lowerMatch}`) &&
+                   !whoamiOutput.toLowerCase().includes(`https://${lowerMatch}`);
+          });
+          
+          if (validMatches.length > 0) {
           // Use the last match (usually the Account ID)
-          accountId = hexMatches[hexMatches.length - 1];
+            accountId = validMatches[validMatches.length - 1].toLowerCase();
+          }
         }
       }
     } catch (error) {

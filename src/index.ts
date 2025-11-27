@@ -212,7 +212,10 @@ export default {
         if (key.startsWith('preset/')) {
           console.log('Processing preset upload:', key);
           let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
-          const enableVertexPrompt = request.headers.get('X-Enable-Vertex-Prompt') === 'true';
+          // Accept both header names for compatibility
+          const enableVertexPrompt = 
+            request.headers.get('X-Enable-Vertex-Prompt') === 'true' ||
+            request.headers.get('X-Enable-Gemini-Prompt') === 'true';
           console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt);
 
           // Decode base64 if encoded
@@ -306,7 +309,7 @@ export default {
             } catch (vertexError) {
               const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
               const errorStack = vertexError instanceof Error ? vertexError.stack : undefined;
-              geminiCallInfo = { 
+              vertexCallInfo = { 
                 success: false, 
                 error: errorMsg,
                 debug: {

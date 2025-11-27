@@ -2468,6 +2468,146 @@
                 return {};
             }
         }
+
+        // Vertex API functions
+        window.vertexAPI = {
+            /**
+             * Get prompt for a preset image from Vertex API
+             * @param {string} presetImageId - The ID of the preset image
+             * @returns {Promise<{success: boolean, presetImage?: object, error?: string}>}
+             */
+            async getPrompt(presetImageId) {
+                try {
+                    const response = await fetch(`${WORKER_URL}/vertex/get-prompt/${presetImageId}`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const data = await safeJson(response);
+
+                    if (!response.ok) {
+                        logApiCall({
+                            label: 'Vertex API: Get Prompt',
+                            method: 'GET',
+                            url: `/vertex/get-prompt/${presetImageId}`,
+                            status: 'error',
+                            payload: data
+                        });
+                        return {
+                            success: false,
+                            error: data.message || `HTTP ${response.status}: ${response.statusText}`
+                        };
+                    }
+
+                    logApiCall({
+                        label: 'Vertex API: Get Prompt',
+                        method: 'GET',
+                        url: `/vertex/get-prompt/${presetImageId}`,
+                        status: 'success',
+                        payload: data
+                    });
+
+                    return {
+                        success: true,
+                        presetImage: data.presetImage
+                    };
+                } catch (error) {
+                    console.error('[Vertex API] Get prompt error:', error);
+                    logApiCall({
+                        label: 'Vertex API: Get Prompt',
+                        method: 'GET',
+                        url: `/vertex/get-prompt/${presetImageId}`,
+                        status: 'error',
+                        payload: { message: error?.message || String(error) }
+                    });
+                    return {
+                        success: false,
+                        error: error?.message || String(error)
+                    };
+                }
+            },
+
+            /**
+             * Test Vertex AI API connectivity
+             * @returns {Promise<{success: boolean, message?: string, status?: number, models?: string[], error?: string}>}
+             */
+            async testConnection() {
+                try {
+                    const response = await fetch(`${WORKER_URL}/test-vertex`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    const data = await safeJson(response);
+
+                    logApiCall({
+                        label: 'Vertex API: Test Connection',
+                        method: 'GET',
+                        url: '/test-vertex',
+                        status: response.ok ? 'success' : 'error',
+                        payload: data
+                    });
+
+                    return {
+                        success: response.ok,
+                        message: data.message,
+                        status: data.status,
+                        ok: data.ok,
+                        models: data.models || [],
+                        error: data.error || null
+                    };
+                } catch (error) {
+                    console.error('[Vertex API] Test connection error:', error);
+                    logApiCall({
+                        label: 'Vertex API: Test Connection',
+                        method: 'GET',
+                        url: '/test-vertex',
+                        status: 'error',
+                        payload: { message: error?.message || String(error) }
+                    });
+                    return {
+                        success: false,
+                        error: error?.message || String(error)
+                    };
+                }
+            },
+
+            /**
+             * Refresh prompt for a preset image (re-generate using Vertex AI)
+             * This will trigger a re-upload which automatically generates a new prompt
+             * @param {string} presetImageId - The ID of the preset image
+             * @param {string} imageUrl - The URL of the preset image
+             * @returns {Promise<{success: boolean, prompt?: object, error?: string}>}
+             */
+            async refreshPrompt(presetImageId, imageUrl) {
+                try {
+                    // Note: This would require a new endpoint or we can use the existing upload flow
+                    // For now, we'll just fetch the current prompt
+                    const result = await this.getPrompt(presetImageId);
+                    if (result.success && result.presetImage) {
+                        showStatusMessage('Prompt đã được tải thành công', 'success');
+                        return result;
+                    } else {
+                        showStatusMessage('Không tìm thấy prompt. Vui lòng tải lại hình mẫu để tạo prompt mới.', 'warning');
+                        return result;
+                    }
+                } catch (error) {
+                    console.error('[Vertex API] Refresh prompt error:', error);
+                    showStatusMessage(`Lỗi làm mới prompt: ${error?.message}`, 'error');
+                    return {
+                        success: false,
+                        error: error?.message || String(error)
+                    };
+                }
+            }
+        };
+
+        // Add button to test Vertex API connection (for debugging)
+        // You can call window.vertexAPI.testConnection() from browser console
+        console.log('Vertex API functions available at window.vertexAPI:');
+        console.log('  - getPrompt(presetImageId): Get prompt for a preset');
+        console.log('  - testConnection(): Test Vertex AI API connectivity');
+        console.log('  - refreshPrompt(presetImageId, imageUrl): Refresh prompt for a preset');
     </script>
 </body>
 </html>

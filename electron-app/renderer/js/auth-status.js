@@ -109,7 +109,7 @@ function setupLoginButtons() {
           if (checkResult.authenticated) {
             console.log('[auth-status] User is authenticated! Login completed.');
             await window.authStatus.refresh();
-            alert('Đăng nhập Cloudflare thành công! (Đã xác thực trong trình duyệt)');
+            window.toast?.success('✅ Đăng nhập Cloudflare thành công! (Đã xác thực trong trình duyệt)');
             return;
           }
         } catch (checkError) {
@@ -120,15 +120,15 @@ function setupLoginButtons() {
       
       if (result && result.success) {
         await window.authStatus.refresh();
-        alert('Đăng nhập Cloudflare thành công!');
+        window.toast?.success('✅ Đăng nhập Cloudflare thành công!');
       } else {
         const errorMsg = result?.error || 'Unknown error';
         console.error('[auth-status] Login failed:', errorMsg);
-        alert(`Đăng nhập Cloudflare thất bại: ${errorMsg}`);
+        window.toast?.error(`❌ Đăng nhập Cloudflare thất bại: ${errorMsg}`);
       }
     } catch (error) {
       console.error('[auth-status] Login error:', error);
-      alert(`Lỗi đăng nhập Cloudflare: ${error.message || error}`);
+      window.toast?.error(`❌ Lỗi đăng nhập Cloudflare: ${error.message || error}`);
     } finally {
       newBtnLoginCF.disabled = false;
       newBtnLoginCF.textContent = 'Đăng nhập Cloudflare';
@@ -182,7 +182,7 @@ function setupLoginButtons() {
           if (checkResult.authenticated) {
             console.log('[auth-status] User is authenticated! Login completed.');
             await window.authStatus.refresh();
-            alert('Đăng nhập GCP thành công! (Đã xác thực trong trình duyệt)');
+            window.toast?.success('✅ Đăng nhập GCP thành công! (Đã xác thực trong trình duyệt)');
             return;
           }
         } catch (checkError) {
@@ -193,15 +193,15 @@ function setupLoginButtons() {
       
       if (result && result.success) {
         await window.authStatus.refresh();
-        alert('Đăng nhập GCP thành công!');
+        window.toast?.success('✅ Đăng nhập GCP thành công!');
       } else {
         const errorMsg = result?.error || 'Unknown error';
         console.error('[auth-status] Login failed:', errorMsg);
-        alert(`Đăng nhập GCP thất bại: ${errorMsg}`);
+        window.toast?.error(`❌ Đăng nhập GCP thất bại: ${errorMsg}`);
       }
     } catch (error) {
       console.error('[auth-status] Login error:', error);
-      alert(`Lỗi đăng nhập GCP: ${error.message || error}`);
+      window.toast?.error(`❌ Lỗi đăng nhập GCP: ${error.message || error}`);
     } finally {
       newBtnLoginGCP.disabled = false;
       newBtnLoginGCP.textContent = 'Đăng nhập GCP';

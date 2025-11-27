@@ -12,6 +12,7 @@
 	"site": {
 		"bucket": "public_page"
 	},
+	"pages_build_output_dir": "public_page",
 	"r2_buckets": [
 		{
 			"binding": "FACESWAP_IMAGES",

@@ -667,3 +667,6 @@ const fetchImageAsBase64 = async (imageUrl: string): Promise<string> => {
   return btoa(binary);
 };
 
+// Export generateVertexPrompt as alias to generateGeminiPrompt for backward compatibility
+export const generateVertexPrompt = generateGeminiPrompt;
+

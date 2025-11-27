@@ -120,9 +120,9 @@ window.deploymentList = {
     const btnDelete = document.querySelector(`.btn-delete[data-id="${deploymentId}"]`);
     if (btnDelete) {
       btnDelete.addEventListener('click', async () => {
-        if (confirm('Bạn có chắc muốn xóa triển khai này?')) {
-          await this.deleteDeployment(deploymentId);
-        }
+        // No confirmation dialog - proceed with deletion and show toast
+        window.toast?.info('🗑️ Đang xóa triển khai...');
+        await this.deleteDeployment(deploymentId);
       });
     }
 
@@ -243,9 +243,7 @@ window.deploymentList = {
     const deployment = config.deployments?.find(d => d.id === deploymentId);
     const deploymentName = deployment?.name || 'deployment này';
     
-    if (!confirm(`Bắt đầu triển khai "${deploymentName}"?\n\n📁 Từ thư mục: ${config.codebasePath}`)) {
-      return;
-    }
+    // No confirmation dialog - start deployment directly
 
     try {
       window.dashboard.setIsDeploying(true);

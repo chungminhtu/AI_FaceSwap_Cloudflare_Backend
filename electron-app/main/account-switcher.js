@@ -145,51 +145,113 @@ class AccountSwitcher {
   // This is a placeholder - actual implementation depends on how wrangler handles multi-account
   async switchCloudflare(accountConfig) {
     try {
-      // Verify current account
-      const whoamiOutput = execSync('wrangler whoami', {
+      // Try JSON format first (most reliable, available in newer wrangler versions)
+      let currentAccountId = null;
+      let whoamiOutput = '';
+      
+      try {
+        // Method 1: Try JSON format first (most reliable)
+        try {
+          whoamiOutput = execSync('wrangler whoami --format json', {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000
       });
 
-      // Parse account ID from wrangler whoami output
-      // Wrangler outputs a table format: │ Account Name │ Account ID │
-      let currentAccountId = null;
-      
-      // Method 1: Parse table format (most reliable)
+          try {
+            const jsonData = JSON.parse(whoamiOutput);
+            if (jsonData.accountId) {
+              currentAccountId = jsonData.accountId.toLowerCase();
+              console.log('[AccountSwitcher] Found account ID via JSON:', currentAccountId);
+            } else if (jsonData.account && jsonData.account.id) {
+              currentAccountId = jsonData.account.id.toLowerCase();
+              console.log('[AccountSwitcher] Found account ID via JSON (nested):', currentAccountId);
+            }
+          } catch (jsonError) {
+            // JSON parsing failed, fall through to text parsing
+            console.log('[AccountSwitcher] JSON parsing failed, trying text format:', jsonError.message);
+          }
+        } catch (jsonCmdError) {
+          // JSON format not available, try regular whoami
+          console.log('[AccountSwitcher] JSON format not available, using text format');
+          whoamiOutput = execSync('wrangler whoami', {
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+            timeout: 10000
+          });
+        }
+      } catch (error) {
+        console.error('[AccountSwitcher] Failed to execute wrangler whoami:', error.message);
+        throw error;
+      }
+
+      // Method 2: Parse table format from text output
+      if (!currentAccountId && whoamiOutput) {
       const lines = whoamiOutput.split('\n');
       for (const line of lines) {
+          // Skip header lines and separator lines
+          if (line.includes('Account Name') || line.includes('Account ID') || line.trim().match(/^[│\s\-]+$/)) {
+            continue;
+          }
+          
         // Look for table row with Account ID (contains │ and hex string)
         if (line.includes('│') && /[a-f0-9]{32}/i.test(line)) {
           // Split by │ and find the hex string (32 chars)
-          const parts = line.split('│').map(p => p.trim());
+            // Filter out empty strings and pipe characters
+            const parts = line.split('│')
+              .map(p => p.trim())
+              .filter(p => p && p !== '│' && p.length > 0);
+            
           for (const part of parts) {
+              // Look for 32-character hex string
             const idMatch = part.match(/([a-f0-9]{32})/i);
             if (idMatch && idMatch[1].length === 32) {
-              currentAccountId = idMatch[1];
+                currentAccountId = idMatch[1].toLowerCase();
+                console.log('[AccountSwitcher] Found account ID via table parsing:', currentAccountId);
               break;
             }
           }
           if (currentAccountId) break;
+          }
         }
       }
       
-      // Method 2: Fallback - Try simple regex patterns
-      if (!currentAccountId) {
+      // Method 3: Fallback - Try simple regex patterns
+      if (!currentAccountId && whoamiOutput) {
         // Pattern 1: "Account ID: 72474c350e3f55d96195536a5d39e00d"
         const accountIdMatch1 = whoamiOutput.match(/account\s+id:?\s*([a-f0-9]{32})/i);
         if (accountIdMatch1) {
-          currentAccountId = accountIdMatch1[1];
+          currentAccountId = accountIdMatch1[1].toLowerCase();
+          console.log('[AccountSwitcher] Found account ID via regex pattern 1:', currentAccountId);
         }
       }
       
-      // Method 3: Fallback - Any 32-char hex string
-      if (!currentAccountId) {
+      // Method 4: Fallback - Any 32-char hex string (but filter out common false positives)
+      if (!currentAccountId && whoamiOutput) {
         const hexMatches = whoamiOutput.match(/\b([a-f0-9]{32})\b/gi);
         if (hexMatches && hexMatches.length > 0) {
+          // Filter out matches that are clearly not account IDs (e.g., in URLs, paths)
+          const validMatches = hexMatches.filter(match => {
+            const lowerMatch = match.toLowerCase();
+            // Account IDs are typically lowercase and not part of URLs
+            return !whoamiOutput.toLowerCase().includes(`http://${lowerMatch}`) &&
+                   !whoamiOutput.toLowerCase().includes(`https://${lowerMatch}`);
+          });
+          
+          if (validMatches.length > 0) {
           // Use the last match (usually the Account ID)
-          currentAccountId = hexMatches[hexMatches.length - 1];
+            currentAccountId = validMatches[validMatches.length - 1].toLowerCase();
+            console.log('[AccountSwitcher] Found account ID via regex pattern 2:', currentAccountId);
         }
+        }
+      }
+
+      // Log final result
+      if (currentAccountId) {
+        console.log('[AccountSwitcher] Successfully parsed account ID:', currentAccountId);
+      } else {
+        console.warn('[AccountSwitcher] Could not parse account ID from wrangler whoami output');
+        console.warn('[AccountSwitcher] Output was:', whoamiOutput.substring(0, 500));
       }
 
       if (accountConfig && accountConfig.accountId) {
@@ -202,7 +264,11 @@ class AccountSwitcher {
           };
         }
         
-        if (currentAccountId !== accountConfig.accountId) {
+        // Normalize both account IDs to lowercase for comparison
+        const normalizedCurrent = currentAccountId.toLowerCase().trim();
+        const normalizedExpected = accountConfig.accountId.toLowerCase().trim();
+        
+        if (normalizedCurrent !== normalizedExpected) {
           return {
             success: false,
             error: `Account mismatch. Current: ${currentAccountId}, Expected: ${accountConfig.accountId}`,

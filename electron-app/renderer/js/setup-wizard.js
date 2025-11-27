@@ -317,7 +317,7 @@ window.setupWizard = {
       const codebasePath = config?.codebasePath;
       
       if (!codebasePath) {
-        alert('Vui lòng chọn đường dẫn codebase trước khi chạy lệnh!');
+        window.toast?.warning('⚠️ Vui lòng chọn đường dẫn codebase trước khi chạy lệnh!');
         this.isExecutingCommand = false;
         return;
       }
@@ -326,18 +326,18 @@ window.setupWizard = {
       if (window.electronAPI && window.electronAPI.executeCommand) {
         const result = await window.electronAPI.executeCommand(command, codebasePath);
         if (result.success) {
-          alert(`Lệnh đã chạy thành công!\n\n${result.output || ''}`);
+          window.toast?.success(`✅ Lệnh đã chạy thành công!\n\n${result.output || ''}`);
         } else {
-          alert(`Lỗi khi chạy lệnh:\n\n${result.error || 'Unknown error'}`);
+          window.toast?.error(`❌ Lỗi khi chạy lệnh:\n\n${result.error || 'Unknown error'}`);
         }
       } else {
         // Fallback: copy to clipboard and show message
         await navigator.clipboard.writeText(command);
-        alert(`Đã sao chép lệnh vào clipboard:\n\n${command}\n\nVui lòng chạy trong terminal.`);
+        window.toast?.success(`✅ Đã sao chép lệnh vào clipboard:\n\n${command}\n\nVui lòng chạy trong terminal.`);
       }
     } catch (error) {
       console.error('Error executing command:', error);
-      alert(`Lỗi: ${error.message}`);
+      window.toast?.error(`❌ Lỗi: ${error.message}`);
     } finally {
       this.isExecutingCommand = false;
     }

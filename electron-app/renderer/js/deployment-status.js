@@ -374,10 +374,10 @@ window.deploymentStatus = {
   },
 
   saveHistoryEntry(result) {
-    if (!this.currentDeploymentId || !result.history) return;
+    if (!this.currentDeploymentId) return;
     
     // Merge backend steps with frontend steps (preserve all data)
-    const backendSteps = result.history.steps || [];
+    const backendSteps = result.history?.steps || [];
     const frontendSteps = this.steps || [];
     
     // Create map of backend steps
@@ -416,18 +416,26 @@ window.deploymentStatus = {
     }));
     
     // Save everything to localStorage
+    // Create history entry even if result.history doesn't exist
     const historyEntry = {
-      timestamp: result.history.timestamp || new Date().toISOString(),
-      endTime: result.history.endTime || new Date().toISOString(),
-      status: result.history.status || (result.success ? 'success' : 'failed'),
-      steps: mergedSteps, // Merged steps with all details
+      timestamp: result.history?.timestamp || this.liveEntry?.timestamp || new Date().toISOString(),
+      endTime: result.history?.endTime || this.liveEntry?.endTime || new Date().toISOString(),
+      status: result.history?.status || (result.success ? 'success' : 'failed'),
+      steps: mergedSteps.length > 0 ? mergedSteps : frontendSteps, // Use merged steps or frontend steps
       fullLogs: allLogs, // All logs
-      results: result.results || result.history.results || {},
-      error: result.error || result.history.error || null
+      results: result.results || result.history?.results || this.liveEntry?.results || {},
+      error: result.error || result.history?.error || null
     };
 
     try {
       this.historyList = this.appendHistoryEntryToCache(this.currentDeploymentId, historyEntry);
+      console.log('[deploymentStatus] Saved history entry:', {
+        deploymentId: this.currentDeploymentId,
+        timestamp: historyEntry.timestamp,
+        status: historyEntry.status,
+        stepsCount: historyEntry.steps.length,
+        logsCount: historyEntry.fullLogs.length
+      });
     } catch (error) {
       console.error('Failed to cache deployment history locally:', error);
     }
@@ -512,13 +520,64 @@ window.deploymentStatus = {
   },
 
   loadHistoryList() {
+    // First, try to load from localStorage cache
     const cacheEntries = this.loadHistoryEntries(this.currentDeploymentId);
     const deletedTimestamps = this.loadDeletedTimestamps(this.currentDeploymentId);
 
-    // Just filter out deleted entries - no sorting, no merging
-    return cacheEntries.filter(entry => 
-      entry.timestamp && !deletedTimestamps.includes(entry.timestamp)
-    );
+    // Also try to load from config database
+    let configEntries = [];
+    try {
+      const config = window.dashboard?.getCurrentConfig();
+      if (config && config.deployments) {
+        const deployment = config.deployments.find(d => d.id === this.currentDeploymentId);
+        if (deployment && deployment.history && Array.isArray(deployment.history)) {
+          // Convert config history format to cache format
+          configEntries = deployment.history.map(h => {
+            // Handle both database format (with history_data) and direct format
+            const historyData = h.history_data ? (typeof h.history_data === 'string' ? JSON.parse(h.history_data) : h.history_data) : {};
+            
+            return {
+              timestamp: h.timestamp || historyData.timestamp || h.id || new Date().toISOString(),
+              endTime: h.endTime || historyData.endTime || h.end_time,
+              status: h.status || historyData.status || 'unknown',
+              steps: h.steps || historyData.steps || [],
+              fullLogs: h.fullLogs || historyData.fullLogs || this.flattenStepLogs(h.steps || historyData.steps || []),
+              results: h.results || historyData.results || {
+                workerUrl: h.workerUrl || h.worker_url,
+                pagesUrl: h.pagesUrl || h.pages_url
+              },
+              error: h.error || h.error_message || historyData.error || null
+            };
+          });
+          console.log('[deploymentStatus] Loaded history from config:', configEntries.length, 'entries');
+        }
+      }
+    } catch (error) {
+      console.warn('[deploymentStatus] Failed to load history from config:', error);
+    }
+
+    // Merge cache and config entries, preferring cache (more recent)
+    // Create a map of timestamps to avoid duplicates
+    const entryMap = new Map();
+    
+    // Add config entries first (older)
+    configEntries.forEach(entry => {
+      if (entry.timestamp && !deletedTimestamps.includes(entry.timestamp)) {
+        entryMap.set(entry.timestamp, entry);
+      }
+    });
+    
+    // Add cache entries (newer, will overwrite if same timestamp)
+    cacheEntries.forEach(entry => {
+      if (entry.timestamp && !deletedTimestamps.includes(entry.timestamp)) {
+        entryMap.set(entry.timestamp, entry);
+      }
+    });
+
+    // Convert map to array and return
+    const allEntries = Array.from(entryMap.values());
+    console.log('[deploymentStatus] Total history entries loaded:', allEntries.length);
+    return allEntries;
   },
 
   // Removed separate render() - now using renderHistory() for everything
@@ -603,7 +662,7 @@ window.deploymentStatus = {
     }, 50);
   },
 
-  updateResult(result) {
+  async updateResult(result) {
     if (result.success) {
       this.steps.push({
         step: 'Hoàn tất',
@@ -635,6 +694,13 @@ window.deploymentStatus = {
     }
 
     this.saveHistoryEntry(result);
+    
+    // Reload config to get latest history from database
+    try {
+      await window.dashboard?.loadConfig();
+    } catch (error) {
+      console.warn('[deploymentStatus] Failed to reload config:', error);
+    }
     
     // Clear live entry and show saved history entry
     this.liveEntry = null;
