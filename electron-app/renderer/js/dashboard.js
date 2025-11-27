@@ -1,21 +1,37 @@
 // Main dashboard controller
 let currentConfig = null;
+let isDeploying = false;
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
-  setupEventListeners();
   await refreshAuthStatus();
+  setupEventListeners();
 });
 
 // Load configuration
 async function loadConfig() {
-  try {
-    currentConfig = await window.electronAPI.configRead();
-    updateCodebasePath();
-  } catch (error) {
-    console.error('Failed to load config:', error);
-    showError('Không thể tải cấu hình', error.message);
+  if (window.loading && window.loading.withLoading) {
+    return await window.loading.withLoading(async () => {
+      try {
+        currentConfig = await window.electronAPI.configRead();
+        updateCodebasePath();
+        window.deploymentList.render(currentConfig.deployments || []);
+      } catch (error) {
+        console.error('Failed to load config:', error);
+        showError('Không thể tải cấu hình', error.message);
+      }
+    }, 'Đang tải cấu hình...');
+  } else {
+    // Fallback if loading is not available
+    try {
+      currentConfig = await window.electronAPI.configRead();
+      updateCodebasePath();
+      window.deploymentList.render(currentConfig.deployments || []);
+    } catch (error) {
+      console.error('Failed to load config:', error);
+      showError('Không thể tải cấu hình', error.message);
+    }
   }
 }
 
@@ -42,83 +58,47 @@ function setupEventListeners() {
     });
   }
 
-  // Deploy from secrets.json button
-  const btnDeployFromSecrets = document.getElementById('btn-add-deployment');
-  if (btnDeployFromSecrets) {
-    btnDeployFromSecrets.addEventListener('click', async () => {
-      try {
-        // Check if codebase path is set
-        const codebasePath = currentConfig?.codebasePath;
-        if (!codebasePath) {
-          window.toast?.error('Please set a codebase path in the sidebar first');
-          return;
-        }
-
-        // Start deployment directly from secrets.json
-        window.toast?.info('🚀 Starting deployment from secrets.json...');
-
-        // Switch to deployment status view
-        const statusSection = document.getElementById('deployment-status-section');
-        const listSection = document.getElementById('deployment-section');
-
-        if (statusSection) statusSection.classList.remove('hidden');
-        if (listSection) listSection.classList.add('hidden');
-
-        const statusTitle = document.getElementById('status-header-title');
-        if (statusTitle) {
-          statusTitle.textContent = 'Deployment from secrets.json';
-        }
-
-        // Generate deployment ID
-        const deploymentId = `secrets-deployment-${Date.now()}`;
-
-        // Start deployment
-        const result = await window.electronAPI.deploymentStart(deploymentId);
-
-        if (result.success) {
-          window.toast?.success('✅ Deployment completed successfully!');
-        } else {
-          window.toast?.error(`❌ Deployment failed: ${result.error}`);
-        }
-
-      } catch (error) {
-        window.toast?.error(`❌ Error: ${error.message}`);
+  // Import deployment button (from list)
+  const btnImportDeploymentList = document.getElementById('btn-import-deployment-list');
+  if (btnImportDeploymentList) {
+    btnImportDeploymentList.addEventListener('click', () => {
+      if (window.deploymentForm && typeof window.deploymentForm.showImportDeploymentModal === 'function') {
+        window.deploymentForm.showImportDeploymentModal();
+      } else {
+        window.toast?.error('Deployment form not loaded. Please refresh the page.');
       }
     });
   }
 
-  // Setup auth buttons
-  const btnLoginCf = document.getElementById('btn-login-cf');
-  if (btnLoginCf) {
-    btnLoginCf.addEventListener('click', async () => {
-      try {
-        const result = await window.electronAPI.authLoginCloudflare();
-        if (result.success) {
-          window.toast?.success('Cloudflare authentication successful');
-          await refreshAuthStatus();
-        } else {
-          window.toast?.error(`Cloudflare authentication failed: ${result.error}`);
-        }
-      } catch (error) {
-        window.toast?.error(`Authentication error: ${error.message}`);
+  // Add deployment button
+  const btnAddDeployment = document.getElementById('btn-add-deployment');
+  if (btnAddDeployment) {
+    btnAddDeployment.addEventListener('click', () => {
+      // Wait a bit for scripts to load if needed
+      if (!window.deploymentForm) {
+        // Try waiting a bit more
+        setTimeout(() => {
+          if (window.deploymentForm && typeof window.deploymentForm.show === 'function') {
+            window.deploymentForm.show(null);
+          } else {
+            console.error('deploymentForm not available after wait');
+            window.toast?.error('Deployment form not loaded. Please refresh the page.');
+          }
+        }, 100);
+      } else if (typeof window.deploymentForm.show === 'function') {
+        window.deploymentForm.show(null);
+      } else {
+        console.error('deploymentForm.show is not a function');
+        window.toast?.error('Deployment form not properly initialized. Please refresh the page.');
       }
     });
   }
 
-  const btnLoginGcp = document.getElementById('btn-login-gcp');
-  if (btnLoginGcp) {
-    btnLoginGcp.addEventListener('click', async () => {
-      try {
-        const result = await window.electronAPI.authLoginGCP();
-        if (result.success) {
-          window.toast?.success('GCP authentication successful');
-          await refreshAuthStatus();
-        } else {
-          window.toast?.error(`GCP authentication failed: ${result.error}`);
-        }
-      } catch (error) {
-        window.toast?.error(`Authentication error: ${error.message}`);
-      }
+  // Setup guide button
+  const btnSetupGuide = document.getElementById('btn-setup-guide');
+  if (btnSetupGuide) {
+    btnSetupGuide.addEventListener('click', () => {
+      window.setupWizard.show();
     });
   }
 
@@ -148,11 +128,9 @@ function setupEventListeners() {
             RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
             RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
             GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
-            GOOGLE_GEMINI_API_KEY: deployment.GOOGLE_GEMINI_API_KEY || deployment.secrets?.GOOGLE_GEMINI_API_KEY,
-            GOOGLE_PROJECT_ID: deployment.GOOGLE_PROJECT_ID || deployment.secrets?.GOOGLE_PROJECT_ID,
-            GOOGLE_GEMINI_ENDPOINT: deployment.GOOGLE_GEMINI_ENDPOINT || deployment.secrets?.GOOGLE_GEMINI_ENDPOINT,
-            GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+            GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || deployment.secrets?.GOOGLE_VERTEX_PROJECT_ID,
+            GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || deployment.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
+            GOOGLE_VERTEX_API_KEY: deployment.GOOGLE_VERTEX_API_KEY || deployment.secrets?.GOOGLE_VERTEX_API_KEY,
             GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT
           };
         } else {
@@ -167,11 +145,9 @@ function setupEventListeners() {
             RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
             RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
             GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
-            GOOGLE_GEMINI_API_KEY: deployment.GOOGLE_GEMINI_API_KEY || deployment.secrets?.GOOGLE_GEMINI_API_KEY,
-            GOOGLE_PROJECT_ID: deployment.GOOGLE_PROJECT_ID || deployment.secrets?.GOOGLE_PROJECT_ID,
-            GOOGLE_GEMINI_ENDPOINT: deployment.GOOGLE_GEMINI_ENDPOINT || deployment.secrets?.GOOGLE_GEMINI_ENDPOINT,
-            GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+            GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || deployment.secrets?.GOOGLE_VERTEX_PROJECT_ID,
+            GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || deployment.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
+            GOOGLE_VERTEX_API_KEY: deployment.GOOGLE_VERTEX_API_KEY || deployment.secrets?.GOOGLE_VERTEX_API_KEY,
             GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT
           }));
         }
@@ -198,74 +174,28 @@ function setupEventListeners() {
 
 // Save configuration
 async function saveConfig() {
-  try {
-    await window.electronAPI.configWrite(currentConfig);
-  } catch (error) {
-    console.error('Failed to save config:', error);
-    showError('Không thể lưu cấu hình', error.message);
-  }
-}
-
-// Show error message
-function showError(title, message) {
-  const errorModal = document.getElementById('error-modal');
-  const errorTitle = document.getElementById('error-title');
-  const errorMessage = document.getElementById('error-message');
-
-  if (errorTitle) errorTitle.textContent = title;
-  if (errorMessage) errorMessage.textContent = message;
-  if (errorModal) errorModal.classList.remove('hidden');
-}
-
-// Refresh auth status
-async function refreshAuthStatus() {
-  try {
-    const cfAuth = await window.electronAPI.authCheckCloudflare();
-    const gcpAuth = await window.electronAPI.authCheckGCP();
-
-    updateAuthStatus('cf', cfAuth);
-    updateAuthStatus('gcp', gcpAuth);
-  } catch (error) {
-    console.error('Failed to refresh auth status:', error);
-  }
-}
-
-// Update auth status display
-function updateAuthStatus(provider, authData) {
-  const statusElement = document.getElementById(`${provider}-status`);
-  const loginButton = document.getElementById(`btn-login-${provider}`);
-
-  if (!statusElement) return;
-
-  if (authData.authenticated) {
-    statusElement.textContent = authData.email || 'Authenticated';
-    statusElement.className = 'status-indicator status-success';
-    if (loginButton) loginButton.style.display = 'none';
-  } else {
-    statusElement.textContent = 'Not authenticated';
-    statusElement.className = 'status-indicator status-error';
-    if (loginButton) loginButton.style.display = 'inline-block';
-  }
-}
-
-// Export functions for use by other modules
-window.dashboard = {
-  getCurrentConfig: () => currentConfig,
-  saveConfig,
-  refreshAuthStatus,
-  updateAuthStatus
-};
-
-// Save configuration
-async function saveConfig() {
-  try {
-    const result = await window.electronAPI.configWrite(currentConfig);
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to save config');
+  const saveFn = async () => {
+    try {
+      console.log('[saveConfig] Calling configWrite, deployments count:', currentConfig?.deployments?.length || 0);
+      const result = await window.electronAPI.configWrite(currentConfig);
+      console.log('[saveConfig] Result:', result);
+      if (!result || !result.success) {
+        const errorMsg = result?.error || 'Failed to save config';
+        console.error('[saveConfig] Save failed:', errorMsg);
+        throw new Error(errorMsg);
+      }
+      console.log('[saveConfig] Save successful');
+      return result;
+    } catch (error) {
+      console.error('[saveConfig] Exception:', error);
+      throw error;
     }
-  } catch (error) {
-    console.error('Failed to save config:', error);
-    throw error;
+  };
+  
+  if (window.loading && window.loading.withLoading) {
+    return await window.loading.withLoading(saveFn, 'Đang lưu cấu hình...');
+  } else {
+    return await saveFn();
   }
 }
 
@@ -549,37 +479,45 @@ function escapeHtml(text) {
 }
 
 async function importConfig(importedConfig) {
-  try {
-    // If imported config has deployments array, merge it
-    if (importedConfig.deployments && Array.isArray(importedConfig.deployments)) {
-      if (!currentConfig.deployments) {
-        currentConfig.deployments = [];
+  const importFn = async () => {
+    try {
+      // If imported config has deployments array, merge it
+      if (importedConfig.deployments && Array.isArray(importedConfig.deployments)) {
+        if (!currentConfig.deployments) {
+          currentConfig.deployments = [];
+        }
+        
+        // Merge deployments (avoid duplicates by ID)
+        importedConfig.deployments.forEach(imported => {
+          const existingIndex = currentConfig.deployments.findIndex(d => d.id === imported.id);
+          if (existingIndex >= 0) {
+            currentConfig.deployments[existingIndex] = imported;
+          } else {
+            currentConfig.deployments.push(imported);
+          }
+        });
       }
       
-      // Merge deployments (avoid duplicates by ID)
-      importedConfig.deployments.forEach(imported => {
-        const existingIndex = currentConfig.deployments.findIndex(d => d.id === imported.id);
-        if (existingIndex >= 0) {
-          currentConfig.deployments[existingIndex] = imported;
-        } else {
-          currentConfig.deployments.push(imported);
+      // Merge other config properties
+      Object.keys(importedConfig).forEach(key => {
+        if (key !== 'deployments') {
+          currentConfig[key] = importedConfig[key];
         }
       });
+      
+      await saveConfig();
+      await loadConfig();
+      hideImportConfigModal();
+      showSuccess('Đã nhập cấu hình thành công!');
+    } catch (error) {
+      showError('Không thể nhập cấu hình', error.message);
     }
-    
-    // Merge other config properties
-    Object.keys(importedConfig).forEach(key => {
-      if (key !== 'deployments') {
-        currentConfig[key] = importedConfig[key];
-      }
-    });
-    
-    await saveConfig();
-    await loadConfig();
-    hideImportConfigModal();
-    showSuccess('Đã nhập cấu hình thành công!');
-  } catch (error) {
-    showError('Không thể nhập cấu hình', error.message);
+  };
+  
+  if (window.loading && window.loading.withLoading) {
+    return await window.loading.withLoading(importFn, 'Đang nhập cấu hình...');
+  } else {
+    return await importFn();
   }
 }
 

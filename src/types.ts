@@ -3,15 +3,12 @@ export interface Env {
   RAPIDAPI_HOST: string;
   RAPIDAPI_ENDPOINT: string;
   GOOGLE_VISION_API_KEY: string;
-  GOOGLE_GEMINI_API_KEY: string;
-  GOOGLE_PROJECT_ID?: string;
-  GOOGLE_GEMINI_ENDPOINT?: string;
-  GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
-  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
+  GOOGLE_VERTEX_PROJECT_ID: string;
+  GOOGLE_VERTEX_LOCATION: string;
+  GOOGLE_VERTEX_API_KEY: string;
   GOOGLE_VISION_ENDPOINT: string;
   FACESWAP_IMAGES: R2Bucket;
   DB: D1Database;
-  GEMINI_REFERER?: string;
   NANO_BANANA_API_URL?: string;
   NANO_BANANA_API_KEY?: string;
   R2_ACCOUNT_ID?: string; // Optional: Cloudflare account ID for auto URL generation (e.g., 32 hex characters)
@@ -26,7 +23,7 @@ export interface FaceSwapRequest {
   target_url: string;
   source_url: string;
   selfie_id?: string;
-  mode?: 'rapidapi' | 'gemini'; // Optional: Face swap mode
+  mode?: 'rapidapi' | 'vertex'; // Optional: Face swap mode
 }
 
 export interface FaceSwapResponse {
@@ -90,7 +87,7 @@ export interface UploadUrlRequest {
   filename: string;
   type: 'preset' | 'selfie';
   presetName?: string; // Optional: Name for preset collection
-  enableGeminiPrompt?: boolean; // Optional: Generate Gemini prompt automatically
+  enableVertexPrompt?: boolean; // Optional: Generate Vertex AI prompt automatically
 }
 
 export interface UploadUrlResponse {

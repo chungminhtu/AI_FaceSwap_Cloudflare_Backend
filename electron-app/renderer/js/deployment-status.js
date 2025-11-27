@@ -30,8 +30,10 @@ window.deploymentStatus = {
     this.currentHistoryIndex = null; // null means show live entry
     
     const statusSection = document.getElementById('deployment-status-section');
+    const listSection = document.getElementById('deployment-list-section');
     
     if (statusSection) statusSection.classList.remove('hidden');
+    if (listSection) listSection.classList.add('hidden');
 
     this.renderHistory();
     this.setupListeners();
@@ -39,8 +41,10 @@ window.deploymentStatus = {
 
   hide() {
     const statusSection = document.getElementById('deployment-status-section');
+    const listSection = document.getElementById('deployment-list-section');
     
     if (statusSection) statusSection.classList.add('hidden');
+    if (listSection) listSection.classList.remove('hidden');
     
     this.currentDeploymentId = null;
     this.steps = [];
@@ -63,8 +67,10 @@ window.deploymentStatus = {
       this.currentHistoryIndex = this.historyList.length - 1;
     }
     const statusSection = document.getElementById('deployment-status-section');
+    const listSection = document.getElementById('deployment-list-section');
     
     if (statusSection) statusSection.classList.remove('hidden');
+    if (listSection) listSection.classList.add('hidden');
 
     this.renderHistory();
     this.setupListeners();
@@ -652,8 +658,8 @@ window.deploymentStatus = {
   },
 
   lookupDeploymentName(deploymentId) {
-    // Single deployment from secrets.json - no named deployments
-    return 'secrets.json';
+    const config = window.dashboard?.getCurrentConfig();
+    return config?.deployments?.find(d => d.id === deploymentId)?.name || null;
   },
 
   escapeHtml(text) {

@@ -88,8 +88,8 @@ window.errorDisplay = {
       document.getElementById('btn-retry-deployment').addEventListener('click', async () => {
         this.hide();
         // Get deployment ID from current error context if available
-        // User can retry by clicking the deploy button again
-        alert('Vui lòng thử lại bằng cách nhấn nút Deploy.');
+        // For now, user needs to manually retry from deployment list
+        alert('Vui lòng thử lại từ danh sách triển khai.');
       });
     }
   },

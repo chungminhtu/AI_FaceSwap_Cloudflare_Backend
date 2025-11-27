@@ -34,7 +34,7 @@ export const getUnsafeLevels = (strictness: 'strict' | 'lenient' = 'lenient'): s
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Gemini-Prompt, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, Authorization',
   'Access-Control-Allow-Credentials': 'true',
 };
 
@@ -121,109 +121,3 @@ export const base64UrlEncode = (str: string): string => {
 export const base64Decode = (str: string): string => {
   return atob(str);
 };
-
-// Generate JWT token for Google service account authentication
-export async function generateJWT(
-  serviceAccountEmail: string,
-  privateKey: string,
-  scope: string = 'https://www.googleapis.com/auth/cloud-platform'
-): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = {
-    alg: 'RS256',
-    typ: 'JWT',
-  };
-
-  const payload = {
-    iss: serviceAccountEmail,
-    sub: serviceAccountEmail,
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600, // 1 hour
-    iat: now,
-    scope: scope,
-  };
-
-  // Encode header and payload
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  const signatureInput = `${encodedHeader}.${encodedPayload}`;
-
-  // Import private key and sign
-  // Clean up the private key (remove newlines and headers)
-  const privateKeyPEM = privateKey.replace(/\\n/g, '\n').trim();
-  
-  // Extract the base64 key data
-  const keyData = privateKeyPEM
-    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-    .replace(/-----END PRIVATE KEY-----/g, '')
-    .replace(/\s/g, '');
-  
-  // Decode base64 to binary
-  const binaryString = atob(keyData);
-  const keyBuffer = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    keyBuffer[i] = binaryString.charCodeAt(i);
-  }
-  
-  // Import the key in PKCS8 format
-  let cryptoKey: CryptoKey;
-  try {
-    cryptoKey = await crypto.subtle.importKey(
-      'pkcs8',
-      keyBuffer,
-      {
-        name: 'RSASSA-PKCS1-v1_5',
-        hash: 'SHA-256',
-      },
-      false,
-      ['sign']
-    );
-  } catch (error) {
-    throw new Error(`Failed to import private key: ${error instanceof Error ? error.message : String(error)}. Make sure the private key is in PKCS8 format.`);
-  }
-
-  // Sign the signature input
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    new TextEncoder().encode(signatureInput)
-  );
-
-  // Encode signature to base64url
-  const signatureArray = new Uint8Array(signature);
-  const signatureBase64 = btoa(String.fromCharCode(...signatureArray));
-  const encodedSignature = signatureBase64
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-
-  return `${signatureInput}.${encodedSignature}`;
-}
-
-// Exchange JWT for OAuth access token
-export async function getAccessToken(
-  serviceAccountEmail: string,
-  privateKey: string,
-  scope: string = 'https://www.googleapis.com/auth/cloud-platform'
-): Promise<string> {
-  const jwt = await generateJWT(serviceAccountEmail, privateKey, scope);
-  
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to get access token: ${response.status} ${response.statusText} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  return data.access_token;
-}

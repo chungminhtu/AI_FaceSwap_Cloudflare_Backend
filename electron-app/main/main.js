@@ -4,6 +4,7 @@ const fs = require('fs');
 const ConfigManager = require('./config-manager');
 const AuthChecker = require('./auth-checker');
 const AccountSwitcher = require('./account-switcher');
+const CommandRunner = require('./command-runner');
 // Import unified deployment utilities
 const { deployFromConfig } = require('../../deploy.js');
 
@@ -91,6 +92,14 @@ ipcMain.handle('config:validate', async (event, config) => {
   return ConfigManager.validate(config);
 });
 
+ipcMain.handle('config:save-deployment', async (event, deployment) => {
+  return ConfigManager.saveDeployment(deployment);
+});
+
+ipcMain.handle('config:get-secrets-path', async () => {
+  return ConfigManager.getSecretsPath();
+});
+
 // Authentication
 ipcMain.handle('auth:check-cloudflare', async () => {
   return await AuthChecker.checkCloudflare();
@@ -146,7 +155,7 @@ ipcMain.handle('account:switch-cloudflare', async (event, accountConfig) => {
   return await AccountSwitcher.switchCloudflare(accountConfig);
 });
 
-// Deployment from secrets.json
+// Deployment
 ipcMain.handle('deployment:start', async (event, deploymentId) => {
   if (isDeploying) {
     return { success: false, error: 'Another deployment is already in progress' };
@@ -155,10 +164,17 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
   isDeploying = true;
   
   try {
+    const config = ConfigManager.read();
+    const deployment = config.deployments.find(d => d.id === deploymentId);
+    
+    if (!deployment) {
+      throw new Error('Deployment not found');
+    }
+
     // Set up progress reporting
     const reportProgress = (step, status, details, data) => {
       const progressData = {
-        deploymentId: deploymentId || 'secrets-deployment',
+        deploymentId,
         step,
         status,
         details
@@ -172,12 +188,95 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
       mainWindow.webContents.send('deployment:progress', progressData);
     };
 
+    // Handle account switching before deployment
+    try {
+      if (deployment.gcp) {
+        if (deployment.gcp.accountEmail) {
+          const accountSwitch = await AccountSwitcher.switchGCPAccount(deployment.gcp.accountEmail);
+          if (!accountSwitch.success) {
+            throw new Error(`Failed to switch GCP account: ${accountSwitch.error}`);
+          }
+        }
+
+        if (deployment.gcp.projectId) {
+          const projectSwitch = await AccountSwitcher.switchGCPProject(deployment.gcp.projectId);
+          if (!projectSwitch.success) {
+            reportProgress('verify-gcp', 'warning',
+              `GCP verification failed: ${projectSwitch.error}`);
+          } else {
+            reportProgress('verify-gcp', 'completed',
+              projectSwitch.message || `GCP project: ${projectSwitch.projectId}`);
+          }
+        }
+      }
+
+      if (deployment.cloudflare) {
+        const cfSwitch = await AccountSwitcher.switchCloudflare(deployment.cloudflare);
+        if (!cfSwitch.success && cfSwitch.needsLogin) {
+          throw new Error(`Cloudflare authentication required: ${cfSwitch.error}`);
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+
     // Get codebase path from config
-      const config = ConfigManager.read();
     const codebasePath = config.codebasePath || process.cwd();
 
-    // Load and deploy from secrets.json directly
-    const result = await deployFromConfig(null, reportProgress);
+    // Perform deployment using unified utilities
+    // Convert deployment to flat config format (same as secrets.json)
+    const deploymentConfig = {
+      workerName: deployment.workerName,
+      pagesProjectName: deployment.pagesProjectName,
+      databaseName: deployment.databaseName,
+      bucketName: deployment.bucketName,
+      RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY,
+      RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
+      RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
+      GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
+      GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || deployment.secrets?.GOOGLE_VERTEX_PROJECT_ID,
+      GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || deployment.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
+      GOOGLE_VERTEX_API_KEY: deployment.GOOGLE_VERTEX_API_KEY || deployment.secrets?.GOOGLE_VERTEX_API_KEY,
+      GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT
+    };
+
+    const result = await deployFromConfig(deploymentConfig, reportProgress, codebasePath);
+    
+    // Save deployment history to config
+     config = ConfigManager.read();
+    const deploymentRecord = config.deployments.find(d => d.id === deploymentId);
+      
+    if (deploymentRecord) {
+        // Initialize history array if not exists
+      if (!deploymentRecord.history) {
+        deploymentRecord.history = [];
+        }
+
+      // Create history entry
+      const historyEntry = {
+        id: `${deploymentId}-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        status: result.success ? 'success' : 'failed',
+        error: result.success ? undefined : result.error,
+        results: {
+          workerUrl: result.workerUrl,
+          pagesUrl: result.pagesUrl
+        }
+      };
+        
+        // Add new deployment history (keep last 50 deployments)
+      deploymentRecord.history.unshift(historyEntry);
+      if (deploymentRecord.history.length > 50) {
+        deploymentRecord.history = deploymentRecord.history.slice(0, 50);
+        }
+        
+        // Save updated config
+        ConfigManager.write(config);
+    }
     
     return result;
   } catch (error) {
@@ -204,6 +303,10 @@ ipcMain.handle('deployment:from-config', async (event, configObject, deploymentI
   isDeploying = true;
 
   try {
+    // Get codebase path from config
+    const config = ConfigManager.read();
+    const codebasePath = config.codebasePath || process.cwd();
+
     // Set up progress reporting
     const reportProgress = (step, status, details, data) => {
       const progressData = {
@@ -220,7 +323,7 @@ ipcMain.handle('deployment:from-config', async (event, configObject, deploymentI
       mainWindow.webContents.send('deployment:progress', progressData);
     };
 
-    const result = await deployFromConfig(configObject, reportProgress);
+    const result = await deployFromConfig(configObject, reportProgress, codebasePath);
 
     return {
       success: true,
@@ -303,7 +406,7 @@ ipcMain.handle('helper:get-cloudflare-info', async () => {
     const os = require('os');
     let accountId = null;
     
-    // Method 1: Try to get account ID from wrangler whoami output
+    // Method 1: Try to get account ID from wrangler whoami output (PRIORITY - most reliable)
     try {
       const whoamiOutput = execSync('wrangler whoami', {
         encoding: 'utf8',
@@ -311,13 +414,44 @@ ipcMain.handle('helper:get-cloudflare-info', async () => {
         timeout: 10000
       });
       
-      // Try to extract account ID from output
-      const accountIdMatch = whoamiOutput.match(/account ID:?\s*([a-f0-9]{32})/i);
-      if (accountIdMatch) {
-        accountId = accountIdMatch[1];
+      // Parse table format: │ Account Name │ Account ID │
+      // The Account ID is in the second column of the data row
+      const lines = whoamiOutput.split('\n');
+      for (const line of lines) {
+        // Look for table row with Account ID (contains │ and hex string)
+        if (line.includes('│') && /[a-f0-9]{32}/i.test(line)) {
+          // Split by │ and find the hex string (32 chars)
+          const parts = line.split('│').map(p => p.trim());
+          for (const part of parts) {
+            const idMatch = part.match(/([a-f0-9]{32})/i);
+            if (idMatch && idMatch[1].length === 32) {
+              accountId = idMatch[1];
+              break;
+            }
+          }
+          if (accountId) break;
+        }
+      }
+      
+      // Fallback: Try simple regex patterns
+      if (!accountId) {
+        // Pattern 1: "Account ID: 72474c350e3f55d96195536a5d39e00d"
+        const accountIdMatch1 = whoamiOutput.match(/account\s+id:?\s*([a-f0-9]{32})/i);
+        if (accountIdMatch1) {
+          accountId = accountIdMatch1[1];
+        }
+      }
+      
+      // Fallback: Pattern 2: Any 32-char hex string
+      if (!accountId) {
+        const hexMatches = whoamiOutput.match(/\b([a-f0-9]{32})\b/gi);
+        if (hexMatches && hexMatches.length > 0) {
+          // Use the last match (usually the Account ID)
+          accountId = hexMatches[hexMatches.length - 1];
+        }
       }
     } catch (error) {
-      // Ignore
+      console.log('[helper:get-cloudflare-info] wrangler whoami failed:', error.message);
     }
     
     // Method 2: Try to get from wrangler.jsonc or wrangler.toml in codebase
@@ -545,17 +679,88 @@ ipcMain.handle('helper:get-gcp-projects', async () => {
     const gcpCheck = await AuthChecker.checkGCP();
     
     if (!gcpCheck.authenticated) {
-      return { success: false, error: 'Not authenticated with GCP' };
+      return { 
+        success: false, 
+        error: 'Not authenticated with GCP. Please click "Đăng nhập GCP" to authenticate.',
+        needsLogin: true
+      };
     }
 
-    // Get list of projects
-    const projectsOutput = execSync('gcloud projects list --format="json"', {
+    // Try to use application-default credentials first (works in non-interactive mode)
+    // If that fails, fall back to regular auth
+    let projectsOutput;
+    let useApplicationDefault = false;
+
+    try {
+      // First try with application-default credentials (non-interactive)
+      projectsOutput = execSync('gcloud projects list --format="json"', {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 15000,
+        env: {
+          ...process.env,
+          // Try to use application-default credentials
+          CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: process.env.GOOGLE_APPLICATION_CREDENTIALS || ''
+        }
+      });
+    } catch (authError) {
+      // If auth error, check if it's a reauthentication issue
+      const errorMessage = authError.message || authError.stderr?.toString() || '';
+      
+      if (errorMessage.includes('reauthentication') || 
+          errorMessage.includes('auth tokens') ||
+          errorMessage.includes('cannot prompt during non-interactive')) {
+        
+        // Try to refresh tokens using application-default login
+        try {
+          // Check if application-default credentials exist
+          execSync('gcloud auth application-default print-access-token', {
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+            timeout: 5000
+          });
+          
+          // If we get here, application-default credentials work, retry with them
+          projectsOutput = execSync('gcloud projects list --format="json"', {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 15000
     });
+          useApplicationDefault = true;
+        } catch (appDefaultError) {
+          // Application-default credentials also failed
+          return {
+            success: false,
+            error: 'GCP authentication expired. Please run "gcloud auth login" or "gcloud auth application-default login" in your terminal, then refresh this page.',
+            needsLogin: true,
+            details: 'Reauthentication failed. Cannot prompt during non-interactive execution.'
+          };
+        }
+      } else {
+        // Other error
+        throw authError;
+      }
+    }
 
-    const projects = JSON.parse(projectsOutput);
+    // Parse projects
+    let projects;
+    try {
+      projects = JSON.parse(projectsOutput);
+    } catch (parseError) {
+      return {
+        success: false,
+        error: `Failed to parse GCP projects list: ${parseError.message}`,
+        details: projectsOutput?.substring(0, 200)
+      };
+    }
+
+    if (!Array.isArray(projects)) {
+      return {
+        success: false,
+        error: 'Invalid response from GCP projects list',
+        details: 'Expected array but got: ' + typeof projects
+      };
+    }
     
     return {
       success: true,
@@ -563,11 +768,56 @@ ipcMain.handle('helper:get-gcp-projects', async () => {
         projectId: p.projectId,
         name: p.name || p.projectId
       })),
-      currentAccount: gcpCheck.currentAccount
+      currentAccount: gcpCheck.currentAccount,
+      usedApplicationDefault: useApplicationDefault
     };
   } catch (error) {
-    return { success: false, error: error.message };
+    const errorMessage = error.message || String(error);
+    const errorDetails = error.stderr?.toString() || error.stdout?.toString() || '';
+    
+    // Check for specific authentication errors
+    if (errorMessage.includes('reauthentication') || 
+        errorMessage.includes('auth tokens') ||
+        errorMessage.includes('cannot prompt during non-interactive')) {
+      return {
+        success: false,
+        error: 'GCP authentication expired. Please run "gcloud auth login" or "gcloud auth application-default login" in your terminal.',
+        needsLogin: true,
+        details: 'Reauthentication failed. Cannot prompt during non-interactive execution.'
+      };
+    }
+    
+    return { 
+      success: false, 
+      error: errorMessage,
+      details: errorDetails.substring(0, 500)
+    };
   }
 });
 
+// Command Execution
+const commandRunner = new CommandRunner();
+
+ipcMain.handle('command:execute', async (event, command, cwd) => {
+  try {
+    const result = await commandRunner.execute(command, {
+      cwd: cwd || process.cwd(),
+      silent: false,
+      throwOnError: false,
+      timeout: 120000 // 2 minutes
+    });
+    
+    return {
+      success: result.success,
+      output: result.output || '',
+      error: result.error || null
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message || 'Command execution failed',
+      output: ''
+    };
+  }
+});
 

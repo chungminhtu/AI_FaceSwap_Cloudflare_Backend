@@ -2,7 +2,7 @@
 
 import type { Env, FaceSwapRequest, UploadUrlRequest } from './types';
 import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
-import { callFaceSwap, callNanoBanana, checkSafeSearch, generateGeminiPrompt } from './services';
+import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
 
 const DEFAULT_R2_BUCKET_NAME = 'faceswap-images';
@@ -95,7 +95,7 @@ export default {
           publicUrl,
           key,
           presetName: body.presetName, // Pass through preset name for frontend
-          enableGeminiPrompt: body.enableGeminiPrompt // Pass through Gemini prompt flag
+          enableVertexPrompt: body.enableVertexPrompt // Pass through Vertex AI prompt flag
         });
       } catch (error) {
         console.error('Upload URL generation error:', error);
@@ -103,10 +103,10 @@ export default {
       }
     }
 
-    // Handle Gemini prompt retrieval for presets
-    if (path.startsWith('/gemini/get-prompt/') && request.method === 'GET') {
+    // Handle Vertex AI prompt retrieval for presets
+    if (path.startsWith('/vertex/get-prompt/') && request.method === 'GET') {
       try {
-        const presetImageId = path.replace('/gemini/get-prompt/', '');
+        const presetImageId = path.replace('/vertex/get-prompt/', '');
 
         const result = await env.DB.prepare(
           'SELECT id, image_url, prompt_json FROM preset_images WHERE id = ?'
@@ -128,7 +128,7 @@ export default {
           }
         });
       } catch (error) {
-        console.error('[Gemini] Prompt retrieval error:', error);
+        console.error('[Vertex] Prompt retrieval error:', error);
         return errorResponse(`Prompt retrieval failed: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
@@ -212,8 +212,8 @@ export default {
         if (key.startsWith('preset/')) {
           console.log('Processing preset upload:', key);
           let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
-          const enableGeminiPrompt = request.headers.get('X-Enable-Gemini-Prompt') === 'true';
-          console.log('Raw preset name:', presetName, 'Enable Gemini Prompt:', enableGeminiPrompt);
+          const enableVertexPrompt = request.headers.get('X-Enable-Vertex-Prompt') === 'true';
+          console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt);
 
           // Decode base64 if encoded
           const isEncoded = request.headers.get('X-Preset-Name-Encoded') === 'base64';
@@ -230,8 +230,8 @@ export default {
           let imageId: string | undefined;
           let promptJson: string | null = null;
           
-          // Track Gemini API call details for response (declared outside try block for access in return)
-          let geminiCallInfo: { 
+          // Track Vertex AI API call details for response (declared outside try block for access in return)
+          let vertexCallInfo: { 
             success: boolean; 
             error?: string; 
             promptKeys?: string[];
@@ -268,56 +268,56 @@ export default {
               console.log(`Using existing collection: ${collectionId}`);
             }
 
-            // ALWAYS generate Gemini prompt automatically for preset images
-            // This sends the exact prompt to Gemini API with the preset image
-            console.log('[Gemini] ALWAYS generating prompt for uploaded preset image:', publicUrl);
-            console.log('[Gemini] Calling Gemini API with exact prompt text and preset image');
+            // ALWAYS generate Vertex AI prompt automatically for preset images
+            // This sends the exact prompt to Vertex AI API with the preset image
+            console.log('[Vertex] ALWAYS generating prompt for uploaded preset image:', publicUrl);
+            console.log('[Vertex] Calling Vertex AI API with exact prompt text and preset image');
             
             try {
-              const promptResult = await generateGeminiPrompt(publicUrl, env);
+              const promptResult = await generateVertexPrompt(publicUrl, env);
               if (promptResult.success && promptResult.prompt) {
                 promptJson = JSON.stringify(promptResult.prompt);
                 const promptKeys = Object.keys(promptResult.prompt);
-                geminiCallInfo = { 
+                vertexCallInfo = { 
                   success: true, 
                   promptKeys,
                   debug: promptResult.debug 
                 };
-                console.log('[Gemini] ✅ Generated prompt successfully, length:', promptJson.length);
-                console.log('[Gemini] Prompt keys:', promptKeys);
-                console.log('[Gemini] ✅ Will store prompt_json in database');
+                console.log('[Vertex] ✅ Generated prompt successfully, length:', promptJson.length);
+                console.log('[Vertex] Prompt keys:', promptKeys);
+                console.log('[Vertex] ✅ Will store prompt_json in database');
                 if (promptResult.debug) {
-                  console.log('[Gemini] Debug info:', JSON.stringify(promptResult.debug));
+                  console.log('[Vertex] Debug info:', JSON.stringify(promptResult.debug));
                 }
               } else {
-                geminiCallInfo = { 
+                vertexCallInfo = { 
                   success: false, 
                   error: promptResult.error || 'Unknown error',
                   debug: promptResult.debug 
                 };
-                console.error('[Gemini] ❌ Failed to generate prompt:', promptResult.error);
-                console.error('[Gemini] Error details:', promptResult.error);
+                console.error('[Vertex] ❌ Failed to generate prompt:', promptResult.error);
+                console.error('[Vertex] Error details:', promptResult.error);
                 if (promptResult.debug) {
-                  console.error('[Gemini] Debug info:', JSON.stringify(promptResult.debug));
+                  console.error('[Vertex] Debug info:', JSON.stringify(promptResult.debug));
                 }
-                console.error('[Gemini] ⚠️ Image will be saved without prompt_json. Please check your GOOGLE_GEMINI_API_KEY and ensure Gemini API is enabled.');
+                console.error('[Vertex] ⚠️ Image will be saved without prompt_json. Please check your GOOGLE_VERTEX_API_KEY and ensure Vertex AI API is enabled.');
                 // Continue without prompt - image will still be saved
               }
-            } catch (geminiError) {
-              const errorMsg = geminiError instanceof Error ? geminiError.message : String(geminiError);
-              const errorStack = geminiError instanceof Error ? geminiError.stack : undefined;
+            } catch (vertexError) {
+              const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
+              const errorStack = vertexError instanceof Error ? vertexError.stack : undefined;
               geminiCallInfo = { 
                 success: false, 
                 error: errorMsg,
                 debug: {
                   errorDetails: errorMsg,
-                  rawError: errorStack || String(geminiError)
+                  rawError: errorStack || String(vertexError)
                 }
               };
-              console.error('[Gemini] ❌ Exception during prompt generation:', geminiError);
-              console.error('[Gemini] Error type:', geminiError instanceof Error ? geminiError.constructor.name : typeof geminiError);
-              console.error('[Gemini] Stack trace:', errorStack || 'No stack trace');
-              console.error('[Gemini] ⚠️ Image will be saved without prompt_json due to exception.');
+              console.error('[Vertex] ❌ Exception during prompt generation:', vertexError);
+              console.error('[Vertex] Error type:', vertexError instanceof Error ? vertexError.constructor.name : typeof vertexError);
+              console.error('[Vertex] Stack trace:', errorStack || 'No stack trace');
+              console.error('[Vertex] ⚠️ Image will be saved without prompt_json due to exception.');
               // Continue without prompt - image will still be saved
             }
 
@@ -411,7 +411,7 @@ export default {
             filename: key.replace('preset/', ''),
             hasPrompt: !!promptJson,
             prompt_json: promptJsonObject,
-            gemini_info: geminiCallInfo  // Include Gemini API call details for frontend logging
+            vertex_info: vertexCallInfo  // Include Vertex AI API call details for frontend logging
           });
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);
@@ -897,18 +897,21 @@ export default {
       }
     }
 
-    // Test Gemini API connectivity
-    if (path === '/test-gemini' && request.method === 'GET') {
+    // Test Vertex AI API connectivity
+    if (path === '/test-vertex' && request.method === 'GET') {
       try {
-        if (!env.GOOGLE_GEMINI_API_KEY) {
-          return errorResponse('Gemini API key not configured', 500);
+        if (!env.GOOGLE_VERTEX_API_KEY || !env.GOOGLE_VERTEX_PROJECT_ID) {
+          return errorResponse('Vertex AI credentials not configured', 500);
         }
 
-        console.log('[Test-Gemini] Testing Gemini API connectivity...');
+        const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+        const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+        console.log('[Test-Vertex] Testing Vertex AI API connectivity...');
 
-        const listResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+        const testEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/models`;
+        const listResponse = await fetch(testEndpoint, {
           headers: {
-            'x-goog-api-key': env.GOOGLE_GEMINI_API_KEY
+            'Authorization': `Bearer ${env.GOOGLE_VERTEX_API_KEY}`
           }
         });
 
@@ -925,11 +928,11 @@ export default {
           }
         }
 
-        console.log('[Test-Gemini] Response status:', listResponse.status);
-        console.log('[Test-Gemini] Response body:', rawBody.substring(0, 200));
+        console.log('[Test-Vertex] Response status:', listResponse.status);
+        console.log('[Test-Vertex] Response body:', rawBody.substring(0, 200));
 
         return jsonResponse({
-          message: listResponse.ok ? 'Gemini API reachable' : 'Gemini API returned an error',
+          message: listResponse.ok ? 'Vertex AI API reachable' : 'Vertex AI API returned an error',
           hasApiKey: true,
           status: listResponse.status,
           ok: listResponse.ok,
@@ -937,7 +940,7 @@ export default {
           error: listResponse.ok ? null : rawBody.substring(0, 500)
         });
       } catch (error) {
-        return errorResponse(`Gemini test failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+        return errorResponse(`Vertex AI test failed: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
 
@@ -952,9 +955,9 @@ export default {
           api_provider?: string;
         } = await request.json();
 
-        const resolvedMode: 'rapidapi' | 'gemini' =
-          body.mode === 'gemini' || body.api_provider === 'google-nano-banana'
-            ? 'gemini'
+        const resolvedMode: 'rapidapi' | 'vertex' =
+          body.mode === 'vertex' || body.api_provider === 'google-nano-banana'
+            ? 'vertex'
             : 'rapidapi';
 
         const envError = validateEnv(env, resolvedMode);
@@ -965,28 +968,28 @@ export default {
 
         let faceSwapResult;
 
-        // Check if using Gemini mode (Gemini-generated prompts)
-        if (resolvedMode === 'gemini' && body.preset_image_id) {
-          console.log('[Gemini] Using Gemini-generated prompt for preset:', body.preset_image_id);
+        // Check if using Vertex AI mode (Vertex AI-generated prompts)
+        if (resolvedMode === 'vertex' && body.preset_image_id) {
+          console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
-          // Get the stored Gemini-generated prompt JSON from database
+          // Get the stored Vertex AI-generated prompt JSON from database
           const promptResult = await env.DB.prepare(
             'SELECT prompt_json FROM preset_images WHERE id = ?'
           ).bind(body.preset_image_id).first();
 
           if (!promptResult || !(promptResult as any).prompt_json) {
-            console.error('[Gemini] No prompt_json found in database for preset:', body.preset_image_id);
-            return errorResponse('No Gemini-generated prompt found for this preset image. Please re-upload the preset image to automatically generate the prompt using Gemini API. If you continue to see this error, check that your Google Gemini API key is enabled for your region.', 400);
+            console.error('[Vertex] No prompt_json found in database for preset:', body.preset_image_id);
+            return errorResponse('No Vertex AI-generated prompt found for this preset image. Please re-upload the preset image to automatically generate the prompt using Vertex AI API. If you continue to see this error, check that your Google Vertex AI credentials are configured correctly.', 400);
           }
 
           const promptData = JSON.parse((promptResult as any).prompt_json);
 
-          // Call Nano Banana provider using the stored Gemini prompt
-          console.log('[Gemini] Dispatching prompt to Nano Banana provider');
+          // Call Nano Banana provider using the stored Vertex AI prompt
+          console.log('[Vertex] Dispatching prompt to Nano Banana provider');
           const nanoResult = await callNanoBanana(promptData, body.target_url, body.source_url, env);
 
           if (!nanoResult.Success || !nanoResult.ResultImageUrl) {
-            console.error('[Gemini] Nano Banana provider failed:', nanoResult);
+            console.error('[Vertex] Nano Banana provider failed:', nanoResult);
             return jsonResponse({
               Success: false,
               Message: nanoResult.Message || 'Nano Banana provider failed to generate image',

@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   configRead: () => ipcRenderer.invoke('config:read'),
   configWrite: (config) => ipcRenderer.invoke('config:write', config),
   configValidate: (config) => ipcRenderer.invoke('config:validate', config),
+  configSaveDeployment: (deployment) => ipcRenderer.invoke('config:save-deployment', deployment),
+  configGetSecretsPath: () => ipcRenderer.invoke('config:get-secrets-path'),
 
   // Authentication
   authCheckCloudflare: () => ipcRenderer.invoke('auth:check-cloudflare'),
@@ -36,6 +38,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dialogSelectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
   dialogSaveConfig: (configJson) => ipcRenderer.invoke('dialog:save-config', configJson),
   dialogLoadConfig: () => ipcRenderer.invoke('dialog:load-config'),
+
+  // Command execution
+  executeCommand: (command, cwd) => ipcRenderer.invoke('command:execute', command, cwd),
 
   // Helper functions
   helperGetCloudflareInfo: () => ipcRenderer.invoke('helper:get-cloudflare-info'),

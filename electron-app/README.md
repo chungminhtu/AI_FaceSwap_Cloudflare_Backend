@@ -1,15 +1,17 @@
 # Electron Deployment Manager
 
-Desktop application for deploying Cloudflare Worker from secrets.json - identical to running `node deploy.js`.
+Desktop application for managing multiple Cloudflare Worker deployments to different GCP projects and Cloudflare accounts.
 
 ## Features
 
-- ✅ Deploy directly from `secrets.json` (same as CLI)
+- ✅ Manage multiple deployment configurations in one place
 - ✅ Vietnamese UI with English technical terms
-- ✅ Automatic Cloudflare and GCP authentication
-- ✅ Real-time deployment progress tracking
+- ✅ Automatic account/project switching
+- ✅ Setup wizards for billing, Vision API, and Cloudflare
 - ✅ Comprehensive error handling and display
-- ✅ SQLite database for persistent configuration
+- ✅ Automatic retry for network failures
+- ✅ Real-time deployment progress tracking
+- ✅ Configuration import/export
 
 ## Installation
 
@@ -57,26 +59,44 @@ Built applications will be in the `dist/` directory.
 
 ### First Time Setup
 
-1. **Set Codebase Path**: Click "Chọn..." next to the codebase path field and select your Cloudflare Worker codebase directory (must contain `secrets.json`).
+1. **Set Codebase Path**: Click "Chọn..." next to the codebase path field and select your Cloudflare Worker codebase directory.
 
 2. **Authenticate**:
    - Click "Đăng nhập Cloudflare" to authenticate with Cloudflare
    - Click "Đăng nhập GCP" to authenticate with Google Cloud
 
-3. **Deploy**:
-   - Click "🚀 Deploy from secrets.json"
-   - The app will read your `secrets.json` and deploy using the exact same logic as `node deploy.js`
+3. **Add Deployment**:
+   - Click "+ Thêm Triển khai"
+   - Fill in all required fields:
+     - Deployment name and ID
+     - GCP Project ID and account email
+     - Cloudflare account information
+     - All required secrets (RAPIDAPI_KEY, etc.)
+   - Click "Lưu"
+
+4. **Deploy**:
+   - Click "Triển khai" on any deployment card
    - Monitor progress in the deployment status view
    - Review any errors if deployment fails
 
-## Configuration
+### Setup Guides
 
-The application stores configuration in SQLite database:
-- **macOS**: `~/Library/Application Support/electron-deployment-app/config.sqlite`
-- **Windows**: `%APPDATA%/electron-deployment-app/config.sqlite`
-- **Linux**: `~/.config/electron-deployment-app/config.sqlite`
+Click "Hướng dẫn Thiết lập" to access interactive guides for:
+- **Billing Setup**: How to enable billing on Google Cloud
+- **Vision API Setup**: Step-by-step Vision API configuration
+- **Cloudflare Setup**: Cloudflare account and resources setup
 
-**Deployment uses `secrets.json` from your codebase directory** - same file used by `node deploy.js`.
+### Configuration Management
+
+- **Export Config**: Save your deployment configurations to a JSON file
+- **Import Config**: Load deployment configurations from a JSON file
+
+## Configuration File
+
+The application stores all configurations in:
+- **macOS**: `~/Library/Application Support/electron-deployment-app/deployments-config.json`
+- **Windows**: `%APPDATA%/electron-deployment-app/deployments-config.json`
+- **Linux**: `~/.config/electron-deployment-app/deployments-config.json`
 
 ## Requirements
 
@@ -113,8 +133,8 @@ The app automatically retries network failures up to 3 times with exponential ba
 - **Framework**: Electron
 - **UI**: Vanilla HTML/CSS/JavaScript
 - **IPC**: Electron IPC for main/renderer communication
-- **Config Storage**: SQLite database
-- **Deployment**: Direct integration with `deploy.js` module (same logic as CLI)
+- **Config Storage**: JSON file in user data directory
+- **CLI Integration**: Uses child_process to execute wrangler and gcloud commands
 
 ## License
 

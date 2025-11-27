@@ -94,11 +94,9 @@ function loadSecretsConfig() {
         RAPIDAPI_HOST: 'ai-face-swap2.p.rapidapi.com',
         RAPIDAPI_ENDPOINT: 'https://ai-face-swap2.p.rapidapi.com/public/process/urls',
         GOOGLE_VISION_API_KEY: 'your_vision_key',
-        GOOGLE_GEMINI_API_KEY: 'your_gemini_key',
-        GOOGLE_PROJECT_ID: 'your_project_id',
-        GOOGLE_GEMINI_ENDPOINT: 'https://generativelanguage.googleapis.com/v1beta',
-        GOOGLE_SERVICE_ACCOUNT_EMAIL: 'your-service-account@project.iam.gserviceaccount.com',
-        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----',
+        GOOGLE_VERTEX_PROJECT_ID: 'your-gcp-project-id',
+        GOOGLE_VERTEX_LOCATION: 'us-central1',
+        GOOGLE_VERTEX_API_KEY: 'your-vertex-api-key',
         GOOGLE_VISION_ENDPOINT: 'https://vision.googleapis.com/v1/images:annotate'
       }, null, 2));
       process.exit(1);
@@ -118,21 +116,12 @@ function parseConfigObject(config) {
   const requiredFields = [
     'workerName', 'pagesProjectName', 'databaseName', 'bucketName',
     'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
-    'GOOGLE_VISION_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'GOOGLE_VISION_ENDPOINT'
+    'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VERTEX_API_KEY', 'GOOGLE_VISION_ENDPOINT'
   ];
 
   const missingFields = requiredFields.filter(field => !config[field]);
   if (missingFields.length > 0) {
     throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
-  }
-
-  // Validate Vertex AI fields if using Vertex AI endpoint
-  // Note: If missing, auto-setup will handle it during deployment
-  if (config.GOOGLE_GEMINI_ENDPOINT && config.GOOGLE_GEMINI_ENDPOINT.includes('aiplatform')) {
-    if (!config.GOOGLE_PROJECT_ID) {
-      throw new Error('GOOGLE_PROJECT_ID is required when using Vertex AI endpoint');
-    }
-    // Service account credentials will be auto-generated if missing
   }
 
   return {
@@ -145,20 +134,23 @@ function parseConfigObject(config) {
       RAPIDAPI_HOST: config.RAPIDAPI_HOST,
       RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
       GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
-      GOOGLE_GEMINI_API_KEY: config.GOOGLE_GEMINI_API_KEY,
-      GOOGLE_PROJECT_ID: config.GOOGLE_PROJECT_ID,
-      GOOGLE_GEMINI_ENDPOINT: config.GOOGLE_GEMINI_ENDPOINT,
-      GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+      GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
+      GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
+      GOOGLE_VERTEX_API_KEY: config.GOOGLE_VERTEX_API_KEY,
       GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT
     }
   };
 }
 
 // Deploy from configuration object (used by Electron)
-async function deployFromConfig(configObject, reportProgress = null) {
+async function deployFromConfig(configObject, reportProgress = null, codebasePath = null) {
   try {
     const deploymentConfig = parseConfigObject(configObject);
+    
+    // Add codebasePath if provided
+    if (codebasePath) {
+      deploymentConfig.codebasePath = codebasePath;
+    }
 
     if (reportProgress) {
       reportProgress('start', 'running', 'Starting deployment...');
@@ -206,38 +198,16 @@ SECRETS.JSON FORMAT:
     "RAPIDAPI_HOST": "ai-face-swap2.p.rapidapi.com",
     "RAPIDAPI_ENDPOINT": "https://ai-face-swap2.p.rapidapi.com/public/process/urls",
     "GOOGLE_VISION_API_KEY": "your_google_vision_key_here",
-    "GOOGLE_GEMINI_API_KEY": "your_google_gemini_key_here",
-    "GOOGLE_PROJECT_ID": "your_google_project_id (required for Vertex AI, auto-setup available)",
-    "GOOGLE_GEMINI_ENDPOINT": "https://generativelanguage.googleapis.com/v1beta",
-    "GOOGLE_SERVICE_ACCOUNT_EMAIL": "auto-generated if missing (for Vertex AI)",
-    "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY": "auto-generated if missing (for Vertex AI)",
+    "GOOGLE_VERTEX_PROJECT_ID": "your-gcp-project-id",
+    "GOOGLE_VERTEX_LOCATION": "us-central1",
+    "GOOGLE_VERTEX_API_KEY": "your-vertex-api-key",
     "GOOGLE_VISION_ENDPOINT": "https://vision.googleapis.com/v1/images:annotate"
   }
 
 REQUIRED FIELDS:
   • workerName, pagesProjectName, databaseName, bucketName
   • RAPIDAPI_KEY, RAPIDAPI_HOST, RAPIDAPI_ENDPOINT
-  • GOOGLE_VISION_API_KEY, GOOGLE_GEMINI_API_KEY, GOOGLE_VISION_ENDPOINT
-  • GOOGLE_PROJECT_ID (required only for Vertex AI endpoint)
-  • GOOGLE_GEMINI_ENDPOINT (optional, defaults to regular Gemini API)
-  
-AUTO-SETUP:
-  • If using Vertex AI endpoint (aiplatform.googleapis.com), service account credentials
-    will be automatically created and configured during deployment
-  • Requires: gcloud CLI installed and authenticated
-  • Service account name: cloudflare-worker-gemini
-  • Credentials are automatically saved to secrets.json
-
-HOW TO GET GOOGLE_PROJECT_ID:
-  • Option 1: Create via web console: https://console.cloud.google.com/projectcreate
-  • Option 2: Create via CLI: gcloud projects create YOUR_PROJECT_ID
-  • Option 3: Use existing project - copy Project ID from Google Cloud Console
-  • The deployment script will verify your project exists and list available projects if not found
-
-IMPORTANT:
-  • GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY is AUTO-GENERATED - you don't need to get it manually!
-  • Just set GOOGLE_PROJECT_ID and run deployment - everything else is automatic
-  • See GOOGLE_PROJECT_SETUP.md for detailed instructions
+  • GOOGLE_VISION_API_KEY, GOOGLE_VERTEX_PROJECT_ID, GOOGLE_VERTEX_LOCATION, GOOGLE_VERTEX_API_KEY, GOOGLE_VISION_ENDPOINT
 
 EXAMPLES:
   # Deploy using secrets.json (only way)
@@ -253,458 +223,104 @@ All project names should be unique per Cloudflare account to avoid conflicts.
 // Deployment functions that can be used by both CLI and Electron
 const deploymentUtils = {
   checkWrangler() {
-    try {
-      execSync('wrangler --version', { stdio: 'ignore' });
-      return true;
-    } catch {
-      return false;
-    }
+  try {
+    execSync('wrangler --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
   },
 
   checkGcloud() {
-    try {
-      execSync('gcloud --version', { stdio: 'ignore' });
-      return true;
-    } catch {
-      return false;
-    }
+  try {
+    execSync('gcloud --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
   },
 
   checkGcpAuth() {
-    try {
-      const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
-      return authList && authList.trim().length > 0;
-    } catch {
-      return false;
-    }
+  try {
+    const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
+    return authList && authList.trim().length > 0;
+  } catch {
+    return false;
+  }
   },
 
-  async fixGcpAuth(projectId = null) {
-    try {
-      log.info('Checking GCP authentication status...');
+  async fixGcpAuth() {
+  try {
+    log.info('Checking GCP authentication status...');
 
-      // Check if authenticated accounts exist
-      const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
-      if (!authList || authList.trim().length === 0) {
-        log.warn('No GCP accounts authenticated. Starting login process...');
-        execCommand('gcloud auth login', { stdio: 'inherit' });
-        log.success('GCP login completed');
-      } else {
-        log.success('GCP accounts found');
-      }
-
-      // Check active account
-      const activeAccount = execCommand('gcloud auth list --filter=status:ACTIVE --format="value(account)"', { silent: true, throwOnError: false });
-      if (!activeAccount || activeAccount.trim().length === 0) {
-        log.info('Setting active account...');
-        const accounts = authList.trim().split('\n').filter(Boolean);
-        if (accounts.length > 0) {
-          execCommand(`gcloud config set account ${accounts[0]}`, { stdio: 'inherit' });
-          log.success(`Active account set to: ${accounts[0]}`);
-        }
-      }
-
-      // Set project if provided
-      if (projectId) {
-        const currentProject = execCommand('gcloud config get-value project', { silent: true, throwOnError: false });
-        if (!currentProject || currentProject.trim() !== projectId) {
-          log.info(`Setting GCP project to ${projectId}...`);
-          execCommand(`gcloud config set project ${projectId}`, { stdio: 'inherit' });
-          log.success(`GCP project set to ${projectId}`);
-        } else {
-          log.success(`GCP project already set to ${projectId}`);
-        }
-      }
-
-      // Check if application default credentials are needed
-      try {
-        execCommand('gcloud auth application-default print-access-token', { silent: true, throwOnError: false });
-        log.success('Application default credentials available');
-      } catch {
-        log.info('Application default credentials not configured (optional)');
-        log.info('Run "gcloud auth application-default login" if you need advanced GCP features');
-      }
-
-      return true;
-    } catch (error) {
-      log.error(`GCP authentication fix failed: ${error.message}`);
-      log.warn('GCP authentication may need manual intervention');
-      return false;
+    // Check if authenticated accounts exist
+    const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
+    if (!authList || authList.trim().length === 0) {
+      log.warn('No GCP accounts authenticated. Starting login process...');
+      execCommand('gcloud auth login', { stdio: 'inherit' });
+      log.success('GCP login completed');
+    } else {
+      log.success('GCP accounts found');
     }
+
+    // Check active account
+    const activeAccount = execCommand('gcloud auth list --filter=status:ACTIVE --format="value(account)"', { silent: true, throwOnError: false });
+    if (!activeAccount || activeAccount.trim().length === 0) {
+      log.info('Setting active account...');
+      const accounts = authList.trim().split('\n').filter(Boolean);
+      if (accounts.length > 0) {
+        execCommand(`gcloud config set account ${accounts[0]}`, { stdio: 'inherit' });
+        log.success(`Active account set to: ${accounts[0]}`);
+      }
+    }
+
+    // Check current project
+    const currentProject = execCommand('gcloud config get-value project', { silent: true, throwOnError: false });
+    if (!currentProject || currentProject.trim() !== 'ai-photo-office') {
+      log.info('Setting GCP project to ai-photo-office...');
+      execCommand('gcloud config set project ai-photo-office', { stdio: 'inherit' });
+      log.success('GCP project set to ai-photo-office');
+    } else {
+      log.success('GCP project already set to ai-photo-office');
+    }
+
+    // Check if application default credentials are needed
+    try {
+      execCommand('gcloud auth application-default print-access-token', { silent: true, throwOnError: false });
+      log.success('Application default credentials available');
+    } catch {
+      log.info('Application default credentials not configured (optional)');
+      log.info('Run "gcloud auth application-default login" if you need advanced GCP features');
+    }
+
+    return true;
+  } catch (error) {
+    log.error(`GCP authentication fix failed: ${error.message}`);
+    log.warn('GCP authentication may need manual intervention');
+    return false;
+  }
   },
 
   checkAuth() {
-    try {
-      execCommand('wrangler whoami', { silent: true, throwOnError: false });
-      return true;
-    } catch {
-      return false;
-    }
+  try {
+    execCommand('wrangler whoami', { silent: true, throwOnError: false });
+    return true;
+  } catch {
+    return false;
+  }
   },
 
   getSecrets() {
-    try {
-      const output = execCommand('wrangler secret list', { silent: true, throwOnError: false });
-      if (!output) return [];
-      return output.split('\n')
-        .filter(line => line.trim() && !line.includes('Secret') && !line.includes('---'))
-        .map(line => line.split(/\s+/)[0])
-        .filter(Boolean);
-    } catch {
-      return [];
-    }
-  },
-
-  // Check if Google Cloud project exists
-  async checkGoogleCloudProject(projectId, reportProgress = null) {
-    try {
-      if (reportProgress) {
-        reportProgress('check-project', 'running', `Checking Google Cloud project: ${projectId}...`);
-      } else {
-        log.info(`Checking Google Cloud project: ${projectId}...`);
-      }
-
-      const result = execCommand(
-        `gcloud projects describe ${projectId} --format="value(projectId)"`,
-        { silent: true, throwOnError: false }
-      );
-
-      if (result && result.trim() === projectId) {
-        if (reportProgress) {
-          reportProgress('check-project', 'completed', `Project ${projectId} exists`);
-        } else {
-          log.success(`Project ${projectId} exists`);
-        }
-        return true;
-      } else {
-        if (reportProgress) {
-          reportProgress('check-project', 'error', `Project ${projectId} not found`);
-        } else {
-          log.error(`Project ${projectId} not found`);
-        }
-        return false;
-      }
-    } catch (error) {
-      if (reportProgress) {
-        reportProgress('check-project', 'error', `Failed to check project: ${error.message}`);
-      } else {
-        log.error(`Failed to check project: ${error.message}`);
-      }
-      return false;
-    }
-  },
-
-  // List available Google Cloud projects
-  listGoogleCloudProjects() {
-    try {
-      const result = execCommand(
-        'gcloud projects list --format="value(projectId)"',
-        { silent: true, throwOnError: false }
-      );
-      
-      if (result && result.trim()) {
-        return result.trim().split('\n').filter(Boolean);
-      }
-      return [];
-    } catch (error) {
-      log.warn(`Failed to list projects: ${error.message}`);
-      return [];
-    }
-  },
-
-  // Enable required Google Cloud APIs
-  async enableGoogleCloudAPIs(projectId, reportProgress = null) {
-    const REQUIRED_APIS = [
-      'aiplatform.googleapis.com', // Vertex AI API
-      'cloudresourcemanager.googleapis.com' // For IAM operations
-    ];
-
-    try {
-      if (reportProgress) {
-        reportProgress('enable-apis', 'running', 'Enabling required Google Cloud APIs...');
-      } else {
-        log.info('Enabling required Google Cloud APIs...');
-      }
-
-      for (const api of REQUIRED_APIS) {
-        try {
-          // Check if API is already enabled
-          const checkResult = execCommand(
-            `gcloud services list --enabled --filter="name:${api}" --project=${projectId} --format="value(name)"`,
-            { silent: true, throwOnError: false }
-          );
-
-          if (checkResult && checkResult.trim().includes(api)) {
-            if (reportProgress) {
-              reportProgress('enable-apis', 'completed', `${api} already enabled`);
-            } else {
-              log.success(`${api} already enabled`);
-            }
-            continue;
-          }
-
-          // Enable the API
-          execCommand(
-            `gcloud services enable ${api} --project=${projectId}`,
-            { stdio: 'inherit' }
-          );
-
-          if (reportProgress) {
-            reportProgress('enable-apis', 'completed', `${api} enabled`);
-          } else {
-            log.success(`${api} enabled`);
-          }
-        } catch (error) {
-          // API might already be enabled or user doesn't have permission
-          if (reportProgress) {
-            reportProgress('enable-apis', 'warning', `${api} enablement (may already be enabled)`);
-          } else {
-            log.warn(`${api} may already be enabled or requires permissions`);
-          }
-        }
-      }
-
-      if (reportProgress) {
-        reportProgress('enable-apis', 'completed', 'All required APIs enabled');
-      } else {
-        log.success('All required APIs enabled');
-      }
-    } catch (error) {
-      if (reportProgress) {
-        reportProgress('enable-apis', 'error', `Failed to enable APIs: ${error.message}`);
-      } else {
-        log.warn(`Failed to enable some APIs: ${error.message}`);
-      }
-      // Don't throw - continue with setup
-    }
-  },
-
-  // Automatically set up Vertex AI service account
-  async setupVertexAIServiceAccount(projectId, reportProgress = null) {
-    const SERVICE_ACCOUNT_NAME = 'cloudflare-worker-gemini';
-    const SERVICE_ACCOUNT_EMAIL = `${SERVICE_ACCOUNT_NAME}@${projectId}.iam.gserviceaccount.com`;
-    const KEY_FILE = path.join(process.cwd(), `.${SERVICE_ACCOUNT_NAME}-key.json`);
-
-    try {
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'running', 'Setting up Vertex AI service account...');
-      } else {
-        log.info('Setting up Vertex AI service account...');
-      }
-
-      // First, enable required APIs
-      await this.enableGoogleCloudAPIs(projectId, reportProgress);
-
-      // Check if service account already exists
-      let serviceAccountExists = false;
-      try {
-        execCommand(`gcloud iam service-accounts describe ${SERVICE_ACCOUNT_EMAIL} --project=${projectId}`, {
-          silent: true,
-          throwOnError: false
-        });
-        serviceAccountExists = true;
-        if (reportProgress) {
-          reportProgress('setup-vertex-ai', 'completed', 'Service account already exists');
-        } else {
-          log.success('Service account already exists');
-        }
-      } catch {
-        // Service account doesn't exist, create it
-        if (reportProgress) {
-          reportProgress('setup-vertex-ai', 'running', 'Creating service account...');
-        } else {
-          log.info('Creating service account...');
-        }
-        
-        execCommand(
-          `gcloud iam service-accounts create ${SERVICE_ACCOUNT_NAME} --display-name="Cloudflare Worker Gemini Service Account" --project=${projectId}`,
-          { stdio: 'inherit' }
-        );
-        
-        if (reportProgress) {
-          reportProgress('setup-vertex-ai', 'completed', 'Service account created');
-        } else {
-          log.success('Service account created');
-        }
-      }
-
-      // Assign Vertex AI User role
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'running', 'Assigning Vertex AI User role...');
-      } else {
-        log.info('Assigning Vertex AI User role...');
-      }
-
-      try {
-        execCommand(
-          `gcloud projects add-iam-policy-binding ${projectId} --member="serviceAccount:${SERVICE_ACCOUNT_EMAIL}" --role="roles/aiplatform.user"`,
-          { silent: true, throwOnError: false }
-        );
-        if (reportProgress) {
-          reportProgress('setup-vertex-ai', 'completed', 'Vertex AI User role assigned');
-        } else {
-          log.success('Vertex AI User role assigned');
-        }
-      } catch (error) {
-        // Role might already be assigned, continue
-        if (reportProgress) {
-          reportProgress('setup-vertex-ai', 'warning', 'Role assignment (may already be assigned)');
-        } else {
-          log.warn('Role may already be assigned');
-        }
-      }
-
-      // Generate and download key
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'running', 'Generating service account key...');
-      } else {
-        log.info('Generating service account key...');
-      }
-
-      // Delete old key file if exists
-      if (fs.existsSync(KEY_FILE)) {
-        fs.unlinkSync(KEY_FILE);
-      }
-
-      execCommand(
-        `gcloud iam service-accounts keys create "${KEY_FILE}" --iam-account=${SERVICE_ACCOUNT_EMAIL} --project=${projectId}`,
-        { stdio: 'inherit' }
-      );
-
-      // Read the key file
-      const keyData = JSON.parse(fs.readFileSync(KEY_FILE, 'utf8'));
-
-      // Clean up key file (security)
-      fs.unlinkSync(KEY_FILE);
-
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'completed', 'Service account key generated');
-      } else {
-        log.success('Service account key generated');
-      }
-
-      return {
-        email: keyData.client_email,
-        privateKey: keyData.private_key,
-        projectId: keyData.project_id
-      };
-    } catch (error) {
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'error', `Failed to set up service account: ${error.message}`);
-      } else {
-        log.error(`Failed to set up service account: ${error.message}`);
-      }
-      throw error;
-    }
-  },
-
-  // Automatically configure Vertex AI in secrets.json
-  async autoConfigureVertexAI(config, codebasePath = null, reportProgress = null) {
-    const endpoint = config.GOOGLE_GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta';
-    const isVertexAI = endpoint.includes('aiplatform');
-
-    if (!isVertexAI) {
-      return config; // Not using Vertex AI, return as-is
-    }
-
-    // Check if already configured
-    if (config.GOOGLE_SERVICE_ACCOUNT_EMAIL && config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && config.GOOGLE_PROJECT_ID) {
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'completed', 'Vertex AI already configured');
-      } else {
-        log.success('Vertex AI already configured');
-      }
-      return config;
-    }
-
-    // Need to set up service account
-    const projectId = config.GOOGLE_PROJECT_ID;
-    if (!projectId) {
-      throw new Error('GOOGLE_PROJECT_ID is required for Vertex AI. Please set it in secrets.json');
-    }
-
-    if (reportProgress) {
-      reportProgress('setup-vertex-ai', 'running', 'Auto-configuring Vertex AI service account...');
-    } else {
-      log.info('Auto-configuring Vertex AI service account...');
-    }
-
-    // Check gcloud is available
-    if (!this.checkGcloud()) {
-      throw new Error('gcloud CLI is required for automatic Vertex AI setup. Please install Google Cloud SDK: https://cloud.google.com/sdk/docs/install');
-    }
-
-    // Check GCP authentication and set project
-    if (!this.checkGcpAuth()) {
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'running', 'Authenticating with Google Cloud...');
-      } else {
-        log.info('Authenticating with Google Cloud...');
-      }
-      await this.fixGcpAuth(projectId);
-    } else {
-      // Already authenticated, just set the project
-      try {
-        execCommand(`gcloud config set project ${projectId}`, { silent: true, throwOnError: false });
-      } catch (error) {
-        log.warn(`Could not set project: ${error.message}`);
-      }
-    }
-
-    // Check if project exists
-    const projectExists = await this.checkGoogleCloudProject(projectId, reportProgress);
-    if (!projectExists) {
-      const availableProjects = this.listGoogleCloudProjects();
-      let errorMessage = `\n❌ Google Cloud project "${projectId}" not found.\n\n`;
-      
-      if (availableProjects.length > 0) {
-        errorMessage += `Available projects:\n`;
-        availableProjects.forEach(p => errorMessage += `  - ${p}\n`);
-        errorMessage += `\nEither:\n`;
-        errorMessage += `1. Use one of the projects above by setting GOOGLE_PROJECT_ID in secrets.json\n`;
-        errorMessage += `2. Create a new project:\n`;
-      } else {
-        errorMessage += `To create a new project:\n`;
-      }
-      
-      errorMessage += `   gcloud projects create ${projectId} --name="My Vertex AI Project"\n`;
-      errorMessage += `   gcloud billing projects link ${projectId} --billing-account=YOUR_BILLING_ACCOUNT_ID\n\n`;
-      errorMessage += `Or create via web console: https://console.cloud.google.com/projectcreate\n`;
-      
-      throw new Error(errorMessage);
-    }
-
-    // Set up service account
-    const credentials = await this.setupVertexAIServiceAccount(projectId, reportProgress);
-
-    // Update config with credentials
-    const updatedConfig = {
-      ...config,
-      GOOGLE_PROJECT_ID: credentials.projectId || projectId,
-      GOOGLE_SERVICE_ACCOUNT_EMAIL: credentials.email,
-      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: credentials.privateKey
-    };
-
-    // Save to secrets.json (use codebasePath if provided, otherwise current directory)
-    const secretsPath = path.join(codebasePath || process.cwd(), 'secrets.json');
-    if (fs.existsSync(secretsPath)) {
-      const currentSecrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
-      const updatedSecrets = {
-        ...currentSecrets,
-        GOOGLE_PROJECT_ID: updatedConfig.GOOGLE_PROJECT_ID,
-        GOOGLE_SERVICE_ACCOUNT_EMAIL: updatedConfig.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: updatedConfig.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-      };
-      fs.writeFileSync(secretsPath, JSON.stringify(updatedSecrets, null, 2), 'utf8');
-      
-      if (reportProgress) {
-        reportProgress('setup-vertex-ai', 'completed', 'Vertex AI credentials saved to secrets.json');
-      } else {
-        log.success('Vertex AI credentials saved to secrets.json');
-      }
-    }
-
-    return updatedConfig;
+  try {
+    const output = execCommand('wrangler secret list', { silent: true, throwOnError: false });
+    if (!output) return [];
+    return output.split('\n')
+      .filter(line => line.trim() && !line.includes('Secret') && !line.includes('---'))
+      .map(line => line.split(/\s+/)[0])
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
   },
 
   async executeWithLogs(command, cwd, step, reportProgress) {
@@ -768,7 +384,7 @@ const deploymentUtils = {
     });
   },
 
-  async ensureR2Bucket(codebasePath, reportProgress) {
+  async ensureR2Bucket(codebasePath, reportProgress, bucketName = DEFAULT_R2_BUCKET_NAME) {
     try {
       const listResult = await this.executeWithLogs('wrangler r2 bucket list', codebasePath, 'check-r2', reportProgress);
       const output = listResult.stdout || '';
@@ -1119,14 +735,40 @@ const deploymentUtils = {
       if (reportProgress) reportProgress('check-prerequisites', 'completed', 'Prerequisites OK');
 
       // Step 2: Check and fix GCP authentication
+      // Note: In Electron mode, account switching is handled in main.js before calling deployFromConfig
+      // This step only checks auth status, doesn't switch accounts/projects
       if (reportProgress) reportProgress('check-gcp-auth', 'running', 'Checking GCP authentication...');
       if (!this.checkGcpAuth()) {
         if (reportProgress) reportProgress('check-gcp-auth', 'warning', 'GCP authentication required');
-        if (!await this.fixGcpAuth()) {
-          throw new Error('GCP authentication setup failed');
+        // Only try to fix auth in CLI mode (when no reportProgress means CLI)
+        // In Electron mode, account switching is handled separately in main.js
+        if (!reportProgress) {
+          // CLI mode - try to fix auth
+          if (!await this.fixGcpAuth()) {
+            throw new Error('GCP authentication setup failed');
+          }
+        } else {
+          // Electron mode - just report warning, don't try to fix (account switching already done in main.js)
+          reportProgress('check-gcp-auth', 'warning', 'GCP authentication may need manual setup');
         }
       } else {
         if (reportProgress) reportProgress('check-gcp-auth', 'completed', 'GCP authentication OK');
+      }
+
+      // Step 2.5: Enable Vertex AI API automatically
+      if (secrets && secrets.GOOGLE_VERTEX_PROJECT_ID) {
+        if (reportProgress) reportProgress('enable-vertex-api', 'running', 'Enabling Vertex AI API...');
+        try {
+          const projectId = secrets.GOOGLE_VERTEX_PROJECT_ID;
+          // Set project
+          execCommand(`gcloud config set project ${projectId}`, { silent: true, throwOnError: false });
+          // Enable Vertex AI API
+          execCommand(`gcloud services enable aiplatform.googleapis.com --project=${projectId}`, { silent: true, throwOnError: false });
+          if (reportProgress) reportProgress('enable-vertex-api', 'completed', 'Vertex AI API enabled');
+        } catch (error) {
+          if (reportProgress) reportProgress('enable-vertex-api', 'warning', `Vertex AI API enablement: ${error.message}`);
+          // Non-critical, continue
+        }
       }
 
       // Step 3: Check Cloudflare authentication
@@ -1136,38 +778,11 @@ const deploymentUtils = {
       }
       if (reportProgress) reportProgress('check-auth', 'completed', 'Cloudflare authentication OK');
 
-      // Step 3.5: Auto-configure Vertex AI if needed
-      if (secrets && secrets.GOOGLE_GEMINI_ENDPOINT && secrets.GOOGLE_GEMINI_ENDPOINT.includes('aiplatform')) {
-        try {
-          const updatedConfig = await this.autoConfigureVertexAI({
-            ...config,
-            ...secrets
-          }, codebasePath, reportProgress);
-          
-          // Update config with auto-configured credentials
-          if (updatedConfig.GOOGLE_SERVICE_ACCOUNT_EMAIL && updatedConfig.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
-            secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL = updatedConfig.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-            secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = updatedConfig.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
-            if (updatedConfig.GOOGLE_PROJECT_ID) {
-              secrets.GOOGLE_PROJECT_ID = updatedConfig.GOOGLE_PROJECT_ID;
-            }
-          }
-        } catch (error) {
-          if (reportProgress) {
-            reportProgress('setup-vertex-ai', 'error', `Vertex AI auto-setup failed: ${error.message}`);
-          } else {
-            log.warn(`Vertex AI auto-setup failed: ${error.message}`);
-            log.warn('You may need to manually configure service account credentials');
-          }
-          // Don't throw - allow deployment to continue, user can configure manually
-        }
-      }
-
       // Step 4: Check R2 bucket
-      await this.ensureR2Bucket(codebasePath, reportProgress);
+      await this.ensureR2Bucket(codebasePath, reportProgress, bucketName);
 
       // Step 5: Check D1 database
-      await this.ensureD1Database(codebasePath, reportProgress);
+      await this.ensureD1Database(codebasePath, reportProgress, databaseName);
 
       // Step 6: Deploy secrets
       if (secrets) {
@@ -1303,9 +918,9 @@ async function main() {
         log.success(details || `D1 database '${deploymentConfig.databaseName}' OK`);
       } else if (status === 'warning') {
         log.warn(details);
-      } else {
+    } else {
         log.info(details || `Checking D1 database '${deploymentConfig.databaseName}'...`);
-      }
+                }
     }, deploymentConfig.databaseName);
     log.success(`D1 database '${deploymentConfig.databaseName}' OK`);
   } catch (error) {
@@ -1321,7 +936,7 @@ async function main() {
     try {
       await deploymentUtils.deploySecrets(deploymentConfig.secrets, process.cwd(), (step, status, details) => {
         if (status === 'completed') {
-          log.success('Secrets deployed successfully');
+      log.success('Secrets deployed successfully');
         } else {
           log.info(details || 'Deploying secrets...');
         }
@@ -1333,15 +948,15 @@ async function main() {
   } else {
     // Check if secrets are set manually
     const existingSecrets = deploymentUtils.getSecrets();
-    const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
-    const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
+    const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VERTEX_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
+  const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
 
-    if (missingVars.length > 0) {
-      log.warn(`Missing environment variables: ${missingVars.join(', ')}`);
-      log.warn('You can set secrets manually with: wrangler secret put <NAME>');
+  if (missingVars.length > 0) {
+    log.warn(`Missing environment variables: ${missingVars.join(', ')}`);
+    log.warn('You can set secrets manually with: wrangler secret put <NAME>');
       log.warn('Or provide them in your config file under the "secrets" key');
-    } else {
-      log.success('All environment variables are set');
+  } else {
+    log.success('All environment variables are set');
     }
   }
 
@@ -1353,7 +968,7 @@ async function main() {
         log.success(details || 'Worker deployed');
       } else {
         log.info(details || 'Deploying Worker...');
-      }
+          }
     });
 
     if (workerUrl) {
@@ -1374,8 +989,8 @@ async function main() {
     try {
       pagesUrl = await deploymentUtils.deployPages(process.cwd(), deploymentConfig.pagesProjectName, (step, status, details) => {
         if (status === 'completed') {
-          log.success('Pages deployed');
-          log.success(`Frontend URL: ${pagesUrl}`);
+      log.success('Pages deployed');
+      log.success(`Frontend URL: ${pagesUrl}`);
         } else if (status === 'warning') {
           log.warn(details);
         } else {
@@ -1413,8 +1028,8 @@ async function main() {
 
 // Run CLI if this file is executed directly
 if (require.main === module) {
-  main().catch((error) => {
-    log.error(`Deployment failed: ${error.message}`);
-    process.exit(1);
-  });
+main().catch((error) => {
+  log.error(`Deployment failed: ${error.message}`);
+  process.exit(1);
+});
 }

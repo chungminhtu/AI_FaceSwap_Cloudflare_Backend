@@ -38,11 +38,49 @@ class AuthChecker {
   // Check GCP authentication
   async checkGCP() {
     try {
-      const output = execSync('gcloud auth list --filter=status:ACTIVE --format="value(account)"', {
+      // First try regular auth
+      let output;
+      try {
+        output = execSync('gcloud auth list --filter=status:ACTIVE --format="value(account)"', {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 10000
       });
+      } catch (authError) {
+        // If regular auth fails, try application-default credentials
+        const errorMsg = authError.message || authError.stderr?.toString() || '';
+        if (errorMsg.includes('reauthentication') ||
+            errorMsg.includes('auth tokens') ||
+            errorMsg.includes('cannot prompt during non-interactive')) {
+          // Try application-default credentials as fallback
+          try {
+            execSync('gcloud auth application-default print-access-token', {
+              encoding: 'utf8',
+              stdio: ['pipe', 'pipe', 'pipe'],
+              timeout: 5000
+            });
+            // Application-default credentials work, but we don't have account info
+            return {
+              authenticated: true,
+              accounts: ['application-default'],
+              currentAccount: 'application-default',
+              details: 'Using application-default credentials',
+              usingApplicationDefault: true
+            };
+          } catch (appDefaultError) {
+            // Both failed
+            return {
+              authenticated: false,
+              accounts: [],
+              currentAccount: null,
+              error: 'GCP authentication expired. Run: gcloud auth login or gcloud auth application-default login',
+              needsReauth: true,
+              details: errorMsg
+            };
+          }
+        }
+        throw authError;
+      }
 
       const accounts = output.trim().split('\n').filter(a => a);
       
@@ -57,11 +95,13 @@ class AuthChecker {
         details: output.trim()
       };
     } catch (error) {
+      const errorMsg = error.message || error.stderr?.toString() || '';
       return {
         authenticated: false,
         accounts: [],
         currentAccount: null,
-        error: error.message,
+        error: errorMsg,
+        needsReauth: errorMsg.includes('reauthentication') || errorMsg.includes('auth tokens'),
         details: error.stderr?.toString() || error.stdout?.toString() || 'Not authenticated'
       };
     }

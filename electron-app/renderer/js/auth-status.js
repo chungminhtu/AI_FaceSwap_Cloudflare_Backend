@@ -37,10 +37,18 @@ window.authStatus = {
     try {
       const result = await window.electronAPI.authCheckGCP();
       if (result.authenticated) {
-        statusEl.textContent = result.currentAccount || 'Đã xác thực';
+        let displayText = result.currentAccount || 'Đã xác thực';
+        if (result.usingApplicationDefault) {
+          displayText = 'Application Default';
+        }
+        statusEl.textContent = displayText;
         statusEl.className = 'status-indicator authenticated';
       } else {
-        statusEl.textContent = 'Chưa xác thực';
+        let displayText = 'Chưa xác thực';
+        if (result.needsReauth) {
+          displayText = 'Cần đăng nhập lại';
+        }
+        statusEl.textContent = displayText;
         statusEl.className = 'status-indicator not-authenticated';
       }
     } catch (error) {

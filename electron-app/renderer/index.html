@@ -50,43 +50,42 @@
           </div>
         </div>
 
+        <div class="sidebar-actions-section">
+          <h3>Công cụ</h3>
+          <div class="sidebar-actions">
+            <button id="btn-setup-guide" class="btn btn-small btn-full">📖 Hướng dẫn Thiết lập</button>
+            <button id="btn-export-config" class="btn btn-small btn-full">💾 Xuất Tất cả Config</button>
+          </div>
+        </div>
       </aside>
 
       <!-- Main Content Area -->
       <div class="content-area">
-        <!-- Simple Deployment Section -->
-        <section id="deployment-section" class="section">
+        <!-- Deployment List -->
+        <section id="deployment-list-section" class="section">
           <div class="section-header">
-            <h2>Cloudflare Deployment</h2>
-            <button id="btn-add-deployment" class="btn btn-primary">🚀 Deploy from secrets.json</button>
-          </div>
-
-          <div class="deployment-info">
-            <div class="info-card">
-              <h3>📄 Configuration</h3>
-              <p>This tool deploys using <code>secrets.json</code> from your codebase directory.</p>
-              <p>The deployment process is identical to running <code>node deploy.js</code> in your project.</p>
+            <h2>Danh sách Deploy</h2>
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-import-deployment-list" class="btn btn-secondary">📥 Nhập Deploy</button>
+              <button id="btn-add-deployment" class="btn btn-primary">Deploy store mới</button>
             </div>
-
-            <div class="info-card">
-              <h3>🔧 Required Files</h3>
-              <ul>
-                <li><code>secrets.json</code> - Configuration and API keys</li>
-                <li><code>src/</code> - Cloudflare Worker code</li>
-                <li><code>public_page/</code> - Frontend files</li>
-                <li><code>schema.sql</code> - Database schema</li>
-              </ul>
           </div>
-
-            <div class="info-card">
-              <h3>🎯 What Gets Deployed</h3>
-              <ul>
-                <li>Cloudflare Worker (Backend API)</li>
-                <li>Cloudflare Pages (Frontend)</li>
-                <li>D1 Database with schema</li>
-                <li>R2 Storage bucket</li>
-              </ul>
+          <div id="deployment-list" class="deployment-list">
+            <!-- Deployments will be rendered here -->
           </div>
+        </section>
+
+        <!-- Deployment Form (hidden by default) -->
+        <section id="deployment-form-section" class="section hidden">
+          <div class="section-header">
+            <h2 id="form-title">Deploy store mới</h2>
+            <div style="display: flex; gap: 8px;">
+              <button type="submit" form="deployment-form-form" class="btn btn-primary">Lưu</button>
+              <button id="btn-cancel-form" class="btn btn-secondary">Hủy</button>
+            </div>
+          </div>
+          <div id="deployment-form" class="deployment-form">
+            <!-- Form will be rendered here -->
           </div>
         </section>
 
@@ -107,6 +106,80 @@
   <!-- Toast Notification Container -->
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-spinner">
+      <div class="spinner"></div>
+      <div class="loading-text">Đang xử lý...</div>
+    </div>
+  </div>
+
+  <!-- Setup Guide Modal -->
+  <div id="setup-guide-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Hướng dẫn Thiết lập</h2>
+        <button id="btn-close-modal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="setup-wizard" class="setup-wizard">
+          <!-- Setup wizard will be rendered here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Config Modal -->
+  <div id="import-config-modal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>Nhập Cấu hình</h2>
+        <button id="btn-close-import" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="import-config-tabs">
+          <button class="import-tab active" data-tab="json">Dán JSON</button>
+          <button class="import-tab" data-tab="file">Chọn File</button>
+        </div>
+        <div id="import-json-tab" class="import-tab-content active">
+          <label class="form-label">Dán nội dung JSON cấu hình:</label>
+          <textarea id="import-json-textarea" class="form-textarea code-textarea" placeholder='{"deployments": [...]}'></textarea>
+          <div style="margin-top: var(--spacing-sm); display: flex; gap: var(--spacing-sm);">
+            <button id="btn-preview-json" class="btn btn-secondary">👁️ Xem Trước</button>
+            <button id="btn-validate-json" class="btn btn-secondary">✓ Kiểm tra</button>
+          </div>
+          <div id="import-preview" class="import-preview hidden">
+            <div class="import-preview-header">
+              <h3>Xem Trước Cấu hình</h3>
+              <button id="btn-close-preview" class="btn-close-small">&times;</button>
+            </div>
+            <div id="import-preview-content" class="import-preview-content"></div>
+          </div>
+          <div class="import-help">
+            <p>💡 Bạn có thể dán toàn bộ cấu hình JSON hoặc chỉ phần deployments.</p>
+            <p>📋 Cấu hình sẽ được hợp nhất với cấu hình hiện tại.</p>
+          </div>
+        </div>
+        <div id="import-file-tab" class="import-tab-content">
+          <div class="file-import-zone">
+            <button id="btn-select-config-file" class="btn btn-primary">Chọn File JSON</button>
+            <p class="file-import-hint">Chọn file cấu hình JSON từ máy tính</p>
+          </div>
+          <div id="file-preview" class="import-preview hidden" style="margin-top: var(--spacing-md);">
+            <div class="import-preview-header">
+              <h3>Xem Trước Cấu hình từ File</h3>
+              <button id="btn-close-file-preview" class="btn-close-small">&times;</button>
+            </div>
+            <div id="file-preview-content" class="import-preview-content"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-import" class="btn btn-secondary">Hủy</button>
+        <button id="btn-confirm-import" class="btn btn-primary">Nhập Cấu hình</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Error Display Modal -->
   <div id="error-modal" class="modal hidden">
@@ -128,9 +201,13 @@
   </div>
 
   <script src="js/toast.js"></script>
+  <script src="js/loading.js"></script>
   <script src="js/dashboard.js"></script>
+  <script src="js/deployment-form.js"></script>
+  <script src="js/deployment-list.js"></script>
   <script src="js/deployment-status.js"></script>
   <script src="js/error-display.js"></script>
+  <script src="js/setup-wizard.js"></script>
   <script src="js/auth-status.js"></script>
 </body>
 </html>

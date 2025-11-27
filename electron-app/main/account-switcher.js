@@ -21,19 +21,20 @@ class AccountSwitcher {
 
       // Try to switch project (may fail if auth issues)
       try {
-      execSync(`gcloud config set project ${projectId}`, {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 10000
-      });
+        execSync(`gcloud config set project ${projectId}`, {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 10000
+        });
       } catch (setError) {
         // Handle authentication errors gracefully
-        if (setError.message.includes('reauthentication') ||
-            setError.message.includes('auth tokens') ||
-            setError.message.includes('cannot prompt during non-interactive')) {
+        const errorMsg = setError.message || setError.stderr?.toString() || '';
+        if (errorMsg.includes('reauthentication') ||
+            errorMsg.includes('auth tokens') ||
+            errorMsg.includes('cannot prompt during non-interactive')) {
           return {
             success: false,
-            error: 'GCP authentication expired. Run: gcloud auth login',
+            error: 'GCP authentication expired. Please run "gcloud auth login" or "gcloud auth application-default login" in your terminal.',
             needsAuth: true,
             currentProject: currentProject || 'unknown'
           };
@@ -68,6 +69,27 @@ class AccountSwitcher {
   // Switch GCP account
   async switchGCPAccount(email) {
     try {
+      // Check authentication first
+      try {
+        execSync('gcloud auth list --filter=status:ACTIVE --format="value(account)"', {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 5000
+        });
+      } catch (authError) {
+        const errorMsg = authError.message || authError.stderr?.toString() || '';
+        if (errorMsg.includes('reauthentication') ||
+            errorMsg.includes('auth tokens') ||
+            errorMsg.includes('cannot prompt during non-interactive')) {
+          return {
+            success: false,
+            error: 'GCP authentication expired. Please run "gcloud auth login" or "gcloud auth application-default login" in your terminal.',
+            needsAuth: true
+          };
+        }
+        throw authError;
+      }
+
       // First check if the account is already authenticated
       const accountsOutput = execSync('gcloud auth list --format="value(account)"', {
         encoding: 'utf8',
@@ -130,23 +152,63 @@ class AccountSwitcher {
         timeout: 10000
       });
 
-      // Check if we need to switch
-      // Wrangler uses account_id in wrangler.jsonc or wrangler.toml
-      // We can verify by checking the current account ID
+      // Parse account ID from wrangler whoami output
+      // Wrangler outputs a table format: │ Account Name │ Account ID │
+      let currentAccountId = null;
       
-      // For now, just verify authentication
-      // The actual account switching will be handled by wrangler configuration
-      const accountMatch = whoamiOutput.match(/account ID:?\s*([^\s]+)/i);
-      const currentAccountId = accountMatch ? accountMatch[1] : null;
+      // Method 1: Parse table format (most reliable)
+      const lines = whoamiOutput.split('\n');
+      for (const line of lines) {
+        // Look for table row with Account ID (contains │ and hex string)
+        if (line.includes('│') && /[a-f0-9]{32}/i.test(line)) {
+          // Split by │ and find the hex string (32 chars)
+          const parts = line.split('│').map(p => p.trim());
+          for (const part of parts) {
+            const idMatch = part.match(/([a-f0-9]{32})/i);
+            if (idMatch && idMatch[1].length === 32) {
+              currentAccountId = idMatch[1];
+              break;
+            }
+          }
+          if (currentAccountId) break;
+        }
+      }
+      
+      // Method 2: Fallback - Try simple regex patterns
+      if (!currentAccountId) {
+        // Pattern 1: "Account ID: 72474c350e3f55d96195536a5d39e00d"
+        const accountIdMatch1 = whoamiOutput.match(/account\s+id:?\s*([a-f0-9]{32})/i);
+        if (accountIdMatch1) {
+          currentAccountId = accountIdMatch1[1];
+        }
+      }
+      
+      // Method 3: Fallback - Any 32-char hex string
+      if (!currentAccountId) {
+        const hexMatches = whoamiOutput.match(/\b([a-f0-9]{32})\b/gi);
+        if (hexMatches && hexMatches.length > 0) {
+          // Use the last match (usually the Account ID)
+          currentAccountId = hexMatches[hexMatches.length - 1];
+        }
+      }
 
       if (accountConfig && accountConfig.accountId) {
-        // If accountId is specified in config, we need to ensure wrangler.jsonc has it
-        // This is handled by deploy.js when it uses the correct config
-        if (currentAccountId && currentAccountId !== accountConfig.accountId) {
+        // If accountId is specified in config, verify it matches
+        if (!currentAccountId) {
+          return {
+            success: false,
+            error: `Could not detect current Cloudflare account ID. Please ensure you are authenticated with wrangler.`,
+            needsLogin: true
+          };
+        }
+        
+        if (currentAccountId !== accountConfig.accountId) {
           return {
             success: false,
             error: `Account mismatch. Current: ${currentAccountId}, Expected: ${accountConfig.accountId}`,
-            needsLogin: true
+            needsLogin: true,
+            currentAccountId: currentAccountId,
+            expectedAccountId: accountConfig.accountId
           };
         }
       }
