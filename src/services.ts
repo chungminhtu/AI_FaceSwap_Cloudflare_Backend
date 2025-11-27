@@ -111,17 +111,67 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(prompt);
     }
 
-    // Only use the stored prompt_json text - no images sent
-    // The prompt_json already contains the full scene description from the preset image
-    console.log('[Gemini-NanoBanana] Using stored prompt_json text only (no images)');
-    console.log('[Gemini-NanoBanana] Prompt length:', promptText.length);
+    // Fetch both images (preset and selfie) to include in the request
+    console.log('[Gemini-NanoBanana] Fetching images for face swap...');
+    console.log('[Gemini-NanoBanana] Preset URL:', targetUrl);
+    console.log('[Gemini-NanoBanana] Selfie URL:', sourceUrl);
+    
+    let presetImageBase64: string | null = null;
+    let selfieImageBase64: string | null = null;
+    
+    try {
+      const presetResponse = await fetch(targetUrl);
+      if (presetResponse.ok) {
+        const presetBuffer = await presetResponse.arrayBuffer();
+        presetImageBase64 = `data:${presetResponse.headers.get('content-type') || 'image/jpeg'};base64,${Buffer.from(presetBuffer).toString('base64')}`;
+        console.log('[Gemini-NanoBanana] ✅ Preset image fetched');
+      }
+    } catch (error) {
+      console.warn('[Gemini-NanoBanana] Failed to fetch preset image:', error);
+    }
+    
+    try {
+      const selfieResponse = await fetch(sourceUrl);
+      if (selfieResponse.ok) {
+        const selfieBuffer = await selfieResponse.arrayBuffer();
+        selfieImageBase64 = `data:${selfieResponse.headers.get('content-type') || 'image/jpeg'};base64,${Buffer.from(selfieBuffer).toString('base64')}`;
+        console.log('[Gemini-NanoBanana] ✅ Selfie image fetched');
+      }
+    } catch (error) {
+      console.warn('[Gemini-NanoBanana] Failed to fetch selfie image:', error);
+    }
 
-    // Call Gemini API with ONLY the stored prompt text (no images)
+    // Build request with prompt text and images
+    const parts: any[] = [{ text: promptText }];
+    
+    if (presetImageBase64) {
+      // Extract base64 data and mime type
+      const [mimePart, base64Data] = presetImageBase64.split(',');
+      const mimeType = mimePart.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+      console.log('[Gemini-NanoBanana] Added preset image to request');
+    }
+    
+    if (selfieImageBase64) {
+      const [mimePart, base64Data] = selfieImageBase64.split(',');
+      const mimeType = mimePart.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+      console.log('[Gemini-NanoBanana] Added selfie image to request');
+    }
+
     const requestBody = {
       contents: [{
-        parts: [
-          { text: promptText }
-        ]
+        parts: parts
       }],
       generationConfig: {
         temperature: 0.1,
@@ -201,27 +251,58 @@ export const callNanoBanana = async (
       let resultImageUrl: string | undefined;
       let resultMessage = 'Gemini face swap completed';
 
-      // Try to extract image from response
+      // Try to extract image from response or text description
+      let base64ImageData: string | null = null;
       for (const part of parts) {
         if (part.inline_data?.data) {
-          // If Gemini returns base64 image data, we'd need to upload it to R2 first
-          // For now, return error indicating Gemini doesn't generate images directly
-          return {
-            Success: false,
-            Message: 'Gemini API does not generate images directly. It only returns text descriptions. Please use a proper image generation API.',
-            StatusCode: 501,
-            Error: 'Gemini generateContent endpoint returns text, not images',
-          };
+          // Gemini returned base64 image data - upload it to R2
+          base64ImageData = part.inline_data.data;
+          console.log('[Gemini-NanoBanana] Found base64 image data in response');
         }
         if (part.text) {
           resultMessage = part.text;
+          console.log('[Gemini-NanoBanana] Response text:', resultMessage.substring(0, 200));
         }
       }
 
-      // Check if there's a URL in the text response
-      const urlMatch = resultMessage.match(/https?:\/\/[^\s]+\.(?:jpg|jpeg|png|webp)/i);
-      if (urlMatch) {
-        resultImageUrl = urlMatch[0];
+      // If we got base64 image data, upload it to R2
+      if (base64ImageData) {
+        try {
+          // Convert base64 to Uint8Array for Cloudflare Workers
+          const binaryString = atob(base64ImageData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          const resultKey = `results/gemini_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+          
+          await env.FACESWAP_IMAGES.put(resultKey, bytes, {
+            httpMetadata: {
+              contentType: 'image/jpeg',
+              cacheControl: 'public, max-age=31536000, immutable',
+            },
+          });
+          
+          // Return R2 key format - will be converted to public URL by caller
+          resultImageUrl = `r2://${resultKey}`;
+          console.log('[Gemini-NanoBanana] ✅ Image uploaded to R2:', resultKey);
+        } catch (r2Error) {
+          console.error('[Gemini-NanoBanana] Failed to upload image to R2:', r2Error);
+          return {
+            Success: false,
+            Message: 'Failed to save generated image',
+            StatusCode: 500,
+            Error: r2Error instanceof Error ? r2Error.message : String(r2Error),
+          };
+        }
+      } else {
+        // Check if there's a URL in the text response
+        const urlMatch = resultMessage.match(/https?:\/\/[^\s]+\.(?:jpg|jpeg|png|webp)/i);
+        if (urlMatch) {
+          resultImageUrl = urlMatch[0];
+          console.log('[Gemini-NanoBanana] Found image URL in response text:', resultImageUrl);
+        }
       }
 
       const result: FaceSwapResponse = {
@@ -233,8 +314,8 @@ export const callNanoBanana = async (
 
       if (!result.Success || !result.ResultImageUrl) {
         result.Success = false;
-        result.Message = 'Gemini API did not return an image URL. Gemini generateContent returns text descriptions, not images.';
-        result.Error = 'Use a proper image generation service for face swap operations.';
+        result.Message = 'Gemini API did not return an image. Note: Gemini models are text generation models and do not generate images. For face swap operations, please use the RapidAPI provider or a dedicated image generation service.';
+        result.Error = 'Gemini generateContent endpoint returns text descriptions, not images. Use a proper image generation/manipulation API for face swaps.';
       }
 
       return result;

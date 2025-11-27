@@ -2211,11 +2211,12 @@
             `;
             document.body.appendChild(loadingOverlay);
 
-            try {
-                const apiProvider = document.getElementById('api-provider').value;
-                const mode = apiProvider === 'google-nano-banana' ? 'gemini' : 'rapidapi';
+            // Declare mode outside try block so it's accessible in catch
+            const apiProvider = document.getElementById('api-provider').value;
+            const mode = apiProvider === 'google-nano-banana' ? 'vertex' : 'rapidapi';
 
-                if (mode === 'gemini' && !presetSelection.hasPrompt) {
+            try {
+                if (mode === 'vertex' && !presetSelection.hasPrompt) {
                     throw new Error('Mẫu chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) sau khi bật Gemini.');
                 }
 

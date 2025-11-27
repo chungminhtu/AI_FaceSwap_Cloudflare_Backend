@@ -1001,6 +1001,14 @@ export default {
             }, nanoResult.StatusCode || 500);
           }
 
+          // If result URL is in R2 format (r2://key), convert it to public URL
+          if (nanoResult.ResultImageUrl.startsWith('r2://')) {
+            const r2Key = nanoResult.ResultImageUrl.replace('r2://', '');
+            const requestUrl = new URL(request.url);
+            nanoResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            console.log('[Vertex] Converted R2 URL to public URL:', nanoResult.ResultImageUrl);
+          }
+
           faceSwapResult = nanoResult;
         } else {
           // Use RapidAPI as before
