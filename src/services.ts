@@ -118,10 +118,8 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
     console.log('[Vertex-NanoBanana] Selfie URL:', sourceUrl);
     console.log('[Vertex-NanoBanana] Full prompt_json received:', JSON.stringify(prompt, null, 2));
     console.log('[Vertex-NanoBanana] Constructed prompt text:', faceSwapPrompt.substring(0, 500));
-    console.log('[Vertex-NanoBanana] Request will include:');
-    console.log('[Vertex-NanoBanana]   - Preset image (base64, length:', presetImageData.length, ')');
-    console.log('[Vertex-NanoBanana]   - Selfie image (base64, length:', selfieImageData.length, ')');
-    console.log('[Vertex-NanoBanana]   - Prompt text (length:', faceSwapPrompt.length, ')');
+    console.log('[Vertex-NanoBanana] Prompt text length:', faceSwapPrompt.length);
+    console.log('[Vertex-NanoBanana] Request will include prompt text (length:', faceSwapPrompt.length, ')');
 
     // Vertex AI requires OAuth token for service account authentication
       if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -152,17 +150,28 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
       }
 
     // Fetch both preset and selfie images as base64
+    // IMPORTANT: Declare variables first, then fetch to avoid TDZ (Temporal Dead Zone) issues
+    let presetImageData: string;
+    let selfieImageData: string;
+    
     console.log('[Vertex-NanoBanana] Fetching preset image from:', targetUrl);
-    const presetImageData = await fetchImageAsBase64(targetUrl);
+    presetImageData = await fetchImageAsBase64(targetUrl);
     console.log('[Vertex-NanoBanana] ✅ Preset image fetched, base64 length:', presetImageData.length);
     
     console.log('[Vertex-NanoBanana] Fetching selfie image from:', sourceUrl);
-    const selfieImageData = await fetchImageAsBase64(sourceUrl);
+    selfieImageData = await fetchImageAsBase64(sourceUrl);
     console.log('[Vertex-NanoBanana] ✅ Selfie image fetched, base64 length:', selfieImageData.length);
+    
+    // Log request details after both images are fetched
+    console.log('[Vertex-NanoBanana] Request will include:');
+    console.log('[Vertex-NanoBanana]   - Preset image (base64, length:', presetImageData.length, ')');
+    console.log('[Vertex-NanoBanana]   - Selfie image (base64, length:', selfieImageData.length, ')');
+    console.log('[Vertex-NanoBanana]   - Prompt text (length:', faceSwapPrompt.length, ')');
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
     // IMPORTANT: contents must be an OBJECT, not an array (as per documentation)
+    // Create requestBody AFTER both images are fetched to avoid TDZ issues
     const requestBody = {
       contents: {
         role: "USER",  // Uppercase as per documentation
@@ -328,7 +337,7 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
         }
         return value;
       }));
-      
+
       const curlCommand = `curl -X POST \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
   -H "Content-Type: application/json" \\

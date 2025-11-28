@@ -4,6 +4,7 @@ const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const os = require('os');
 
 // Colors for output
 const colors = {
@@ -330,6 +331,46 @@ All project names should be unique per Cloudflare account to avoid conflicts.
 `);
 }
 
+// Cache file for storing authentication check results
+const getCacheFile = () => {
+  const cacheDir = path.join(os.homedir(), '.ai-faceswap-deploy');
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
+  return path.join(cacheDir, 'auth-cache.json');
+};
+
+// Load cache
+const loadCache = () => {
+  try {
+    const cacheFile = getCacheFile();
+    if (fs.existsSync(cacheFile)) {
+      const data = fs.readFileSync(cacheFile, 'utf8');
+      const cache = JSON.parse(data);
+      // Check if cache is still valid (24 hours)
+      const now = Date.now();
+      const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+      if (cache.timestamp && (now - cache.timestamp < CACHE_DURATION)) {
+        return cache;
+      }
+    }
+  } catch (error) {
+    // Ignore cache errors
+  }
+  return { timestamp: 0, checks: {} };
+};
+
+// Save cache
+const saveCache = (cache) => {
+  try {
+    const cacheFile = getCacheFile();
+    cache.timestamp = Date.now();
+    fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2));
+  } catch (error) {
+    // Ignore cache errors
+  }
+};
+
 // Deployment functions that can be used by both CLI and Electron
 const deploymentUtils = {
   checkWrangler() {
@@ -351,10 +392,24 @@ const deploymentUtils = {
   },
 
   checkGcpAuth() {
+  // Check cache first
+  const cache = loadCache();
+  if (cache.checks && cache.checks.gcpAuth === true) {
+    return true;
+  }
+  
   try {
     const authList = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
-    return authList && authList.trim().length > 0;
+    const result = authList && authList.trim().length > 0;
+    // Cache the result
+    cache.checks = cache.checks || {};
+    cache.checks.gcpAuth = result;
+    saveCache(cache);
+    return result;
   } catch {
+    cache.checks = cache.checks || {};
+    cache.checks.gcpAuth = false;
+    saveCache(cache);
     return false;
   }
   },
@@ -412,10 +467,23 @@ const deploymentUtils = {
   },
 
   checkAuth() {
+  // Check cache first
+  const cache = loadCache();
+  if (cache.checks && cache.checks.cloudflareAuth === true) {
+    return true;
+  }
+  
   try {
     execCommand('wrangler whoami', { silent: true, throwOnError: false });
+    // Cache the result
+    cache.checks = cache.checks || {};
+    cache.checks.cloudflareAuth = true;
+    saveCache(cache);
     return true;
   } catch {
+    cache.checks = cache.checks || {};
+    cache.checks.cloudflareAuth = false;
+    saveCache(cache);
     return false;
   }
   },
@@ -582,6 +650,14 @@ const deploymentUtils = {
   },
 
   async ensureR2Bucket(codebasePath, reportProgress, bucketName = DEFAULT_R2_BUCKET_NAME) {
+    // Check cache first
+    const cache = loadCache();
+    const cacheKey = `r2Bucket_${bucketName}`;
+    if (cache.checks && cache.checks[cacheKey] === true) {
+      if (reportProgress) reportProgress('check-r2', 'completed', `R2 bucket '${bucketName}' exists`);
+      return;
+    }
+    
     try {
       const listResult = await this.executeWithLogs('wrangler r2 bucket list', codebasePath, 'check-r2', reportProgress);
       const output = listResult.stdout || '';
@@ -590,11 +666,21 @@ const deploymentUtils = {
         await this.executeWithLogs(`wrangler r2 bucket create ${bucketName}`, codebasePath, 'check-r2', reportProgress);
       }
       if (reportProgress) reportProgress('check-r2', 'completed', 'R2 bucket OK');
+      // Cache the result
+      const cacheAfter = loadCache();
+      cacheAfter.checks = cacheAfter.checks || {};
+      cacheAfter.checks[cacheKey] = true;
+      saveCache(cacheAfter);
     } catch (error) {
       // Bucket might already exist or command might fail - non-fatal
       if (!error.message.includes('already exists')) {
         throw error;
       }
+      // Still cache as OK if it already exists
+      const cacheAfter = loadCache();
+      cacheAfter.checks = cacheAfter.checks || {};
+      cacheAfter.checks[cacheKey] = true;
+      saveCache(cacheAfter);
     }
   },
 
@@ -727,8 +813,18 @@ const deploymentUtils = {
         }
       }
       if (reportProgress) reportProgress('check-d1', 'completed', 'D1 database OK');
+      // Cache the result
+      cache.checks = cache.checks || {};
+      cache.checks[cacheKey] = true;
+      saveCache(cache);
     } catch (error) {
       // Database might already exist - non-fatal
+      // Still cache as OK if it's a non-critical error
+      if (error.message && (error.message.includes('already exists') || error.message.includes('no such table'))) {
+        cache.checks = cache.checks || {};
+        cache.checks[cacheKey] = true;
+        saveCache(cache);
+      }
       if (!error.message.includes('already exists')) {
         throw error;
       }
@@ -1160,11 +1256,17 @@ const deploymentUtils = {
       }
 
       // Step 3: Check Cloudflare authentication
+      // Skip check if cached
+      if (!cache.checks || cache.checks.cloudflareAuth !== true) {
       if (reportProgress) reportProgress('check-auth', 'running', 'Checking Cloudflare authentication...');
       if (!this.checkAuth()) {
         throw new Error('Cloudflare authentication required');
       }
       if (reportProgress) reportProgress('check-auth', 'completed', 'Cloudflare authentication OK');
+      } else {
+        // Cached - skip check
+        if (reportProgress) reportProgress('check-auth', 'completed', 'Cloudflare authentication OK (cached)');
+      }
 
       // Step 4: Check R2 bucket
       await this.ensureR2Bucket(codebasePath, reportProgress, bucketName);
