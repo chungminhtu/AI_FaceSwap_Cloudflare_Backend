@@ -479,6 +479,12 @@ const deploymentUtils = {
 
           // For CLI: Only show important messages (filter verbose output)
           if (!reportProgress) {
+            // Suppress duplicate D1 database check messages
+            if (step === 'check-d1' && trimmed.includes('Checking D1 database')) {
+              // Don't log these - they're logged once at the start
+              return;
+            }
+            
             // For Pages deployment, show more output
             if (step === 'deploy-pages') {
               // Show all important output for Pages, skip telemetry and separator lines
@@ -1301,9 +1307,8 @@ async function main() {
         log.success(details || `D1 database '${deploymentConfig.databaseName}' OK`);
       } else if (status === 'warning') {
         log.warn(details);
-    } else {
-        log.info(details || `Checking D1 database '${deploymentConfig.databaseName}'...`);
-                }
+      }
+      // Don't log 'info' status for D1 checks - they're too verbose
     }, deploymentConfig.databaseName);
     log.success(`D1 database '${deploymentConfig.databaseName}' OK`);
   } catch (error) {

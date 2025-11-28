@@ -1331,16 +1331,17 @@
                         <input type="file" class="file-input" id="preset-input" accept="image/*">
                     </div>
                     <!-- Upload Options for Preset -->
-                    <div class="upload-options" id="preset-upload-options" style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px; display: none;">
+                    <div class="upload-options" id="preset-upload-options" style="margin-top: 10px; padding: 12px; background: #f0f7ff; border: 1px solid #b3d9ff; border-radius: 6px; display: block;">
+                        <div style="font-weight: 600; font-size: 13px; color: #1976d2; margin-bottom: 10px;">⚙️ Tùy chọn khi tải lên:</div>
                         <div class="option-row" style="display: flex; align-items: center; margin-bottom: 8px;">
-                            <input type="checkbox" id="preset-enable-vision-scan" checked style="margin-right: 8px; cursor: pointer;">
-                            <label for="preset-enable-vision-scan" style="cursor: pointer; font-size: 13px; color: #333;">
+                            <input type="checkbox" id="preset-enable-vision-scan" checked style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
+                            <label for="preset-enable-vision-scan" style="cursor: pointer; font-size: 13px; color: #333; user-select: none;">
                                 🔍 Quét với Google Vision (Kiểm tra an toàn)
                             </label>
                         </div>
                         <div class="option-row" style="display: flex; align-items: center;">
-                            <input type="checkbox" id="preset-enable-vertex-prompt" checked style="margin-right: 8px; cursor: pointer;">
-                            <label for="preset-enable-vertex-prompt" style="cursor: pointer; font-size: 13px; color: #333;">
+                            <input type="checkbox" id="preset-enable-vertex-prompt" checked style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
+                            <label for="preset-enable-vertex-prompt" style="cursor: pointer; font-size: 13px; color: #333; user-select: none;">
                                 🤖 Tạo Prompt với Vertex AI
                             </label>
                         </div>
@@ -1484,6 +1485,64 @@
         const apiProviderSelect = document.getElementById('api-provider');
         const apiLogList = document.getElementById('api-log-list');
 
+        // Load checkbox states from localStorage on page load
+        function loadCheckboxStates() {
+            try {
+                const visionScanEnabled = localStorage.getItem('preset-enable-vision-scan');
+                const vertexPromptEnabled = localStorage.getItem('preset-enable-vertex-prompt');
+                
+                const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
+                const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
+                
+                if (visionScanCheckbox && visionScanEnabled !== null) {
+                    visionScanCheckbox.checked = visionScanEnabled === 'true';
+                }
+                
+                if (vertexPromptCheckbox && vertexPromptEnabled !== null) {
+                    vertexPromptCheckbox.checked = vertexPromptEnabled === 'true';
+                }
+            } catch (error) {
+                console.error('Error loading checkbox states:', error);
+            }
+        }
+
+        // Save checkbox states to localStorage when changed
+        function setupCheckboxListeners() {
+            const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
+            const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
+            
+            if (visionScanCheckbox) {
+                visionScanCheckbox.addEventListener('change', (e) => {
+                    try {
+                        localStorage.setItem('preset-enable-vision-scan', e.target.checked ? 'true' : 'false');
+                    } catch (error) {
+                        console.error('Error saving vision scan checkbox state:', error);
+                    }
+                });
+            }
+            
+            if (vertexPromptCheckbox) {
+                vertexPromptCheckbox.addEventListener('change', (e) => {
+                    try {
+                        localStorage.setItem('preset-enable-vertex-prompt', e.target.checked ? 'true' : 'false');
+                    } catch (error) {
+                        console.error('Error saving vertex prompt checkbox state:', error);
+                    }
+                });
+            }
+        }
+
+        // Initialize checkbox states and listeners when page loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                loadCheckboxStates();
+                setupCheckboxListeners();
+            });
+        } else {
+            loadCheckboxStates();
+            setupCheckboxListeners();
+        }
+
         function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
             return {
                 key,
@@ -1560,7 +1619,7 @@
         const galleryKeys = Object.keys(galleries);
         const MAX_LOG_ENTRIES = 30;
 
-        function logApiCall({ label, method, url, status = 'info', payload, geminiInfo, visionInfo, deleteInfo }) {
+        function logApiCall({ label, method, url, status = 'info', payload }) {
             if (!apiLogList) return;
             // Log POST, PUT, and DELETE requests (exclude GET, etc.)
             const normalizedMethod = (method || '').toUpperCase();
@@ -1574,143 +1633,17 @@
 
             const statusLabel = status === 'success' ? 'Thành công' : status === 'error' ? 'Lỗi' : 'Thông tin';
             
-            // Build Gemini info HTML if present
-            let geminiHtml = '';
-            if (geminiInfo) {
-                const geminiStatus = geminiInfo.success ? '✅ SUCCESS' : '❌ FAILED';
-                const statusColor = geminiInfo.success ? '#2bc990' : '#ff4d6d';
-                
-                let geminiDetails = '';
-                
-                // Basic status
-                if (geminiInfo.error) {
-                    geminiDetails += `<div style="color: #ff4d6d; margin-top: 8px;"><strong>❌ Error:</strong> ${escapeHtml(geminiInfo.error)}</div>`;
-                } else if (geminiInfo.promptKeys) {
-                    geminiDetails += `<div style="color: #2bc990; margin-top: 8px;"><strong>✅ Generated prompt with keys:</strong> ${geminiInfo.promptKeys.join(', ')}</div>`;
-                }
-                
-                // Debug information
-                if (geminiInfo.debug) {
-                    const debug = geminiInfo.debug;
-                    geminiDetails += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">`;
-                    geminiDetails += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 12px;">🔍 Debug Information:</div>`;
-                    
-                    if (debug.endpoint) {
-                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Endpoint:</strong> ${escapeHtml(debug.endpoint)}</div>`;
-                    }
-                    if (debug.model) {
-                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Model:</strong> ${escapeHtml(debug.model)}</div>`;
-                    }
-                    if (debug.requestSent !== undefined) {
-                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Request Sent:</strong> ${debug.requestSent ? '✅ Yes' : '❌ No'}</div>`;
-                    }
-                    if (debug.httpStatus) {
-                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>HTTP Status:</strong> ${debug.httpStatus} ${debug.httpStatusText || ''}</div>`;
-                    }
-                    if (debug.responseTimeMs !== undefined) {
-                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Response Time:</strong> ${debug.responseTimeMs}ms</div>`;
-                    }
-                    if (debug.errorDetails) {
-                        geminiDetails += `<div style="font-size: 11px; margin: 4px 0; color: #ff4d6d;"><strong>Error Details:</strong> ${escapeHtml(debug.errorDetails.substring(0, 300))}</div>`;
-                    }
-                    if (debug.responseStructure) {
-                        geminiDetails += `<details style="margin-top: 8px;"><summary style="cursor: pointer; font-size: 11px; color: #666;">Show Response Structure</summary><pre style="font-size: 10px; max-height: 200px; overflow: auto; background: rgba(0,0,0,0.05); padding: 8px; margin-top: 4px; border-radius: 4px;">${escapeHtml(debug.responseStructure)}</pre></details>`;
-                    }
-                    if (debug.rawError && debug.rawError.length > 0) {
-                        geminiDetails += `<details style="margin-top: 8px;"><summary style="cursor: pointer; font-size: 11px; color: #ff4d6d;">Show Full Error</summary><pre style="font-size: 10px; max-height: 200px; overflow: auto; background: rgba(255,77,109,0.1); padding: 8px; margin-top: 4px; border-radius: 4px;">${escapeHtml(debug.rawError.substring(0, 1000))}</pre></details>`;
-                    }
-                    
-                    geminiDetails += `</div>`;
-                }
-                
-                geminiHtml = `
-                    <div style="background: rgba(248, 35, 135, 0.05); padding: 12px; margin-top: 8px; border-left: 3px solid ${statusColor}; border-radius: 4px;">
-                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">🔮 Gemini API: ${geminiStatus}</div>
-                        ${geminiDetails}
+            // Build raw response JSON display
+            let responseJsonHtml = '';
+            if (payload !== undefined && payload !== null) {
+                const responseJson = JSON.stringify(payload, null, 2);
+                responseJsonHtml = `
+                    <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
+                        <div style="font-weight: 600; font-size: 12px; color: #666; margin-bottom: 8px;">📋 Response JSON:</div>
+                        <pre style="font-size: 11px; max-height: 500px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin: 0;">${escapeHtml(responseJson)}</pre>
                     </div>
                 `;
             }
-            
-            // Build Vision scan info HTML if present
-            let visionHtml = '';
-            if (visionInfo) {
-                const visionStatus = visionInfo.success && visionInfo.isSafe ? '✅ SAFE' : visionInfo.success && !visionInfo.isSafe ? '⚠️ UNSAFE' : '❌ FAILED';
-                const statusColor = visionInfo.success && visionInfo.isSafe ? '#2bc990' : visionInfo.success && !visionInfo.isSafe ? '#ff9800' : '#ff4d6d';
-                
-                let visionDetails = '';
-                
-                if (visionInfo.error) {
-                    visionDetails += `<div style="color: #ff4d6d; margin-top: 8px;"><strong>❌ Error:</strong> ${escapeHtml(visionInfo.error)}</div>`;
-                } else if (visionInfo.isSafe !== undefined) {
-                    visionDetails += `<div style="color: ${visionInfo.isSafe ? '#2bc990' : '#ff9800'}; margin-top: 8px;"><strong>${visionInfo.isSafe ? '✅ Image passed safety check' : '⚠️ Image failed safety check'}</strong></div>`;
-                }
-                
-                // Display raw Vision API response if available
-                if (visionInfo.rawResponse) {
-                    const rawResponseJson = JSON.stringify(visionInfo.rawResponse, null, 2);
-                    visionDetails += `<details style="margin-top: 12px;"><summary style="cursor: pointer; font-size: 12px; font-weight: 600; color: #2196F3; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px;">📋 Show Raw Vision API Response</summary><pre style="font-size: 11px; max-height: 400px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(rawResponseJson)}</pre></details>`;
-                }
-                
-                visionHtml = `
-                    <div style="background: rgba(33, 150, 243, 0.05); padding: 12px; margin-top: 8px; border-left: 3px solid ${statusColor}; border-radius: 4px;">
-                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">🔍 Google Vision API: ${visionStatus}</div>
-                        ${visionDetails}
-                    </div>
-                `;
-            }
-            
-            // Build Delete info HTML if present
-            let deleteHtml = '';
-            if (deleteInfo && normalizedMethod === 'DELETE') {
-                const deleteStatus = deleteInfo.success ? '✅ SUCCESS' : '❌ FAILED';
-                const statusColor = deleteInfo.success ? '#2bc990' : '#ff4d6d';
-                
-                let deleteDetails = '';
-                
-                if (deleteInfo.debug) {
-                    const debug = deleteInfo.debug;
-                    deleteDetails += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">`;
-                    deleteDetails += `<div style="font-weight: 600; margin-bottom: 8px; font-size: 12px;">🔍 Delete Debug Information:</div>`;
-                    
-                    if (debug.presetId) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Preset ID:</strong> ${escapeHtml(debug.presetId)}</div>`;
-                    }
-                    if (debug.selfieId) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>Selfie ID:</strong> ${escapeHtml(debug.selfieId)}</div>`;
-                    }
-                    if (debug.resultsDeleted !== undefined) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: ${debug.resultsDeleted > 0 ? '#ff9800' : '#666'};"><strong>Related Results Deleted:</strong> ${debug.resultsDeleted}</div>`;
-                    }
-                    if (debug.databaseDeleted !== undefined) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: ${debug.databaseDeleted > 0 ? '#2bc990' : '#ff4d6d'};"><strong>Database Records Deleted:</strong> ${debug.databaseDeleted}</div>`;
-                    }
-                    if (debug.r2Deleted !== undefined) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: ${debug.r2Deleted ? '#2bc990' : '#ff9800'};"><strong>R2 File Deleted:</strong> ${debug.r2Deleted ? '✅ Yes' : '❌ No'}</div>`;
-                    }
-                    if (debug.r2Key) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0;"><strong>R2 Key:</strong> ${escapeHtml(debug.r2Key)}</div>`;
-                    }
-                    if (debug.r2Error) {
-                        deleteDetails += `<div style="font-size: 11px; margin: 4px 0; color: #ff4d6d;"><strong>R2 Error:</strong> ${escapeHtml(debug.r2Error)}</div>`;
-                    }
-                    if (debug.imageUrl) {
-                        deleteDetails += `<details style="margin-top: 8px;"><summary style="cursor: pointer; font-size: 11px; color: #666;">Show Image URL</summary><div style="font-size: 10px; word-break: break-all; margin-top: 4px;">${escapeHtml(debug.imageUrl)}</div></details>`;
-                    }
-                    
-                    deleteDetails += `</div>`;
-                }
-                
-                deleteHtml = `
-                    <div style="background: rgba(43, 201, 144, 0.05); padding: 12px; margin-top: 8px; border-left: 3px solid ${statusColor}; border-radius: 4px;">
-                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">🗑️ Delete Operation: ${deleteStatus}</div>
-                        ${deleteDetails}
-                    </div>
-                `;
-            }
-            
-            const payloadHtml = payload !== undefined && payload !== null
-                ? `<pre class="api-log-payload">${escapeHtml(formatPayload(payload))}</pre>`
-                : '';
 
             entry.innerHTML = `
                 <div class="api-log-entry-header">
@@ -1719,10 +1652,7 @@
                 </div>
                 <div class="api-log-action">${label}</div>
                 <div class="api-log-detail">${method} ${url}</div>
-                ${geminiHtml}
-                ${visionHtml}
-                ${deleteHtml}
-                ${payloadHtml}
+                ${responseJsonHtml}
             `;
 
             apiLogList.prepend(entry);
@@ -2023,12 +1953,6 @@
         presetInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            
-            // Show upload options when file is selected
-            const optionsDiv = document.getElementById('preset-upload-options');
-            if (optionsDiv) {
-                optionsDiv.style.display = 'block';
-            }
 
             await handleImageUpload(file, 'preset');
         });
@@ -2085,21 +2009,38 @@
                 });
 
                 let uploadData = {};
+                let uploadResponseText = '';
                 try {
-                    uploadData = await uploadUrlResponse.json();
-                } catch {
-                    uploadData = {};
+                    uploadResponseText = await uploadUrlResponse.text();
+                    if (uploadResponseText) {
+                        uploadData = JSON.parse(uploadResponseText);
+                    }
+                } catch (parseError) {
+                    console.error('Failed to parse upload URL response:', parseError);
+                    console.error('Response text:', uploadResponseText);
+                    uploadData = { 
+                        error: 'Failed to parse response',
+                        message: uploadResponseText || 'Unknown error'
+                    };
                 }
 
                 if (!uploadUrlResponse.ok) {
+                    // Backend errorResponse returns { Success: false, Message: ..., StatusCode: ... }
+                    const errorMsg = uploadData.Message || uploadData.message || uploadData.error || uploadResponseText || `HTTP ${uploadUrlResponse.status} ${uploadUrlResponse.statusText}`;
                     logApiCall({
                         label: `Xin URL Tải Lên (${config.logName})`,
                         method: 'POST',
                         url: '/upload-url',
                         status: 'error',
-                        payload: uploadData
+                        payload: { ...uploadData, status: uploadUrlResponse.status, statusText: uploadUrlResponse.statusText }
                     });
-                    throw new Error(uploadData.message || 'Không thể lấy URL tải lên');
+                    throw new Error(errorMsg);
+                }
+
+                // Validate that uploadUrl exists in response
+                if (!uploadData.uploadUrl) {
+                    console.error('Upload URL response missing uploadUrl field:', uploadData);
+                    throw new Error('Response missing uploadUrl field. Server may be misconfigured.');
                 }
 
                 logApiCall({
@@ -2197,9 +2138,7 @@
                     method: 'PUT',
                     url: uploadData.uploadUrl,
                     status: uploadResult.success ? 'success' : 'error',
-                    payload: uploadResult,
-                    geminiInfo: uploadResult.gemini_info || uploadResult.vertex_info || null,  // Include Vertex AI API call details
-                    visionInfo: uploadResult.vision_scan || null  // Include Vision API scan results
+                    payload: uploadResult
                 });
 
                 // Add to local state
@@ -2359,8 +2298,7 @@
                     method: 'POST',
                     url: `${WORKER_URL}/faceswap`,
                     status: 'success',
-                    payload: data,
-                    geminiInfo: data.gemini_info || null
+                    payload: data
                 });
 
             } catch (error) {
