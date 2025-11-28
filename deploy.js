@@ -569,19 +569,55 @@ const deploymentUtils = {
     }
   },
 
-  async deploySecrets(secrets, codebasePath, reportProgress) {
+  async deploySecrets(secrets, codebasePath, reportProgress, workerName) {
     if (!secrets) {
       throw new Error('No secrets provided');
     }
 
     // Create temporary secrets.json file
     const secretsPath = path.join(codebasePath, 'temp-secrets.json');
+    const wranglerConfigPath = path.join(codebasePath, 'wrangler.jsonc');
+    let originalConfigContent = null;
+    let configModified = false;
+    
     try {
       fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), 'utf8');
 
-      // Deploy secrets using wrangler
+      // Temporarily remove pages_build_output_dir from wrangler.jsonc to avoid Pages project detection
+      // This allows wrangler secret bulk to target the Worker instead of Pages
+      if (fs.existsSync(wranglerConfigPath)) {
+        try {
+          originalConfigContent = fs.readFileSync(wranglerConfigPath, 'utf8');
+          // Parse JSONC (remove comments)
+          const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+          const config = JSON.parse(jsonContent);
+          
+          // Remove both pages_build_output_dir and site fields to prevent Pages project detection
+          // Wrangler detects Pages projects by either of these fields
+          if (config.pages_build_output_dir || config.site) {
+            if (config.pages_build_output_dir) {
+              delete config.pages_build_output_dir;
+            }
+            if (config.site) {
+              delete config.site;
+            }
+            fs.writeFileSync(wranglerConfigPath, JSON.stringify(config, null, '\t'), 'utf8');
+            configModified = true;
+            console.log('[Deploy] Temporarily removed pages_build_output_dir and site fields for secret deployment');
+          }
+        } catch (configError) {
+          console.warn('[Deploy] Could not modify wrangler.jsonc:', configError.message);
+        }
+      }
+
+      // Deploy secrets using wrangler - explicitly specify worker name to avoid Pages project detection
+      // Use --name flag to ensure we're deploying to the Worker, not Pages
+      const command = workerName 
+        ? `wrangler secret bulk --name ${workerName} temp-secrets.json`
+        : 'wrangler secret bulk temp-secrets.json';
+      
       const result = await this.executeWithLogs(
-        'wrangler secret bulk temp-secrets.json',
+        command,
         codebasePath,
         'deploy-secrets',
         reportProgress
@@ -599,7 +635,19 @@ const deploymentUtils = {
       }
 
       if (reportProgress) reportProgress('deploy-secrets', 'completed', 'Secrets deployed');
+      
+      return result;
     } finally {
+      // Restore original wrangler.jsonc if we modified it
+      if (configModified && originalConfigContent) {
+        try {
+          fs.writeFileSync(wranglerConfigPath, originalConfigContent, 'utf8');
+          console.log('[Deploy] Restored pages_build_output_dir and site fields in wrangler.jsonc');
+        } catch (restoreError) {
+          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
+        }
+      }
+      
       // Clean up temporary file
       if (fs.existsSync(secretsPath)) {
         try {
@@ -614,148 +662,180 @@ const deploymentUtils = {
   async deployWorker(codebasePath, workerName, reportProgress) {
     if (reportProgress) reportProgress('deploy-worker', 'running', `Deploying Worker: ${workerName}...`);
 
-    const result = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
-
-    // Handle error 10214: Can't edit settings on non-deployed worker
-    // This happens when observability settings are applied to a worker that doesn't exist yet
-    if (!result.success && result.error && result.error.includes('code: 10214')) {
-      console.log('[Deploy] Error 10214 detected - worker not deployed yet. Retrying without observability settings...');
-      
-      // Temporarily remove observability from wrangler.jsonc
-      const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-      let wranglerContent = null;
-      let observabilityConfig = null;
-      
-      if (fs.existsSync(wranglerPath)) {
-        try {
-          wranglerContent = fs.readFileSync(wranglerPath, 'utf8');
-          // Parse JSONC (remove comments)
-          const jsonContent = wranglerContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-          const wranglerConfig = JSON.parse(jsonContent);
-          
-          if (wranglerConfig.observability) {
-            observabilityConfig = JSON.parse(JSON.stringify(wranglerConfig.observability)); // Deep copy
-            delete wranglerConfig.observability;
-            // Write back as JSON (wrangler accepts both JSON and JSONC)
-            fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
-            console.log('[Deploy] Temporarily removed observability settings for initial deployment');
+    // Temporarily remove pages_build_output_dir from wrangler.jsonc to avoid Pages project detection
+    const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
+    let originalConfigContent = null;
+    let configModified = false;
+    
+    if (fs.existsSync(wranglerPath)) {
+      try {
+        originalConfigContent = fs.readFileSync(wranglerPath, 'utf8');
+        // Parse JSONC (remove comments)
+        const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const wranglerConfig = JSON.parse(jsonContent);
+        
+        // Remove both pages_build_output_dir and site fields to prevent Pages project detection
+        // Wrangler detects Pages projects by either of these fields
+        if (wranglerConfig.pages_build_output_dir || wranglerConfig.site) {
+          if (wranglerConfig.pages_build_output_dir) {
+            delete wranglerConfig.pages_build_output_dir;
           }
-        } catch (error) {
-          console.warn('[Deploy] Could not modify wrangler.jsonc:', error.message);
-        }
-      }
-      
-      // Retry deployment without observability
-      const retryResult = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
-      
-      // Restore observability settings if we removed them
-      if (observabilityConfig) {
-        try {
-          // Re-read the current config (may have been modified)
-          const currentContent = fs.readFileSync(wranglerPath, 'utf8');
-          const jsonContent = currentContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-          const wranglerConfig = JSON.parse(jsonContent);
-          wranglerConfig.observability = observabilityConfig;
+          if (wranglerConfig.site) {
+            delete wranglerConfig.site;
+          }
           fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
-          console.log('[Deploy] Restored observability settings');
-          
-          // Now deploy again with observability (worker exists now)
-          if (retryResult.success) {
-            console.log('[Deploy] Deploying again with observability settings...');
-            const finalResult = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
-            if (finalResult.success) {
-              // Use the final result
-              Object.assign(result, finalResult);
-            } else {
-              console.warn('[Deploy] Failed to deploy with observability settings, but worker is deployed');
-            }
-          }
-        } catch (error) {
-          console.warn('[Deploy] Could not restore observability settings:', error.message);
-          // Try to restore original content if we have it
-          if (wranglerContent) {
-            try {
-              fs.writeFileSync(wranglerPath, wranglerContent, 'utf8');
-            } catch (restoreError) {
-              console.warn('[Deploy] Could not restore original wrangler.jsonc:', restoreError.message);
-            }
-          }
+          configModified = true;
+          console.log('[Deploy] Temporarily removed pages_build_output_dir and site fields for worker deployment');
         }
+      } catch (configError) {
+        console.warn('[Deploy] Could not modify wrangler.jsonc:', configError.message);
       }
-      
-      if (!retryResult.success && !result.success) {
-        throw new Error(retryResult.error || result.error || 'Worker deployment failed');
-      }
-      
-      // If retry succeeded, use retry result
-      if (retryResult.success) {
-        Object.assign(result, retryResult);
-      }
-    } else if (!result.success) {
-      throw new Error(result.error || 'Worker deployment failed');
     }
 
-    // Try to get Worker URL
-    let workerUrl = '';
     try {
-      const deployments = execSync('wrangler deployments list --latest', {
-        encoding: 'utf8',
-        stdio: 'pipe',
-        timeout: 10000,
-        cwd: codebasePath
-      });
+      let result = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
 
-      if (deployments) {
-        const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
-        if (urlMatch) {
-          workerUrl = urlMatch[0];
+      // Handle error 10214: Can't edit settings on non-deployed worker
+      // This happens when observability settings are applied to a worker that doesn't exist yet
+      if (!result.success && result.error && result.error.includes('code: 10214')) {
+        console.log('[Deploy] Error 10214 detected - worker not deployed yet. Retrying without observability settings...');
+        
+        // Temporarily remove observability from wrangler.jsonc (pages_build_output_dir already removed)
+        let observabilityConfig = null;
+        
+        if (fs.existsSync(wranglerPath)) {
+          try {
+            const currentContent = fs.readFileSync(wranglerPath, 'utf8');
+            // Parse JSONC (remove comments)
+            const jsonContent = currentContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+            const wranglerConfig = JSON.parse(jsonContent);
+            
+            if (wranglerConfig.observability) {
+              observabilityConfig = JSON.parse(JSON.stringify(wranglerConfig.observability)); // Deep copy
+              delete wranglerConfig.observability;
+              // Write back as JSON (wrangler accepts both JSON and JSONC)
+              fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
+              console.log('[Deploy] Temporarily removed observability settings for initial deployment');
+            }
+          } catch (error) {
+            console.warn('[Deploy] Could not modify wrangler.jsonc:', error.message);
+          }
         }
+        
+        // Retry deployment without observability
+        const retryResult = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
+        
+        // Restore observability settings if we removed them
+        if (observabilityConfig) {
+          try {
+            // Re-read the current config (may have been modified)
+            const currentContent = fs.readFileSync(wranglerPath, 'utf8');
+            const jsonContent = currentContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+            const wranglerConfig = JSON.parse(jsonContent);
+            wranglerConfig.observability = observabilityConfig;
+            fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
+            console.log('[Deploy] Restored observability settings');
+            
+            // Now deploy again with observability (worker exists now)
+            if (retryResult.success) {
+              console.log('[Deploy] Deploying again with observability settings...');
+              const finalResult = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
+              if (finalResult.success) {
+                // Use the final result
+                result = finalResult;
+              } else {
+                console.warn('[Deploy] Failed to deploy with observability settings, but worker is deployed');
+              }
+            }
+          } catch (error) {
+            console.warn('[Deploy] Could not restore observability settings:', error.message);
+          }
+        }
+        
+        if (!retryResult.success && !result.success) {
+          throw new Error(retryResult.error || result.error || 'Worker deployment failed');
+        }
+        
+        // If retry succeeded, use retry result
+        if (retryResult.success && !result.success) {
+          result = retryResult;
+        }
+      } else if (!result.success) {
+        throw new Error(result.error || 'Worker deployment failed');
       }
-    } catch (error) {
-      // Try to construct URL from whoami
+
+      // Try to get Worker URL
+      let workerUrl = '';
       try {
-        const whoami = execSync('wrangler whoami', {
+        const deployments = execSync('wrangler deployments list --latest', {
           encoding: 'utf8',
           stdio: 'pipe',
           timeout: 10000,
           cwd: codebasePath
         });
 
-        const accountMatch = whoami.match(/([^\s]+)@/);
-        if (accountMatch) {
-          const accountSubdomain = accountMatch[1];
-          workerUrl = `https://${workerName}.${accountSubdomain}.workers.dev`;
+        if (deployments) {
+          const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
+          if (urlMatch) {
+            workerUrl = urlMatch[0];
+          }
         }
       } catch (error) {
-        // Could not determine URL
-      }
-    }
-
-    // Update HTML with Worker URL if found
-    if (workerUrl) {
-      const htmlPath = path.join(codebasePath, 'public_page', 'index.html');
-      if (fs.existsSync(htmlPath)) {
+        // Try to construct URL from whoami
         try {
-          let htmlContent = fs.readFileSync(htmlPath, 'utf8');
-          const urlPattern = /const WORKER_URL = ['"](.*?)['"]/;
-          if (urlPattern.test(htmlContent)) {
-            htmlContent = htmlContent.replace(urlPattern, `const WORKER_URL = '${workerUrl}'`);
-            fs.writeFileSync(htmlPath, htmlContent, 'utf8');
+          const whoami = execSync('wrangler whoami', {
+            encoding: 'utf8',
+            stdio: 'pipe',
+            timeout: 10000,
+            cwd: codebasePath
+          });
+
+          const accountMatch = whoami.match(/([^\s]+)@/);
+          if (accountMatch) {
+            const accountSubdomain = accountMatch[1];
+            workerUrl = `https://${workerName}.${accountSubdomain}.workers.dev`;
           }
         } catch (error) {
-          // Non-fatal
+          // Could not determine URL
+        }
+      }
+
+      // Update HTML with Worker URL if found
+      if (workerUrl) {
+        const htmlPath = path.join(codebasePath, 'public_page', 'index.html');
+        if (fs.existsSync(htmlPath)) {
+          try {
+            let htmlContent = fs.readFileSync(htmlPath, 'utf8');
+            const urlPattern = /const WORKER_URL = ['"](.*?)['"]/;
+            if (urlPattern.test(htmlContent)) {
+              htmlContent = htmlContent.replace(urlPattern, `const WORKER_URL = '${workerUrl}'`);
+              fs.writeFileSync(htmlPath, htmlContent, 'utf8');
+            }
+          } catch (error) {
+            // Non-fatal
+          }
+        }
+      }
+
+      if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
+      return workerUrl;
+    } finally {
+      // Restore original wrangler.jsonc if we modified it
+      if (configModified && originalConfigContent) {
+        try {
+          fs.writeFileSync(wranglerPath, originalConfigContent, 'utf8');
+          console.log('[Deploy] Restored pages_build_output_dir in wrangler.jsonc after worker deployment');
+        } catch (restoreError) {
+          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
         }
       }
     }
-
-    if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
-    return workerUrl;
   },
 
   async deployPages(codebasePath, pagesProjectName, reportProgress) {
     // Check for public_page in codebasePath first
     let publicPageDir = path.join(codebasePath, 'public_page');
-    
+
     // If not found, check in project root (where deploy.js is located)
     if (!fs.existsSync(publicPageDir)) {
       const projectRoot = path.resolve(__dirname);
@@ -778,6 +858,39 @@ const deploymentUtils = {
     const absolutePublicPageDir = path.resolve(publicPageDir);
 
     if (reportProgress) reportProgress('deploy-pages', 'running', `Deploying Pages: ${pagesProjectName}...`);
+
+    // Temporarily modify wrangler.jsonc for Pages deployment
+    // Pages deployment doesn't support Worker fields like "main", "observability", "site"
+    const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
+    let originalConfigContent = null;
+    let configModified = false;
+
+    if (fs.existsSync(wranglerPath)) {
+      try {
+        originalConfigContent = fs.readFileSync(wranglerPath, 'utf8');
+        // Parse JSONC (remove comments)
+        const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const wranglerConfig = JSON.parse(jsonContent);
+
+        // Remove Worker-specific fields that Pages doesn't support
+        const workerFields = ['main', 'observability', 'site', 'r2_buckets', 'd1_databases'];
+        let removedFields = false;
+        for (const field of workerFields) {
+          if (wranglerConfig[field]) {
+            delete wranglerConfig[field];
+            removedFields = true;
+          }
+        }
+
+        if (removedFields) {
+          fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
+          configModified = true;
+          console.log('[Deploy] Temporarily removed Worker fields for Pages deployment');
+        }
+      } catch (configError) {
+        console.warn('[Deploy] Could not modify wrangler.jsonc for Pages:', configError.message);
+      }
+    }
 
     try {
       // Use the exact same command as deploy.js CLI
@@ -805,6 +918,16 @@ const deploymentUtils = {
       if (reportProgress) reportProgress('deploy-pages', 'warning', `Pages deployment error: ${error.message}. URL: ${pagesUrl}`);
       // Still return the URL as Pages deployment is non-critical
       return pagesUrl;
+    } finally {
+      // Restore original wrangler.jsonc if we modified it
+      if (configModified && originalConfigContent) {
+        try {
+          fs.writeFileSync(wranglerPath, originalConfigContent, 'utf8');
+          console.log('[Deploy] Restored Worker fields in wrangler.jsonc after Pages deployment');
+        } catch (restoreError) {
+          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
+        }
+      }
     }
   },
 
@@ -887,7 +1010,7 @@ const deploymentUtils = {
 
       // Step 7: Deploy secrets (now that worker exists)
       if (secrets) {
-        await this.deploySecrets(secrets, codebasePath, reportProgress);
+        await this.deploySecrets(secrets, codebasePath, reportProgress, workerName);
       }
 
       // Step 8: Deploy Pages
@@ -1038,7 +1161,7 @@ async function main() {
         } else {
           log.info(details || 'Deploying secrets...');
         }
-      });
+      }, deploymentConfig.workerName);
     } catch (error) {
       log.error('Failed to deploy secrets');
       throw error;

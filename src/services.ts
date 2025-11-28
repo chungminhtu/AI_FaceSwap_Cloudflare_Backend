@@ -73,32 +73,23 @@ export const callNanoBanana = async (
   sourceUrl: string,
   env: Env
 ): Promise<FaceSwapResponse> => {
-  // Use Gemini API key (same as prompt generation)
-  const apiKey = env.GOOGLE_GEMINI_API_KEY;
-  if (!apiKey) {
+  // Use Vertex AI credentials
+  if (!env.GOOGLE_VERTEX_API_KEY || !env.GOOGLE_VERTEX_PROJECT_ID) {
     return {
       Success: false,
-      Message: 'GOOGLE_GEMINI_API_KEY not set',
+      Message: 'GOOGLE_VERTEX_API_KEY and GOOGLE_VERTEX_PROJECT_ID are required',
       StatusCode: 500,
     };
   }
 
   try {
-    const geminiModel = 'models/gemini-2.5-flash';
-    // Use configurable endpoint, defaulting to regular Gemini API
-    const baseEndpoint = env.GOOGLE_GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta';
-    const isVertexAI = baseEndpoint.includes('aiplatform');
-
-    let geminiEndpoint: string;
-    if (isVertexAI) {
-      const projectId = env.GOOGLE_PROJECT_ID;
-      if (!projectId) {
-        throw new Error('GOOGLE_PROJECT_ID is required when using Vertex AI endpoint');
-      }
-      geminiEndpoint = `${baseEndpoint}/projects/${projectId}/locations/us-central1/publishers/google/models/${geminiModel}:generateContent`;
-    } else {
-      geminiEndpoint = `${baseEndpoint}/${geminiModel}:generateContent`;
-    }
+    const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    
+    // Use Vertex AI Gemini API with image generation (Nano Banana)
+    // Model supports image generation via response_modalities
+    const geminiModel = 'models/gemini-2.0-flash-exp';
+    const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
     // Build the prompt text from the stored prompt JSON (this describes the preset scene)
     let promptText = '';
@@ -111,130 +102,69 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(prompt);
     }
 
-    // Fetch both images (preset and selfie) to include in the request
-    console.log('[Gemini-NanoBanana] Fetching images for face swap...');
-    console.log('[Gemini-NanoBanana] Preset URL:', targetUrl);
-    console.log('[Gemini-NanoBanana] Selfie URL:', sourceUrl);
-    
-    let presetImageBase64: string | null = null;
-    let selfieImageBase64: string | null = null;
-    
-    try {
-      const presetResponse = await fetch(targetUrl);
-      if (presetResponse.ok) {
-        const presetBuffer = await presetResponse.arrayBuffer();
-        presetImageBase64 = `data:${presetResponse.headers.get('content-type') || 'image/jpeg'};base64,${Buffer.from(presetBuffer).toString('base64')}`;
-        console.log('[Gemini-NanoBanana] ✅ Preset image fetched');
-      }
-    } catch (error) {
-      console.warn('[Gemini-NanoBanana] Failed to fetch preset image:', error);
-    }
-    
-    try {
-      const selfieResponse = await fetch(sourceUrl);
-      if (selfieResponse.ok) {
-        const selfieBuffer = await selfieResponse.arrayBuffer();
-        selfieImageBase64 = `data:${selfieResponse.headers.get('content-type') || 'image/jpeg'};base64,${Buffer.from(selfieBuffer).toString('base64')}`;
-        console.log('[Gemini-NanoBanana] ✅ Selfie image fetched');
-      }
-    } catch (error) {
-      console.warn('[Gemini-NanoBanana] Failed to fetch selfie image:', error);
+    console.log('[Vertex-NanoBanana] Using Vertex AI Gemini API for image generation (Nano Banana)');
+    console.log('[Vertex-NanoBanana] Preset URL:', targetUrl);
+    console.log('[Vertex-NanoBanana] Selfie URL:', sourceUrl);
+    console.log('[Vertex-NanoBanana] Prompt:', promptText.substring(0, 200));
+
+    // Vertex AI Imagen API requires OAuth token
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      return {
+        Success: false,
+        Message: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+        StatusCode: 500,
+      };
     }
 
-    // Build request with prompt text and images
-    const parts: any[] = [{ text: promptText }];
-    
-    if (presetImageBase64) {
-      // Extract base64 data and mime type
-      const [mimePart, base64Data] = presetImageBase64.split(',');
-      const mimeType = mimePart.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
-      parts.push({
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data
-        }
-      });
-      console.log('[Gemini-NanoBanana] Added preset image to request');
-    }
-    
-    if (selfieImageBase64) {
-      const [mimePart, base64Data] = selfieImageBase64.split(',');
-      const mimeType = mimePart.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
-      parts.push({
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data
-        }
-      });
-      console.log('[Gemini-NanoBanana] Added selfie image to request');
+    let accessToken: string;
+    try {
+      console.log('[Vertex-NanoBanana] Generating OAuth access token for Vertex AI...');
+      accessToken = await getAccessToken(
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
+      console.log('[Vertex-NanoBanana] ✅ OAuth token obtained successfully');
+    } catch (tokenError) {
+      console.error('[Vertex-NanoBanana] ❌ Failed to get OAuth token:', tokenError);
+      return {
+        Success: false,
+        Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        StatusCode: 500,
+      };
     }
 
+    // Vertex AI Gemini API request format with image generation
+    // Request both TEXT and IMAGE responses using response_modalities
     const requestBody = {
       contents: [{
-        parts: parts
+        parts: [
+          { text: promptText }
+        ]
       }],
       generationConfig: {
-        temperature: 0.1,
-        topK: 1,
-        topP: 1,
-        maxOutputTokens: 2048,
+        responseModalities: ['TEXT', 'IMAGE'], // Request both text and image
+        temperature: 0.7,
       }
     };
 
-    // Determine authentication method
-    let authHeader: string;
-    if (isVertexAI) {
-      // Vertex AI requires JWT/OAuth token
-      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
-        return {
-          Success: false,
-          Message: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
-          StatusCode: 500,
-        };
-      }
-      
-      try {
-        console.log('[Gemini-NanoBanana] Generating OAuth access token for Vertex AI...');
-        const accessToken = await getAccessToken(
-          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-        );
-        authHeader = `Bearer ${accessToken}`;
-        console.log('[Gemini-NanoBanana] ✅ OAuth token obtained successfully');
-      } catch (tokenError) {
-        console.error('[Gemini-NanoBanana] ❌ Failed to get OAuth token:', tokenError);
-        return {
-          Success: false,
-          Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
-          StatusCode: 500,
-        };
-      }
-    } else {
-      // Regular Gemini API uses API key
-      authHeader = apiKey;
-    }
-
-    // Call Gemini API with only text (no images)
+    // Call Vertex AI Gemini API
     const response = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(isVertexAI 
-          ? { 'Authorization': authHeader }
-          : { 'x-goog-api-key': authHeader }
-        )
+        'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
     });
 
     const rawResponse = await response.text();
-    console.log('[Gemini-NanoBanana] Response status:', response.status);
+    console.log('[Vertex-NanoBanana] Response status:', response.status);
 
     if (!response.ok) {
-      console.error('[Gemini-NanoBanana] API error:', rawResponse.substring(0, 500));
+      console.error('[Vertex-NanoBanana] API error:', rawResponse.substring(0, 500));
       return {
         Success: false,
-        Message: `Gemini API error: ${response.status} ${response.statusText}`,
+        Message: `Vertex AI Gemini API error: ${response.status} ${response.statusText}`,
         StatusCode: response.status,
         Error: rawResponse.substring(0, 500),
       };
@@ -242,87 +172,76 @@ export const callNanoBanana = async (
 
     try {
       const data = JSON.parse(rawResponse);
+      console.log('[Vertex-NanoBanana] Response structure:', JSON.stringify(data).substring(0, 500));
 
-      // Gemini API returns text, not image URLs
-      // Check if response contains image data or URL
-      const parts = data.candidates?.[0]?.content?.parts || [];
-      
-      // Look for image data in response (if Gemini returns images)
-      let resultImageUrl: string | undefined;
-      let resultMessage = 'Gemini face swap completed';
+      // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
+      const candidates = data.candidates || [];
+      if (candidates.length === 0) {
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return any candidates',
+          StatusCode: 500,
+          Error: 'No candidates found in response',
+        };
+      }
 
-      // Try to extract image from response or text description
-      let base64ImageData: string | null = null;
+      const parts = candidates[0].content?.parts || [];
+      let base64Image: string | null = null;
+      let mimeType = 'image/png';
+
+      // Extract image from parts array - look for inline_data
       for (const part of parts) {
-        if (part.inline_data?.data) {
-          // Gemini returned base64 image data - upload it to R2
-          base64ImageData = part.inline_data.data;
-          console.log('[Gemini-NanoBanana] Found base64 image data in response');
-        }
-        if (part.text) {
-          resultMessage = part.text;
-          console.log('[Gemini-NanoBanana] Response text:', resultMessage.substring(0, 200));
+        if (part.inline_data) {
+          base64Image = part.inline_data.data;
+          mimeType = part.inline_data.mime_type || 'image/png';
+          console.log('[Vertex-NanoBanana] ✅ Found image in inline_data, mimeType:', mimeType);
+          break;
         }
       }
 
-      // If we got base64 image data, upload it to R2
-      if (base64ImageData) {
-        try {
-          // Convert base64 to Uint8Array for Cloudflare Workers
-          const binaryString = atob(base64ImageData);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          
-          const resultKey = `results/gemini_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
-          
-          await env.FACESWAP_IMAGES.put(resultKey, bytes, {
-            httpMetadata: {
-              contentType: 'image/jpeg',
-              cacheControl: 'public, max-age=31536000, immutable',
-            },
-          });
-          
-          // Return R2 key format - will be converted to public URL by caller
-          resultImageUrl = `r2://${resultKey}`;
-          console.log('[Gemini-NanoBanana] ✅ Image uploaded to R2:', resultKey);
-        } catch (r2Error) {
-          console.error('[Gemini-NanoBanana] Failed to upload image to R2:', r2Error);
-          return {
-            Success: false,
-            Message: 'Failed to save generated image',
-            StatusCode: 500,
-            Error: r2Error instanceof Error ? r2Error.message : String(r2Error),
-          };
-        }
-      } else {
-        // Check if there's a URL in the text response
-        const urlMatch = resultMessage.match(/https?:\/\/[^\s]+\.(?:jpg|jpeg|png|webp)/i);
-        if (urlMatch) {
-          resultImageUrl = urlMatch[0];
-          console.log('[Gemini-NanoBanana] Found image URL in response text:', resultImageUrl);
-        }
+      if (!base64Image) {
+        console.error('[Vertex-NanoBanana] No image data found in response parts');
+        console.log('[Vertex-NanoBanana] Available parts:', JSON.stringify(parts).substring(0, 500));
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return an image in the response',
+          StatusCode: 500,
+          Error: 'No inline_data found in response parts',
+        };
       }
+      
+      console.log('[Vertex-NanoBanana] ✅ Received base64 image from Vertex AI, length:', base64Image.length);
 
-      const result: FaceSwapResponse = {
-        Success: !!resultImageUrl,
+      // Convert base64 to Uint8Array and upload to R2
+      const binaryString = atob(base64Image);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const resultKey = `results/vertex_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'png'}`;
+      
+      await env.FACESWAP_IMAGES.put(resultKey, bytes, {
+        httpMetadata: {
+          contentType: mimeType,
+          cacheControl: 'public, max-age=31536000, immutable',
+        },
+      });
+      
+      // Get public URL (will be converted by caller)
+      const resultImageUrl = `r2://${resultKey}`;
+      console.log('[Vertex-NanoBanana] ✅ Image uploaded to R2:', resultKey);
+
+      return {
+        Success: true,
         ResultImageUrl: resultImageUrl,
-        Message: resultMessage || 'Gemini generation completed',
+        Message: 'Vertex AI image generation completed',
         StatusCode: response.status,
       };
-
-      if (!result.Success || !result.ResultImageUrl) {
-        result.Success = false;
-        result.Message = 'Gemini API did not return an image. Note: Gemini models are text generation models and do not generate images. For face swap operations, please use the RapidAPI provider or a dedicated image generation service.';
-        result.Error = 'Gemini generateContent endpoint returns text descriptions, not images. Use a proper image generation/manipulation API for face swaps.';
-      }
-
-      return result;
     } catch (parseError) {
       return {
         Success: false,
-        Message: 'Failed to parse Gemini API response',
+        Message: 'Failed to parse Vertex AI Gemini API response',
         StatusCode: 500,
         Error: rawResponse.substring(0, 500),
       };
@@ -330,7 +249,7 @@ export const callNanoBanana = async (
   } catch (error) {
     return {
       Success: false,
-      Message: `Gemini face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
+      Message: `Vertex AI face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
     };
   }
@@ -435,8 +354,8 @@ export const checkSafeSearch = async (
   }
 };
 
-// Google Gemini API integration for automatic prompt generation
-export const generateGeminiPrompt = async (
+// Vertex AI API integration for automatic prompt generation
+export const generateVertexPrompt = async (
   imageUrl: string,
   env: Env
 ): Promise<{ 
@@ -456,62 +375,46 @@ export const generateGeminiPrompt = async (
   }
 }> => {
   const startTime = Date.now();
-  console.log('[Gemini] ========== STARTING GEMINI PROMPT GENERATION ==========');
-  console.log('[Gemini] Image URL:', imageUrl);
-  console.log('[Gemini] Function called at:', new Date().toISOString());
+  console.log('[Vertex] ========== STARTING VERTEX AI PROMPT GENERATION ==========');
+  console.log('[Vertex] Image URL:', imageUrl);
+  console.log('[Vertex] Function called at:', new Date().toISOString());
   
   const debugInfo: any = {};
   
   try {
-    // Use Gemini API key (separate from Vision)
-    const apiKey = env.GOOGLE_GEMINI_API_KEY;
-    if (!apiKey) {
-      console.error('[Gemini] ❌ ERROR: GOOGLE_GEMINI_API_KEY not set');
+    // Use Vertex AI credentials
+    if (!env.GOOGLE_VERTEX_API_KEY || !env.GOOGLE_VERTEX_PROJECT_ID) {
+      console.error('[Vertex] ❌ ERROR: GOOGLE_VERTEX_API_KEY and GOOGLE_VERTEX_PROJECT_ID are required');
       return { 
         success: false, 
-        error: 'GOOGLE_GEMINI_API_KEY not set',
-        debug: { errorDetails: 'API key is missing from environment variables' }
+        error: 'GOOGLE_VERTEX_API_KEY and GOOGLE_VERTEX_PROJECT_ID are required',
+        debug: { errorDetails: 'Vertex AI credentials are missing from environment variables' }
       };
     }
-    console.log('[Gemini] ✅ API key found (length:', apiKey.length, ')');
+    console.log('[Vertex] ✅ Vertex AI credentials found');
 
     const geminiModel = 'models/gemini-2.5-flash';
-    // Use configurable endpoint, defaulting to regular Gemini API
-    const baseEndpoint = env.GOOGLE_GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta';
+    const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    
+    // Vertex AI endpoint format
+    const vertexEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
-    // Check if it's a Vertex AI endpoint (contains 'aiplatform')
-    const isVertexAI = baseEndpoint.includes('aiplatform');
-
-    let geminiEndpoint: string;
-    if (isVertexAI) {
-      // Vertex AI format: https://REGION-aiplatform.googleapis.com/v1beta1/projects/PROJECT_ID/locations/REGION/publishers/google/models/MODEL:METHOD
-      const projectId = env.GOOGLE_PROJECT_ID;
-      if (!projectId) {
-        throw new Error('GOOGLE_PROJECT_ID is required when using Vertex AI endpoint');
-      }
-      geminiEndpoint = `${baseEndpoint}/projects/${projectId}/locations/us-central1/publishers/google/models/${geminiModel}:generateContent`;
-      console.log('[Gemini] Using Vertex AI endpoint:', geminiEndpoint);
-    } else {
-      // Regular Gemini API format
-      geminiEndpoint = `${baseEndpoint}/${geminiModel}:generateContent`;
-      console.log('[Gemini] Using regular Gemini API endpoint');
-    }
-
-    debugInfo.endpoint = geminiEndpoint;
+    debugInfo.endpoint = vertexEndpoint;
     debugInfo.model = geminiModel;
-    console.log('[Gemini] Using endpoint:', geminiEndpoint);
-    console.log('[Gemini] Using model:', geminiModel);
+    console.log('[Vertex] Using Vertex AI endpoint:', vertexEndpoint);
+    console.log('[Vertex] Using model:', geminiModel);
 
     // Exact prompt text as specified by user
     const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
     // Fetch image as base64
-    console.log('[Gemini] Fetching image as base64 from:', imageUrl);
+    console.log('[Vertex] Fetching image as base64 from:', imageUrl);
     const imageData = await fetchImageAsBase64(imageUrl);
-    console.log('[Gemini] ✅ Image fetched, base64 length:', imageData.length);
+    console.log('[Vertex] ✅ Image fetched, base64 length:', imageData.length);
 
-    // Build request body following official Gemini REST API format
-    console.log('[Gemini] Building request body with exact prompt text...');
+    // Build request body following Vertex AI API format
+    console.log('[Vertex] Building request body with exact prompt text...');
     const requestBody = {
       contents: [{
         parts: [
@@ -562,54 +465,44 @@ export const generateGeminiPrompt = async (
         }
       }
     };
-    console.log('[Gemini] Request body prepared, sending to Gemini API...');
-    console.log('[Gemini] Request URL:', geminiEndpoint);
-    console.log('[Gemini] Prompt text length:', prompt.length);
+    console.log('[Vertex] Request body prepared, sending to Vertex AI API...');
+    console.log('[Vertex] Request URL:', vertexEndpoint);
+    console.log('[Vertex] Prompt text length:', prompt.length);
 
     debugInfo.requestSent = true;
     
-    // Determine authentication method
-    let authHeader: string;
-    if (isVertexAI) {
-      // Vertex AI requires JWT/OAuth token
-      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
-        console.error('[Gemini] ❌ Vertex AI requires service account credentials');
-        return {
-          success: false,
-          error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
-          debug: { errorDetails: 'Service account credentials missing' }
-        };
-      }
-      
-      try {
-        console.log('[Gemini] Generating OAuth access token for Vertex AI...');
-        const accessToken = await getAccessToken(
-          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-        );
-        authHeader = `Bearer ${accessToken}`;
-        console.log('[Gemini] ✅ OAuth token obtained successfully');
-      } catch (tokenError) {
-        console.error('[Gemini] ❌ Failed to get OAuth token:', tokenError);
-        return {
-          success: false,
-          error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
-          debug: { errorDetails: String(tokenError) }
-        };
-      }
-    } else {
-      // Regular Gemini API uses API key
-      authHeader = apiKey;
+    // Vertex AI requires OAuth token
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      console.error('[Vertex] ❌ Vertex AI requires service account credentials');
+      return {
+        success: false,
+        error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+        debug: { errorDetails: 'Service account credentials missing' }
+      };
     }
     
-    const response = await fetch(geminiEndpoint, {
+    let accessToken: string;
+    try {
+      console.log('[Vertex] Generating OAuth access token for Vertex AI...');
+      accessToken = await getAccessToken(
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
+      console.log('[Vertex] ✅ OAuth token obtained successfully');
+    } catch (tokenError) {
+      console.error('[Vertex] ❌ Failed to get OAuth token:', tokenError);
+      return {
+        success: false,
+        error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        debug: { errorDetails: String(tokenError) }
+      };
+    }
+    
+    const response = await fetch(vertexEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(isVertexAI 
-          ? { 'Authorization': authHeader }
-          : { 'x-goog-api-key': authHeader }
-        )
+        'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
     });
@@ -619,22 +512,22 @@ export const generateGeminiPrompt = async (
     debugInfo.httpStatusText = response.statusText;
     debugInfo.responseTimeMs = responseTime;
     
-    console.log('[Gemini] ✅ API request sent, received status:', response.status, response.statusText);
-    console.log('[Gemini] Response time:', responseTime, 'ms');
+    console.log('[Vertex] ✅ API request sent, received status:', response.status, response.statusText);
+    console.log('[Vertex] Response time:', responseTime, 'ms');
 
     if (!response.ok) {
       const errorText = await response.text();
       const errorPreview = errorText.substring(0, 1000);
       debugInfo.errorDetails = errorPreview;
       debugInfo.rawError = errorText;
-      console.error('[Gemini] API error:', {
+      console.error('[Vertex] API error:', {
         status: response.status,
         statusText: response.statusText,
         error: errorPreview
       });
       return { 
         success: false, 
-        error: `Gemini API error: ${response.status} ${response.statusText}`,
+        error: `Vertex AI API error: ${response.status} ${response.statusText}`,
         debug: debugInfo
       };
     }
@@ -642,16 +535,16 @@ export const generateGeminiPrompt = async (
     const data = await response.json() as any;
     const responseStructure = JSON.stringify(data).substring(0, 500);
     debugInfo.responseStructure = responseStructure;
-    console.log('[Gemini] Response structure:', responseStructure);
+    console.log('[Vertex] Response structure:', responseStructure);
 
-    // With structured outputs (responseMimeType: "application/json"), Gemini returns JSON directly
+    // With structured outputs (responseMimeType: "application/json"), Vertex AI returns JSON directly
     const parts = data.candidates?.[0]?.content?.parts;
     if (!parts || parts.length === 0) {
       debugInfo.errorDetails = 'Response received but no parts found in candidates[0].content.parts';
       debugInfo.responseStructure = JSON.stringify(data);
       return { 
         success: false, 
-        error: 'No response parts from Gemini API',
+        error: 'No response parts from Vertex AI API',
         debug: debugInfo
       };
     }
@@ -683,7 +576,7 @@ export const generateGeminiPrompt = async (
             promptJson = JSON.parse(jsonText);
             break;
           } catch (parseError) {
-            console.warn('[Gemini] Failed to parse JSON from text:', parseError);
+            console.warn('[Vertex] Failed to parse JSON from text:', parseError);
           }
         }
       }
@@ -691,12 +584,12 @@ export const generateGeminiPrompt = async (
 
     if (!promptJson) {
       const partsDebug = JSON.stringify(parts).substring(0, 500);
-      console.error('[Gemini] Could not extract JSON from response. Parts:', partsDebug);
+      console.error('[Vertex] Could not extract JSON from response. Parts:', partsDebug);
       debugInfo.errorDetails = 'Could not extract valid JSON from response parts';
       debugInfo.responseStructure = partsDebug;
       return { 
         success: false, 
-        error: 'No valid JSON response from Gemini API',
+        error: 'No valid JSON response from Vertex AI API',
         debug: debugInfo
       };
     }
@@ -706,21 +599,21 @@ export const generateGeminiPrompt = async (
     const missingKeys = requiredKeys.filter(key => !promptJson[key] || promptJson[key] === '');
 
     if (missingKeys.length > 0) {
-      console.error('[Gemini] Missing required keys:', missingKeys);
-      console.error('[Gemini] Received JSON:', JSON.stringify(promptJson));
+      console.error('[Vertex] Missing required keys:', missingKeys);
+      console.error('[Vertex] Received JSON:', JSON.stringify(promptJson));
       return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
     }
 
-    console.log('[Gemini] ✅ Generated prompt successfully with all required keys');
-    console.log('[Gemini] Prompt preview:', promptJson.prompt?.substring(0, 200));
-    console.log('[Gemini] ========== GEMINI PROMPT GENERATION SUCCESS ==========');
+    console.log('[Vertex] ✅ Generated prompt successfully with all required keys');
+    console.log('[Vertex] Prompt preview:', promptJson.prompt?.substring(0, 200));
+    console.log('[Vertex] ========== VERTEX AI PROMPT GENERATION SUCCESS ==========');
     debugInfo.responseTimeMs = Date.now() - startTime;
     return { success: true, prompt: promptJson, debug: debugInfo };
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    console.error('[Gemini] ========== GEMINI PROMPT GENERATION FAILED ==========');
-    console.error('[Gemini] Exception:', error);
+    console.error('[Vertex] ========== VERTEX AI PROMPT GENERATION FAILED ==========');
+    console.error('[Vertex] Exception:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
     debugInfo.errorDetails = errorMessage;
@@ -748,6 +641,5 @@ const fetchImageAsBase64 = async (imageUrl: string): Promise<string> => {
   return btoa(binary);
 };
 
-// Export generateVertexPrompt as alias to generateGeminiPrompt for backward compatibility
-export const generateVertexPrompt = generateGeminiPrompt;
+// generateVertexPrompt is already defined above
 
