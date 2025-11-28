@@ -96,7 +96,7 @@ export const callNanoBanana = async (
     const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
     // Convert prompt_json to text string for Vertex AI
-    // The entire prompt_json object should be converted to a readable text string
+    // The prompt_json from DB is already the complete text to send - no modifications needed
     let promptText = '';
     if (prompt && typeof prompt === 'object') {
       // Convert the entire prompt_json object to a formatted text string
@@ -107,19 +107,8 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(prompt);
     }
 
-    // Add face swap instruction to the prompt text
-    const faceSwapPrompt = `${promptText}
-
-FACE SWAP INSTRUCTION:
-Take the face from the second image (selfie) and seamlessly swap it onto the first image (preset), while maintaining the style, lighting, and composition described in the prompt_json above.`;
-
-    console.log('[Vertex-NanoBanana] Using Vertex AI Gemini API for image generation (Nano Banana)');
-    console.log('[Vertex-NanoBanana] Preset URL:', targetUrl);
-    console.log('[Vertex-NanoBanana] Selfie URL:', sourceUrl);
-    console.log('[Vertex-NanoBanana] Full prompt_json received:', JSON.stringify(prompt, null, 2));
-    console.log('[Vertex-NanoBanana] Constructed prompt text:', faceSwapPrompt.substring(0, 500));
-    console.log('[Vertex-NanoBanana] Prompt text length:', faceSwapPrompt.length);
-    console.log('[Vertex-NanoBanana] Request will include prompt text (length:', faceSwapPrompt.length, ')');
+    // Use prompt_json as-is - it's already the complete instruction text
+    const faceSwapPrompt = promptText;
 
     // Vertex AI requires OAuth token for service account authentication
       if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -134,14 +123,12 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
       
     let accessToken: string;
       try {
-      console.log('[Vertex-NanoBanana] Generating OAuth access token for Vertex AI...');
       accessToken = await getAccessToken(
           env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
           env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
         );
-      console.log('[Vertex-NanoBanana] ✅ OAuth token obtained successfully');
       } catch (tokenError) {
-      console.error('[Vertex-NanoBanana] ❌ Failed to get OAuth token:', tokenError);
+      console.error('[Vertex-NanoBanana] Failed to get OAuth token:', tokenError);
         return {
           Success: false,
           Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
@@ -149,29 +136,19 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
         };
       }
 
-    // Fetch both preset and selfie images as base64
-    // IMPORTANT: Declare variables first, then fetch to avoid TDZ (Temporal Dead Zone) issues
-    let presetImageData: string;
+    // Fetch only the selfie image as base64
+    // For Nano Banana (Vertex AI), we only send the selfie image and text prompt
+    // The preset image style is described in the prompt_json text
+    // IMPORTANT: Declare variable first, then fetch to avoid TDZ (Temporal Dead Zone) issues
     let selfieImageData: string;
     
-    console.log('[Vertex-NanoBanana] Fetching preset image from:', targetUrl);
-    presetImageData = await fetchImageAsBase64(targetUrl);
-    console.log('[Vertex-NanoBanana] ✅ Preset image fetched, base64 length:', presetImageData.length);
-    
-    console.log('[Vertex-NanoBanana] Fetching selfie image from:', sourceUrl);
     selfieImageData = await fetchImageAsBase64(sourceUrl);
-    console.log('[Vertex-NanoBanana] ✅ Selfie image fetched, base64 length:', selfieImageData.length);
-    
-    // Log request details after both images are fetched
-    console.log('[Vertex-NanoBanana] Request will include:');
-    console.log('[Vertex-NanoBanana]   - Preset image (base64, length:', presetImageData.length, ')');
-    console.log('[Vertex-NanoBanana]   - Selfie image (base64, length:', selfieImageData.length, ')');
-    console.log('[Vertex-NanoBanana]   - Prompt text (length:', faceSwapPrompt.length, ')');
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
-    // IMPORTANT: contents must be an OBJECT, not an array (as per documentation)
-    // Create requestBody AFTER both images are fetched to avoid TDZ issues
+    // IMPORTANT: For Nano Banana, we only send the selfie image + text prompt (not preset image)
+    // The preset image style is described in the prompt_json text
+    // contents must be an OBJECT, not an array (as per documentation)
     const requestBody = {
       contents: {
         role: "USER",  // Uppercase as per documentation
@@ -179,16 +156,10 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
           {
             inline_data: {
               mimeType: "image/jpeg",  // camelCase as per documentation
-              data: presetImageData
-            }
-          },
-          {
-            inline_data: {
-              mimeType: "image/jpeg",
               data: selfieImageData
             }
           },
-          { text: faceSwapPrompt }  // This is the prompt_json text
+          { text: faceSwapPrompt }  // This contains the prompt_json text describing the preset style
         ]
       },
       generationConfig: {
@@ -206,7 +177,7 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
       }]
     };
 
-    // Generate curl command for testing (with sanitized base64) - do this before the request
+    // Generate curl command for testing (with sanitized base64)
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
       if (key === 'data' && typeof value === 'string' && value.length > 100) {
         return '...'; // Replace base64 with placeholder
@@ -231,11 +202,9 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
     });
 
     const rawResponse = await response.text();
-    console.log('[Vertex-NanoBanana] Response status:', response.status);
-    console.log('[Vertex-NanoBanana] Full response text:', rawResponse);
 
     if (!response.ok) {
-      console.error('[Vertex-NanoBanana] API error - Full response:', rawResponse);
+      console.error('[Vertex-NanoBanana] API error:', response.status, rawResponse.substring(0, 500));
       
       return {
         Success: false,
@@ -249,7 +218,6 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
 
     try {
       const data = JSON.parse(rawResponse);
-      console.log('[Vertex-NanoBanana] Response structure:', JSON.stringify(data).substring(0, 500));
       
       // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
       const candidates = data.candidates || [];
@@ -273,22 +241,18 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
         if (part.inlineData) {
           base64Image = part.inlineData.data;
           mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/png';
-          console.log('[Vertex-NanoBanana] ✅ Found image in inlineData (camelCase), mimeType:', mimeType);
           break;
         }
         // Check for snake_case format (inline_data) - fallback
         if (part.inline_data) {
           base64Image = part.inline_data.data;
           mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/png';
-          console.log('[Vertex-NanoBanana] ✅ Found image in inline_data (snake_case), mimeType:', mimeType);
           break;
         }
       }
 
       if (!base64Image) {
-        console.error('[Vertex-NanoBanana] No image data found in response parts');
-        console.log('[Vertex-NanoBanana] Full response data:', JSON.stringify(data, null, 2));
-        console.log('[Vertex-NanoBanana] Available parts:', JSON.stringify(parts, null, 2));
+        console.error('[Vertex-NanoBanana] No image data found in response');
         return {
           Success: false,
           Message: 'Vertex AI Gemini API did not return an image in the response',
@@ -299,7 +263,6 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
         };
       }
       
-      console.log('[Vertex-NanoBanana] ✅ Received base64 image from Vertex AI, length:', base64Image.length);
 
       // Convert base64 to Uint8Array and upload to R2
       const binaryString = atob(base64Image);
@@ -319,7 +282,6 @@ Take the face from the second image (selfie) and seamlessly swap it onto the fir
       
       // Get public URL (will be converted by caller)
       const resultImageUrl = `r2://${resultKey}`;
-      console.log('[Vertex-NanoBanana] ✅ Image uploaded to R2:', resultKey);
 
       // Sanitize response data for UI - replace base64 with "..."
       const sanitizedData = JSON.parse(JSON.stringify(data, (key, value) => {
@@ -504,9 +466,6 @@ export const generateVertexPrompt = async (
   }
 }> => {
   const startTime = Date.now();
-  console.log('[Vertex] ========== STARTING VERTEX AI PROMPT GENERATION ==========');
-  console.log('[Vertex] Image URL:', imageUrl);
-  console.log('[Vertex] Function called at:', new Date().toISOString());
   
   const debugInfo: any = {};
   
@@ -520,7 +479,6 @@ export const generateVertexPrompt = async (
         debug: { errorDetails: 'Vertex AI project ID is missing from environment variables' }
       };
     }
-    console.log('[Vertex] ✅ Vertex AI credentials found');
 
     // Note: Model name should NOT include "models/" prefix for publishers endpoint
     // Using gemini-2.5-flash (text-only) for prompt generation - cheaper at $2.50 per million output tokens
@@ -536,20 +494,15 @@ export const generateVertexPrompt = async (
 
     debugInfo.endpoint = vertexEndpoint;
     debugInfo.model = geminiModel;
-    console.log('[Vertex] Using Vertex AI endpoint:', vertexEndpoint);
-    console.log('[Vertex] Using model:', geminiModel);
 
     // Exact prompt text as specified by user
     const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
     // Fetch image as base64
-    console.log('[Vertex] Fetching image as base64 from:', imageUrl);
     const imageData = await fetchImageAsBase64(imageUrl);
-    console.log('[Vertex] ✅ Image fetched, base64 length:', imageData.length);
 
     // Build request body following Vertex AI API format
     // Note: contents array items must include a "role" field set to "user" or "model"
-    console.log('[Vertex] Building request body with exact prompt text...');
     const requestBody = {
       contents: [{
         role: "user",  // Required: must be "user" or "model"
@@ -601,9 +554,6 @@ export const generateVertexPrompt = async (
         }
       }
     };
-    console.log('[Vertex] Request body prepared, sending to Vertex AI API...');
-    console.log('[Vertex] Request URL:', vertexEndpoint);
-    console.log('[Vertex] Prompt text length:', prompt.length);
 
     debugInfo.requestSent = true;
     
@@ -619,12 +569,10 @@ export const generateVertexPrompt = async (
       
     let accessToken: string;
       try {
-      console.log('[Vertex] Generating OAuth access token for Vertex AI...');
       accessToken = await getAccessToken(
-          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-        );
-      console.log('[Vertex] ✅ OAuth token obtained successfully');
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
       } catch (tokenError) {
       console.error('[Vertex] ❌ Failed to get OAuth token:', tokenError);
         return {
@@ -648,8 +596,6 @@ export const generateVertexPrompt = async (
     debugInfo.httpStatusText = response.statusText;
     debugInfo.responseTimeMs = responseTime;
     
-    console.log('[Vertex] ✅ API request sent, received status:', response.status, response.statusText);
-    console.log('[Vertex] Response time:', responseTime, 'ms');
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -740,16 +686,12 @@ export const generateVertexPrompt = async (
       return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
     }
 
-    console.log('[Vertex] ✅ Generated prompt successfully with all required keys');
-    console.log('[Vertex] Prompt preview:', promptJson.prompt?.substring(0, 200));
-    console.log('[Vertex] ========== VERTEX AI PROMPT GENERATION SUCCESS ==========');
     debugInfo.responseTimeMs = Date.now() - startTime;
     return { success: true, prompt: promptJson, debug: debugInfo };
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    console.error('[Vertex] ========== VERTEX AI PROMPT GENERATION FAILED ==========');
-    console.error('[Vertex] Exception:', error);
+    console.error('[Vertex] Prompt generation failed:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
     debugInfo.errorDetails = errorMessage;
