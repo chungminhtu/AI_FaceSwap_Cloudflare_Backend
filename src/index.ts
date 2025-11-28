@@ -1096,10 +1096,12 @@ export default {
         }
 
         // Safe search validation - can be disabled via DISABLE_SAFE_SEARCH env variable
+        // Skip safety check for Nano Banana (Vertex AI) - Vision API not needed
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
+        const skipSafetyCheckForVertex = resolvedMode === 'vertex'; // Skip Vision API for Nano Banana
         let safetyCheckResult: { checked: boolean; isSafe: boolean; details?: any; error?: string } | undefined;
         
-        if (!disableSafeSearch) {
+        if (!disableSafeSearch && !skipSafetyCheckForVertex) {
           console.log('[FaceSwap] Running safety check on result image:', faceSwapResult.ResultImageUrl);
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
@@ -1139,12 +1141,21 @@ export default {
           }
           console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
         } else {
-          console.log('[FaceSwap] Safe search validation disabled via DISABLE_SAFE_SEARCH config');
-          safetyCheckResult = {
-            checked: false,
-            isSafe: true,
-            error: 'Safety check disabled via DISABLE_SAFE_SEARCH'
-          };
+          if (skipSafetyCheckForVertex) {
+            console.log('[FaceSwap] Safe search validation skipped for Nano Banana (Vertex AI)');
+            safetyCheckResult = {
+              checked: false,
+              isSafe: true,
+              error: 'Safety check skipped for Vertex AI mode'
+            };
+          } else {
+            console.log('[FaceSwap] Safe search validation disabled via DISABLE_SAFE_SEARCH config');
+            safetyCheckResult = {
+              checked: false,
+              isSafe: true,
+              error: 'Safety check disabled via DISABLE_SAFE_SEARCH'
+            };
+          }
         }
 
         // Try to download result image and store in R2 (non-fatal if it fails)
