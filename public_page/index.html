@@ -1330,6 +1330,21 @@
                         <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
                         <input type="file" class="file-input" id="preset-input" accept="image/*">
                     </div>
+                    <!-- Upload Options for Preset -->
+                    <div class="upload-options" id="preset-upload-options" style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px; display: none;">
+                        <div class="option-row" style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <input type="checkbox" id="preset-enable-vision-scan" checked style="margin-right: 8px; cursor: pointer;">
+                            <label for="preset-enable-vision-scan" style="cursor: pointer; font-size: 13px; color: #333;">
+                                🔍 Quét với Google Vision (Kiểm tra an toàn)
+                            </label>
+                        </div>
+                        <div class="option-row" style="display: flex; align-items: center;">
+                            <input type="checkbox" id="preset-enable-vertex-prompt" checked style="margin-right: 8px; cursor: pointer;">
+                            <label for="preset-enable-vertex-prompt" style="cursor: pointer; font-size: 13px; color: #333;">
+                                🤖 Tạo Prompt với Vertex AI
+                            </label>
+                        </div>
+                    </div>
                     <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
                     <div class="pagination" id="preset-pagination" style="display: none;">
                         <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
@@ -1545,7 +1560,7 @@
         const galleryKeys = Object.keys(galleries);
         const MAX_LOG_ENTRIES = 30;
 
-        function logApiCall({ label, method, url, status = 'info', payload, geminiInfo, deleteInfo }) {
+        function logApiCall({ label, method, url, status = 'info', payload, geminiInfo, visionInfo, deleteInfo }) {
             if (!apiLogList) return;
             // Log POST, PUT, and DELETE requests (exclude GET, etc.)
             const normalizedMethod = (method || '').toUpperCase();
@@ -1616,6 +1631,34 @@
                 `;
             }
             
+            // Build Vision scan info HTML if present
+            let visionHtml = '';
+            if (visionInfo) {
+                const visionStatus = visionInfo.success && visionInfo.isSafe ? '✅ SAFE' : visionInfo.success && !visionInfo.isSafe ? '⚠️ UNSAFE' : '❌ FAILED';
+                const statusColor = visionInfo.success && visionInfo.isSafe ? '#2bc990' : visionInfo.success && !visionInfo.isSafe ? '#ff9800' : '#ff4d6d';
+                
+                let visionDetails = '';
+                
+                if (visionInfo.error) {
+                    visionDetails += `<div style="color: #ff4d6d; margin-top: 8px;"><strong>❌ Error:</strong> ${escapeHtml(visionInfo.error)}</div>`;
+                } else if (visionInfo.isSafe !== undefined) {
+                    visionDetails += `<div style="color: ${visionInfo.isSafe ? '#2bc990' : '#ff9800'}; margin-top: 8px;"><strong>${visionInfo.isSafe ? '✅ Image passed safety check' : '⚠️ Image failed safety check'}</strong></div>`;
+                }
+                
+                // Display raw Vision API response if available
+                if (visionInfo.rawResponse) {
+                    const rawResponseJson = JSON.stringify(visionInfo.rawResponse, null, 2);
+                    visionDetails += `<details style="margin-top: 12px;"><summary style="cursor: pointer; font-size: 12px; font-weight: 600; color: #2196F3; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px;">📋 Show Raw Vision API Response</summary><pre style="font-size: 11px; max-height: 400px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(rawResponseJson)}</pre></details>`;
+                }
+                
+                visionHtml = `
+                    <div style="background: rgba(33, 150, 243, 0.05); padding: 12px; margin-top: 8px; border-left: 3px solid ${statusColor}; border-radius: 4px;">
+                        <div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">🔍 Google Vision API: ${visionStatus}</div>
+                        ${visionDetails}
+                    </div>
+                `;
+            }
+            
             // Build Delete info HTML if present
             let deleteHtml = '';
             if (deleteInfo && normalizedMethod === 'DELETE') {
@@ -1677,6 +1720,7 @@
                 <div class="api-log-action">${label}</div>
                 <div class="api-log-detail">${method} ${url}</div>
                 ${geminiHtml}
+                ${visionHtml}
                 ${deleteHtml}
                 ${payloadHtml}
             `;
@@ -1979,6 +2023,12 @@
         presetInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+            
+            // Show upload options when file is selected
+            const optionsDiv = document.getElementById('preset-upload-options');
+            if (optionsDiv) {
+                optionsDiv.style.display = 'block';
+            }
 
             await handleImageUpload(file, 'preset');
         });
@@ -2084,9 +2134,21 @@
                 // Upload new file
                 const headers = { 'Content-Type': file.type };
 
-                // Add Gemini prompt header for preset uploads
+                // Add options headers for preset uploads
                 if (type === 'preset') {
-                    headers['X-Enable-Gemini-Prompt'] = 'true';
+                    // Check if Vision scan is enabled
+                    const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
+                    if (visionScanCheckbox && visionScanCheckbox.checked) {
+                        headers['X-Enable-Vision-Scan'] = 'true';
+                    }
+                    
+                    // Check if Vertex prompt generation is enabled
+                    const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
+                    if (vertexPromptCheckbox && vertexPromptCheckbox.checked) {
+                        headers['X-Enable-Vertex-Prompt'] = 'true';
+                        headers['X-Enable-Gemini-Prompt'] = 'true'; // Keep for backward compatibility
+                    }
+                    
                     headers['X-Preset-Name'] = filename; // Use filename as preset name
                 }
 
@@ -2129,14 +2191,15 @@
                     uploadResult = {};
                 }
 
-                // Log with Gemini info if present (for preset uploads)
+                // Log with Vertex and Vision info if present (for preset uploads)
                 logApiCall({
                     label: `Tải Lên Hình Ảnh (${config.logName})`,
                     method: 'PUT',
                     url: uploadData.uploadUrl,
                     status: uploadResult.success ? 'success' : 'error',
                     payload: uploadResult,
-                    geminiInfo: uploadResult.gemini_info || null  // Include Gemini API call details
+                    geminiInfo: uploadResult.gemini_info || uploadResult.vertex_info || null,  // Include Vertex AI API call details
+                    visionInfo: uploadResult.vision_scan || null  // Include Vision API scan results
                 });
 
                 // Add to local state

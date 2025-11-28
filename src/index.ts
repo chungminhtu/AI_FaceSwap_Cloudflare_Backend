@@ -216,7 +216,8 @@ export default {
           const enableVertexPrompt = 
             request.headers.get('X-Enable-Vertex-Prompt') === 'true' ||
             request.headers.get('X-Enable-Gemini-Prompt') === 'true';
-          console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt);
+          const enableVisionScan = request.headers.get('X-Enable-Vision-Scan') === 'true';
+          console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt, 'Enable Vision Scan:', enableVisionScan);
 
           // Decode base64 if encoded
           const isEncoded = request.headers.get('X-Preset-Name-Encoded') === 'base64';
@@ -250,6 +251,9 @@ export default {
               rawError?: string;
             };
           } = { success: false };
+          
+          // Track Vision API scan results for response (declared outside try block for access in return)
+          let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
 
           try {
             // First, check if a collection with this name already exists
@@ -271,13 +275,44 @@ export default {
               console.log(`Using existing collection: ${collectionId}`);
             }
 
-            // ALWAYS generate Vertex AI prompt automatically for preset images
-            // This sends the exact prompt to Vertex AI API with the preset image
-            console.log('[Vertex] ALWAYS generating prompt for uploaded preset image:', publicUrl);
-            console.log('[Vertex] Calling Vertex AI API with exact prompt text and preset image');
+            // Perform Vision API safety scan if enabled
+            if (enableVisionScan) {
+              console.log('[Vision] Scanning preset image with Google Vision API for safety check...');
+              try {
+                const visionResult = await checkSafeSearch(publicUrl, env);
+                visionScanResult = {
+                  success: visionResult.isSafe !== undefined,
+                  isSafe: visionResult.isSafe,
+                  error: visionResult.error,
+                  rawResponse: visionResult.rawResponse // Include full raw Vision API response
+                };
+                if (visionResult.isSafe) {
+                  console.log('[Vision] ✅ Image passed safety check');
+                } else {
+                  console.warn('[Vision] ⚠️ Image failed safety check:', visionResult.error);
+                }
+              } catch (visionError) {
+                console.error('[Vision] ❌ Error during Vision API scan:', visionError);
+                visionScanResult = {
+                  success: false,
+                  error: visionError instanceof Error ? visionError.message : String(visionError)
+                };
+              }
+            } else {
+              console.log('[Vision] Vision API scan skipped (not enabled)');
+            }
+
+            // Generate Vertex AI prompt only if enabled
+            if (enableVertexPrompt) {
+              console.log('[Vertex] Generating prompt for uploaded preset image:', publicUrl);
+              console.log('[Vertex] Calling Vertex AI API with exact prompt text and preset image');
+            } else {
+              console.log('[Vertex] Vertex AI prompt generation skipped (not enabled)');
+            }
             
-            try {
-              const promptResult = await generateVertexPrompt(publicUrl, env);
+            if (enableVertexPrompt) {
+              try {
+                const promptResult = await generateVertexPrompt(publicUrl, env);
               if (promptResult.success && promptResult.prompt) {
                 promptJson = JSON.stringify(promptResult.prompt);
                 const promptKeys = Object.keys(promptResult.prompt);
@@ -322,9 +357,10 @@ export default {
               console.error('[Vertex] Stack trace:', errorStack || 'No stack trace');
               console.error('[Vertex] ⚠️ Image will be saved without prompt_json due to exception.');
               // Continue without prompt - image will still be saved
+              }
             }
 
-            // Always save image to database (even if Gemini prompt generation failed)
+            // Always save image to database (even if prompt generation or vision scan failed)
             imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             const createdAt = Math.floor(Date.now() / 1000);
             
@@ -414,7 +450,8 @@ export default {
             filename: key.replace('preset/', ''),
             hasPrompt: !!promptJson,
             prompt_json: promptJsonObject,
-            vertex_info: vertexCallInfo  // Include Vertex AI API call details for frontend logging
+            vertex_info: vertexCallInfo,  // Include Vertex AI API call details for frontend logging
+            vision_scan: visionScanResult  // Include Vision API scan results for frontend logging
           });
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);

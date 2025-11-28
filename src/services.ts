@@ -323,12 +323,20 @@ export const checkSafeSearch = async (
 
     if (data.responses?.[0]?.error) {
       console.error('[SafeSearch] API returned error:', data.responses[0].error);
-      return { isSafe: false, error: data.responses[0].error.message };
+      return { 
+        isSafe: false, 
+        error: data.responses[0].error.message,
+        rawResponse: data // Include full raw response even on error
+      };
     }
 
     if (!annotation) {
       console.warn('[SafeSearch] No safe search annotation in response');
-      return { isSafe: false, error: 'No safe search annotation' };
+      return { 
+        isSafe: false, 
+        error: 'No safe search annotation',
+        rawResponse: data // Include full raw response
+      };
     }
 
     // Get strictness from env (default: 'lenient' - only blocks VERY_LIKELY)
@@ -351,7 +359,8 @@ export const checkSafeSearch = async (
       statusCode: worstViolation?.code,
       violationCategory: worstViolation?.category,
       violationLevel: worstViolation?.level,
-      details: annotation // Return full safeSearchAnnotation details
+      details: annotation, // Return full safeSearchAnnotation details
+      rawResponse: data // Include full raw Vision API response
     };
   } catch (error) {
     console.error('[SafeSearch] Exception:', error);

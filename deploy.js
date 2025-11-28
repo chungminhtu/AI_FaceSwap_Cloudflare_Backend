@@ -92,6 +92,17 @@ function executeWithLogs(command, cwd, stepName, reportProgress) {
           child.stdin.write('y\n');
         } else if (trimmed.includes('Error') || trimmed.includes('✘')) {
           console.log(`✗ ${stepName}: ${trimmed}`);
+        } else if (stepName === 'deploy-pages') {
+          // For Pages deployment, show all important output
+          // Skip empty lines, warnings about wrangler.json, and telemetry messages
+          if (trimmed && 
+              !trimmed.includes('telemetry') && 
+              !trimmed.includes('update available') &&
+              !trimmed.includes('─────────────────') &&
+              !trimmed.startsWith('⛅️ wrangler')) {
+            // Show all non-empty, non-telemetry lines for Pages
+            console.log(`ℹ ${stepName}: ${trimmed}`);
+          }
         }
 
         // Send progress updates less frequently
@@ -468,33 +479,45 @@ const deploymentUtils = {
 
           // For CLI: Only show important messages (filter verbose output)
           if (!reportProgress) {
-            // Only show these specific important messages, filter everything else
-            if ((trimmed.includes('Uploaded') && trimmed.includes('sec')) ||
-                (trimmed.includes('Deployed') && trimmed.includes('sec')) ||
-                trimmed.includes('Success! Uploaded') ||
-                trimmed.includes('Deployment complete!') ||
-                trimmed.includes('✨ Successfully created secret') ||
-                trimmed.includes('Finished processing secrets file') ||
-                (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) ||
-                (trimmed.includes('Error') || trimmed.includes('✘'))) {
+            // For Pages deployment, show more output
+            if (step === 'deploy-pages') {
+              // Show all important output for Pages, skip telemetry and separator lines
+              if (trimmed && 
+                  !trimmed.includes('telemetry') && 
+                  !trimmed.includes('update available') &&
+                  !trimmed.includes('─────────────────') &&
+                  !trimmed.startsWith('⛅️ wrangler')) {
+                console.log(`ℹ ${step}: ${trimmed}`);
+              }
+            } else {
+              // For other steps, only show these specific important messages
+              if ((trimmed.includes('Uploaded') && trimmed.includes('sec')) ||
+                  (trimmed.includes('Deployed') && trimmed.includes('sec')) ||
+                  trimmed.includes('Success! Uploaded') ||
+                  trimmed.includes('Deployment complete!') ||
+                  trimmed.includes('✨ Successfully created secret') ||
+                  trimmed.includes('Finished processing secrets file') ||
+                  (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) ||
+                  (trimmed.includes('Error') || trimmed.includes('✘'))) {
 
-              if (trimmed.includes('Uploaded') && trimmed.includes('sec')) {
-                console.log(`✓ ${step}: ${trimmed}`);
-              } else if (trimmed.includes('Deployed') && trimmed.includes('sec')) {
-                console.log(`✓ ${step}: ${trimmed}`);
-              } else if (trimmed.includes('Success! Uploaded')) {
-                console.log(`✓ ${step}: ${trimmed}`);
-              } else if (trimmed.includes('Deployment complete!')) {
-                console.log(`✓ ${step}: ${trimmed}`);
-              } else if (trimmed.includes('✨ Successfully created secret')) {
-                console.log(`✓ ${trimmed}`);
-              } else if (trimmed.includes('Finished processing secrets file')) {
-                console.log(`✓ Secrets upload completed`);
-              } else if (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) {
-                // Already handled above, just log
-                console.log('✓ Confirming D1 database operation...');
-              } else if (trimmed.includes('Error') || trimmed.includes('✘')) {
-                console.log(`✗ ${step}: ${trimmed}`);
+                if (trimmed.includes('Uploaded') && trimmed.includes('sec')) {
+                  console.log(`✓ ${step}: ${trimmed}`);
+                } else if (trimmed.includes('Deployed') && trimmed.includes('sec')) {
+                  console.log(`✓ ${step}: ${trimmed}`);
+                } else if (trimmed.includes('Success! Uploaded')) {
+                  console.log(`✓ ${step}: ${trimmed}`);
+                } else if (trimmed.includes('Deployment complete!')) {
+                  console.log(`✓ ${step}: ${trimmed}`);
+                } else if (trimmed.includes('✨ Successfully created secret')) {
+                  console.log(`✓ ${trimmed}`);
+                } else if (trimmed.includes('Finished processing secrets file')) {
+                  console.log(`✓ Secrets upload completed`);
+                } else if (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) {
+                  // Already handled above, just log
+                  console.log('✓ Confirming D1 database operation...');
+                } else if (trimmed.includes('Error') || trimmed.includes('✘')) {
+                  console.log(`✗ ${step}: ${trimmed}`);
+                }
               }
             }
           }

@@ -62,6 +62,7 @@ export interface SafeSearchResult {
     violence: string;
     racy: string;
   };
+  rawResponse?: GoogleVisionResponse; // Full raw response from Vision API
 }
 
 export interface GenericApiResponse<T> {
