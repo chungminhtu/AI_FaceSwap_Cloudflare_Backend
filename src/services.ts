@@ -88,56 +88,68 @@ export const callNanoBanana = async (
     const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
     
     // Use Vertex AI Gemini API with image generation (Nano Banana)
-    // Using stable production model: gemini-2.5-flash
-    const geminiModel = 'gemini-2.5-flash';
+    // IMPORTANT: Must use gemini-2.5-flash-image (not gemini-2.5-flash) for image generation
+    // Only gemini-2.5-flash-image supports image + text output (responseModalities: ["TEXT", "IMAGE"])
+    // gemini-2.5-flash only outputs text, so multimodal (image) output isn't supported
+    // Cost: $30 per million output tokens for images (~$0.039 per image) vs $2.50 for text-only
+    const geminiModel = 'gemini-2.5-flash-image';
     const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
-    // Build the prompt text from the stored prompt JSON (this describes the preset scene)
+    // Convert prompt_json to text string for Vertex AI
+    // The entire prompt_json object should be converted to a readable text string
     let promptText = '';
     if (prompt && typeof prompt === 'object') {
-      const promptObj = prompt as any;
-      promptText = promptObj.prompt || JSON.stringify(promptObj);
+      // Convert the entire prompt_json object to a formatted text string
+      promptText = JSON.stringify(prompt, null, 2);
     } else if (typeof prompt === 'string') {
       promptText = prompt;
     } else {
       promptText = JSON.stringify(prompt);
     }
 
-    // Add face swap instruction to the prompt
-    const faceSwapPrompt = `${promptText}\n\nPlease swap the face from the second image (selfie) onto the first image (preset), maintaining the style, lighting, and composition of the preset image.`;
+    // Add face swap instruction to the prompt text
+    const faceSwapPrompt = `${promptText}
+
+FACE SWAP INSTRUCTION:
+Take the face from the second image (selfie) and seamlessly swap it onto the first image (preset), while maintaining the style, lighting, and composition described in the prompt_json above.`;
 
     console.log('[Vertex-NanoBanana] Using Vertex AI Gemini API for image generation (Nano Banana)');
     console.log('[Vertex-NanoBanana] Preset URL:', targetUrl);
     console.log('[Vertex-NanoBanana] Selfie URL:', sourceUrl);
-    console.log('[Vertex-NanoBanana] Prompt:', faceSwapPrompt.substring(0, 200));
+    console.log('[Vertex-NanoBanana] Full prompt_json received:', JSON.stringify(prompt, null, 2));
+    console.log('[Vertex-NanoBanana] Constructed prompt text:', faceSwapPrompt.substring(0, 500));
+    console.log('[Vertex-NanoBanana] Request will include:');
+    console.log('[Vertex-NanoBanana]   - Preset image (base64, length:', presetImageData.length, ')');
+    console.log('[Vertex-NanoBanana]   - Selfie image (base64, length:', selfieImageData.length, ')');
+    console.log('[Vertex-NanoBanana]   - Prompt text (length:', faceSwapPrompt.length, ')');
 
     // Vertex AI requires OAuth token for service account authentication
-    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBanana] Missing service account credentials');
-      return {
-        Success: false,
+        return {
+          Success: false,
         Message: 'Google Service Account credentials are required for Vertex AI. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY environment variables.',
-        StatusCode: 500,
+          StatusCode: 500,
         Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
-      };
-    }
-
+        };
+      }
+      
     let accessToken: string;
-    try {
+      try {
       console.log('[Vertex-NanoBanana] Generating OAuth access token for Vertex AI...');
       accessToken = await getAccessToken(
-        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-      );
+          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        );
       console.log('[Vertex-NanoBanana] ✅ OAuth token obtained successfully');
-    } catch (tokenError) {
+      } catch (tokenError) {
       console.error('[Vertex-NanoBanana] ❌ Failed to get OAuth token:', tokenError);
-      return {
-        Success: false,
-        Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
-        StatusCode: 500,
-      };
-    }
+        return {
+          Success: false,
+          Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+          StatusCode: 500,
+        };
+      }
 
     // Fetch both preset and selfie images as base64
     console.log('[Vertex-NanoBanana] Fetching preset image from:', targetUrl);
@@ -185,6 +197,20 @@ export const callNanoBanana = async (
       }]
     };
 
+    // Generate curl command for testing (with sanitized base64) - do this before the request
+    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+      if (key === 'data' && typeof value === 'string' && value.length > 100) {
+        return '...'; // Replace base64 with placeholder
+      }
+      return value;
+    }));
+    
+    const curlCommand = `curl -X POST \\
+  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+
     // Call Vertex AI Gemini API
     const response = await fetch(geminiEndpoint, {
       method: 'POST',
@@ -197,14 +223,18 @@ export const callNanoBanana = async (
 
     const rawResponse = await response.text();
     console.log('[Vertex-NanoBanana] Response status:', response.status);
+    console.log('[Vertex-NanoBanana] Full response text:', rawResponse);
 
     if (!response.ok) {
-      console.error('[Vertex-NanoBanana] API error:', rawResponse.substring(0, 500));
+      console.error('[Vertex-NanoBanana] API error - Full response:', rawResponse);
+      
       return {
         Success: false,
         Message: `Vertex AI Gemini API error: ${response.status} ${response.statusText}`,
         StatusCode: response.status,
-        Error: rawResponse.substring(0, 500),
+        Error: rawResponse, // Include full response text, not truncated
+        FullResponse: rawResponse, // Also include in separate field for UI display
+        CurlCommand: curlCommand, // Include curl command for testing
       };
     }
 
@@ -227,24 +257,36 @@ export const callNanoBanana = async (
       let base64Image: string | null = null;
       let mimeType = 'image/png';
 
-      // Extract image from parts array - look for inline_data
+      // Extract image from parts array - look for inline_data (snake_case) or inlineData (camelCase)
+      // Vertex AI API may return either format
       for (const part of parts) {
+        // Check for camelCase format (inlineData) - this is what the API actually returns
+        if (part.inlineData) {
+          base64Image = part.inlineData.data;
+          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/png';
+          console.log('[Vertex-NanoBanana] ✅ Found image in inlineData (camelCase), mimeType:', mimeType);
+          break;
+        }
+        // Check for snake_case format (inline_data) - fallback
         if (part.inline_data) {
           base64Image = part.inline_data.data;
-          mimeType = part.inline_data.mime_type || 'image/png';
-          console.log('[Vertex-NanoBanana] ✅ Found image in inline_data, mimeType:', mimeType);
+          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/png';
+          console.log('[Vertex-NanoBanana] ✅ Found image in inline_data (snake_case), mimeType:', mimeType);
           break;
         }
       }
 
       if (!base64Image) {
         console.error('[Vertex-NanoBanana] No image data found in response parts');
-        console.log('[Vertex-NanoBanana] Available parts:', JSON.stringify(parts).substring(0, 500));
+        console.log('[Vertex-NanoBanana] Full response data:', JSON.stringify(data, null, 2));
+        console.log('[Vertex-NanoBanana] Available parts:', JSON.stringify(parts, null, 2));
         return {
           Success: false,
           Message: 'Vertex AI Gemini API did not return an image in the response',
           StatusCode: 500,
           Error: 'No inline_data found in response parts',
+          FullResponse: JSON.stringify(data, null, 2), // Include full response for debugging
+          ResponseParts: JSON.stringify(parts, null, 2), // Include parts for debugging
         };
       }
       
@@ -270,18 +312,47 @@ export const callNanoBanana = async (
       const resultImageUrl = `r2://${resultKey}`;
       console.log('[Vertex-NanoBanana] ✅ Image uploaded to R2:', resultKey);
 
+      // Sanitize response data for UI - replace base64 with "..."
+      const sanitizedData = JSON.parse(JSON.stringify(data, (key, value) => {
+        if (key === 'data' && typeof value === 'string' && value.length > 100) {
+          // Likely base64 image data - replace with placeholder
+          return '...';
+        }
+        return value;
+      }));
+
+      // Generate curl command for testing (with sanitized base64)
+      const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+        if (key === 'data' && typeof value === 'string' && value.length > 100) {
+          return '...'; // Replace base64 with placeholder
+        }
+        return value;
+      }));
+      
+      const curlCommand = `curl -X POST \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+
       return {
         Success: true,
         ResultImageUrl: resultImageUrl,
         Message: 'Vertex AI image generation completed',
         StatusCode: response.status,
+        VertexResponse: sanitizedData, // Include sanitized Vertex AI response JSON (base64 replaced with "...")
+        Prompt: prompt, // Include the prompt that was used
+        CurlCommand: curlCommand, // Include curl command for testing
       };
     } catch (parseError) {
+      console.error('[Vertex-NanoBanana] JSON parse error:', parseError);
+      console.error('[Vertex-NanoBanana] Full raw response that failed to parse:', rawResponse);
       return {
         Success: false,
-        Message: 'Failed to parse Vertex AI Gemini API response',
+        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
         StatusCode: 500,
-        Error: rawResponse.substring(0, 500),
+        Error: rawResponse, // Include full response text
+        FullResponse: rawResponse, // Also include in separate field for UI display
       };
     }
   } catch (error) {
@@ -443,6 +514,9 @@ export const generateVertexPrompt = async (
     console.log('[Vertex] ✅ Vertex AI credentials found');
 
     // Note: Model name should NOT include "models/" prefix for publishers endpoint
+    // Using gemini-2.5-flash (text-only) for prompt generation - cheaper at $2.50 per million output tokens
+    // vs gemini-2.5-flash-image at $30 per million output tokens for images
+    // We only need text output (JSON prompt), so text-only model is more cost-effective
     const geminiModel = 'gemini-2.5-flash';
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';

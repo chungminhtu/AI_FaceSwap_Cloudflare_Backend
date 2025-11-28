@@ -1041,12 +1041,38 @@ export default {
 
           if (!nanoResult.Success || !nanoResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(nanoResult, null, 2));
+            
+            // Sanitize error response - replace base64 with "..."
+            let sanitizedError = null;
+            if (nanoResult.FullResponse) {
+              try {
+                const parsedResponse = typeof nanoResult.FullResponse === 'string' 
+                  ? JSON.parse(nanoResult.FullResponse) 
+                  : nanoResult.FullResponse;
+                sanitizedError = JSON.parse(JSON.stringify(parsedResponse, (key, value) => {
+                  if (key === 'data' && typeof value === 'string' && value.length > 100) {
+                    return '...';
+                  }
+                  return value;
+                }));
+              } catch (parseErr) {
+                // If parsing fails, use the error string as-is but truncate if too long
+                sanitizedError = typeof nanoResult.FullResponse === 'string' 
+                  ? nanoResult.FullResponse.substring(0, 500) + '...' 
+                  : nanoResult.FullResponse;
+              }
+            }
+            
             return jsonResponse({
               status: 'error',
               message: nanoResult.Message || 'Nano Banana provider failed to generate image',
               code: nanoResult.StatusCode || 500,
               error: nanoResult.Error,
-              details: nanoResult,
+              details: {
+                ...nanoResult,
+                VertexResponse: sanitizedError, // Sanitized Vertex AI response (base64 replaced with "...")
+                Prompt: promptData, // Include the prompt that was used
+              },
             }, nanoResult.StatusCode || 500);
           }
 
@@ -1175,6 +1201,13 @@ export default {
         }
 
         // Return success response in GenericApiResponse format
+        // Merge Vertex response and prompt if available (for Vertex AI mode)
+        const vertexData = (faceSwapResult as any).VertexResponse ? {
+          VertexResponse: (faceSwapResult as any).VertexResponse, // Sanitized Vertex AI response (base64 replaced with "...")
+          Prompt: (faceSwapResult as any).Prompt || promptData, // Include the prompt that was used
+          CurlCommand: (faceSwapResult as any).CurlCommand || null, // Include curl command for testing
+        } : null;
+
         return jsonResponse({
           data: {
             resultImageUrl: resultUrl
@@ -1182,11 +1215,13 @@ export default {
           debug: {
             ...faceSwapResult,
             ResultImageUrl: resultUrl,
-            SafetyCheck: safetyCheckResult
+            SafetyCheck: safetyCheckResult,
+            ...(vertexData || {}) // Merge Vertex response, prompt, and curl command if available
           },
           status: 'success',
           message: faceSwapResult.Message || 'Face swap completed successfully',
-          code: 200
+          code: 200,
+          ...(vertexData?.CurlCommand ? { CurlCommand: vertexData.CurlCommand } : {}) // Also include at top level for easy access
         });
       } catch (error) {
         console.error('Unhandled error:', error);
