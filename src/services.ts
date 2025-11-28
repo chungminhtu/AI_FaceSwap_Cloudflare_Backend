@@ -73,7 +73,8 @@ export const callNanoBanana = async (
   sourceUrl: string,
   env: Env
 ): Promise<FaceSwapResponse> => {
-  // Use Vertex AI credentials (OAuth token from service account, not API key)
+  // Use Vertex AI Gemini API with image generation support
+  // Based on official documentation: responseModalities: ["TEXT", "IMAGE"] is supported
   if (!env.GOOGLE_VERTEX_PROJECT_ID) {
     return {
       Success: false,
@@ -87,11 +88,8 @@ export const callNanoBanana = async (
     const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
     
     // Use Vertex AI Gemini API with image generation (Nano Banana)
-    // Model supports image generation via response_modalities
-    // Note: Model name should NOT include "models/" prefix for publishers endpoint
-    // Using stable production model: gemini-2.5-flash (stable) or gemini-2.0-flash (auto-updated stable alias)
-    // Avoid experimental (-exp) or preview (-preview) models for production
-    const geminiModel = 'gemini-2.5-flash';  // Stable production model
+    // Using stable production model: gemini-2.5-flash
+    const geminiModel = 'gemini-2.5-flash';
     const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
     // Build the prompt text from the stored prompt JSON (this describes the preset scene)
@@ -105,13 +103,15 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(prompt);
     }
 
+    // Add face swap instruction to the prompt
+    const faceSwapPrompt = `${promptText}\n\nPlease swap the face from the second image (selfie) onto the first image (preset), maintaining the style, lighting, and composition of the preset image.`;
+
     console.log('[Vertex-NanoBanana] Using Vertex AI Gemini API for image generation (Nano Banana)');
     console.log('[Vertex-NanoBanana] Preset URL:', targetUrl);
     console.log('[Vertex-NanoBanana] Selfie URL:', sourceUrl);
-    console.log('[Vertex-NanoBanana] Prompt:', promptText.substring(0, 200));
+    console.log('[Vertex-NanoBanana] Prompt:', faceSwapPrompt.substring(0, 200));
 
     // Vertex AI requires OAuth token for service account authentication
-    // Check if service account credentials are available
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBanana] Missing service account credentials');
       return {
@@ -139,20 +139,50 @@ export const callNanoBanana = async (
       };
     }
 
+    // Fetch both preset and selfie images as base64
+    console.log('[Vertex-NanoBanana] Fetching preset image from:', targetUrl);
+    const presetImageData = await fetchImageAsBase64(targetUrl);
+    console.log('[Vertex-NanoBanana] ✅ Preset image fetched, base64 length:', presetImageData.length);
+    
+    console.log('[Vertex-NanoBanana] Fetching selfie image from:', sourceUrl);
+    const selfieImageData = await fetchImageAsBase64(sourceUrl);
+    console.log('[Vertex-NanoBanana] ✅ Selfie image fetched, base64 length:', selfieImageData.length);
+
     // Vertex AI Gemini API request format with image generation
-    // Request both TEXT and IMAGE responses using response_modalities
-    // Note: contents array items must include a "role" field set to "user" or "model"
+    // Based on official documentation format
+    // IMPORTANT: contents must be an OBJECT, not an array (as per documentation)
     const requestBody = {
-      contents: [{
-        role: "user",  // Required: must be "user" or "model"
+      contents: {
+        role: "USER",  // Uppercase as per documentation
         parts: [
-          { text: promptText }
+          {
+            inline_data: {
+              mimeType: "image/jpeg",  // camelCase as per documentation
+              data: presetImageData
+            }
+          },
+          {
+            inline_data: {
+              mimeType: "image/jpeg",
+              data: selfieImageData
+            }
+          },
+          { text: faceSwapPrompt }  // This is the prompt_json text
         ]
-      }],
+      },
       generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'], // Request both text and image
+        responseModalities: ["TEXT", "IMAGE"],  // Request both text and image output
+        imageConfig: {
+          aspectRatio: "1:1",  // Square aspect ratio for face swap
+        },
         temperature: 0.7,
-      }
+        maxOutputTokens: 2048,
+      },
+      safetySettings: [{
+        method: "PROBABILITY",
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
+      }]
     };
 
     // Call Vertex AI Gemini API
