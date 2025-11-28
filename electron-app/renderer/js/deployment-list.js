@@ -122,7 +122,7 @@ window.deploymentList = {
       btnDelete.addEventListener('click', async () => {
         // No confirmation dialog - proceed with deletion and show toast
         window.toast?.info('🗑️ Đang xóa triển khai...');
-        await this.deleteDeployment(deploymentId);
+          await this.deleteDeployment(deploymentId);
       });
     }
 

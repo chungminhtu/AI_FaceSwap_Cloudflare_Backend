@@ -305,14 +305,14 @@ export default {
             // Generate Vertex AI prompt only if enabled
             if (enableVertexPrompt) {
               console.log('[Vertex] Generating prompt for uploaded preset image:', publicUrl);
-              console.log('[Vertex] Calling Vertex AI API with exact prompt text and preset image');
+            console.log('[Vertex] Calling Vertex AI API with exact prompt text and preset image');
             } else {
               console.log('[Vertex] Vertex AI prompt generation skipped (not enabled)');
             }
             
             if (enableVertexPrompt) {
-              try {
-                const promptResult = await generateVertexPrompt(publicUrl, env);
+            try {
+              const promptResult = await generateVertexPrompt(publicUrl, env);
               if (promptResult.success && promptResult.prompt) {
                 promptJson = JSON.stringify(promptResult.prompt);
                 const promptKeys = Object.keys(promptResult.prompt);
@@ -1057,7 +1057,7 @@ export default {
             nanoResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
             console.log('[Vertex] Converted R2 URL to public URL:', nanoResult.ResultImageUrl);
           }
-          
+
           faceSwapResult = nanoResult;
         } else {
           // Use RapidAPI as before

@@ -88,7 +88,10 @@ export const callNanoBanana = async (
     
     // Use Vertex AI Gemini API with image generation (Nano Banana)
     // Model supports image generation via response_modalities
-    const geminiModel = 'models/gemini-2.0-flash-exp';
+    // Note: Model name should NOT include "models/" prefix for publishers endpoint
+    // Using stable production model: gemini-2.5-flash (stable) or gemini-2.0-flash (auto-updated stable alias)
+    // Avoid experimental (-exp) or preview (-preview) models for production
+    const geminiModel = 'gemini-2.5-flash';  // Stable production model
     const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
     // Build the prompt text from the stored prompt JSON (this describes the preset scene)
@@ -138,8 +141,10 @@ export const callNanoBanana = async (
 
     // Vertex AI Gemini API request format with image generation
     // Request both TEXT and IMAGE responses using response_modalities
+    // Note: contents array items must include a "role" field set to "user" or "model"
     const requestBody = {
       contents: [{
+        role: "user",  // Required: must be "user" or "model"
         parts: [
           { text: promptText }
         ]
@@ -176,12 +181,12 @@ export const callNanoBanana = async (
     try {
       const data = JSON.parse(rawResponse);
       console.log('[Vertex-NanoBanana] Response structure:', JSON.stringify(data).substring(0, 500));
-
+      
       // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
-        return {
-          Success: false,
+          return {
+            Success: false,
           Message: 'Vertex AI Gemini API did not return any candidates',
           StatusCode: 500,
           Error: 'No candidates found in response',
@@ -407,11 +412,13 @@ export const generateVertexPrompt = async (
     }
     console.log('[Vertex] ✅ Vertex AI credentials found');
 
-    const geminiModel = 'models/gemini-2.5-flash';
+    // Note: Model name should NOT include "models/" prefix for publishers endpoint
+    const geminiModel = 'gemini-2.5-flash';
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
-    
+
     // Vertex AI endpoint format
+    // Format: https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent
     const vertexEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
     debugInfo.endpoint = vertexEndpoint;
@@ -428,9 +435,11 @@ export const generateVertexPrompt = async (
     console.log('[Vertex] ✅ Image fetched, base64 length:', imageData.length);
 
     // Build request body following Vertex AI API format
+    // Note: contents array items must include a "role" field set to "user" or "model"
     console.log('[Vertex] Building request body with exact prompt text...');
     const requestBody = {
       contents: [{
+        role: "user",  // Required: must be "user" or "model"
         parts: [
           { text: prompt },
           {
@@ -486,30 +495,30 @@ export const generateVertexPrompt = async (
     debugInfo.requestSent = true;
     
     // Vertex AI requires OAuth token
-    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex] ❌ Vertex AI requires service account credentials');
-      return {
-        success: false,
-        error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
-        debug: { errorDetails: 'Service account credentials missing' }
-      };
-    }
-    
+        return {
+          success: false,
+          error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+          debug: { errorDetails: 'Service account credentials missing' }
+        };
+      }
+      
     let accessToken: string;
-    try {
+      try {
       console.log('[Vertex] Generating OAuth access token for Vertex AI...');
       accessToken = await getAccessToken(
-        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-      );
+          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        );
       console.log('[Vertex] ✅ OAuth token obtained successfully');
-    } catch (tokenError) {
+      } catch (tokenError) {
       console.error('[Vertex] ❌ Failed to get OAuth token:', tokenError);
-      return {
-        success: false,
-        error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
-        debug: { errorDetails: String(tokenError) }
-      };
+        return {
+          success: false,
+          error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+          debug: { errorDetails: String(tokenError) }
+        };
     }
     
     const response = await fetch(vertexEndpoint, {

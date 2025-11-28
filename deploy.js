@@ -270,12 +270,12 @@ async function deployFromConfig(configObject, reportProgress = null, codebasePat
     }
 
     // Show configuration always (both CLI and Electron)
-    console.log('📋 Configuration:');
-    console.log(`   Worker Name: ${deploymentConfig.workerName}`);
-    console.log(`   Pages Name: ${deploymentConfig.pagesProjectName}`);
-    console.log(`   Database: ${deploymentConfig.databaseName}`);
-    console.log(`   Bucket: ${deploymentConfig.bucketName}`);
-    console.log('');
+      console.log('📋 Configuration:');
+      console.log(`   Worker Name: ${deploymentConfig.workerName}`);
+      console.log(`   Pages Name: ${deploymentConfig.pagesProjectName}`);
+      console.log(`   Database: ${deploymentConfig.databaseName}`);
+      console.log(`   Bucket: ${deploymentConfig.bucketName}`);
+      console.log('');
 
     return await deploymentUtils.performDeployment(deploymentConfig, reportProgress);
   } catch (error) {
@@ -465,7 +465,7 @@ const deploymentUtils = {
           promptAnswered = true;
         }
 
-        const lines = output.split('\n').filter(line => line.trim());
+          const lines = output.split('\n').filter(line => line.trim());
         for (const line of lines) {
           const trimmed = line.trim();
 
@@ -534,15 +534,15 @@ const deploymentUtils = {
         const output = data.toString();
         stderr += output;
 
-        const lines = output.split('\n').filter(line => line.trim());
+          const lines = output.split('\n').filter(line => line.trim());
         for (const line of lines) {
           const trimmed = line.trim();
           if (trimmed) {
             // For Electron UI: Send ALL error log lines
             if (reportProgress) {
-              reportProgress(step, 'running', null, {
+            reportProgress(step, 'running', null, {
                 log: trimmed
-              });
+            });
             }
             
             // For CLI: Log errors immediately
@@ -927,65 +927,65 @@ const deploymentUtils = {
           result = retryResult;
         }
       } else if (!result.success) {
-        throw new Error(result.error || 'Worker deployment failed');
-      }
+      throw new Error(result.error || 'Worker deployment failed');
+    }
 
-      // Try to get Worker URL
-      let workerUrl = '';
+    // Try to get Worker URL
+    let workerUrl = '';
+    try {
+      const deployments = execSync('wrangler deployments list --latest', {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 10000,
+        cwd: codebasePath
+      });
+
+      if (deployments) {
+        const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
+        if (urlMatch) {
+          workerUrl = urlMatch[0];
+        }
+      }
+    } catch (error) {
+      // Try to construct URL from whoami
       try {
-        const deployments = execSync('wrangler deployments list --latest', {
+        const whoami = execSync('wrangler whoami', {
           encoding: 'utf8',
           stdio: 'pipe',
           timeout: 10000,
           cwd: codebasePath
         });
 
-        if (deployments) {
-          const urlMatch = deployments.match(/https:\/\/[^\s]+\.workers\.dev/);
-          if (urlMatch) {
-            workerUrl = urlMatch[0];
-          }
+        const accountMatch = whoami.match(/([^\s]+)@/);
+        if (accountMatch) {
+          const accountSubdomain = accountMatch[1];
+          workerUrl = `https://${workerName}.${accountSubdomain}.workers.dev`;
         }
       } catch (error) {
-        // Try to construct URL from whoami
-        try {
-          const whoami = execSync('wrangler whoami', {
-            encoding: 'utf8',
-            stdio: 'pipe',
-            timeout: 10000,
-            cwd: codebasePath
-          });
+        // Could not determine URL
+      }
+    }
 
-          const accountMatch = whoami.match(/([^\s]+)@/);
-          if (accountMatch) {
-            const accountSubdomain = accountMatch[1];
-            workerUrl = `https://${workerName}.${accountSubdomain}.workers.dev`;
+    // Update HTML with Worker URL if found
+    if (workerUrl) {
+      const htmlPath = path.join(codebasePath, 'public_page', 'index.html');
+      if (fs.existsSync(htmlPath)) {
+        try {
+          let htmlContent = fs.readFileSync(htmlPath, 'utf8');
+          const urlPattern = /const WORKER_URL = ['"](.*?)['"]/;
+          if (urlPattern.test(htmlContent)) {
+            htmlContent = htmlContent.replace(urlPattern, `const WORKER_URL = '${workerUrl}'`);
+            fs.writeFileSync(htmlPath, htmlContent, 'utf8');
           }
         } catch (error) {
-          // Could not determine URL
+          // Non-fatal
         }
       }
+    }
 
-      // Update HTML with Worker URL if found
-      if (workerUrl) {
-        const htmlPath = path.join(codebasePath, 'public_page', 'index.html');
-        if (fs.existsSync(htmlPath)) {
-          try {
-            let htmlContent = fs.readFileSync(htmlPath, 'utf8');
-            const urlPattern = /const WORKER_URL = ['"](.*?)['"]/;
-            if (urlPattern.test(htmlContent)) {
-              htmlContent = htmlContent.replace(urlPattern, `const WORKER_URL = '${workerUrl}'`);
-              fs.writeFileSync(htmlPath, htmlContent, 'utf8');
-            }
-          } catch (error) {
-            // Non-fatal
-          }
-        }
-      }
-
-      if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
+    if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
       // Don't log here - already logged in executeWithLogs
-      return workerUrl;
+    return workerUrl;
     } finally {
       // Restore original wrangler.jsonc if we modified it
       if (configModified && originalConfigContent) {
@@ -1073,13 +1073,13 @@ const deploymentUtils = {
 
       // Check if command succeeded (exit code 0)
       if (result.success) {
-      if (reportProgress) reportProgress('deploy-pages', 'completed', `Pages deployed successfully: ${pagesUrl}`);
+        if (reportProgress) reportProgress('deploy-pages', 'completed', `Pages deployed successfully: ${pagesUrl}`);
       // Don't log here - already logged in executeWithLogs
-      return pagesUrl;
+        return pagesUrl;
       } else {
         // Command failed but we still return the URL (deployment might have partially succeeded)
-      if (reportProgress) reportProgress('deploy-pages', 'warning', `Pages deployment may have issues, but URL is: ${pagesUrl}`);
-      return pagesUrl;
+        if (reportProgress) reportProgress('deploy-pages', 'warning', `Pages deployment may have issues, but URL is: ${pagesUrl}`);
+        return pagesUrl;
       }
     } catch (error) {
       // Pages deployment failed, but return URL anyway (non-critical)
@@ -1307,7 +1307,7 @@ async function main() {
         log.success(details || `D1 database '${deploymentConfig.databaseName}' OK`);
       } else if (status === 'warning') {
         log.warn(details);
-      }
+                }
       // Don't log 'info' status for D1 checks - they're too verbose
     }, deploymentConfig.databaseName);
     log.success(`D1 database '${deploymentConfig.databaseName}' OK`);

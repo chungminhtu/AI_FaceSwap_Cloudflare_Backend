@@ -627,34 +627,34 @@ window.deploymentForm = {
 
   async fetchGCPProjects() {
     const fetchFn = async () => {
-      try {
-        const result = await window.electronAPI.helperGetGCPProjects();
-        if (!result.success) {
-          let errorMessage = `Không thể lấy danh sách projects: ${result.error}`;
-          
-          if (result.needsLogin) {
-            errorMessage += '\n\nVui lòng chạy lệnh sau trong terminal:\n';
-            errorMessage += 'gcloud auth login\n';
-            errorMessage += 'hoặc\n';
-            errorMessage += 'gcloud auth application-default login\n\n';
-            errorMessage += 'Sau đó làm mới trang này.';
-          } else {
-            errorMessage += '\nHãy đảm bảo bạn đã đăng nhập GCP và cài đặt gcloud CLI';
-          }
-          
-          window.toast?.error(errorMessage);
-          return;
+    try {
+      const result = await window.electronAPI.helperGetGCPProjects();
+      if (!result.success) {
+        let errorMessage = `Không thể lấy danh sách projects: ${result.error}`;
+        
+        if (result.needsLogin) {
+          errorMessage += '\n\nVui lòng chạy lệnh sau trong terminal:\n';
+          errorMessage += 'gcloud auth login\n';
+          errorMessage += 'hoặc\n';
+          errorMessage += 'gcloud auth application-default login\n\n';
+          errorMessage += 'Sau đó làm mới trang này.';
+        } else {
+          errorMessage += '\nHãy đảm bảo bạn đã đăng nhập GCP và cài đặt gcloud CLI';
         }
+        
+        window.toast?.error(errorMessage);
+        return;
+      }
 
-        if (result.projects.length === 0) {
-          window.toast?.warning('Không tìm thấy project nào. Hãy tạo project mới trong Google Cloud Console.');
-          return;
-        }
+      if (result.projects.length === 0) {
+        window.toast?.warning('Không tìm thấy project nào. Hãy tạo project mới trong Google Cloud Console.');
+        return;
+      }
 
-        // Show project selection modal
-        this.showProjectSelectionModal(result.projects, result.currentAccount);
-      } catch (error) {
-        window.toast?.error(`Lỗi: ${error.message}`);
+      // Show project selection modal
+      this.showProjectSelectionModal(result.projects, result.currentAccount);
+    } catch (error) {
+      window.toast?.error(`Lỗi: ${error.message}`);
       }
     };
 
@@ -803,27 +803,27 @@ window.deploymentForm = {
 
   async fetchGCPEmail() {
     const fetchFn = async () => {
-      try {
-        const emailField = document.getElementById('form-gcp-email');
-        if (!emailField) {
-          window.toast?.warning('Form chưa được hiển thị. Vui lòng đảm bảo form đã được mở.');
-          return;
-        }
+    try {
+      const emailField = document.getElementById('form-gcp-email');
+      if (!emailField) {
+        window.toast?.warning('Form chưa được hiển thị. Vui lòng đảm bảo form đã được mở.');
+        return;
+      }
 
-        const result = await window.electronAPI.authCheckGCP();
-        console.log('GCP auth check result:', result);
-        
-        if (result.authenticated && result.currentAccount) {
-          emailField.value = result.currentAccount;
-          emailField.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event
-          console.log('Filled GCP email:', result.currentAccount);
-          window.toast?.success(`Đã lấy email: ${result.currentAccount}`);
-        } else {
-          window.toast?.warning(`Chưa đăng nhập GCP. Hãy click "Đăng nhập GCP" ở sidebar.`);
-        }
-      } catch (error) {
-        console.error('Error fetching GCP email:', error);
-        window.toast?.error(`Lỗi: ${error.message}`);
+      const result = await window.electronAPI.authCheckGCP();
+      console.log('GCP auth check result:', result);
+      
+      if (result.authenticated && result.currentAccount) {
+        emailField.value = result.currentAccount;
+        emailField.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event
+        console.log('Filled GCP email:', result.currentAccount);
+        window.toast?.success(`Đã lấy email: ${result.currentAccount}`);
+      } else {
+        window.toast?.warning(`Chưa đăng nhập GCP. Hãy click "Đăng nhập GCP" ở sidebar.`);
+      }
+    } catch (error) {
+      console.error('Error fetching GCP email:', error);
+      window.toast?.error(`Lỗi: ${error.message}`);
       }
     };
 
@@ -885,15 +885,15 @@ window.deploymentForm = {
 
   async fetchCloudflareInfo() {
     const fetchFn = async () => {
-      try {
-        const accountIdField = document.getElementById('form-cf-account-id');
-        const emailField = document.getElementById('form-cf-email');
-        
+    try {
+      const accountIdField = document.getElementById('form-cf-account-id');
+      const emailField = document.getElementById('form-cf-email');
+      
         // Show loading state in fields
-        if (accountIdField) accountIdField.value = 'Đang tải...';
-        if (emailField) emailField.value = 'Đang tải...';
-        
-        const result = await window.electronAPI.helperGetCloudflareInfo();
+      if (accountIdField) accountIdField.value = 'Đang tải...';
+      if (emailField) emailField.value = 'Đang tải...';
+      
+      const result = await window.electronAPI.helperGetCloudflareInfo();
       if (!result.success) {
         window.toast?.error(`Không thể lấy thông tin Cloudflare: ${result.error}\nHãy đảm bảo bạn đã đăng nhập Cloudflare và cài đặt wrangler CLI`);
         if (accountIdField) accountIdField.value = '';
@@ -936,12 +936,12 @@ window.deploymentForm = {
           }
         }, 1000);
       }
-      } catch (error) {
-        window.toast?.error(`Lỗi: ${error.message}`);
-        const accountIdField = document.getElementById('form-cf-account-id');
-        const emailField = document.getElementById('form-cf-email');
-        if (accountIdField) accountIdField.value = '';
-        if (emailField) emailField.value = '';
+    } catch (error) {
+      window.toast?.error(`Lỗi: ${error.message}`);
+      const accountIdField = document.getElementById('form-cf-account-id');
+      const emailField = document.getElementById('form-cf-email');
+      if (accountIdField) accountIdField.value = '';
+      if (emailField) emailField.value = '';
       }
     };
 
@@ -955,27 +955,27 @@ window.deploymentForm = {
 
   async fetchCloudflareEmail() {
     const fetchFn = async () => {
-      try {
-        const emailField = document.getElementById('form-cf-email');
-        if (!emailField) {
-          window.toast?.warning('Form chưa được hiển thị. Vui lòng đảm bảo form đã được mở.');
-          return;
-        }
+    try {
+      const emailField = document.getElementById('form-cf-email');
+      if (!emailField) {
+        window.toast?.warning('Form chưa được hiển thị. Vui lòng đảm bảo form đã được mở.');
+        return;
+      }
 
-        const result = await window.electronAPI.authCheckCloudflare();
-        console.log('Cloudflare auth check result:', result);
-        
-        if (result.authenticated && result.email) {
-          emailField.value = result.email;
-          emailField.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event
-          console.log('Filled Cloudflare email:', result.email);
-          window.toast?.success(`Đã lấy email: ${result.email}`);
-        } else {
-          window.toast?.warning(`Chưa đăng nhập Cloudflare. Hãy click "Đăng nhập Cloudflare" ở sidebar.`);
-        }
-      } catch (error) {
-        console.error('Error fetching Cloudflare email:', error);
-        window.toast?.error(`Lỗi: ${error.message}`);
+      const result = await window.electronAPI.authCheckCloudflare();
+      console.log('Cloudflare auth check result:', result);
+      
+      if (result.authenticated && result.email) {
+        emailField.value = result.email;
+        emailField.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event
+        console.log('Filled Cloudflare email:', result.email);
+        window.toast?.success(`Đã lấy email: ${result.email}`);
+      } else {
+        window.toast?.warning(`Chưa đăng nhập Cloudflare. Hãy click "Đăng nhập Cloudflare" ở sidebar.`);
+      }
+    } catch (error) {
+      console.error('Error fetching Cloudflare email:', error);
+      window.toast?.error(`Lỗi: ${error.message}`);
       }
     };
 

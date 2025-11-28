@@ -2214,7 +2214,7 @@
             document.body.appendChild(loadingOverlay);
 
             // Declare mode outside try block so it's accessible in catch
-            const apiProvider = document.getElementById('api-provider').value;
+                const apiProvider = document.getElementById('api-provider').value;
             const mode = apiProvider === 'google-nano-banana' ? 'vertex' : 'rapidapi';
 
             try {
@@ -2254,7 +2254,7 @@
                     errorText = text;
                     try {
                         data = JSON.parse(text);
-                    } catch {
+                } catch {
                         // If JSON parse fails, use the text as error message
                         data = { message: text || `HTTP ${response.status} ${response.statusText}` };
                     }
@@ -2276,8 +2276,8 @@
                     }
                     if (errorText && errorText.length < 500) {
                         errorMessage += `\nPhản hồi: ${errorText}`;
-                    }
-                    
+                }
+
                     const error = new Error(errorMessage);
                     error.responseData = data;
                     error.statusCode = response.status;
