@@ -1854,7 +1854,6 @@
                          onclick="handleSelect('${type}', '${item.id}', event)"
                          data-item-id="${item.id}">
                         <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
-                        ${item.hasPrompt ? '<span class="gemini-badge" title="Đã có Gemini prompt">Gemini</span>' : ''}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>
                 `).join('');
