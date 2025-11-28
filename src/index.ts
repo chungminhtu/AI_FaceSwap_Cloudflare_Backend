@@ -889,6 +889,99 @@ export default {
       }
     }
 
+    // Handle results deletion (reuse same pattern as presets/selfies)
+    if (path.startsWith('/results/') && request.method === 'DELETE') {
+      try {
+        const resultId = path.replace('/results/', '');
+        if (!resultId) {
+          return errorResponse('Result ID is required', 400);
+        }
+
+        console.log(`[DELETE] Deleting result: ${resultId}`);
+
+        // First, check if result exists and get the R2 key
+        const checkResult = await env.DB.prepare(
+          'SELECT result_url FROM results WHERE id = ?'
+        ).bind(resultId).first();
+
+        if (!checkResult) {
+          console.warn(`[DELETE] Result not found: ${resultId}`);
+          return errorResponse('Result not found', 404);
+        }
+
+        const resultUrl = (checkResult as any).result_url || '';
+
+        // Delete from database
+        const deleteResult = await env.DB.prepare(
+          'DELETE FROM results WHERE id = ?'
+        ).bind(resultId).run();
+
+        if (!deleteResult.success || deleteResult.meta?.changes === 0) {
+          console.warn(`[DELETE] No rows deleted for result: ${resultId}`);
+          return errorResponse('Result not found or already deleted', 404);
+        }
+
+        console.log(`[DELETE] Successfully deleted result from database: ${resultId}`);
+
+        // Try to delete from R2 (non-fatal if it fails)
+        let r2Deleted = false;
+        let r2Key = null;
+        let r2Error = null;
+        if (resultUrl) {
+          try {
+            // Extract R2 key from URL (format: r2://key or https://.../key)
+            if (resultUrl.startsWith('r2://')) {
+              r2Key = resultUrl.replace('r2://', '');
+            } else if (resultUrl.includes('/results/')) {
+              r2Key = resultUrl.split('/results/')[1];
+              if (!r2Key.startsWith('results/')) {
+                r2Key = `results/${r2Key}`;
+              }
+            } else if (resultUrl.includes('r2.dev') && resultUrl.includes('/results/')) {
+              // Extract from public R2 URL: https://pub-xxx.r2.dev/results/xxx.jpg
+              const urlParts = resultUrl.split('/results/');
+              if (urlParts.length > 1) {
+                r2Key = `results/${urlParts[1]}`;
+              }
+            }
+
+            if (r2Key) {
+              await env.FACESWAP_IMAGES.delete(r2Key);
+              r2Deleted = true;
+              console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
+            }
+          } catch (r2DeleteError) {
+            r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
+            console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
+          }
+        }
+
+        return jsonResponse({
+          success: true,
+          message: 'Result deleted successfully',
+          debug: {
+            resultId,
+            databaseDeleted: deleteResult.meta?.changes || 0,
+            r2Deleted,
+            r2Key,
+            r2Error: r2Error || null,
+            resultUrl
+          }
+        });
+      } catch (error) {
+        console.error('[DELETE] Delete result exception:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ 
+          success: false, 
+          message: `Failed to delete result: ${errorMessage}`,
+          debug: {
+            resultId: path.replace('/results/', ''),
+            error: errorMessage,
+          }
+        }, 500);
+      }
+    }
+
     // Handle R2 file serving (if no public URL configured)
     if (path.startsWith('/r2/') && request.method === 'GET') {
       try {

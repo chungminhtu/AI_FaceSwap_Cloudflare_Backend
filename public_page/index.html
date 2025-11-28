@@ -1328,7 +1328,7 @@
                         <div class="upload-icon">📤</div>
                         <div class="upload-text">Nhấp để tải lên hình mẫu</div>
                         <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                        <input type="file" class="file-input" id="preset-input" accept="image/*">
+                        <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                     </div>
                     <!-- Upload Options for Preset -->
                     <div class="upload-options" id="preset-upload-options" style="margin-top: 10px; padding: 12px; background: #f0f7ff; border: 1px solid #b3d9ff; border-radius: 6px; display: block;">
@@ -1448,6 +1448,17 @@
         </div>
     </div>
 
+    <!-- Results Section (Bottom) -->
+    <div class="results-section" style="margin-top: 40px; padding: 20px; background: rgba(255, 255, 255, 0.02); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+        <div class="section-title" style="margin-bottom: 20px;">Kết Quả Đổi Mặt</div>
+        <div id="results-gallery" class="gallery-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;"></div>
+        <div class="pagination" id="results-pagination" style="display: none; margin-top: 20px; justify-content: center; align-items: center; gap: 12px;">
+            <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">‹</button>
+            <span class="pagination-info" id="results-page-info">1 / 1</span>
+            <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">›</button>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -1476,6 +1487,10 @@
         const selfieGallery = document.getElementById('selfie-gallery');
         const selfiePagination = document.getElementById('selfie-pagination');
         const selfiePageInfo = document.getElementById('selfie-page-info');
+        
+        const resultsGallery = document.getElementById('results-gallery');
+        const resultsPagination = document.getElementById('results-pagination');
+        const resultsPageInfo = document.getElementById('results-page-info');
         const selfiePrevBtn = document.getElementById('selfie-prev');
         const selfieNextBtn = document.getElementById('selfie-next');
         const selfieGalleryEmpty = document.getElementById('selfie-gallery-empty');
@@ -1613,13 +1628,40 @@
                     nextBtn: selfieNextBtn,
                     empty: selfieGalleryEmpty
                 }
+            }),
+            results: createGalleryConfig({
+                key: 'results',
+                responseKey: 'results',
+                listEndpoint: '/results',
+                deleteEndpoint: '/results',
+                logName: 'Kết Quả Đổi Mặt',
+                labels: {
+                    selectedTitle: '',
+                    selectSuccess: '',
+                    deleteSuccess: 'Đã xóa kết quả thành công',
+                    deleteError: 'Không thể xóa kết quả',
+                    confirmDelete: 'Bạn có chắc chắn muốn xóa kết quả này không?',
+                    emptyMessage: 'Chưa có kết quả nào',
+                    emptyIcon: '🖼️'
+                },
+                elements: {
+                    upload: null,
+                    input: null,
+                    preview: null,
+                    gallery: resultsGallery,
+                    pagination: resultsPagination,
+                    pageInfo: resultsPageInfo,
+                    prevBtn: document.getElementById('results-prev'),
+                    nextBtn: document.getElementById('results-next'),
+                    empty: null
+                }
             })
         };
 
         const galleryKeys = Object.keys(galleries);
         const MAX_LOG_ENTRIES = 30;
 
-        function logApiCall({ label, method, url, status = 'info', payload }) {
+        function logApiCall({ label, method, url, status = 'info', payload, duration }) {
             if (!apiLogList) return;
             // Log POST, PUT, and DELETE requests (exclude GET, etc.)
             const normalizedMethod = (method || '').toUpperCase();
@@ -1633,25 +1675,15 @@
 
             const statusLabel = status === 'success' ? 'Thành công' : status === 'error' ? 'Lỗi' : 'Thông tin';
             
+            // Build duration display if provided
+            const durationHtml = duration ? `<span style="color: #666; font-size: 12px; margin-left: 8px;">⏱️ ${duration}</span>` : '';
+            
             // Build raw response JSON display
             let responseJsonHtml = '';
             if (payload !== undefined && payload !== null) {
                 const responseJson = JSON.stringify(payload, null, 2);
                 
-                // Check if there's a curl command in the response
-                let curlCommandHtml = '';
-                if (payload.CurlCommand || (payload.debug && payload.debug.CurlCommand)) {
-                    const curlCmd = payload.CurlCommand || payload.debug?.CurlCommand || '';
-                    curlCommandHtml = `
-                        <div style="margin-top: 12px; padding: 12px; background: rgba(33, 150, 243, 0.05); border-radius: 4px; border: 1px solid rgba(33, 150, 243, 0.2);">
-                            <div style="font-weight: 600; font-size: 12px; color: #2196F3; margin-bottom: 8px;">🔧 cURL Command (for testing):</div>
-                            <pre style="font-size: 11px; max-height: 300px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: 'Courier New', monospace;">${escapeHtml(curlCmd)}</pre>
-                    </div>
-                `;
-            }
-            
                 responseJsonHtml = `
-                    ${curlCommandHtml}
                     <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
                         <div style="font-weight: 600; font-size: 12px; color: #666; margin-bottom: 8px;">📋 Response JSON:</div>
                         <pre style="font-size: 11px; max-height: 500px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin: 0;">${escapeHtml(responseJson)}</pre>
@@ -1664,7 +1696,7 @@
                     <span>${timestamp}</span>
                     <span>${statusLabel}</span>
                 </div>
-                <div class="api-log-action">${label}</div>
+                <div class="api-log-action">${label}${durationHtml}</div>
                 <div class="api-log-detail">${method} ${url}</div>
                 ${responseJsonHtml}
             `;
@@ -1760,7 +1792,9 @@
 
         // Initialize the application
         async function init() {
-            galleryKeys.forEach(resetPreview);
+            galleryKeys.forEach(type => {
+                if (type !== 'results') resetPreview(type);
+            });
             await Promise.all(galleryKeys.map(loadGallery));
         }
 
@@ -1775,7 +1809,8 @@
                 // GET requests are not logged (only POST and PUT)
             } catch (error) {
                 console.error(`Lỗi tải ${type}:`, error);
-                showStatusMessage(`Lỗi tải ${type === 'preset' ? 'mẫu' : 'selfie'}`, 'error');
+                const typeName = type === 'preset' ? 'mẫu' : type === 'selfie' ? 'selfie' : 'kết quả';
+                showStatusMessage(`Lỗi tải ${typeName}`, 'error');
                 // GET requests are not logged (only POST and PUT)
             }
         }
@@ -1788,11 +1823,15 @@
             if (!items.length) {
                 gallery.style.display = 'none';
                 pagination.style.display = 'none';
-                empty.style.display = 'block';
+                if (empty) empty.style.display = 'block';
+                if (type === 'results') {
+                    gallery.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">Chưa có kết quả nào</div>';
+                    gallery.style.display = 'block';
+                }
                 return;
             }
 
-            empty.style.display = 'none';
+            if (empty) empty.style.display = 'none';
             gallery.style.display = 'grid';
             pagination.style.display = 'flex';
 
@@ -1801,15 +1840,25 @@
             const startIndex = (config.state.page - 1) * ITEMS_PER_PAGE;
             const pageItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
-            gallery.innerHTML = pageItems.map(item => `
-                <div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}"
-                     onclick="handleSelect('${type}', '${item.id}', event)"
-                     data-item-id="${item.id}">
-                    <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
-                    ${item.hasPrompt ? '<span class="gemini-badge" title="Đã có Gemini prompt">Gemini</span>' : ''}
-                    <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
-                </div>
-            `).join('');
+            // Results don't have selection, just display and delete
+            if (type === 'results') {
+                gallery.innerHTML = pageItems.map(item => `
+                    <div class="gallery-item" data-item-id="${item.id}">
+                        <img src="${item.result_url}" alt="${item.preset_name || ''}" loading="lazy" decoding="async">
+                        <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
+                    </div>
+                `).join('');
+            } else {
+                gallery.innerHTML = pageItems.map(item => `
+                    <div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}"
+                         onclick="handleSelect('${type}', '${item.id}', event)"
+                         data-item-id="${item.id}">
+                        <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
+                        ${item.hasPrompt ? '<span class="gemini-badge" title="Đã có Gemini prompt">Gemini</span>' : ''}
+                        <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
+                    </div>
+                `).join('');
+            }
 
             pageInfo.textContent = `${config.state.page} / ${totalPages}`;
             prevBtn.disabled = config.state.page === 1;
@@ -1962,12 +2011,18 @@
             }
         }
 
-        // Handle preset file upload
+        // Handle preset file upload (support multiple files)
         presetInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+            const files = Array.from(e.target.files || []);
+            if (files.length === 0) return;
 
-            await handleImageUpload(file, 'preset');
+            // Process all files sequentially
+            for (const file of files) {
+                await handleImageUpload(file, 'preset');
+            }
+            
+            // Reset input to allow re-uploading same files
+            e.target.value = '';
         });
 
         // Handle selfie file upload
@@ -2226,9 +2281,10 @@
             `;
             document.body.appendChild(loadingOverlay);
 
-            // Declare mode outside try block so it's accessible in catch
+            // Declare mode and startTime outside try block so they're accessible in catch
                 const apiProvider = document.getElementById('api-provider').value;
             const mode = apiProvider === 'google-nano-banana' ? 'vertex' : 'rapidapi';
+            const startTime = Date.now(); // Track start time for duration calculation
 
             try {
                 if (mode === 'vertex' && !presetSelection.hasPrompt) {
@@ -2260,6 +2316,10 @@
                     body: JSON.stringify(payload)
                 });
 
+                // Calculate duration in seconds with one decimal place
+                const endTime = Date.now();
+                const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
+
                 let data = {};
                 let errorText = '';
                 try {
@@ -2283,6 +2343,10 @@
                 // This handles cases where response format might vary but we have the essential data
                 if (response.ok && resultUrl) {
                     // This is a success - continue to display the result
+                    // Reload results gallery to show the new result
+                    if (galleries.results) {
+                        await loadGallery('results');
+                    }
                 } else if (!response.ok || data.status === 'error' || (data.Success === false && !resultUrl)) {
                     // This is an error - build detailed error message
                     let errorMessage = data.message || data.Message || 'Đổi mặt thất bại';
@@ -2313,13 +2377,19 @@
                 // Show result
                 resultDisplay.innerHTML = `<img src="${resultUrl}" alt="Kết quả đổi mặt" class="result-image">`;
 
+                // Reload results gallery to show the new result
+                if (galleries.results) {
+                    await loadGallery('results');
+                }
+
                 showStatusMessage('Đã hoàn thành đổi mặt thành công', 'success');
                 logApiCall({
                     label: `FaceSwap (${mode})`,
                     method: 'POST',
                     url: `${WORKER_URL}/faceswap`,
                     status: 'success',
-                    payload: data
+                    payload: data,
+                    duration: `${durationSeconds}s`
                 });
 
             } catch (error) {
@@ -2333,6 +2403,10 @@
                 // Show detailed error in status message
                 showStatusMessage(`Đổi mặt thất bại: ${errorMessage}`, 'error');
                 
+                // Calculate duration even for errors
+                const errorEndTime = Date.now();
+                const errorDuration = `${((errorEndTime - startTime) / 1000).toFixed(1)}s`;
+
                 // Log detailed error to API log panel
                 logApiCall({
                     label: `FaceSwap (${mode || 'unknown'})`,
@@ -2344,7 +2418,8 @@
                         message: errorMessage,
                         error: errorData || error,
                         fullError: error
-                    }
+                    },
+                    duration: errorDuration
                 });
             } finally {
                 // Hide loading state
