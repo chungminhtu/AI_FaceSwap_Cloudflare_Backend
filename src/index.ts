@@ -303,7 +303,7 @@ export default {
                 if (promptResult.debug) {
                   console.error('[Vertex] Debug info:', JSON.stringify(promptResult.debug));
                 }
-                console.error('[Vertex] ⚠️ Image will be saved without prompt_json. Please check your GOOGLE_VERTEX_API_KEY and ensure Vertex AI API is enabled.');
+                console.error('[Vertex] ⚠️ Image will be saved without prompt_json. Please check your GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY and ensure Vertex AI API is enabled.');
                 // Continue without prompt - image will still be saved
               }
             } catch (vertexError) {
@@ -903,18 +903,29 @@ export default {
     // Test Vertex AI API connectivity
     if (path === '/test-vertex' && request.method === 'GET') {
       try {
-        if (!env.GOOGLE_VERTEX_API_KEY || !env.GOOGLE_VERTEX_PROJECT_ID) {
-          return errorResponse('Vertex AI credentials not configured', 500);
+        if (!env.GOOGLE_VERTEX_PROJECT_ID) {
+          return errorResponse('Vertex AI project ID not configured', 500);
+        }
+
+        if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+          return errorResponse('Vertex AI service account credentials not configured. GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required.', 500);
         }
 
         const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
         const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
         console.log('[Test-Vertex] Testing Vertex AI API connectivity...');
 
+        // Generate OAuth token from service account
+        const { getAccessToken } = await import('./utils');
+        const accessToken = await getAccessToken(
+          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        );
+
         const testEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/models`;
         const listResponse = await fetch(testEndpoint, {
           headers: {
-            'Authorization': `Bearer ${env.GOOGLE_VERTEX_API_KEY}`
+            'Authorization': `Bearer ${accessToken}`
           }
         });
 
@@ -992,12 +1003,13 @@ export default {
           const nanoResult = await callNanoBanana(promptData, body.target_url, body.source_url, env);
 
           if (!nanoResult.Success || !nanoResult.ResultImageUrl) {
-            console.error('[Vertex] Nano Banana provider failed:', nanoResult);
+            console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(nanoResult, null, 2));
             return jsonResponse({
-              Success: false,
-              Message: nanoResult.Message || 'Nano Banana provider failed to generate image',
-              StatusCode: nanoResult.StatusCode || 500,
-              Error: nanoResult.Error,
+              status: 'error',
+              message: nanoResult.Message || 'Nano Banana provider failed to generate image',
+              code: nanoResult.StatusCode || 500,
+              error: nanoResult.Error,
+              details: nanoResult,
             }, nanoResult.StatusCode || 500);
           }
 

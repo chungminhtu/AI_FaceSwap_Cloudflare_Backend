@@ -5,12 +5,13 @@ export interface Env {
   GOOGLE_VISION_API_KEY: string;
   GOOGLE_VERTEX_PROJECT_ID: string;
   GOOGLE_VERTEX_LOCATION: string;
-  GOOGLE_VERTEX_API_KEY: string;
   GOOGLE_VISION_ENDPOINT: string;
   FACESWAP_IMAGES: R2Bucket;
   DB: D1Database;
   NANO_BANANA_API_URL?: string;
   NANO_BANANA_API_KEY?: string;
+  GOOGLE_SERVICE_ACCOUNT_EMAIL?: string; // Optional: Service account email for OAuth token generation
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string; // Optional: Service account private key for OAuth token generation
   R2_ACCOUNT_ID?: string; // Optional: Cloudflare account ID for auto URL generation (e.g., 32 hex characters)
   CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
   ACCOUNT_ID?: string; // Fallback alias

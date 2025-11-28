@@ -2246,17 +2246,43 @@
                 });
 
                 let data = {};
+                let errorText = '';
                 try {
-                    data = await response.json();
-                } catch {
-                    data = {};
+                    const text = await response.text();
+                    errorText = text;
+                    try {
+                        data = JSON.parse(text);
+                    } catch {
+                        // If JSON parse fails, use the text as error message
+                        data = { message: text || `HTTP ${response.status} ${response.statusText}` };
+                    }
+                } catch (parseError) {
+                    errorText = `Failed to parse response: ${parseError}`;
+                    data = { message: errorText };
                 }
 
-                if (!response.ok || data.status === 'error') {
-                    throw new Error(data.message || 'Đổi mặt thất bại');
+                if (!response.ok || data.status === 'error' || !data.Success) {
+                    // Build detailed error message
+                    let errorMessage = data.message || data.Message || 'Đổi mặt thất bại';
+                    
+                    // Add error details if available
+                    if (data.Error) {
+                        errorMessage += `\nChi tiết: ${typeof data.Error === 'string' ? data.Error : JSON.stringify(data.Error)}`;
+                    }
+                    if (data.StatusCode) {
+                        errorMessage += `\nMã lỗi: ${data.StatusCode}`;
+                    }
+                    if (errorText && errorText.length < 500) {
+                        errorMessage += `\nPhản hồi: ${errorText}`;
+                    }
+                    
+                    const error = new Error(errorMessage);
+                    error.responseData = data;
+                    error.statusCode = response.status;
+                    throw error;
                 }
 
-                const resultUrl = data.data?.resultImageUrl;
+                const resultUrl = data.data?.resultImageUrl || data.ResultImageUrl;
                 if (!resultUrl) {
                     throw new Error('Không nhận được hình ảnh kết quả');
                 }
@@ -2276,13 +2302,27 @@
 
             } catch (error) {
                 console.error('Lỗi đổi mặt:', error);
-                showStatusMessage(`Đổi mặt thất bại: ${error.message}`, 'error');
+                
+                // Build detailed error message for UI
+                let errorMessage = error?.message || String(error);
+                const errorData = error?.responseData;
+                const statusCode = error?.statusCode;
+                
+                // Show detailed error in status message
+                showStatusMessage(`Đổi mặt thất bại: ${errorMessage}`, 'error');
+                
+                // Log detailed error to API log panel
                 logApiCall({
                     label: `FaceSwap (${mode || 'unknown'})`,
                     method: 'POST',
                     url: `${WORKER_URL}/faceswap`,
                     status: 'error',
-                    payload: { message: error?.message || String(error) }
+                    statusCode: statusCode || 500,
+                    payload: {
+                        message: errorMessage,
+                        error: errorData || error,
+                        fullError: error
+                    }
                 });
             } finally {
                 // Hide loading state

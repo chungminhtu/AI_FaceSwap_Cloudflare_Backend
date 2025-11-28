@@ -153,8 +153,9 @@ class ConfigManager {
         GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY || config.secrets?.GOOGLE_VISION_API_KEY,
         GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID || config.secrets?.GOOGLE_VERTEX_PROJECT_ID,
         GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || config.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
-        GOOGLE_VERTEX_API_KEY: config.GOOGLE_VERTEX_API_KEY || config.secrets?.GOOGLE_VERTEX_API_KEY,
-        GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT || config.secrets?.GOOGLE_VISION_ENDPOINT
+        GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT || config.secrets?.GOOGLE_VISION_ENDPOINT,
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL || config.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || config.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
       };
 
       // Remove undefined values
@@ -221,8 +222,11 @@ class ConfigManager {
               RAPIDAPI_HOST: secretsConfig.RAPIDAPI_HOST,
               RAPIDAPI_ENDPOINT: secretsConfig.RAPIDAPI_ENDPOINT,
               GOOGLE_VISION_API_KEY: secretsConfig.GOOGLE_VISION_API_KEY,
-              GOOGLE_GEMINI_API_KEY: secretsConfig.GOOGLE_GEMINI_API_KEY,
-              GOOGLE_VISION_ENDPOINT: secretsConfig.GOOGLE_VISION_ENDPOINT
+              GOOGLE_VERTEX_PROJECT_ID: secretsConfig.GOOGLE_VERTEX_PROJECT_ID,
+              GOOGLE_VERTEX_LOCATION: secretsConfig.GOOGLE_VERTEX_LOCATION,
+              GOOGLE_VISION_ENDPOINT: secretsConfig.GOOGLE_VISION_ENDPOINT,
+              GOOGLE_SERVICE_ACCOUNT_EMAIL: secretsConfig.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+              GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: secretsConfig.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
             }
           };
 
@@ -488,7 +492,7 @@ class ConfigManager {
             const secretKeys = [
               'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
               'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION',
-              'GOOGLE_VERTEX_API_KEY', 'GOOGLE_VISION_ENDPOINT'
+              'GOOGLE_VISION_ENDPOINT', 'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'
             ];
 
             const insertSecretStmt = this.db.prepare(`
@@ -632,7 +636,8 @@ class ConfigManager {
     const requiredFields = [
       'workerName', 'pagesProjectName', 'databaseName', 'bucketName',
       'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
-      'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VERTEX_API_KEY', 'GOOGLE_VISION_ENDPOINT'
+      'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VISION_ENDPOINT',
+      'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'
       ];
 
     // Check if secrets are in flat format or nested

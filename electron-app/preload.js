@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Helper functions
   helperGetCloudflareInfo: () => ipcRenderer.invoke('helper:get-cloudflare-info'),
-  helperGetGCPProjects: () => ipcRenderer.invoke('helper:get-gcp-projects')
+  helperGetGCPProjects: () => ipcRenderer.invoke('helper:get-gcp-projects'),
+  helperGetServiceAccountCredentials: () => ipcRenderer.invoke('helper:get-service-account-credentials')
 });
 

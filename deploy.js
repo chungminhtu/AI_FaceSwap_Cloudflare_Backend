@@ -48,6 +48,105 @@ function prompt(question) {
   });
 }
 
+// Execute command with logs but reduced verbosity
+function executeWithLogs(command, cwd, stepName, reportProgress) {
+  return new Promise((resolve, reject) => {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    const child = spawn(command, [], {
+      cwd: cwd || process.cwd(),
+      shell: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let lastProgressUpdate = Date.now();
+    let commandStarted = false;
+
+    child.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdout += output;
+
+      // Only log important status messages, not every line
+      const lines = output.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Log important status updates only
+        if (trimmed.includes('Uploaded') && trimmed.includes('sec')) {
+          console.log(`✓ ${stepName}: ${trimmed}`);
+        } else if (trimmed.includes('Deployed') && trimmed.includes('sec')) {
+          console.log(`✓ ${stepName}: ${trimmed}`);
+        } else if (trimmed.includes('Success! Uploaded')) {
+          console.log(`✓ ${stepName}: ${trimmed}`);
+        } else if (trimmed.includes('Deployment complete!')) {
+          console.log(`✓ ${stepName}: ${trimmed}`);
+        } else if (trimmed.includes('✨ Successfully created secret')) {
+          console.log(`✓ ${trimmed}`);
+        } else if (trimmed.includes('Finished processing secrets file')) {
+          console.log(`✓ Secrets upload completed`);
+        } else if (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) {
+          // Handle D1 database confirmation automatically
+          console.log('✓ Confirming D1 database operation...');
+          child.stdin.write('y\n');
+        } else if (trimmed.includes('Error') || trimmed.includes('✘')) {
+          console.log(`✗ ${stepName}: ${trimmed}`);
+        }
+
+        // Send progress updates less frequently
+        const now = Date.now();
+        if (now - lastProgressUpdate > 2000) { // Update every 2 seconds
+          if (reportProgress && !commandStarted) {
+            reportProgress(stepName, 'running', trimmed);
+            commandStarted = true;
+          }
+          lastProgressUpdate = now;
+        }
+      }
+    });
+
+    child.stderr.on('data', (data) => {
+      const output = data.toString();
+      stderr += output;
+
+      // Log errors immediately
+      const lines = output.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        if (line.trim()) {
+          console.log(`✗ ${stepName}: ${line.trim()}`);
+        }
+      }
+    });
+
+    child.on('close', (code) => {
+      const result = {
+        success: code === 0,
+        stdout: stdout,
+        stderr: stderr,
+        exitCode: code,
+        error: code !== 0 ? stderr || stdout : null
+      };
+
+      if (reportProgress) {
+        reportProgress(stepName, result.success ? 'completed' : 'error',
+          result.success ? 'Completed successfully' : `Failed with code ${code}`);
+      }
+
+      if (result.success) {
+        resolve(result);
+      } else {
+        reject(new Error(result.error || `Command failed with code ${code}`));
+      }
+    });
+
+    child.on('error', (error) => {
+      console.log(`✗ ${stepName}: Process error - ${error.message}`);
+      reject(error);
+    });
+  });
+}
+
 // ============================================================================
 // DEFAULT PROJECT NAMES - Can be overridden via config or CLI args
 // ============================================================================
@@ -96,8 +195,9 @@ function loadSecretsConfig() {
         GOOGLE_VISION_API_KEY: 'your_vision_key',
         GOOGLE_VERTEX_PROJECT_ID: 'your-gcp-project-id',
         GOOGLE_VERTEX_LOCATION: 'us-central1',
-        GOOGLE_VERTEX_API_KEY: 'your-vertex-api-key',
-        GOOGLE_VISION_ENDPOINT: 'https://vision.googleapis.com/v1/images:annotate'
+        GOOGLE_VISION_ENDPOINT: 'https://vision.googleapis.com/v1/images:annotate',
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: 'your-service-account@project.iam.gserviceaccount.com',
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n'
       }, null, 2));
       process.exit(1);
     }
@@ -116,7 +216,8 @@ function parseConfigObject(config) {
   const requiredFields = [
     'workerName', 'pagesProjectName', 'databaseName', 'bucketName',
     'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
-    'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VERTEX_API_KEY', 'GOOGLE_VISION_ENDPOINT'
+    'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VISION_ENDPOINT',
+    'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'
   ];
 
   const missingFields = requiredFields.filter(field => !config[field]);
@@ -136,8 +237,9 @@ function parseConfigObject(config) {
       GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
       GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
       GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
-      GOOGLE_VERTEX_API_KEY: config.GOOGLE_VERTEX_API_KEY,
-      GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT
+      GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
     }
   };
 }
@@ -156,15 +258,13 @@ async function deployFromConfig(configObject, reportProgress = null, codebasePat
       reportProgress('start', 'running', 'Starting deployment...');
     }
 
-    // Show configuration if no progress reporter
-    if (!reportProgress) {
-      console.log('📋 Configuration:');
-      console.log(`   Worker Name: ${deploymentConfig.workerName}`);
-      console.log(`   Pages Name: ${deploymentConfig.pagesProjectName}`);
-      console.log(`   Database: ${deploymentConfig.databaseName}`);
-      console.log(`   Bucket: ${deploymentConfig.bucketName}`);
-      console.log('');
-    }
+    // Show configuration always (both CLI and Electron)
+    console.log('📋 Configuration:');
+    console.log(`   Worker Name: ${deploymentConfig.workerName}`);
+    console.log(`   Pages Name: ${deploymentConfig.pagesProjectName}`);
+    console.log(`   Database: ${deploymentConfig.databaseName}`);
+    console.log(`   Bucket: ${deploymentConfig.bucketName}`);
+    console.log('');
 
     return await deploymentUtils.performDeployment(deploymentConfig, reportProgress);
   } catch (error) {
@@ -200,14 +300,13 @@ SECRETS.JSON FORMAT:
     "GOOGLE_VISION_API_KEY": "your_google_vision_key_here",
     "GOOGLE_VERTEX_PROJECT_ID": "your-gcp-project-id",
     "GOOGLE_VERTEX_LOCATION": "us-central1",
-    "GOOGLE_VERTEX_API_KEY": "your-vertex-api-key",
     "GOOGLE_VISION_ENDPOINT": "https://vision.googleapis.com/v1/images:annotate"
   }
 
 REQUIRED FIELDS:
   • workerName, pagesProjectName, databaseName, bucketName
   • RAPIDAPI_KEY, RAPIDAPI_HOST, RAPIDAPI_ENDPOINT
-  • GOOGLE_VISION_API_KEY, GOOGLE_VERTEX_PROJECT_ID, GOOGLE_VERTEX_LOCATION, GOOGLE_VERTEX_API_KEY, GOOGLE_VISION_ENDPOINT
+  • GOOGLE_VISION_API_KEY, GOOGLE_VERTEX_PROJECT_ID, GOOGLE_VERTEX_LOCATION, GOOGLE_VISION_ENDPOINT
 
 EXAMPLES:
   # Deploy using secrets.json (only way)
@@ -334,21 +433,71 @@ const deploymentUtils = {
       let stdout = '';
       let stderr = '';
 
+      let lastProgressUpdate = Date.now();
+      let promptAnswered = false;
+
       child.stdout.on('data', (data) => {
         const output = data.toString();
         stdout += output;
 
-        // Write to terminal (CLI mode)
-        process.stdout.write(output);
+        // Auto-answer any interactive prompts immediately
+        const lowerOutput = output.toLowerCase();
+        if ((lowerOutput.includes('ok to proceed') || 
+             lowerOutput.includes('proceed?') ||
+             lowerOutput.includes('continue?') ||
+             lowerOutput.includes('(y/n)') ||
+             lowerOutput.includes('[y/n]') ||
+             lowerOutput.includes('yes/no')) && !promptAnswered) {
+          // Auto-answer with 'yes' or 'y'
+          console.log('✓ Auto-confirming prompt...');
+          child.stdin.write('yes\n');
+          promptAnswered = true;
+        }
 
-        // Send each line to UI (Electron mode)
-        if (reportProgress) {
-          const lines = output.split('\n').filter(line => line.trim());
-          lines.forEach(line => {
+        const lines = output.split('\n').filter(line => line.trim());
+        for (const line of lines) {
+          const trimmed = line.trim();
+
+          // For Electron UI: Send ALL log lines to reportProgress
+          if (reportProgress) {
+            // Send every log line to Electron UI for display
             reportProgress(step, 'running', null, {
-              log: line.trim()
+              log: trimmed
             });
-          });
+          }
+
+          // For CLI: Only show important messages (filter verbose output)
+          if (!reportProgress) {
+            // Only show these specific important messages, filter everything else
+            if ((trimmed.includes('Uploaded') && trimmed.includes('sec')) ||
+                (trimmed.includes('Deployed') && trimmed.includes('sec')) ||
+                trimmed.includes('Success! Uploaded') ||
+                trimmed.includes('Deployment complete!') ||
+                trimmed.includes('✨ Successfully created secret') ||
+                trimmed.includes('Finished processing secrets file') ||
+                (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) ||
+                (trimmed.includes('Error') || trimmed.includes('✘'))) {
+
+              if (trimmed.includes('Uploaded') && trimmed.includes('sec')) {
+                console.log(`✓ ${step}: ${trimmed}`);
+              } else if (trimmed.includes('Deployed') && trimmed.includes('sec')) {
+                console.log(`✓ ${step}: ${trimmed}`);
+              } else if (trimmed.includes('Success! Uploaded')) {
+                console.log(`✓ ${step}: ${trimmed}`);
+              } else if (trimmed.includes('Deployment complete!')) {
+                console.log(`✓ ${step}: ${trimmed}`);
+              } else if (trimmed.includes('✨ Successfully created secret')) {
+                console.log(`✓ ${trimmed}`);
+              } else if (trimmed.includes('Finished processing secrets file')) {
+                console.log(`✓ Secrets upload completed`);
+              } else if (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) {
+                // Already handled above, just log
+                console.log('✓ Confirming D1 database operation...');
+              } else if (trimmed.includes('Error') || trimmed.includes('✘')) {
+                console.log(`✗ ${step}: ${trimmed}`);
+              }
+            }
+          }
         }
       });
 
@@ -356,29 +505,48 @@ const deploymentUtils = {
         const output = data.toString();
         stderr += output;
 
-        // Write to terminal (CLI mode)
-        process.stderr.write(output);
-
-        // Send each line to UI (Electron mode)
-        if (reportProgress) {
-          const lines = output.split('\n').filter(line => line.trim());
-          lines.forEach(line => {
-            reportProgress(step, 'running', null, {
-              log: line.trim()
-            });
-          });
+        const lines = output.split('\n').filter(line => line.trim());
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed) {
+            // For Electron UI: Send ALL error log lines
+            if (reportProgress) {
+              reportProgress(step, 'running', null, {
+                log: trimmed
+              });
+            }
+            
+            // For CLI: Log errors immediately
+            if (!reportProgress) {
+              console.log(`✗ ${step}: ${trimmed}`);
+            }
+          }
         }
       });
 
       child.on('close', (code) => {
-        if (code === 0) {
-          resolve({ success: true, stdout, stderr });
+        const result = {
+          success: code === 0,
+          stdout: stdout,
+          stderr: stderr,
+          exitCode: code,
+          error: code !== 0 ? stderr || stdout : null
+        };
+
+        if (reportProgress) {
+          reportProgress(step, result.success ? 'completed' : 'error',
+            result.success ? 'Completed successfully' : `Failed with code ${code}`);
+        }
+
+        if (result.success) {
+          resolve(result);
         } else {
-          reject(new Error(`Command exited with code ${code}\n${stderr}`));
+          reject(new Error(result.error || `Command failed with code ${code}`));
         }
       });
 
       child.on('error', (error) => {
+        console.log(`✗ ${step}: Process error - ${error.message}`);
         reject(error);
       });
     });
@@ -411,11 +579,8 @@ const deploymentUtils = {
       });
 
       if (!output || !output.includes(databaseName)) {
-        execSync(`wrangler d1 create ${databaseName}`, {
-          stdio: 'inherit',
-          timeout: 30000,
-          cwd: codebasePath
-        });
+        // Use executeWithLogs to auto-answer prompts
+        await this.executeWithLogs(`wrangler d1 create ${databaseName}`, codebasePath, 'check-d1', reportProgress);
 
         // Initialize schema
         const schemaPath = path.join(codebasePath, 'schema.sql');
@@ -428,21 +593,9 @@ const deploymentUtils = {
             });
           } catch (error) {
             // If schema fails, recreate database
-            execSync(`wrangler d1 delete ${databaseName}`, {
-              stdio: 'inherit',
-              timeout: 30000,
-              cwd: codebasePath
-            });
-            execSync(`wrangler d1 create ${databaseName}`, {
-              stdio: 'inherit',
-              timeout: 30000,
-              cwd: codebasePath
-            });
-            execSync(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, {
-              stdio: 'inherit',
-              timeout: 30000,
-              cwd: codebasePath
-            });
+            await this.executeWithLogs(`wrangler d1 delete ${databaseName}`, codebasePath, 'check-d1', reportProgress);
+            await this.executeWithLogs(`wrangler d1 create ${databaseName}`, codebasePath, 'check-d1', reportProgress);
+            await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, codebasePath, 'check-d1', reportProgress);
           }
         }
       } else {
@@ -488,11 +641,7 @@ const deploymentUtils = {
           if (needsSchemaUpdate) {
             try {
               // Apply schema.sql - it uses CREATE TABLE IF NOT EXISTS so it's safe
-              execSync(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, {
-                stdio: 'inherit',
-                timeout: 30000,
-                cwd: codebasePath
-              });
+              await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, codebasePath, 'check-d1', reportProgress);
 
               // If results table exists but has wrong structure, fix it
               try {
@@ -516,16 +665,8 @@ const deploymentUtils = {
 
                   if (!hasData) {
                     // Safe to recreate - table is empty
-                    execSync('wrangler d1 execute ${databaseName} --remote --command="DROP TABLE IF EXISTS results;"', {
-                      stdio: 'inherit',
-                      timeout: 30000,
-                      cwd: codebasePath
-                    });
-                    execSync('wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE results (id TEXT PRIMARY KEY, selfie_id TEXT NOT NULL, preset_collection_id TEXT NOT NULL, preset_image_id TEXT NOT NULL, preset_name TEXT NOT NULL, result_url TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), FOREIGN KEY (selfie_id) REFERENCES selfies(id), FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id), FOREIGN KEY (preset_image_id) REFERENCES preset_images(id));"', {
-                      stdio: 'inherit',
-                      timeout: 30000,
-                      cwd: codebasePath
-                    });
+                    await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="DROP TABLE IF EXISTS results;"`, codebasePath, 'check-d1', reportProgress);
+                    await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE results (id TEXT PRIMARY KEY, selfie_id TEXT NOT NULL, preset_collection_id TEXT NOT NULL, preset_image_id TEXT NOT NULL, preset_name TEXT NOT NULL, result_url TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), FOREIGN KEY (selfie_id) REFERENCES selfies(id), FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id), FOREIGN KEY (preset_image_id) REFERENCES preset_images(id));"`, codebasePath, 'check-d1', reportProgress);
                   }
                 }
               } catch (fixError) {
@@ -542,11 +683,7 @@ const deploymentUtils = {
                 });
 
                 if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
-                  execSync('wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE IF NOT EXISTS selfies (id TEXT PRIMARY KEY, image_url TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));"', {
-                    stdio: 'inherit',
-                    timeout: 30000,
-                    cwd: codebasePath
-                  });
+                  await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE IF NOT EXISTS selfies (id TEXT PRIMARY KEY, image_url TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));"`, codebasePath, 'check-d1', reportProgress);
                 }
               } catch (createError) {
                 // Failed to create selfies table - non-fatal, will be caught below
@@ -818,6 +955,7 @@ const deploymentUtils = {
       }
 
       if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
+      // Don't log here - already logged in executeWithLogs
       return workerUrl;
     } finally {
       // Restore original wrangler.jsonc if we modified it
@@ -906,12 +1044,13 @@ const deploymentUtils = {
 
       // Check if command succeeded (exit code 0)
       if (result.success) {
-        if (reportProgress) reportProgress('deploy-pages', 'completed', `Pages deployed successfully: ${pagesUrl}`);
-        return pagesUrl;
+      if (reportProgress) reportProgress('deploy-pages', 'completed', `Pages deployed successfully: ${pagesUrl}`);
+      // Don't log here - already logged in executeWithLogs
+      return pagesUrl;
       } else {
         // Command failed but we still return the URL (deployment might have partially succeeded)
-        if (reportProgress) reportProgress('deploy-pages', 'warning', `Pages deployment may have issues, but URL is: ${pagesUrl}`);
-        return pagesUrl;
+      if (reportProgress) reportProgress('deploy-pages', 'warning', `Pages deployment may have issues, but URL is: ${pagesUrl}`);
+      return pagesUrl;
       }
     } catch (error) {
       // Pages deployment failed, but return URL anyway (non-critical)
@@ -1156,11 +1295,8 @@ async function main() {
     log.info('Deploying secrets...');
     try {
       await deploymentUtils.deploySecrets(deploymentConfig.secrets, process.cwd(), (step, status, details) => {
-        if (status === 'completed') {
-      log.success('Secrets deployed successfully');
-        } else {
-          log.info(details || 'Deploying secrets...');
-        }
+        // Don't log here - executeWithLogs already handles logging
+        // Only report progress for Electron mode
       }, deploymentConfig.workerName);
     } catch (error) {
       log.error('Failed to deploy secrets');
@@ -1169,7 +1305,7 @@ async function main() {
   } else {
     // Check if secrets are set manually
     const existingSecrets = deploymentUtils.getSecrets();
-    const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VERTEX_API_KEY', 'GOOGLE_VISION_ENDPOINT'];
+    const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VISION_ENDPOINT', 'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'];
   const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
 
   if (missingVars.length > 0) {
@@ -1185,18 +1321,9 @@ async function main() {
   log.info(`Deploying Worker: ${deploymentConfig.workerName}...`);
   try {
     workerUrl = await deploymentUtils.deployWorker(process.cwd(), deploymentConfig.workerName, (step, status, details) => {
-      if (status === 'completed') {
-        log.success(details || 'Worker deployed');
-      } else {
-        log.info(details || 'Deploying Worker...');
-          }
+      // Don't log here - executeWithLogs already handles logging
+      // Only report progress for Electron mode
     });
-
-    if (workerUrl) {
-      log.success(`Worker URL: ${workerUrl}`);
-    } else {
-      log.warn('Could not auto-detect Worker URL. Please check Cloudflare Dashboard.');
-    }
   } catch (error) {
     log.error('Worker deployment failed!');
     process.exit(1);
@@ -1209,14 +1336,8 @@ async function main() {
   if (fs.existsSync(publicPageDir)) {
     try {
       pagesUrl = await deploymentUtils.deployPages(process.cwd(), deploymentConfig.pagesProjectName, (step, status, details) => {
-        if (status === 'completed') {
-      log.success('Pages deployed');
-      log.success(`Frontend URL: ${pagesUrl}`);
-        } else if (status === 'warning') {
-          log.warn(details);
-        } else {
-          log.info(details || 'Deploying Pages...');
-        }
+        // Don't log here - executeWithLogs already handles logging
+        // Only report progress for Electron mode
       });
     } catch (error) {
       log.warn('Pages deployment failed (non-critical)');

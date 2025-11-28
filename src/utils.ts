@@ -1,19 +1,19 @@
-// Safety violation status codes (1000+)
+// Safety violation status codes (1000+) Loại nhạy cảm
 export const SAFETY_STATUS_CODES = {
-  ADULT: 1001,
-  VIOLENCE: 1002,
-  RACY: 1003,
-  MEDICAL: 1004,
-  SPOOF: 1005,
+  ADULT: 1001, // Ảnh người lớn, nude, gợi dục, porn, ...
+  VIOLENCE: 1002, // Ảnh bạo lực, chiến tranh, tử vong, ...
+  RACY: 1003, // Ảnh nhạy cảm sexy, gợi dục, khiêu gợi, ...
+  MEDICAL: 1004, // Ảnh máu me, phẫu thuật, y tế, nạn nhân, ...
+  SPOOF: 1005, // Lừa bịp, ảnh copy của người khác, ...
 } as const;
 
-// Severity levels (higher = worse)
+// Severity levels (higher = worse) Độ nghiêm trọng
 const SEVERITY_LEVELS: Record<string, number> = {
-  VERY_UNLIKELY:-1,
-  UNLIKELY: 0,
-  POSSIBLE: 1,
-  LIKELY: 2,
-  VERY_LIKELY: 3,
+  VERY_UNLIKELY:-1, // Không có nội dung nhạy cảm, chắc chắn
+  UNLIKELY: 0, // Không có nội dung nhạy cảm, nhưng chưa chắc chắn
+  POSSIBLE: 1, // Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn
+  LIKELY: 2, // Có nội dung nhạy cảm, chắc chắn
+  VERY_LIKELY: 3, // Có nội dung nhạy cảm, chắc chắn
 };
 
 // Get severity number for a level
@@ -21,14 +21,13 @@ function getSeverity(level: string): number {
   return SEVERITY_LEVELS[level] || 0;
 }
 
-// Default: Only block VERY_LIKELY (lenient mode)
+// Default: Only block VERY_LIKELY (loose mode)
 // Strict mode: Block both LIKELY and VERY_LIKELY
-export const getUnsafeLevels = (strictness: 'strict' | 'lenient' = 'lenient'): string[] => {
+export const getUnsafeLevels = (strictness: 'strict'): string[] => {
   if (strictness === 'strict') {
     return ['LIKELY', 'VERY_LIKELY'];
   }
-  // lenient (default): only block VERY_LIKELY
-  return ['VERY_LIKELY'];
+  return ['LIKELY', 'VERY_LIKELY'];
 };
 
 export const CORS_HEADERS = {

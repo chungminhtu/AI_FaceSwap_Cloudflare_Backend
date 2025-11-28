@@ -73,11 +73,11 @@ export const callNanoBanana = async (
   sourceUrl: string,
   env: Env
 ): Promise<FaceSwapResponse> => {
-  // Use Vertex AI credentials
-  if (!env.GOOGLE_VERTEX_API_KEY || !env.GOOGLE_VERTEX_PROJECT_ID) {
+  // Use Vertex AI credentials (OAuth token from service account, not API key)
+  if (!env.GOOGLE_VERTEX_PROJECT_ID) {
     return {
       Success: false,
-      Message: 'GOOGLE_VERTEX_API_KEY and GOOGLE_VERTEX_PROJECT_ID are required',
+      Message: 'GOOGLE_VERTEX_PROJECT_ID is required',
       StatusCode: 500,
     };
   }
@@ -107,12 +107,15 @@ export const callNanoBanana = async (
     console.log('[Vertex-NanoBanana] Selfie URL:', sourceUrl);
     console.log('[Vertex-NanoBanana] Prompt:', promptText.substring(0, 200));
 
-    // Vertex AI Imagen API requires OAuth token
+    // Vertex AI requires OAuth token for service account authentication
+    // Check if service account credentials are available
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      console.error('[Vertex-NanoBanana] Missing service account credentials');
       return {
         Success: false,
-        Message: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+        Message: 'Google Service Account credentials are required for Vertex AI. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY environment variables.',
         StatusCode: 500,
+        Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
       };
     }
 
@@ -247,10 +250,12 @@ export const callNanoBanana = async (
       };
     }
   } catch (error) {
+    console.error('[Vertex-NanoBanana] Unexpected error:', error);
     return {
       Success: false,
       Message: `Vertex AI face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
+      Error: error instanceof Error ? error.stack : String(error),
     };
   }
 };
@@ -382,13 +387,13 @@ export const generateVertexPrompt = async (
   const debugInfo: any = {};
   
   try {
-    // Use Vertex AI credentials
-    if (!env.GOOGLE_VERTEX_API_KEY || !env.GOOGLE_VERTEX_PROJECT_ID) {
-      console.error('[Vertex] ❌ ERROR: GOOGLE_VERTEX_API_KEY and GOOGLE_VERTEX_PROJECT_ID are required');
+    // Use Vertex AI credentials (OAuth token from service account, not API key)
+    if (!env.GOOGLE_VERTEX_PROJECT_ID) {
+      console.error('[Vertex] ❌ ERROR: GOOGLE_VERTEX_PROJECT_ID is required');
       return { 
         success: false, 
-        error: 'GOOGLE_VERTEX_API_KEY and GOOGLE_VERTEX_PROJECT_ID are required',
-        debug: { errorDetails: 'Vertex AI credentials are missing from environment variables' }
+        error: 'GOOGLE_VERTEX_PROJECT_ID is required',
+        debug: { errorDetails: 'Vertex AI project ID is missing from environment variables' }
       };
     }
     console.log('[Vertex] ✅ Vertex AI credentials found');

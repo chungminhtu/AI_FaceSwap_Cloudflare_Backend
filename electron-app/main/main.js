@@ -239,8 +239,9 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
       GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
       GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || deployment.secrets?.GOOGLE_VERTEX_PROJECT_ID,
       GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || deployment.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
-      GOOGLE_VERTEX_API_KEY: deployment.GOOGLE_VERTEX_API_KEY || deployment.secrets?.GOOGLE_VERTEX_API_KEY,
-      GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT
+      GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT,
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
     };
 
     const result = await deployFromConfig(deploymentConfig, reportProgress, codebasePath);
@@ -842,6 +843,183 @@ ipcMain.handle('helper:get-gcp-projects', async () => {
       success: false, 
       error: errorMessage,
       details: errorDetails.substring(0, 500)
+    };
+  }
+});
+
+// Auto-fetch service account credentials
+ipcMain.handle('helper:get-service-account-credentials', async () => {
+  try {
+    const { execSync } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    
+    // Check GCP authentication
+    const gcpCheck = await AuthChecker.checkGCP();
+    if (!gcpCheck.authenticated) {
+      return {
+        success: false,
+        error: 'Not authenticated with GCP. Please login first.',
+        needsLogin: true
+      };
+    }
+
+    // Get current project
+    let projectId;
+    try {
+      projectId = execSync('gcloud config get-value project', {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5000
+      }).trim();
+      
+      if (!projectId) {
+        return {
+          success: false,
+          error: 'No GCP project set. Please set a project first.',
+          needsProject: true
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Failed to get GCP project: ' + (error.message || 'Unknown error'),
+        needsProject: true
+      };
+    }
+
+    // List service accounts
+    let serviceAccounts;
+    try {
+      const saOutput = execSync(`gcloud iam service-accounts list --project=${projectId} --format="json"`, {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000
+      });
+      serviceAccounts = JSON.parse(saOutput);
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Failed to list service accounts. You may need to create one manually in GCP Console.',
+        details: error.message
+      };
+    }
+
+    // Find or create a service account for Vertex AI
+    let serviceAccount = serviceAccounts.find(sa => 
+      sa.email && (
+        sa.email.includes('vertex') || 
+        sa.email.includes('ai') ||
+        sa.displayName?.toLowerCase().includes('vertex') ||
+        sa.displayName?.toLowerCase().includes('ai')
+      )
+    );
+
+    // If no suitable service account found, use the first one or create a new one
+    if (!serviceAccount && serviceAccounts.length > 0) {
+      serviceAccount = serviceAccounts[0];
+    }
+
+    // If still no service account, try to create one
+    if (!serviceAccount) {
+      try {
+        const saName = `vertex-ai-worker-${Date.now().toString().slice(-8)}`;
+        const saEmail = `${saName}@${projectId}.iam.gserviceaccount.com`;
+        
+        execSync(`gcloud iam service-accounts create ${saName} --display-name="Vertex AI Worker" --project=${projectId}`, {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: 30000
+        });
+
+        // Grant necessary roles
+        try {
+          execSync(`gcloud projects add-iam-policy-binding ${projectId} --member="serviceAccount:${saEmail}" --role="roles/aiplatform.user"`, {
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+            timeout: 30000
+          });
+        } catch (roleError) {
+          console.warn('[ServiceAccount] Could not grant aiplatform.user role:', roleError.message);
+        }
+
+        serviceAccount = { email: saEmail, name: saName };
+      } catch (createError) {
+        return {
+          success: false,
+          error: 'Failed to create service account. Please create one manually in GCP Console with roles/aiplatform.user.',
+          details: createError.message
+        };
+      }
+    }
+
+    const saEmail = serviceAccount.email;
+    if (!saEmail) {
+      return {
+        success: false,
+        error: 'Service account email not found.'
+      };
+    }
+
+    // Create a temporary key file
+    const tempKeyFile = path.join(os.tmpdir(), `sa-key-${Date.now()}.json`);
+    
+    try {
+      // Create a new key for the service account
+      execSync(`gcloud iam service-accounts keys create "${tempKeyFile}" --iam-account="${saEmail}" --project=${projectId}`, {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 30000
+      });
+
+      // Read the key file
+      const keyData = JSON.parse(fs.readFileSync(tempKeyFile, 'utf8'));
+      
+      // Extract email and private key
+      const email = keyData.client_email;
+      const privateKey = keyData.private_key;
+
+      // Clean up temp file
+      try {
+        fs.unlinkSync(tempKeyFile);
+      } catch (unlinkError) {
+        console.warn('[ServiceAccount] Could not delete temp key file:', unlinkError.message);
+      }
+
+      if (!email || !privateKey) {
+        return {
+          success: false,
+          error: 'Failed to extract credentials from service account key.'
+        };
+      }
+
+      return {
+        success: true,
+        email: email,
+        privateKey: privateKey
+      };
+    } catch (keyError) {
+      // Clean up temp file on error
+      try {
+        if (fs.existsSync(tempKeyFile)) {
+          fs.unlinkSync(tempKeyFile);
+        }
+      } catch (unlinkError) {
+        // Ignore
+      }
+
+      return {
+        success: false,
+        error: 'Failed to create service account key. You may need to create one manually in GCP Console.',
+        details: keyError.message
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: 'Failed to get service account credentials: ' + (error.message || 'Unknown error'),
+      details: error.stack
     };
   }
 });

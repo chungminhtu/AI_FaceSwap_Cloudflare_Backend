@@ -82,8 +82,9 @@ window.deploymentForm = {
               GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || '',
               GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || '',
               GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || 'us-central1',
-              GOOGLE_VERTEX_API_KEY: deployment.GOOGLE_VERTEX_API_KEY || '',
-              GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || ''
+              GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || '',
+              GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
+              GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || ''
             }
           };
         } else {
@@ -136,7 +137,6 @@ window.deploymentForm = {
           GOOGLE_VISION_API_KEY: '',
           GOOGLE_VERTEX_PROJECT_ID: '',
           GOOGLE_VERTEX_LOCATION: 'us-central1',
-          GOOGLE_VERTEX_API_KEY: '',
           GOOGLE_VISION_ENDPOINT: ''
         },
         workerName: '',
@@ -306,13 +306,25 @@ window.deploymentForm = {
               <small class="form-hint">Region for Vertex AI (e.g., us-central1)</small>
             </div>
             <div class="form-group">
-              <label class="form-label">Vertex AI API Key *</label>
-              <input type="text" class="form-input" id="form-secret-google-vertex-key" value="${this.escapeHtml(deploymentData.secrets?.GOOGLE_VERTEX_API_KEY || '')}" required>
-              <small class="form-hint">For prompt generation (Vertex AI)</small>
-            </div>
-            <div class="form-group">
               <label class="form-label">Vision Endpoint *</label>
               <input type="text" class="form-input" id="form-secret-google-endpoint" value="${this.escapeHtml(deploymentData.secrets?.GOOGLE_VISION_ENDPOINT || '')}" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">
+                Service Account Email *
+                <button type="button" id="btn-fetch-service-account" class="label-fetch-btn" title="Tự động lấy Service Account credentials">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"></path>
+                  </svg>
+                </button>
+              </label>
+              <input type="email" class="form-input" id="form-secret-google-service-account-email" value="${this.escapeHtml(deploymentData.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL || '')}" required>
+              <small class="form-hint">GCP Service Account email for Vertex AI OAuth</small>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Service Account Private Key *</label>
+              <textarea class="form-input" id="form-secret-google-service-account-key" rows="4" required>${this.escapeHtml(deploymentData.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '')}</textarea>
+              <small class="form-hint">GCP Service Account private key (JSON format, include newlines)</small>
             </div>
           </div>
         </div>
@@ -359,6 +371,13 @@ window.deploymentForm = {
       });
     }
 
+    const btnFetchServiceAccount = document.getElementById('btn-fetch-service-account');
+    if (btnFetchServiceAccount) {
+      btnFetchServiceAccount.addEventListener('click', async () => {
+        await this.fetchServiceAccountCredentials();
+      });
+    }
+
     // AUTO-FETCH Cloudflare Account ID when form opens (if not already set)
     const accountIdField = document.getElementById('form-cf-account-id');
     if (accountIdField && !accountIdField.value) {
@@ -378,6 +397,37 @@ window.deploymentForm = {
           console.log('[Auto-fetch] Could not auto-fetch Account ID:', e.message);
         }
       }, 500);
+    }
+
+    // AUTO-FETCH Service Account Credentials when form opens (if not already set)
+    const saEmailField = document.getElementById('form-secret-google-service-account-email');
+    const saKeyField = document.getElementById('form-secret-google-service-account-key');
+    if ((saEmailField && !saEmailField.value) || (saKeyField && !saKeyField.value)) {
+      // Auto-fetch after a longer delay to let GCP project be set first
+      setTimeout(async () => {
+        try {
+          const result = await window.electronAPI.helperGetServiceAccountCredentials();
+          if (result.success && result.email && result.privateKey) {
+            if (saEmailField && !saEmailField.value) {
+              saEmailField.value = result.email;
+              saEmailField.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (saKeyField && !saKeyField.value) {
+              saKeyField.value = result.privateKey;
+              saKeyField.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            console.log('[Auto-fetch] Automatically filled Service Account credentials');
+            // Show subtle notification
+            window.toast?.success(`✅ Đã tự động lấy Service Account credentials`, { duration: 3000 });
+          } else if (result.error) {
+            // Only log error, don't show toast - user can fill manually
+            console.log('[Auto-fetch] Could not auto-fetch Service Account credentials:', result.error);
+          }
+        } catch (e) {
+          // Silently fail - user can fill manually
+          console.log('[Auto-fetch] Could not auto-fetch Service Account credentials:', e.message);
+        }
+      }, 1500);
     }
 
     const btnFetchCFEmail = document.getElementById('btn-fetch-cf-email');
@@ -450,8 +500,9 @@ window.deploymentForm = {
       'form-secret-google-vision-key',
       'form-secret-google-vertex-project-id',
       'form-secret-google-vertex-location',
-      'form-secret-google-vertex-key',
-      'form-secret-google-endpoint'
+      'form-secret-google-endpoint',
+      'form-secret-google-service-account-email',
+      'form-secret-google-service-account-key'
     ];
 
     formFields.forEach(fieldId => {
@@ -494,8 +545,9 @@ window.deploymentForm = {
         GOOGLE_VISION_API_KEY: document.getElementById('form-secret-google-vision-key')?.value || '',
         GOOGLE_VERTEX_PROJECT_ID: document.getElementById('form-secret-google-vertex-project-id')?.value || '',
         GOOGLE_VERTEX_LOCATION: document.getElementById('form-secret-google-vertex-location')?.value || 'us-central1',
-        GOOGLE_VERTEX_API_KEY: document.getElementById('form-secret-google-vertex-key')?.value || '',
-        GOOGLE_VISION_ENDPOINT: document.getElementById('form-secret-google-endpoint')?.value || ''
+        GOOGLE_VISION_ENDPOINT: document.getElementById('form-secret-google-endpoint')?.value || '',
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: document.getElementById('form-secret-google-service-account-email')?.value || '',
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: document.getElementById('form-secret-google-service-account-key')?.value || ''
       },
       savedAt: new Date().toISOString()
     };
@@ -783,6 +835,54 @@ window.deploymentForm = {
     }
   },
 
+  async fetchServiceAccountCredentials() {
+    const fetchFn = async () => {
+      try {
+        const emailField = document.getElementById('form-secret-google-service-account-email');
+        const keyField = document.getElementById('form-secret-google-service-account-key');
+        
+        if (!emailField || !keyField) {
+          window.toast?.warning('Form chưa được hiển thị. Vui lòng đảm bảo form đã được mở.');
+          return;
+        }
+
+        const result = await window.electronAPI.helperGetServiceAccountCredentials();
+        console.log('Service Account credentials result:', result);
+        
+        if (result.success && result.email && result.privateKey) {
+          emailField.value = result.email;
+          emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          keyField.value = result.privateKey;
+          keyField.dispatchEvent(new Event('input', { bubbles: true }));
+          console.log('Filled Service Account credentials');
+          window.toast?.success(`✅ Đã lấy Service Account credentials thành công!`);
+        } else {
+          let errorMessage = `Không thể lấy Service Account credentials: ${result.error || 'Unknown error'}`;
+          
+          if (result.needsLogin) {
+            errorMessage += '\n\nVui lòng đăng nhập GCP trước.';
+          } else if (result.needsProject) {
+            errorMessage += '\n\nVui lòng chọn GCP project trước.';
+          } else if (result.details) {
+            errorMessage += `\n\nChi tiết: ${result.details}`;
+          }
+          
+          window.toast?.error(errorMessage);
+        }
+      } catch (error) {
+        console.error('Error fetching Service Account credentials:', error);
+        window.toast?.error(`Lỗi: ${error.message}`);
+      }
+    };
+
+    // Show loading overlay during fetch
+    if (window.loading && window.loading.withLoading) {
+      await window.loading.withLoading(fetchFn, 'Đang lấy Service Account credentials...');
+    } else {
+      await fetchFn();
+    }
+  },
+
   async fetchCloudflareInfo() {
     const fetchFn = async () => {
       try {
@@ -950,7 +1050,7 @@ window.deploymentForm = {
               // It's either a single deployment object or a secrets-only file
               // Check if it looks like a secrets-only file
               const isSecretsOnly = !deployment.id && !deployment.name && !deployment.gcp && !deployment.cloudflare &&
-                (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_VISION_API_KEY || deployment.GOOGLE_VERTEX_API_KEY);
+                (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_VISION_API_KEY);
               
               if (isSecretsOnly) {
                 console.log('Detected secrets-only file');
@@ -1048,7 +1148,7 @@ window.deploymentForm = {
             }
             
             // Check if we found any secrets
-            if (!secrets.RAPIDAPI_KEY && !secrets.GOOGLE_VISION_API_KEY && !secrets.GOOGLE_VERTEX_API_KEY) {
+            if (!secrets.RAPIDAPI_KEY && !secrets.GOOGLE_VISION_API_KEY) {
               window.toast?.error('File không chứa secrets hợp lệ (RapidAPI hoặc Google Cloud).');
               modal.remove();
               return;
@@ -1096,13 +1196,17 @@ window.deploymentForm = {
               filledCount++;
               filledFields.push('GOOGLE_VERTEX_LOCATION');
             }
-            if (setSecretValue('form-secret-google-vertex-key', secrets.GOOGLE_VERTEX_API_KEY)) {
-              filledCount++;
-              filledFields.push('GOOGLE_VERTEX_API_KEY');
-            }
             if (setSecretValue('form-secret-google-endpoint', secrets.GOOGLE_VISION_ENDPOINT)) {
               filledCount++;
               filledFields.push('GOOGLE_VISION_ENDPOINT');
+            }
+            if (setSecretValue('form-secret-google-service-account-email', secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL)) {
+              filledCount++;
+              filledFields.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+            }
+            if (setSecretValue('form-secret-google-service-account-key', secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)) {
+              filledCount++;
+              filledFields.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
             }
             
             if (filledCount > 0) {
@@ -1139,7 +1243,7 @@ window.deploymentForm = {
     
     // Check if this is a secrets-only file (flat object with secret keys)
     const isSecretsOnly = !deployment.id && !deployment.name && !deployment.gcp && !deployment.cloudflare &&
-      (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_VISION_API_KEY || deployment.GOOGLE_VERTEX_API_KEY);
+      (deployment.RAPIDAPI_KEY || deployment.RAPIDAPI_HOST || deployment.GOOGLE_VISION_API_KEY);
     
     // If it's secrets-only, wrap it in a secrets object
     if (isSecretsOnly) {
@@ -1274,13 +1378,17 @@ window.deploymentForm = {
           filledCount++;
           filledFields.push('GOOGLE_VERTEX_LOCATION');
         }
-        if (setValue('form-secret-google-vertex-key', secrets.GOOGLE_VERTEX_API_KEY || deployment.GOOGLE_VERTEX_API_KEY, isImporting)) {
-          filledCount++;
-          filledFields.push('GOOGLE_VERTEX_API_KEY');
-        }
         if (setValue('form-secret-google-endpoint', secrets.GOOGLE_VISION_ENDPOINT, isImporting)) {
           filledCount++;
           filledFields.push('GOOGLE_VISION_ENDPOINT');
+        }
+        if (setValue('form-secret-google-service-account-email', secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL, isImporting)) {
+          filledCount++;
+          filledFields.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+        }
+        if (setValue('form-secret-google-service-account-key', secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, isImporting)) {
+          filledCount++;
+          filledFields.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
         }
       }
       
@@ -1328,8 +1436,9 @@ window.deploymentForm = {
       const formGoogleVisionKeyEl = document.getElementById('form-secret-google-vision-key');
       const formGoogleVertexProjectIdEl = document.getElementById('form-secret-google-vertex-project-id');
       const formGoogleVertexLocationEl = document.getElementById('form-secret-google-vertex-location');
-      const formGoogleVertexKeyEl = document.getElementById('form-secret-google-vertex-key');
       const formGoogleEndpointEl = document.getElementById('form-secret-google-endpoint');
+      const formGoogleServiceAccountEmailEl = document.getElementById('form-secret-google-service-account-email');
+      const formGoogleServiceAccountKeyEl = document.getElementById('form-secret-google-service-account-key');
 
       // Check for missing elements
       const missingElements = [];
@@ -1341,7 +1450,6 @@ window.deploymentForm = {
       if (!formRapidApiKeyEl) missingElements.push('form-secret-rapidapi-key');
       if (!formGoogleVisionKeyEl) missingElements.push('form-secret-google-vision-key');
       if (!formGoogleVertexProjectIdEl) missingElements.push('form-secret-google-vertex-project-id');
-      if (!formGoogleVertexKeyEl) missingElements.push('form-secret-google-vertex-key');
 
       if (missingElements.length > 0) {
         console.error('[Save] Missing form elements:', missingElements);
@@ -1382,8 +1490,9 @@ window.deploymentForm = {
         GOOGLE_VISION_API_KEY: formGoogleVisionKeyEl.value.trim(),
         GOOGLE_VERTEX_PROJECT_ID: formGoogleVertexProjectIdEl.value.trim(),
         GOOGLE_VERTEX_LOCATION: formGoogleVertexLocationEl.value.trim() || 'us-central1',
-        GOOGLE_VERTEX_API_KEY: formGoogleVertexKeyEl.value.trim(),
         GOOGLE_VISION_ENDPOINT: formGoogleEndpointEl.value.trim(),
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: formGoogleServiceAccountEmailEl.value.trim(),
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: formGoogleServiceAccountKeyEl.value.trim(),
         status: existingDeployment?.status || 'idle'
       };
 
@@ -1422,8 +1531,9 @@ window.deploymentForm = {
         GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY?.trim() || '',
         GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID?.trim() || '',
         GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION?.trim() || '',
-        GOOGLE_VERTEX_API_KEY: deployment.GOOGLE_VERTEX_API_KEY?.trim() || '',
-        GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT?.trim() || ''
+        GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT?.trim() || '',
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() || '',
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim() || ''
       };
 
       // Check required fields with strict validation
@@ -1438,8 +1548,9 @@ window.deploymentForm = {
         { key: 'GOOGLE_VISION_API_KEY', label: 'Google Vision API Key' },
         { key: 'GOOGLE_VERTEX_PROJECT_ID', label: 'Vertex AI Project ID' },
         { key: 'GOOGLE_VERTEX_LOCATION', label: 'Vertex AI Location' },
-        { key: 'GOOGLE_VERTEX_API_KEY', label: 'Vertex AI API Key' },
-        { key: 'GOOGLE_VISION_ENDPOINT', label: 'Google Vision Endpoint' }
+        { key: 'GOOGLE_VISION_ENDPOINT', label: 'Google Vision Endpoint' },
+        { key: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', label: 'Service Account Email' },
+        { key: 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY', label: 'Service Account Private Key' }
       ];
 
       const missingFields = [];
@@ -1468,8 +1579,9 @@ window.deploymentForm = {
         GOOGLE_VISION_API_KEY: flatDeploymentForValidation.GOOGLE_VISION_API_KEY,
         GOOGLE_VERTEX_PROJECT_ID: flatDeploymentForValidation.GOOGLE_VERTEX_PROJECT_ID,
         GOOGLE_VERTEX_LOCATION: flatDeploymentForValidation.GOOGLE_VERTEX_LOCATION,
-        GOOGLE_VERTEX_API_KEY: flatDeploymentForValidation.GOOGLE_VERTEX_API_KEY,
-        GOOGLE_VISION_ENDPOINT: flatDeploymentForValidation.GOOGLE_VISION_ENDPOINT
+        GOOGLE_VISION_ENDPOINT: flatDeploymentForValidation.GOOGLE_VISION_ENDPOINT,
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: flatDeploymentForValidation.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: flatDeploymentForValidation.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
       };
 
       // Save flat structure to secrets.json (for CLI compatibility)
