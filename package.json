@@ -8,11 +8,9 @@
     "setup:gcp": "node setup-google-cloud.js",
     "deploy-setup": "node deploy/deploy.js setup",
     "deploy-production": "node deploy/deploy.js production",
-    "deploy-ai-office": "DEPLOY_ENV=ai-office node deploy/deploy.js",
-    "deploy-ai-office-dev": "DEPLOY_ENV=ai-office-dev node deploy/deploy.js",
+    "deploy-ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node deploy/deploy.js",
     "deploy-ai-office-dev-with-pages": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node deploy/deploy.js",
-    "deploy-ai-office-prod": "DEPLOY_ENV=ai-office-prod node deploy/deploy.js",
-    "deploy-ai-office-prod-with-pages": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-prod node deploy/deploy.js"
+    "deploy-ai-office-prod": "DEPLOY_ENV=ai-office-prod node deploy/deploy.js"
   },
   "keywords": [
     "cloudflare",
