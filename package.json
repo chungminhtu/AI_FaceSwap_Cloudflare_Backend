@@ -9,7 +9,7 @@
     "deploy-setup": "node deploy/deploy.js setup",
     "deploy-production": "node deploy/deploy.js production",
     "deploy-ai-office": "node deploy/deploy.js ai-office",
-    "deploy-ai-office-dev": "node deploy/deploy.js ai-office-dev"
+    "deploy-ai-office-dev": "DEPLOY_ENV=ai-office-dev node deploy/deploy.js"
   },
   "keywords": [
     "cloudflare",

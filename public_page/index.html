@@ -2031,9 +2031,9 @@
             // Add event listeners to gender filter buttons
             document.querySelectorAll('.gender-filter-btn').forEach(button => {
                 button.addEventListener('click', (e) => {
-                    const btn = e.target as HTMLElement;
+                    const btn = e.target;
                     const gender = btn.dataset.gender || '';
-                    const type = btn.dataset.type as 'preset' | 'selfie';
+                    const type = btn.dataset.type;
 
                     if (!type) return;
 
