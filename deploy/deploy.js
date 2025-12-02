@@ -162,207 +162,69 @@ function executeWithLogs(command, cwd, stepName, reportProgress) {
 // ============================================================================
 // DEFAULT PROJECT NAMES - Can be overridden via config or CLI args
 // ============================================================================
-// NO DEFAULT VALUES - All values MUST come from deployments-secrets.json
-// This prevents configuration mismatches and vulnerabilities
+const DEFAULT_PAGES_PROJECT_NAME = 'ai-faceswap-frontend';
+const DEFAULT_WORKER_NAME = 'ai-faceswap-backend';
+const DEFAULT_D1_DATABASE_NAME = 'faceswap-db';
+const DEFAULT_R2_BUCKET_NAME = 'faceswap-images';
 // ============================================================================
 
 // Parse command line arguments for CLI usage
 function parseCliArgs() {
   const args = process.argv.slice(2);
 
+  // Only allow help flag
   if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
     showHelp();
     process.exit(0);
   }
 
-  if (args.length === 0) {
-    console.error('Error: Command or environment name is required.');
-    console.error('Usage: node deploy.js <env-name>');
-    console.error('       node deploy.js setup');
+  // No other arguments allowed
+  if (args.length > 0) {
+    console.error('No command line arguments allowed. Configuration must be in secrets.json');
     console.error('Run "node deploy.js --help" for usage information.');
     process.exit(1);
   }
 
-  if (args[0] === 'setup') {
-    return { command: 'setup' };
-  }
-
-  if (args.length > 1) {
-    console.error('Error: Only one argument is allowed.');
-    console.error('Usage: node deploy.js <env-name>');
-    process.exit(1);
-  }
-
-  if (args.length === 0 || !args[0]) {
-    console.error('Error: Environment name is required.');
-    console.error('Usage: node deploy.js <env-name>');
-    console.error('');
-    console.error('Available environments:');
-    try {
-      const configPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
-      if (fs.existsSync(configPath)) {
-        const content = fs.readFileSync(configPath, 'utf8');
-        const config = JSON.parse(content);
-        if (config.environments) {
-          Object.keys(config.environments).forEach(env => {
-            console.error(`  - ${env}`);
-          });
-        }
-      }
-    } catch (e) {
-      console.error('  Could not read deployments-secrets.json to list environments');
-    }
-    process.exit(1);
-  }
-
-  return { envName: args[0] };
+  return {};
 }
 
-// Load configuration from deployments-secrets.json with environment support
-function loadDeploymentConfig(envName) {
-  if (!envName) {
-    console.error('Error: Environment name is required but was not provided.');
-    process.exit(1);
-  }
-
-  const configPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
+// Load configuration from secrets.json (flat structure)
+function loadSecretsConfig() {
+  const secretsPath = path.join(process.cwd(), 'secrets.json');
 
   try {
-    if (!fs.existsSync(configPath)) {
-      console.error(`deployments-secrets.json not found. Please create it with your configuration.`);
-      console.log('Expected path: deployments-secrets.json');
+    if (!fs.existsSync(secretsPath)) {
+      console.error('secrets.json not found. Please create secrets.json with your configuration.');
+      console.log('Example secrets.json:');
+      console.log(JSON.stringify({
+        workerName: 'my-store-backend',
+        pagesProjectName: 'my-store-frontend',
+        databaseName: 'my-store-db',
+        bucketName: 'my-store-images',
+        RAPIDAPI_KEY: 'your_key_here',
+        RAPIDAPI_HOST: 'ai-face-swap2.p.rapidapi.com',
+        RAPIDAPI_ENDPOINT: 'https://ai-face-swap2.p.rapidapi.com/public/process/urls',
+        GOOGLE_VISION_API_KEY: 'your_vision_key',
+        GOOGLE_VERTEX_PROJECT_ID: 'your-gcp-project-id',
+        GOOGLE_VERTEX_LOCATION: 'us-central1',
+        GOOGLE_VISION_ENDPOINT: 'https://vision.googleapis.com/v1/images:annotate',
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: 'your-service-account@project.iam.gserviceaccount.com',
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n'
+      }, null, 2));
       process.exit(1);
     }
 
-    const content = fs.readFileSync(configPath, 'utf8');
-    const config = JSON.parse(content);
-
-    if (!config.environments) {
-      console.error('Error: No "environments" section found in deployments-secrets.json');
-      console.error('Expected format: { "environments": { "env-name": { ... } } }');
-      process.exit(1);
-    }
-
-    if (!config.environments[envName]) {
-      console.error(`Error: Environment "${envName}" not found in deployments-secrets.json`);
-      console.error(`Available environments: ${Object.keys(config.environments).join(', ')}`);
-      process.exit(1);
-    }
-
-    const envConfig = config.environments[envName];
-    const parsedConfig = parseConfigObject(envConfig);
-
-    const savedCredentials = loadCredentials();
-    if (savedCredentials) {
-      if (savedCredentials.cloudflare) {
-        if (!parsedConfig.cloudflare.accountId && savedCredentials.cloudflare.accountId) {
-          parsedConfig.cloudflare.accountId = savedCredentials.cloudflare.accountId;
-        }
-        if (!parsedConfig.cloudflare.apiToken && savedCredentials.cloudflare.apiToken) {
-          parsedConfig.cloudflare.apiToken = savedCredentials.cloudflare.apiToken;
-        }
-        if (!parsedConfig.cloudflare.email && savedCredentials.cloudflare.email) {
-          parsedConfig.cloudflare.email = savedCredentials.cloudflare.email;
-        }
-      }
-      if (savedCredentials.gcp) {
-        if (!parsedConfig.gcp.projectId && savedCredentials.gcp.projectId) {
-          parsedConfig.gcp.projectId = savedCredentials.gcp.projectId;
-        }
-        if (!parsedConfig.gcp.accountEmail && savedCredentials.gcp.accountEmail) {
-          parsedConfig.gcp.accountEmail = savedCredentials.gcp.accountEmail;
-        }
-      }
-    }
-
-    return parsedConfig;
+    const content = fs.readFileSync(secretsPath, 'utf8');
+    return parseConfigObject(JSON.parse(content));
   } catch (error) {
-    console.error(`Error loading deployments-secrets.json:`, error.message);
-    process.exit(1);
-  }
-}
-
-// Setup command - interactive login and save credentials
-async function runSetup() {
-  console.log('\n🔧 Setup - Interactive Login and Credential Extraction');
-  console.log('='.repeat(60));
-  console.log('');
-
-  if (!deploymentUtils.checkWrangler()) {
-    log.error('Wrangler CLI not found. Please install it first:');
-    log.info('  npm install -g wrangler');
-    process.exit(1);
-  }
-
-  if (!deploymentUtils.checkGcloud()) {
-    log.error('gcloud CLI not found. Please install Google Cloud SDK first.');
-    log.info('Download from: https://cloud.google.com/sdk/docs/install');
-    process.exit(1);
-  }
-
-  const credentials = {
-    cloudflare: {},
-    gcp: {}
-  };
-
-  console.log('📋 Step 1: Cloudflare Authentication');
-  console.log('-----------------------------------');
-  log.info('Please login to Cloudflare in the browser that will open...');
-  
-  try {
-    execCommand('wrangler login', { stdio: 'inherit' });
-    log.success('Cloudflare login completed');
-    
-    const cloudflareCreds = await extractCloudflareCredentials();
-    credentials.cloudflare = cloudflareCreds;
-    log.success(`Extracted Cloudflare credentials for: ${cloudflareCreds.email}`);
-    log.success(`Account ID: ${cloudflareCreds.accountId}`);
-  } catch (error) {
-    log.error(`Cloudflare setup failed: ${error.message}`);
-    process.exit(1);
-  }
-
-  console.log('');
-  console.log('📋 Step 2: GCP Authentication');
-  console.log('-----------------------------------');
-  log.info('Please login to GCP in the browser that will open...');
-  
-  try {
-    execCommand('gcloud auth login', { stdio: 'inherit' });
-    log.success('GCP login completed');
-    
-    const gcpCreds = await extractGcpCredentials();
-    credentials.gcp = gcpCreds;
-    log.success(`Extracted GCP credentials`);
-    log.success(`Project ID: ${gcpCreds.projectId}`);
-    if (gcpCreds.accountEmail) {
-      log.success(`Account Email: ${gcpCreds.accountEmail}`);
-    }
-  } catch (error) {
-    log.error(`GCP setup failed: ${error.message}`);
-    process.exit(1);
-  }
-
-  console.log('');
-  console.log('💾 Saving credentials...');
-  if (saveCredentials(credentials)) {
-    log.success('Credentials saved successfully!');
-    console.log('');
-    console.log('✅ Setup complete!');
-    console.log('');
-    console.log('You can now deploy using:');
-    console.log(`  node deploy.js <env-name>`);
-    console.log('');
-    console.log('The saved credentials will be used automatically.');
-  } else {
-    log.error('Failed to save credentials');
+    console.error(`Error loading secrets.json:`, error.message);
     process.exit(1);
   }
 }
 
 // Parse and validate configuration object
 function parseConfigObject(config) {
-  // STRICT VALIDATION - ALL FIELDS REQUIRED, NO DEFAULTS
+  // Validate required fields
   const requiredFields = [
     'workerName', 'pagesProjectName', 'databaseName', 'bucketName',
     'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
@@ -370,35 +232,9 @@ function parseConfigObject(config) {
     'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'
   ];
 
-  const missingFields = requiredFields.filter(field => {
-    const value = config[field];
-    return value === undefined || value === null || value === '';
-  });
-  
+  const missingFields = requiredFields.filter(field => !config[field]);
   if (missingFields.length > 0) {
-    throw new Error(`ERROR: Missing required fields in deployments-secrets.json: ${missingFields.join(', ')}. Cannot proceed - this prevents configuration mismatches and vulnerabilities.`);
-  }
-
-  // Validate cloudflare config
-  if (!config.cloudflare || typeof config.cloudflare !== 'object') {
-    throw new Error('ERROR: cloudflare configuration is required in deployments-secrets.json');
-  }
-  if (!config.cloudflare.accountId) {
-    throw new Error('ERROR: cloudflare.accountId is required in deployments-secrets.json');
-  }
-  if (!config.cloudflare.apiToken) {
-    throw new Error('ERROR: cloudflare.apiToken is required in deployments-secrets.json');
-  }
-  
-  // Validate gcp config
-  if (!config.gcp || typeof config.gcp !== 'object') {
-    throw new Error('ERROR: gcp configuration is required in deployments-secrets.json');
-  }
-  if (!config.gcp.projectId) {
-    throw new Error('ERROR: gcp.projectId is required in deployments-secrets.json');
-  }
-  if (!config.gcp.serviceAccountKeyJson) {
-    throw new Error('ERROR: gcp.serviceAccountKeyJson is required in deployments-secrets.json');
+    throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
   }
 
   return {
@@ -406,15 +242,13 @@ function parseConfigObject(config) {
     pagesProjectName: config.pagesProjectName,
     databaseName: config.databaseName,
     bucketName: config.bucketName,
-    cloudflare: config.cloudflare,
-    gcp: config.gcp,
     secrets: {
       RAPIDAPI_KEY: config.RAPIDAPI_KEY,
       RAPIDAPI_HOST: config.RAPIDAPI_HOST,
       RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
       GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
       GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
-      GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION,
+      GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
       GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
       GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
@@ -458,233 +292,43 @@ function showHelp() {
 🚀 Face Swap AI - Deployment Script
 
 USAGE:
-  node deploy.js setup          # First-time setup: interactive login and save credentials
-  node deploy.js <env-name>      # Deploy using saved credentials
+  node deploy.js
 
 DESCRIPTION:
-  Deploys to Cloudflare Workers and Pages using environment-specific configuration.
-  All credentials and settings are stored in a single deployments-secrets.json file.
+  Automatically reads configuration from secrets.json in the current directory.
+  No command line arguments are allowed - all configuration must be in secrets.json.
 
-DIRECTORY STRUCTURE:
-  deployments-secrets.json     # All environment configurations and credentials
+SECRETS.JSON FORMAT:
+  Create a secrets.json file in the project root with this flat structure:
 
-FIRST-TIME SETUP:
-  1. Run: node deploy.js setup
-  2. Login to Cloudflare in the browser
-  3. Login to GCP in the browser
-  4. Credentials will be automatically extracted and saved
-
-DEPLOYMENTS-CONFIG.JSON FORMAT:
   {
-    "environments": {
-      "ai-office": {
-        "name": "ai-office",
-        "workerName": "ai-faceswap-backend-office",
-        "pagesProjectName": "ai-faceswap-frontend-office",
-        "databaseName": "faceswap-db-office",
-        "bucketName": "faceswap-images-office",
-        "cloudflare": {
-          "accountId": "your_cloudflare_account_id_here",
-          "apiToken": "your_cloudflare_api_token_here"
-        },
-        "gcp": {
-          "projectId": "ai-photo-office",
-          "serviceAccountKeyJson": "PASTE_YOUR_ENTIRE_SERVICE_ACCOUNT_JSON_HERE"
-        },
-        "RAPIDAPI_KEY": "",
-        "RAPIDAPI_HOST": "ai-face-swap2.p.rapidapi.com",
-        "RAPIDAPI_ENDPOINT": "https://ai-face-swap2.p.rapidapi.com/public/process/urls",
-        "GOOGLE_VISION_API_KEY": "",
-        "GOOGLE_VERTEX_PROJECT_ID": "",
-        "GOOGLE_VERTEX_LOCATION": "us-central1",
-        "GOOGLE_VISION_ENDPOINT": "https://vision.googleapis.com/v1/images:annotate",
-        "GOOGLE_SERVICE_ACCOUNT_EMAIL": "",
-        "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY": ""
-      }
-    }
+    "workerName": "my-store-backend",
+    "pagesProjectName": "my-store-frontend",
+    "databaseName": "my-store-db",
+    "bucketName": "my-store-images",
+    "RAPIDAPI_KEY": "your_rapidapi_key_here",
+    "RAPIDAPI_HOST": "ai-face-swap2.p.rapidapi.com",
+    "RAPIDAPI_ENDPOINT": "https://ai-face-swap2.p.rapidapi.com/public/process/urls",
+    "GOOGLE_VISION_API_KEY": "your_google_vision_key_here",
+    "GOOGLE_VERTEX_PROJECT_ID": "your-gcp-project-id",
+    "GOOGLE_VERTEX_LOCATION": "us-central1",
+    "GOOGLE_VISION_ENDPOINT": "https://vision.googleapis.com/v1/images:annotate"
   }
 
-EXAMPLES:
-  # First-time setup (interactive login)
-  node deploy.js setup
+REQUIRED FIELDS:
+  • workerName, pagesProjectName, databaseName, bucketName
+  • RAPIDAPI_KEY, RAPIDAPI_HOST, RAPIDAPI_ENDPOINT
+  • GOOGLE_VISION_API_KEY, GOOGLE_VERTEX_PROJECT_ID, GOOGLE_VERTEX_LOCATION, GOOGLE_VISION_ENDPOINT
 
-  # Deploy to ai-office environment
-  node deploy.js ai-office
+EXAMPLES:
+  # Deploy using secrets.json (only way)
+  node deploy.js
 
   # Show this help
   node deploy.js --help
 
 All project names should be unique per Cloudflare account to avoid conflicts.
 `);
-}
-
-// Credentials file for storing authentication credentials
-const getCredentialsFile = () => {
-  const credentialsDir = path.join(process.cwd(), '.deploy-credentials');
-  if (!fs.existsSync(credentialsDir)) {
-    fs.mkdirSync(credentialsDir, { recursive: true });
-  }
-  return path.join(credentialsDir, 'credentials.json');
-};
-
-
-// Load saved credentials
-function loadCredentials() {
-  try {
-    const credentialsPath = getCredentialsFile();
-    if (fs.existsSync(credentialsPath)) {
-      const content = fs.readFileSync(credentialsPath, 'utf8');
-      return JSON.parse(content);
-    }
-  } catch (error) {
-    // Ignore errors
-  }
-  return null;
-}
-
-// Save credentials
-function saveCredentials(credentials) {
-  try {
-    const credentialsPath = getCredentialsFile();
-    fs.writeFileSync(credentialsPath, JSON.stringify(credentials, null, 2), 'utf8');
-    fs.chmodSync(credentialsPath, 0o600);
-    return true;
-  } catch (error) {
-    log.error(`Failed to save credentials: ${error.message}`);
-    return false;
-  }
-}
-
-// Extract Cloudflare credentials after login
-async function extractCloudflareCredentials() {
-  try {
-    log.info('Extracting Cloudflare credentials...');
-    
-    let accountId = null;
-    let email = null;
-    
-    const whoamiJsonOutput = execCommand('wrangler whoami --format json', { silent: true, throwOnError: false });
-    if (whoamiJsonOutput) {
-      try {
-        const whoamiData = JSON.parse(whoamiJsonOutput);
-        if (whoamiData) {
-          if (whoamiData.accounts && whoamiData.accounts.length > 0) {
-            accountId = whoamiData.accounts[0].id;
-          }
-          if (whoamiData.email) {
-            email = whoamiData.email;
-          }
-        }
-      } catch (e) {
-        // JSON parse failed, try text format
-      }
-    }
-    
-    if (!accountId) {
-      const whoamiOutput = execCommand('wrangler whoami', { silent: true, throwOnError: false });
-      if (!whoamiOutput) {
-        throw new Error('Not authenticated to Cloudflare. Please run "wrangler login" first.');
-      }
-      
-      const accountIdMatch = whoamiOutput.match(/Account ID:\s*([a-f0-9]{32})/i);
-      if (accountIdMatch) {
-        accountId = accountIdMatch[1].trim();
-      }
-      
-      const emailMatch = whoamiOutput.match(/You are logged in as (.+)/);
-      if (emailMatch) {
-        email = emailMatch[1].trim();
-      }
-    }
-
-    if (!accountId) {
-      log.warn('Could not automatically extract account ID from wrangler whoami.');
-      accountId = await prompt('Enter your Cloudflare Account ID: ');
-      if (!accountId || accountId.trim() === '') {
-        throw new Error('Account ID is required');
-      }
-    }
-
-    let apiToken = null;
-    
-    const possibleConfigPaths = [
-      path.join(os.homedir(), '.wrangler', 'config', 'default.toml'),
-      path.join(os.homedir(), '.wrangler', 'config', 'default.json'),
-      path.join(process.cwd(), '.wrangler', 'config', 'default.toml'),
-      path.join(process.cwd(), '.wrangler', 'config', 'default.json')
-    ];
-    
-    for (const configPath of possibleConfigPaths) {
-      if (fs.existsSync(configPath)) {
-        try {
-          const configContent = fs.readFileSync(configPath, 'utf8');
-          
-          if (configPath.endsWith('.toml')) {
-            const tokenMatch = configContent.match(/api_token\s*=\s*["']([^"']+)["']/);
-            if (tokenMatch) {
-              apiToken = tokenMatch[1];
-              break;
-            }
-          } else if (configPath.endsWith('.json')) {
-            const configData = JSON.parse(configContent);
-            if (configData.api_token) {
-              apiToken = configData.api_token;
-              break;
-            }
-          }
-        } catch (e) {
-          // Continue to next path
-        }
-      }
-    }
-    
-    if (!apiToken) {
-      log.warn('API token not found in config files.');
-      log.info('After wrangler login, the API token should be stored in ~/.wrangler/config/default.toml');
-      log.info('If not found, you can create an API token at: https://dash.cloudflare.com/profile/api-tokens');
-      apiToken = await prompt('Enter your Cloudflare API Token (required for auto-login): ');
-      if (!apiToken || apiToken.trim() === '') {
-        throw new Error('API token is required for non-interactive authentication');
-      }
-    }
-
-    return {
-      email: email || null,
-      accountId: accountId.trim(),
-      apiToken: apiToken.trim()
-    };
-  } catch (error) {
-    log.error(`Failed to extract Cloudflare credentials: ${error.message}`);
-    throw error;
-  }
-}
-
-// Extract GCP credentials after login
-async function extractGcpCredentials() {
-  try {
-    log.info('Extracting GCP credentials...');
-    
-    const projectId = execCommand('gcloud config get-value project', { silent: true, throwOnError: false });
-    if (!projectId || !projectId.trim()) {
-      log.warn('No GCP project set. Please set one:');
-      const manualProjectId = await prompt('Enter your GCP Project ID: ');
-      if (!manualProjectId || manualProjectId.trim() === '') {
-        throw new Error('GCP Project ID is required');
-      }
-      execCommand(`gcloud config set project ${manualProjectId.trim()}`, { silent: true });
-      return { projectId: manualProjectId.trim() };
-    }
-
-    const accountEmail = execCommand('gcloud config get-value account', { silent: true, throwOnError: false });
-    
-    return {
-      projectId: projectId.trim(),
-      accountEmail: accountEmail ? accountEmail.trim() : null
-    };
-  } catch (error) {
-    log.error(`Failed to extract GCP credentials: ${error.message}`);
-    throw error;
-  }
 }
 
 // Cache file for storing authentication check results
@@ -768,114 +412,6 @@ const deploymentUtils = {
     saveCache(cache);
     return false;
   }
-  },
-
-  async setupCloudflareAuth(cloudflareConfig) {
-    try {
-      // Check config file credentials (only source now)
-      const accountId = cloudflareConfig?.accountId && cloudflareConfig.accountId !== 'your_cloudflare_account_id_here' ? cloudflareConfig.accountId : null;
-      const apiToken = cloudflareConfig?.apiToken && cloudflareConfig.apiToken !== 'your_cloudflare_api_token_here' ? cloudflareConfig.apiToken : null;
-      const email = cloudflareConfig?.email;
-      const apiKey = cloudflareConfig?.apiKey;
-
-      if (!accountId) {
-        throw new Error('Cloudflare accountId is required. Add it to deployments-secrets.json under cloudflare.accountId');
-      }
-
-      if (apiToken) {
-        process.env.CLOUDFLARE_API_TOKEN = apiToken;
-        process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
-        
-        const wranglerConfigDir = path.join(os.homedir(), '.wrangler', 'config');
-        const wranglerConfigPath = path.join(wranglerConfigDir, 'default.toml');
-        
-        try {
-          if (!fs.existsSync(wranglerConfigDir)) {
-            fs.mkdirSync(wranglerConfigDir, { recursive: true });
-          }
-          
-          let configContent = '';
-          if (fs.existsSync(wranglerConfigPath)) {
-            configContent = fs.readFileSync(wranglerConfigPath, 'utf8');
-          }
-          
-          if (!configContent.includes('api_token')) {
-            configContent += `\napi_token = "${apiToken}"\n`;
-          } else {
-            configContent = configContent.replace(/api_token\s*=\s*["'][^"']*["']/, `api_token = "${apiToken}"`);
-          }
-          
-          fs.writeFileSync(wranglerConfigPath, configContent, 'utf8');
-        } catch (configError) {
-          log.warn(`Could not write API token to wrangler config: ${configError.message}`);
-        }
-        
-        log.success('Using Cloudflare API token from config file');
-        return true;
-      } else if (email && apiKey) {
-        process.env.CLOUDFLARE_EMAIL = email;
-        process.env.CLOUDFLARE_API_KEY = apiKey;
-        process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
-        log.success('Using Cloudflare email and API key from config file');
-        return true;
-      } else {
-        throw new Error('Cloudflare credentials (apiToken or email+apiKey) are required. Add them to deployments-secrets.json');
-      }
-    } catch (error) {
-      log.error(`Cloudflare authentication setup failed: ${error.message}`);
-      throw error;
-    }
-  },
-
-  async setupGcpAuth(gcpConfig) {
-    try {
-      // Check config file credentials (only source now)
-      const projectId = gcpConfig?.projectId;
-      const serviceAccountKeyJson = gcpConfig?.serviceAccountKeyJson;
-      const accountEmail = gcpConfig?.accountEmail;
-
-      if (!projectId) {
-        throw new Error('GCP projectId is required. Add it to deployments-secrets.json under gcp.projectId');
-      }
-
-      if (serviceAccountKeyJson && (typeof serviceAccountKeyJson === 'string' ? serviceAccountKeyJson.trim() !== '' : serviceAccountKeyJson)) {
-        // Create temporary file with the JSON key content
-        const tempKeyPath = path.join(os.tmpdir(), `gcp-key-${Date.now()}.json`);
-        const keyContent = typeof serviceAccountKeyJson === 'object' ? JSON.stringify(serviceAccountKeyJson, null, 2) : serviceAccountKeyJson;
-        fs.writeFileSync(tempKeyPath, keyContent, 'utf8');
-
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = tempKeyPath;
-        execCommand(`gcloud auth activate-service-account --key-file="${tempKeyPath}"`, { silent: true });
-        execCommand(`gcloud config set project ${projectId}`, { silent: true });
-
-        // Clean up temp file after a short delay to ensure gcloud has read it
-        setTimeout(() => {
-          try {
-            if (fs.existsSync(tempKeyPath)) {
-              fs.unlinkSync(tempKeyPath);
-            }
-          } catch (cleanupError) {
-            // Ignore cleanup errors
-          }
-        }, 5000);
-
-        log.success('GCP authenticated using service account JSON from config file');
-        return true;
-      } else if (accountEmail) {
-        execCommand(`gcloud config set project ${projectId}`, { silent: true });
-        log.success(`GCP project set to: ${projectId}`);
-        log.info('Using existing GCP authentication');
-        return true;
-      } else {
-        execCommand(`gcloud config set project ${projectId}`, { silent: true });
-        log.success(`GCP project set to: ${projectId} from config file`);
-        log.info('Using existing GCP authentication');
-        return true;
-      }
-    } catch (error) {
-      log.error(`GCP authentication setup failed: ${error.message}`);
-      throw error;
-    }
   },
 
   async fixGcpAuth() {
@@ -978,7 +514,6 @@ const deploymentUtils = {
 
       let lastProgressUpdate = Date.now();
       let promptAnswered = false;
-      let lastPromptTime = 0;
 
       child.stdout.on('data', (data) => {
         const output = data.toString();
@@ -986,23 +521,16 @@ const deploymentUtils = {
 
         // Auto-answer any interactive prompts immediately
         const lowerOutput = output.toLowerCase();
-        const now = Date.now();
         if ((lowerOutput.includes('ok to proceed') || 
              lowerOutput.includes('proceed?') ||
              lowerOutput.includes('continue?') ||
              lowerOutput.includes('(y/n)') ||
              lowerOutput.includes('[y/n]') ||
-             lowerOutput.includes('yes/no') ||
-             lowerOutput.includes('unavailable to serve queries')) && (now - lastPromptTime > 1000)) {
-          // Auto-answer with 'y' for (Y/n) prompts, 'yes' for yes/no
+             lowerOutput.includes('yes/no')) && !promptAnswered) {
+          // Auto-answer with 'yes' or 'y'
           console.log('✓ Auto-confirming prompt...');
-          if (lowerOutput.includes('(y/n)') || lowerOutput.includes('[y/n]')) {
-            child.stdin.write('y\n');
-          } else {
-            child.stdin.write('yes\n');
-          }
+          child.stdin.write('yes\n');
           promptAnswered = true;
-          lastPromptTime = now;
         }
 
           const lines = output.split('\n').filter(line => line.trim());
@@ -1074,27 +602,6 @@ const deploymentUtils = {
         const output = data.toString();
         stderr += output;
 
-        // Auto-answer any interactive prompts in stderr as well
-        const lowerOutput = output.toLowerCase();
-        const now = Date.now();
-        if ((lowerOutput.includes('ok to proceed') || 
-             lowerOutput.includes('proceed?') ||
-             lowerOutput.includes('continue?') ||
-             lowerOutput.includes('(y/n)') ||
-             lowerOutput.includes('[y/n]') ||
-             lowerOutput.includes('yes/no') ||
-             lowerOutput.includes('unavailable to serve queries')) && (now - lastPromptTime > 1000)) {
-          // Auto-answer with 'y' for (Y/n) prompts, 'yes' for yes/no
-          console.log('✓ Auto-confirming prompt...');
-          if (lowerOutput.includes('(y/n)') || lowerOutput.includes('[y/n]')) {
-            child.stdin.write('y\n');
-          } else {
-            child.stdin.write('yes\n');
-          }
-          promptAnswered = true;
-          lastPromptTime = now;
-        }
-
           const lines = output.split('\n').filter(line => line.trim());
         for (const line of lines) {
           const trimmed = line.trim();
@@ -1115,15 +622,12 @@ const deploymentUtils = {
       });
 
       child.on('close', (code) => {
-        const combinedOutput = (stdout + stderr).toLowerCase();
-        const hasDuplicateColumnError = combinedOutput.includes('duplicate column');
-        
         const result = {
-          success: code === 0 || hasDuplicateColumnError,
+          success: code === 0,
           stdout: stdout,
           stderr: stderr,
           exitCode: code,
-          error: (code !== 0 && !hasDuplicateColumnError) ? stderr || stdout : null
+          error: code !== 0 ? stderr || stdout : null
         };
 
         if (reportProgress) {
@@ -1132,10 +636,6 @@ const deploymentUtils = {
         }
 
         if (result.success) {
-          if (hasDuplicateColumnError && code !== 0) {
-            // Duplicate column errors are expected for existing databases - treat as success
-            console.log('ℹ Some columns already exist (expected for existing databases)');
-          }
           resolve(result);
         } else {
           reject(new Error(result.error || `Command failed with code ${code}`));
@@ -1149,10 +649,7 @@ const deploymentUtils = {
     });
   },
 
-  async ensureR2Bucket(codebasePath, reportProgress, bucketName) {
-    if (!bucketName) {
-      throw new Error('bucketName is required. It must be specified in deployments-secrets.json');
-    }
+  async ensureR2Bucket(codebasePath, reportProgress, bucketName = DEFAULT_R2_BUCKET_NAME) {
     // Check cache first
     const cache = loadCache();
     const cacheKey = `r2Bucket_${bucketName}`;
@@ -1187,20 +684,16 @@ const deploymentUtils = {
     }
   },
 
-  async ensureD1Database(codebasePath, reportProgress, databaseName) {
-    if (!databaseName) {
-      throw new Error('databaseName is required. It must be specified in deployments-secrets.json');
-    }
-    // Always ensure database exists and get its ID (deployWorker needs the ID)
-    console.log(`[Deploy] Ensuring D1 database exists: ${databaseName}`);
-
+  async ensureD1Database(codebasePath, reportProgress, databaseName = DEFAULT_D1_DATABASE_NAME) {
     try {
-      // No need to update wrangler.jsonc - account_id is set via environment variable
-      const listResult = await this.executeWithLogs('wrangler d1 list', codebasePath, 'check-d1', reportProgress);
-      const output = listResult.stdout || '';
-      const databaseExists = output && output.includes(databaseName);
+      const output = execSync('wrangler d1 list', {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 10000,
+        cwd: codebasePath
+      });
 
-      if (!databaseExists) {
+      if (!output || !output.includes(databaseName)) {
         // Use executeWithLogs to auto-answer prompts
         await this.executeWithLogs(`wrangler d1 create ${databaseName}`, codebasePath, 'check-d1', reportProgress);
 
@@ -1208,22 +701,16 @@ const deploymentUtils = {
         const schemaPath = path.join(codebasePath, 'schema.sql');
         if (fs.existsSync(schemaPath)) {
           try {
-            const schemaResult = await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath} -y`, codebasePath, 'check-d1', reportProgress);
-            const output = (schemaResult.stdout || '') + (schemaResult.stderr || '');
-            if (output.includes('duplicate column')) {
-              console.log('ℹ Some columns already exist (expected for existing databases)');
-            }
+            execSync(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, {
+              stdio: 'inherit',
+              timeout: 30000,
+              cwd: codebasePath
+            });
           } catch (error) {
-            const errorMessage = error.message || error.toString();
-            // If error is due to duplicate column, it's not fatal - columns already exist
-            if (errorMessage.includes('duplicate column')) {
-              console.log('ℹ Some columns already exist (expected for existing databases)');
-            } else {
-              // If schema fails for other reasons, recreate database
-              await this.executeWithLogs(`wrangler d1 delete ${databaseName} --skip-confirmation`, codebasePath, 'check-d1', reportProgress);
-              await this.executeWithLogs(`wrangler d1 create ${databaseName}`, codebasePath, 'check-d1', reportProgress);
-              await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath} -y`, codebasePath, 'check-d1', reportProgress);
-            }
+            // If schema fails, recreate database
+            await this.executeWithLogs(`wrangler d1 delete ${databaseName}`, codebasePath, 'check-d1', reportProgress);
+            await this.executeWithLogs(`wrangler d1 create ${databaseName}`, codebasePath, 'check-d1', reportProgress);
+            await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, codebasePath, 'check-d1', reportProgress);
           }
         }
       } else {
@@ -1238,8 +725,7 @@ const deploymentUtils = {
               encoding: 'utf8',
               stdio: 'pipe',
               timeout: 10000,
-              cwd: codebasePath,
-              env: process.env
+              cwd: codebasePath
             });
 
             if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
@@ -1247,12 +733,11 @@ const deploymentUtils = {
             } else {
               // Check if results table has selfie_id column
               try {
-                const resultsCheck = execSync(`wrangler d1 execute ${databaseName} --remote --command="PRAGMA table_info(results);"`, {
+                const resultsCheck = execSync('wrangler d1 execute ${databaseName} --remote --command="PRAGMA table_info(results);"', {
                   encoding: 'utf8',
                   stdio: 'pipe',
                   timeout: 10000,
-                  cwd: codebasePath,
-                  env: process.env
+                  cwd: codebasePath
                 });
 
                 if (resultsCheck && !resultsCheck.includes('selfie_id')) {
@@ -1271,129 +756,76 @@ const deploymentUtils = {
           if (needsSchemaUpdate) {
             try {
               // Apply schema.sql - it uses CREATE TABLE IF NOT EXISTS so it's safe
-              // Duplicate column errors from ALTER TABLE are expected and will be ignored
-              const schemaResult = await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath} -y`, codebasePath, 'check-d1', reportProgress);
-              
-              // Check if there were duplicate column errors (non-fatal)
-              const output = (schemaResult.stdout || '') + (schemaResult.stderr || '');
-              if (output.includes('duplicate column')) {
-                // Duplicate column errors are expected for existing databases - columns already exist
-                // This is not a fatal error, schema is still valid
-                console.log('ℹ Some columns already exist (expected for existing databases)');
-              }
+              await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, codebasePath, 'check-d1', reportProgress);
 
               // If results table exists but has wrong structure, fix it
               try {
-                const resultsCheck = execSync(`wrangler d1 execute ${databaseName} --remote --command="PRAGMA table_info(results);"`, {
+                const resultsCheck = execSync('wrangler d1 execute ${databaseName} --remote --command="PRAGMA table_info(results);"', {
                   encoding: 'utf8',
                   stdio: 'pipe',
                   timeout: 10000,
-                  cwd: codebasePath,
-                  env: process.env
+                  cwd: codebasePath
                 });
 
                 if (resultsCheck && resultsCheck.includes('preset_collection_id') && !resultsCheck.includes('selfie_id')) {
                   // Check if results table has data
-                  const countCheck = execSync(`wrangler d1 execute ${databaseName} --remote --command="SELECT COUNT(*) as count FROM results;"`, {
+                  const countCheck = execSync('wrangler d1 execute ${databaseName} --remote --command="SELECT COUNT(*) as count FROM results;"', {
                     encoding: 'utf8',
                     stdio: 'pipe',
                     timeout: 10000,
-                    cwd: codebasePath,
-                    env: process.env
+                    cwd: codebasePath
                   });
 
                   const hasData = countCheck && countCheck.includes('"count":') && !countCheck.includes('"count":0');
 
                   if (!hasData) {
                     // Safe to recreate - table is empty
-                    await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="DROP TABLE IF EXISTS results;" -y`, codebasePath, 'check-d1', reportProgress);
-                    await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE results (id TEXT PRIMARY KEY, selfie_id TEXT NOT NULL, preset_collection_id TEXT NOT NULL, preset_image_id TEXT NOT NULL, preset_name TEXT NOT NULL, result_url TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), FOREIGN KEY (selfie_id) REFERENCES selfies(id), FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id), FOREIGN KEY (preset_image_id) REFERENCES preset_images(id));" -y`, codebasePath, 'check-d1', reportProgress);
+                    await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="DROP TABLE IF EXISTS results;"`, codebasePath, 'check-d1', reportProgress);
+                    await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE results (id TEXT PRIMARY KEY, selfie_id TEXT NOT NULL, preset_collection_id TEXT NOT NULL, preset_image_id TEXT NOT NULL, preset_name TEXT NOT NULL, result_url TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), FOREIGN KEY (selfie_id) REFERENCES selfies(id), FOREIGN KEY (preset_collection_id) REFERENCES preset_collections(id), FOREIGN KEY (preset_image_id) REFERENCES preset_images(id));"`, codebasePath, 'check-d1', reportProgress);
                   }
                 }
               } catch (fixError) {
                 // Could not auto-fix results table structure - non-fatal
               }
             } catch (error) {
-              const errorMessage = error.message || error.toString();
-              // Duplicate column errors are expected for existing databases - columns already exist
-              if (errorMessage.includes('duplicate column')) {
-                console.log('ℹ Some columns already exist (expected for existing databases)');
-                // This is not a fatal error, schema is still valid
-                return;
-              }
-              
               // Try to create missing selfies table if it doesn't exist
               try {
-                const selfiesCheck = execSync(`wrangler d1 execute ${databaseName} --remote --command="SELECT name FROM sqlite_master WHERE type='table' AND name='selfies';"`, {
+                const selfiesCheck = execSync('wrangler d1 execute ${databaseName} --remote --command="SELECT name FROM sqlite_master WHERE type=\'table\' AND name=\'selfies\';"', {
                   encoding: 'utf8',
                   stdio: 'pipe',
                   timeout: 10000,
-                  cwd: codebasePath,
-                  env: process.env
+                  cwd: codebasePath
                 });
 
                 if (!selfiesCheck || !selfiesCheck.includes('selfies')) {
-                  await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE IF NOT EXISTS selfies (id TEXT PRIMARY KEY, image_url TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));" -y`, codebasePath, 'check-d1', reportProgress);
+                  await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --command="CREATE TABLE IF NOT EXISTS selfies (id TEXT PRIMARY KEY, image_url TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()));"`, codebasePath, 'check-d1', reportProgress);
                 }
               } catch (createError) {
                 // Failed to create selfies table - non-fatal, will be caught below
               }
 
               // Re-throw if it's a critical error
-              if (!errorMessage.includes('already exists') && !errorMessage.includes('no such table')) {
+              if (!error.message.includes('already exists') && !error.message.includes('no such table')) {
                 throw error;
               }
             }
           }
         }
       }
-
-      // Always get and store database ID for deployment
-      console.log(`[Deploy] Getting D1 database ID for: ${databaseName}`);
-      const finalDatabaseId = this.getD1DatabaseId(codebasePath, databaseName);
-      if (!finalDatabaseId) {
-        throw new Error(`ERROR: Could not get database_id for '${databaseName}'. Cannot proceed with deployment.`);
-      }
-      console.log(`[Deploy] ✓ Found database_id: ${finalDatabaseId}`);
-
-      // Store database ID in cache for deployment (will be used to create temp wrangler.jsonc)
-      const idCache = loadCache();
-      idCache.databaseId = finalDatabaseId;
-      saveCache(idCache);
-
       if (reportProgress) reportProgress('check-d1', 'completed', 'D1 database OK');
       // Cache the result
-      const cacheKey = `d1Database_${databaseName}`;
-      const checkCache = loadCache();
-      checkCache.checks = checkCache.checks || {};
-      checkCache.checks[cacheKey] = true;
-      saveCache(checkCache);
+      cache.checks = cache.checks || {};
+      cache.checks[cacheKey] = true;
+      saveCache(cache);
     } catch (error) {
-      const errorMessage = error.message || error.toString() || '';
-      console.warn(`[Deploy] D1 database setup warning: ${errorMessage}`);
-
-      // For non-critical errors, still try to get the database ID if possible
-      const dbCacheKey = `d1Database_${databaseName}`;
-      if (errorMessage.includes('already exists') || errorMessage.includes('no such table')) {
-        console.log('[Deploy] Database appears to exist despite error, continuing...');
-        const errorCache = loadCache();
-        errorCache.checks = errorCache.checks || {};
-        errorCache.checks[dbCacheKey] = true;
-        saveCache(errorCache);
-      } else {
-        // Try to get database ID even if there were errors
-        console.log('[Deploy] Attempting to get database ID despite errors...');
-        const emergencyDbId = this.getD1DatabaseId(codebasePath, databaseName);
-        if (emergencyDbId) {
-          console.log(`[Deploy] ✓ Emergency database ID retrieval successful: ${emergencyDbId}`);
-          const emergencyCache = loadCache();
-          emergencyCache.databaseId = emergencyDbId;
-          emergencyCache.checks = emergencyCache.checks || {};
-          emergencyCache.checks[dbCacheKey] = true;
-          saveCache(emergencyCache);
-          if (reportProgress) reportProgress('check-d1', 'completed', 'D1 database OK (emergency recovery)');
-          return;
-        }
+      // Database might already exist - non-fatal
+      // Still cache as OK if it's a non-critical error
+      if (error.message && (error.message.includes('already exists') || error.message.includes('no such table'))) {
+        cache.checks = cache.checks || {};
+        cache.checks[cacheKey] = true;
+        saveCache(cache);
+      }
+      if (!error.message.includes('already exists')) {
         throw error;
       }
     }
@@ -1413,8 +845,32 @@ const deploymentUtils = {
     try {
       fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), 'utf8');
 
-      // Temporary wrangler.jsonc should already exist from deployWorker
-      // No need to modify it - it's already configured correctly
+      // Temporarily remove pages_build_output_dir from wrangler.jsonc to avoid Pages project detection
+      // This allows wrangler secret bulk to target the Worker instead of Pages
+      if (fs.existsSync(wranglerConfigPath)) {
+        try {
+          originalConfigContent = fs.readFileSync(wranglerConfigPath, 'utf8');
+          // Parse JSONC (remove comments)
+          const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+          const config = JSON.parse(jsonContent);
+          
+          // Remove both pages_build_output_dir and site fields to prevent Pages project detection
+          // Wrangler detects Pages projects by either of these fields
+          if (config.pages_build_output_dir || config.site) {
+            if (config.pages_build_output_dir) {
+              delete config.pages_build_output_dir;
+            }
+            if (config.site) {
+              delete config.site;
+            }
+            fs.writeFileSync(wranglerConfigPath, JSON.stringify(config, null, '\t'), 'utf8');
+            configModified = true;
+            console.log('[Deploy] Temporarily removed pages_build_output_dir and site fields for secret deployment');
+          }
+        } catch (configError) {
+          console.warn('[Deploy] Could not modify wrangler.jsonc:', configError.message);
+        }
+      }
 
       // Deploy secrets using wrangler - explicitly specify worker name to avoid Pages project detection
       // Use --name flag to ensure we're deploying to the Worker, not Pages
@@ -1444,7 +900,17 @@ const deploymentUtils = {
       
       return result;
     } finally {
-      // Clean up temporary secrets file
+      // Restore original wrangler.jsonc if we modified it
+      if (configModified && originalConfigContent) {
+        try {
+          fs.writeFileSync(wranglerConfigPath, originalConfigContent, 'utf8');
+          console.log('[Deploy] Restored pages_build_output_dir and site fields in wrangler.jsonc');
+        } catch (restoreError) {
+          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
+        }
+      }
+      
+      // Clean up temporary file
       if (fs.existsSync(secretsPath)) {
         try {
           fs.unlinkSync(secretsPath);
@@ -1452,237 +918,43 @@ const deploymentUtils = {
           // Ignore cleanup errors
         }
       }
-      // Note: wrangler.jsonc cleanup happens in performDeployment finally block
     }
   },
 
-  async enableWorkersDevSubdomain(accountId, apiToken, email = null) {
-    if (!accountId || !apiToken) {
-      console.log('[Deploy] ⚠️  Missing accountId or apiToken, cannot enable workers.dev subdomain automatically');
-      return false;
-    }
-
-    console.log('[Deploy] Checking workers.dev subdomain status...');
-
-    // Validate API token and account ID first
-    try {
-      const validateCommand = `curl -X GET "https://api.cloudflare.com/client/v4/accounts/${accountId}" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --silent --max-time 10`;
-      const validateResult = execCommand(validateCommand, { silent: true, throwOnError: false });
-
-      if (!validateResult || !validateResult.includes('"success":true')) {
-        console.log('[Deploy] ⚠️  API token or account ID appears invalid, cannot enable subdomain automatically');
-        console.log('[Deploy] Please verify your Cloudflare credentials in deployments-secrets.json');
-        return false;
-      }
-    } catch (validateError) {
-      console.log('[Deploy] ⚠️  Could not validate API credentials:', validateError.message);
-    }
-
-    // First, check if subdomain is already enabled
-    try {
-      const checkCommand = `curl -X GET "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --silent --max-time 10`;
-      const checkResult = execCommand(checkCommand, { silent: true, throwOnError: false });
-
-      if (checkResult && checkResult.includes('"enabled":true')) {
-        console.log('[Deploy] ✓ workers.dev subdomain is already enabled');
-        return true;
-      } else if (checkResult && checkResult.includes('"enabled":false')) {
-        console.log('[Deploy] ℹ workers.dev subdomain is disabled, attempting to enable...');
-      } else if (checkResult && checkResult.includes('"success":false')) {
-        console.log('[Deploy] ⚠️  Could not check subdomain status, API may not be available');
-      }
-    } catch (checkError) {
-      console.log('[Deploy] ⚠️  Could not check subdomain status:', checkError.message);
-    }
-
-    // Try to enable the subdomain
-    console.log('[Deploy] Attempting to enable workers.dev subdomain via API...');
-
-    // Method 1: Try using Bearer token (most common)
-    try {
-      const curlCommand = `curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --data '{"enabled": true}' --silent --show-error --max-time 30`;
-
-      const result = execCommand(curlCommand, { silent: true, throwOnError: false });
-
-      if (result && result.includes('"success":true')) {
-        console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain via Bearer token');
-        return true;
-      } else if (result && result.includes('"success":false')) {
-        console.log('[Deploy] ⚠️  Bearer token API call returned success:false');
-        // Try to parse error details
-        try {
-          const errorData = JSON.parse(result);
-          if (errorData.errors && errorData.errors.length > 0) {
-            const errorMsg = errorData.errors[0].message;
-            console.log('[Deploy] API Error details:', errorMsg);
-
-            // Check for specific subdomain cases
-            if (errorMsg.includes('already has an associated subdomain')) {
-              console.log('[Deploy] ✓ Account already has workers.dev subdomain registered');
-              return true; // Subdomain exists, we're good
-            } else if (errorMsg.includes('Subdomain') && errorMsg.includes('invalid')) {
-              console.log('[Deploy] ℹ  workers.dev subdomain needs manual registration');
-              console.log('[Deploy] 📋 This will be handled automatically during first worker deployment');
-              console.log('[Deploy] Continuing with deployment...');
-              return false; // Subdomain needs manual setup, but deployment can continue
-            }
-          }
-        } catch (parseError) {
-          console.log('[Deploy] Raw API response:', result);
-        }
-      } else if (result) {
-        console.log('[Deploy] ⚠️  Unexpected API response:', result);
-      }
-    } catch (curlError) {
-      console.log('[Deploy] ⚠️  Bearer token method failed:', curlError.message);
-    }
-
-    // Method 2: Try using X-Auth-Key and X-Auth-Email headers (legacy method)
-    if (email) {
-      try {
-        console.log('[Deploy] Trying legacy X-Auth-Key method...');
-        const legacyCommand = `curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "X-Auth-Key: ${apiToken}" -H "X-Auth-Email: ${email}" -H "Content-Type: application/json" --data '{"enabled": true}' --silent --show-error --max-time 30`;
-
-        const legacyResult = execCommand(legacyCommand, { silent: true, throwOnError: false });
-
-        if (legacyResult && legacyResult.includes('"success":true')) {
-          console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain via X-Auth-Key');
-          return true;
-        } else if (legacyResult && legacyResult.includes('"success":false')) {
-          console.log('[Deploy] ⚠️  X-Auth-Key API call also failed');
-        }
-      } catch (legacyError) {
-        console.log('[Deploy] ⚠️  X-Auth-Key method failed:', legacyError.message);
-      }
-    }
-
-    // Method 3: Try using Node.js https (fallback)
-    try {
-      console.log('[Deploy] Trying Node.js https method...');
-      const https = require('https');
-      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`;
-
-      const response = await new Promise((resolve, reject) => {
-        const req = https.request(url, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000
-        }, (res) => {
-          let data = '';
-          res.on('data', (chunk) => data += chunk);
-          res.on('end', () => resolve({ statusCode: res.statusCode, data }));
-        });
-
-        req.on('error', reject);
-        req.on('timeout', () => {
-          req.destroy();
-          reject(new Error('Request timeout'));
-        });
-
-        req.write(JSON.stringify({ enabled: true }));
-        req.end();
-      });
-
-      if (response.statusCode === 200 && response.data && response.data.includes('"success":true')) {
-        console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain via Node.js https');
-        return true;
-      } else {
-        console.log('[Deploy] ⚠️  Node.js https failed with status:', response.statusCode);
-        if (response.data) {
-          try {
-            const errorData = JSON.parse(response.data);
-            if (errorData.errors && errorData.errors.length > 0) {
-              const errorMsg = errorData.errors[0].message;
-              console.log('[Deploy] API Error:', errorMsg);
-
-              // Check for specific subdomain cases
-              if (errorMsg.includes('already has an associated subdomain')) {
-                console.log('[Deploy] ✓ Account already has workers.dev subdomain registered');
-                return true; // Subdomain exists, we're good
-              } else if (errorMsg.includes('Subdomain') && errorMsg.includes('invalid')) {
-                console.log('[Deploy] ℹ  workers.dev subdomain needs manual registration');
-                console.log('[Deploy] 📋 This will be handled automatically during first worker deployment');
-                console.log('[Deploy] Continuing with deployment...');
-                return false; // Subdomain needs manual setup, but deployment can continue
-              }
-            }
-          } catch (parseError) {
-            console.log('[Deploy] Response:', response.data);
-          }
-        }
-      }
-    } catch (httpsError) {
-      console.log('[Deploy] ⚠️  Node.js https method failed:', httpsError.message);
-    }
-
-    // Final check: wait a moment and check again (subdomain might take time to enable)
-    console.log('[Deploy] Waiting 5 seconds for subdomain changes to propagate...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    try {
-      const finalCheckCommand = `curl -X GET "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --silent --max-time 10`;
-      const finalCheckResult = execCommand(finalCheckCommand, { silent: true, throwOnError: false });
-
-      if (finalCheckResult && finalCheckResult.includes('"enabled":true')) {
-        console.log('[Deploy] ✓ workers.dev subdomain is now enabled after waiting');
-        return true;
-      }
-    } catch (finalCheckError) {
-      // Ignore final check errors
-    }
-
-    console.log('[Deploy] ⚠️  Could not automatically enable workers.dev subdomain');
-    console.log('[Deploy] 📋 Manual setup may be required:');
-    console.log(`[Deploy]     https://dash.cloudflare.com/${accountId}/workers/onboarding`);
-    console.log('[Deploy] 💡 This is usually a one-time setup requirement');
-    console.log('[Deploy] ℹ  The deployment will continue, but may fail if subdomain is required');
-
-    // Return false - subdomain enabling failed
-    // But deployment will continue and handle the error gracefully if it occurs
-    return false;
-  },
-
-  async deployWorker(codebasePath, workerName, databaseName, config, reportProgress) {
-    if (!databaseName) {
-      throw new Error('databaseName is required for deployWorker. It must come from deployments-secrets.json');
-    }
-    if (!config) {
-      throw new Error('config is required for deployWorker. It must come from deployments-secrets.json');
-    }
-
+  async deployWorker(codebasePath, workerName, reportProgress) {
     if (reportProgress) reportProgress('deploy-worker', 'running', `Deploying Worker: ${workerName}...`);
 
-    // Get database ID from cache (set during ensureD1Database)
-    const cache = loadCache();
-    const databaseId = cache.databaseId;
-    if (!databaseId) {
-      throw new Error(`ERROR: Database ID not found. Ensure D1 database '${databaseName}' exists before deployment.`);
-    }
-
-    // CREATE TEMPORARY WRANGLER.JSONC - will be deleted after deployment
+    // Temporarily remove pages_build_output_dir from wrangler.jsonc to avoid Pages project detection
     const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-    const tempConfigCreated = this.createTempWranglerConfig(codebasePath, config, databaseId, false);
-    if (!tempConfigCreated) {
-      throw new Error('ERROR: Failed to create temporary wrangler.jsonc for deployment.');
+    let originalConfigContent = null;
+    let configModified = false;
+    
+    if (fs.existsSync(wranglerPath)) {
+      try {
+        originalConfigContent = fs.readFileSync(wranglerPath, 'utf8');
+        // Parse JSONC (remove comments)
+        const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const wranglerConfig = JSON.parse(jsonContent);
+        
+        // Remove both pages_build_output_dir and site fields to prevent Pages project detection
+        // Wrangler detects Pages projects by either of these fields
+        if (wranglerConfig.pages_build_output_dir || wranglerConfig.site) {
+          if (wranglerConfig.pages_build_output_dir) {
+            delete wranglerConfig.pages_build_output_dir;
+          }
+          if (wranglerConfig.site) {
+            delete wranglerConfig.site;
+          }
+          fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
+          configModified = true;
+          console.log('[Deploy] Temporarily removed pages_build_output_dir and site fields for worker deployment');
+        }
+      } catch (configError) {
+        console.warn('[Deploy] Could not modify wrangler.jsonc:', configError.message);
+      }
     }
-
-    // Try to enable workers.dev subdomain automatically (but continue even if it fails)
-    const subdomainEnabled = await this.enableWorkersDevSubdomain(config.cloudflare.accountId, config.cloudflare.apiToken, config.cloudflare.email);
 
     try {
-      // Verify database exists (ID was already verified during ensureD1Database)
-      const dbInfo = execCommand(`wrangler d1 info ${databaseName}`, { silent: true, throwOnError: false });
-      if (!dbInfo) {
-        console.log(`[Deploy] ⚠️  Could not verify database info, but proceeding with cached database ID`);
-      } else if (!dbInfo.includes(databaseName)) {
-        throw new Error(`ERROR: Database '${databaseName}' does not exist. Please check your D1 database setup.`);
-      } else {
-        console.log(`[Deploy] ✓ Verified D1 database: ${databaseName} (${databaseId})`);
-      }
-
       let result = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
 
       // Handle error 10214: Can't edit settings on non-deployed worker
@@ -1807,11 +1079,19 @@ const deploymentUtils = {
       }
     }
 
-      if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
-      return workerUrl;
+    if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
+      // Don't log here - already logged in executeWithLogs
+    return workerUrl;
     } finally {
-      // ALWAYS DELETE TEMPORARY WRANGLER.JSONC - it was only created for deployment
-      this.deleteTempWranglerConfig(codebasePath);
+      // Restore original wrangler.jsonc if we modified it
+      if (configModified && originalConfigContent) {
+        try {
+          fs.writeFileSync(wranglerPath, originalConfigContent, 'utf8');
+          console.log('[Deploy] Restored pages_build_output_dir in wrangler.jsonc after worker deployment');
+        } catch (restoreError) {
+          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
+        }
+      }
     }
   },
 
@@ -1819,9 +1099,9 @@ const deploymentUtils = {
     // Check for public_page in codebasePath first
     let publicPageDir = path.join(codebasePath, 'public_page');
 
-    // If not found, check in project root (where deploy folder is located)
+    // If not found, check in project root (where deploy.js is located)
     if (!fs.existsSync(publicPageDir)) {
-      const projectRoot = path.resolve(__dirname, '..');
+      const projectRoot = path.resolve(__dirname);
       const rootPublicPageDir = path.join(projectRoot, 'public_page');
       if (fs.existsSync(rootPublicPageDir)) {
         publicPageDir = rootPublicPageDir;
@@ -1915,206 +1195,18 @@ const deploymentUtils = {
     }
   },
 
-  createTempWranglerConfig(codebasePath, config, databaseId, subdomainEnabled = false) {
-    const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-    try {
-      const wranglerConfig = {
-        "name": config.workerName,
-        "main": "src/index.ts",
-        "compatibility_date": "2025-03-07",
-        "compatibility_flags": [
-          "nodejs_compat"
-        ],
-        "observability": {
-          "enabled": true,
-          "head_sampling_rate": 1
-        },
-        "r2_buckets": [
-          {
-            "binding": "FACESWAP_IMAGES",
-            "bucket_name": config.bucketName
-          }
-        ],
-        "d1_databases": [
-          {
-            "binding": "DB",
-            "database_name": config.databaseName,
-            "database_id": databaseId || ""
-          }
-        ],
-        "account_id": config.cloudflare.accountId
-      };
-
-      // Note: workers.dev subdomain should be enabled manually if needed
-      // The deployment will attempt to proceed and provide clear error messages if subdomain is required
-      console.log(`[Deploy] 📋 Note: If deployment fails due to workers.dev subdomain, visit:`);
-      console.log(`[Deploy]     https://dash.cloudflare.com/${config.cloudflare.accountId}/workers/onboarding`);
-
-      fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
-      return wranglerPath;
-    } catch (error) {
-      console.error(`[Deploy] Failed to create temporary wrangler.jsonc: ${error.message}`);
-      return null;
-    }
-  },
-
-  deleteTempWranglerConfig(codebasePath) {
-    const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-    if (fs.existsSync(wranglerPath)) {
-      try {
-        fs.unlinkSync(wranglerPath);
-        console.log('[Deploy] Deleted temporary wrangler.jsonc');
-      } catch (error) {
-        console.warn('[Deploy] Could not delete temporary wrangler.jsonc:', error.message);
-      }
-    }
-  },
-
-
-  getD1DatabaseId(codebasePath, databaseName) {
-    if (!databaseName) {
-      return null;
-    }
-
-    try {
-      // Get database ID using wrangler d1 info (most reliable method)
-      let databaseId = null;
-
-      // Method 1: Use wrangler d1 info command (most direct)
-      const infoOutput = execCommand(`wrangler d1 info ${databaseName}`, { silent: true, throwOnError: false });
-      if (infoOutput) {
-        // Extract database_id from info output
-        const idMatch = infoOutput.match(/database_id["\s:]+([a-f0-9-]{36})/i) ||
-                       infoOutput.match(/id["\s:]+([a-f0-9-]{36})/i) ||
-                       infoOutput.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
-        if (idMatch) {
-          databaseId = idMatch[1];
-        }
-      }
-
-      // Method 2: Try JSON format from list
-      if (!databaseId) {
-        const jsonOutput = execCommand('wrangler d1 list --json', { silent: true, throwOnError: false });
-        if (jsonOutput) {
-          try {
-            const databases = JSON.parse(jsonOutput);
-            if (Array.isArray(databases)) {
-              const database = databases.find(db =>
-                db.name === databaseName ||
-                db.database_name === databaseName ||
-                (db.name && db.name.toLowerCase() === databaseName.toLowerCase())
-              );
-              if (database) {
-                databaseId = database.uuid || database.database_id || database.id || database.database_uuid;
-              }
-            } else if (databases && databases.result && Array.isArray(databases.result)) {
-              // Some versions return { result: [...] }
-              const database = databases.result.find(db =>
-                db.name === databaseName ||
-                db.database_name === databaseName ||
-                (db.name && db.name.toLowerCase() === databaseName.toLowerCase())
-              );
-              if (database) {
-                databaseId = database.uuid || database.database_id || database.id || database.database_uuid;
-              }
-            }
-          } catch (e) {
-            // JSON parse failed, try text format
-          }
-        }
-      }
-
-      // Method 3: Try text format from list
-      if (!databaseId) {
-        const textOutput = execCommand('wrangler d1 list', { silent: true, throwOnError: false });
-        if (textOutput) {
-          // Look for database name and extract ID from nearby lines
-          const lines = textOutput.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes(databaseName)) {
-              // Look for UUID pattern in current or next few lines
-              for (let j = Math.max(0, i - 2); j < Math.min(lines.length, i + 3); j++) {
-                const idMatch = lines[j].match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
-                if (idMatch) {
-                  databaseId = idMatch[1];
-                  break;
-                }
-              }
-              if (databaseId) break;
-            }
-          }
-        }
-      }
-
-      if (!databaseId) {
-        console.error(`[Deploy] ERROR: Could not find database_id for '${databaseName}'`);
-        console.error('[Deploy] Attempted methods: wrangler d1 info, wrangler d1 list --json, wrangler d1 list');
-        console.error('[Deploy] This will cause deployment error 10021. The database must exist and be accessible.');
-        console.error('[Deploy] Please verify:');
-        console.error(`[Deploy]   1. Database '${databaseName}' exists in Cloudflare dashboard`);
-        console.error(`[Deploy]   2. You have access to the correct Cloudflare account`);
-        console.error(`[Deploy]   3. Run: wrangler d1 list (to see all databases)`);
-        return null;
-      }
-
-      console.log(`[Deploy] ✓ Found database_id for '${databaseName}': ${databaseId}`);
-      return databaseId;
-    } catch (error) {
-      console.error(`[Deploy] Error getting database_id: ${error.message}`);
-      return null;
-    }
-  },
-
   async performDeployment(config = {}, reportProgress) {
-    // STRICT VALIDATION - NO DEFAULTS ALLOWED
-    // All values MUST come from deployments-secrets.json to prevent configuration mismatches
-
-    // Critical validation - ensure config has all required fields
-    const requiredFields = ['workerName', 'pagesProjectName', 'databaseName', 'bucketName'];
-    const missingFields = requiredFields.filter(field => !config[field]);
-
-    if (missingFields.length > 0) {
-      throw new Error(`ERROR: Missing required config fields: ${missingFields.join(', ')}. Config must come from deployments-secrets.json with proper environment structure.`);
-    }
-
-    // Additional validation for clarity
-    if (!config.workerName) {
-      throw new Error('ERROR: workerName is required in deployments-secrets.json. Cannot proceed without it.');
-    }
-    if (!config.pagesProjectName) {
-      throw new Error('ERROR: pagesProjectName is required in deployments-secrets.json. Cannot proceed without it.');
-    }
-    if (!config.databaseName) {
-      throw new Error('ERROR: databaseName is required in deployments-secrets.json. Cannot proceed without it.');
-    }
-    if (!config.bucketName) {
-      throw new Error('ERROR: bucketName is required in deployments-secrets.json. Cannot proceed without it.');
-    }
-
     const codebasePath = config.codebasePath || process.cwd();
-    const workerName = config.workerName;
-    const pagesProjectName = config.pagesProjectName;
-    const databaseName = config.databaseName;
-    const bucketName = config.bucketName;
+    const workerName = config.workerName || DEFAULT_WORKER_NAME;
+    const pagesProjectName = config.pagesProjectName || DEFAULT_PAGES_PROJECT_NAME;
+    const databaseName = config.databaseName || DEFAULT_D1_DATABASE_NAME;
+    const bucketName = config.bucketName || DEFAULT_R2_BUCKET_NAME;
     const secrets = config.secrets;
-
-    // NO WRANGLER.JSONC CREATION - All configuration comes from deployments-secrets.json
-    // Temporary config file will be created only during deployment and deleted immediately after
-    
-    const savedCredentials = loadCredentials();
-    const savedAccountId = savedCredentials?.cloudflare?.accountId;
-    const accountId = config.cloudflare?.accountId || savedAccountId;
 
     let workerUrl = '';
     let pagesUrl = '';
 
     try {
-      // Step 0: Set account_id in environment variable (no wrangler.jsonc needed)
-      if (accountId) {
-        process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
-        console.log(`[Deploy] Set CLOUDFLARE_ACCOUNT_ID environment variable: ${accountId}`);
-      }
-
       // Step 1: Check prerequisites
       if (reportProgress) reportProgress('check-prerequisites', 'running', 'Checking prerequisites...');
       const prerequisites = {
@@ -2165,7 +1257,6 @@ const deploymentUtils = {
 
       // Step 3: Check Cloudflare authentication
       // Skip check if cached
-      const cache = loadCache();
       if (!cache.checks || cache.checks.cloudflareAuth !== true) {
       if (reportProgress) reportProgress('check-auth', 'running', 'Checking Cloudflare authentication...');
       if (!this.checkAuth()) {
@@ -2182,35 +1273,10 @@ const deploymentUtils = {
 
       // Step 5: Check D1 database
       await this.ensureD1Database(codebasePath, reportProgress, databaseName);
-      
-      // Verify wrangler.jsonc has correct D1 binding before deployment
-      const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-      if (fs.existsSync(wranglerPath)) {
-        try {
-          const configContent = fs.readFileSync(wranglerPath, 'utf8');
-          const jsonContent = configContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-          const config = JSON.parse(jsonContent);
-          if (config.d1_databases && config.d1_databases.length > 0) {
-            const dbBinding = config.d1_databases.find(db => db.binding === 'DB');
-            if (dbBinding) {
-              if (dbBinding.database_name !== databaseName) {
-                console.warn(`[Deploy] WARNING: wrangler.jsonc database_name (${dbBinding.database_name}) doesn't match expected (${databaseName})`);
-              }
-              if (!dbBinding.database_id) {
-                console.warn(`[Deploy] WARNING: wrangler.jsonc missing database_id for D1 binding`);
-              } else {
-                console.log(`[Deploy] Verified D1 binding in wrangler.jsonc: ${dbBinding.database_name} (${dbBinding.database_id})`);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`[Deploy] Could not verify wrangler.jsonc D1 binding: ${e.message}`);
-        }
-      }
 
       // Step 6: Deploy Worker first (creates the worker if it doesn't exist)
       // This must happen before secrets deployment to avoid error 10214
-      workerUrl = await this.deployWorker(codebasePath, workerName, databaseName, config, reportProgress);
+      workerUrl = await this.deployWorker(codebasePath, workerName, reportProgress);
 
       // Step 7: Deploy secrets (now that worker exists)
       if (secrets) {
@@ -2233,9 +1299,6 @@ const deploymentUtils = {
         workerUrl,
         pagesUrl
       };
-    } finally {
-      // ALWAYS DELETE TEMPORARY WRANGLER.JSONC - it was only created during deployment
-      this.deleteTempWranglerConfig(codebasePath);
     }
   }
 };
@@ -2244,45 +1307,35 @@ const deploymentUtils = {
 module.exports = {
   ...deploymentUtils,
   deployFromConfig,
-  loadDeploymentConfig,
+  loadSecretsConfig,
   parseConfigObject
 };
 
 // CLI main function
 // CLI main function - runs when file is executed directly
 async function main() {
-  const cliArgs = parseCliArgs();
+  // Parse command line arguments (only allows --help)
+  parseCliArgs();
 
-  if (cliArgs.command === 'setup') {
-    await runSetup();
-    return;
-  }
-
-  const envName = cliArgs.envName;
-
-  console.log(`📄 Loading configuration for environment: ${envName}...`);
-  const deploymentConfig = loadDeploymentConfig(envName);
+  // Load configuration from secrets.json
+  console.log('📄 Loading configuration from secrets.json...');
+  const deploymentConfig = loadSecretsConfig();
 
   console.log('\n🚀 Face Swap AI - Deployment Script');
   console.log('====================================\n');
 
+  // Show configuration
   console.log('📋 Configuration:');
-  console.log(`   Environment: ${envName}`);
   console.log(`   Worker Name: ${deploymentConfig.workerName}`);
   console.log(`   Pages Name: ${deploymentConfig.pagesProjectName}`);
   console.log(`   Database: ${deploymentConfig.databaseName}`);
   console.log(`   Bucket: ${deploymentConfig.bucketName}`);
-  if (deploymentConfig.cloudflare?.accountId) {
-    console.log(`   Cloudflare Account ID: ${deploymentConfig.cloudflare.accountId}`);
-  }
-  if (deploymentConfig.gcp?.projectId) {
-    console.log(`   GCP Project ID: ${deploymentConfig.gcp.projectId}`);
-  }
   console.log('');
 
   let workerUrl = '';
   let pagesUrl = '';
 
+  // Check wrangler
   if (!deploymentUtils.checkWrangler()) {
     log.error('Wrangler CLI not found. Installing...');
     try {
@@ -2293,74 +1346,156 @@ async function main() {
     }
   }
 
+  // Check gcloud
   if (!deploymentUtils.checkGcloud()) {
     log.error('gcloud CLI not found. Please install Google Cloud SDK first.');
     log.info('Download from: https://cloud.google.com/sdk/docs/install');
     process.exit(1);
   }
 
-  log.info('Setting up Cloudflare authentication...');
-  try {
-    await deploymentUtils.setupCloudflareAuth(deploymentConfig.cloudflare);
-    log.success('Cloudflare authentication configured');
-  } catch (error) {
-    log.error(`Cloudflare authentication failed: ${error.message}`);
-    process.exit(1);
-  }
-
-  log.info('Setting up GCP authentication...');
-  try {
-    await deploymentUtils.setupGcpAuth(deploymentConfig.gcp);
-    log.success('GCP authentication configured');
-  } catch (error) {
-    log.error(`GCP authentication failed: ${error.message}`);
-    process.exit(1);
-  }
-
-  if (!deploymentUtils.checkAuth()) {
-    log.error('Cloudflare authentication verification failed');
-    process.exit(1);
-  } else {
-    log.success('Cloudflare authentication verified');
-  }
-
-  const result = await deploymentUtils.performDeployment(deploymentConfig, null);
-
-  if (!result.success) {
-    const errorMessage = result.error || 'Unknown error';
-
-    // Check for workers.dev subdomain error and provide better guidance
-    if (errorMessage.includes('workers.dev subdomain') || errorMessage.includes('register a workers.dev subdomain')) {
-      log.error('🚫 DEPLOYMENT FAILED: workers.dev subdomain required');
-      console.log('');
-      console.log('📋 SOLUTION: Register your workers.dev subdomain');
-      console.log(`   1. Visit: https://dash.cloudflare.com/${deploymentConfig.cloudflare?.accountId || 'your-account'}/workers/onboarding`);
-      console.log('   2. Click "Register workers.dev subdomain"');
-      console.log('   3. Choose and confirm your subdomain (e.g., yourname.workers.dev)');
-      console.log('   4. Run deployment again after enabling subdomain');
-      console.log('');
-      console.log('💡 This is required for Cloudflare Workers to have default *.workers.dev URLs');
-      console.log('   (You can still use custom domains later if needed)');
-      console.log('');
-      console.log('🔄 The deployment script attempted to enable this automatically but it may require manual setup.');
-    } else {
-      log.error(`Deployment failed: ${errorMessage}`);
+  // Check and fix GCP authentication
+  log.info('Checking GCP authentication...');
+  if (!deploymentUtils.checkGcpAuth()) {
+    log.warn('GCP authentication required');
+    if (!await deploymentUtils.fixGcpAuth()) {
+      log.error('GCP authentication setup failed');
+      log.warn('Please run the following commands manually:');
+      log.warn('  gcloud auth login');
+      log.warn('  gcloud config set project ai-photo-office');
+      log.warn('  gcloud auth application-default login');
+      process.exit(1);
     }
+  } else {
+    log.success('GCP authentication OK');
+    // Still try to ensure correct project is set
+    await deploymentUtils.fixGcpAuth();
+  }
+
+  // Check authentication
+  log.info('Checking Cloudflare authentication...');
+  if (!deploymentUtils.checkAuth()) {
+    log.warn('Not authenticated. Please login...');
+    try {
+      execCommand('wrangler login', { stdio: 'inherit' });
+      log.success('Authenticated');
+    } catch {
+      log.error('Authentication failed');
+      process.exit(1);
+    }
+  } else {
+    log.success('Authenticated');
+  }
+
+  // Check R2 bucket
+  log.info(`Checking R2 bucket: ${deploymentConfig.bucketName}...`);
+  try {
+    const buckets = execCommand('wrangler r2 bucket list', { silent: true, throwOnError: false });
+    if (!buckets || !buckets.includes(deploymentConfig.bucketName)) {
+      log.warn(`R2 bucket '${deploymentConfig.bucketName}' not found. Creating...`);
+      execCommand(`wrangler r2 bucket create ${deploymentConfig.bucketName}`, { stdio: 'inherit' });
+      log.success(`R2 bucket '${deploymentConfig.bucketName}' created`);
+    } else {
+      log.success(`R2 bucket '${deploymentConfig.bucketName}' exists`);
+    }
+  } catch (error) {
+    log.warn('Could not verify R2 bucket (may already exist)');
+  }
+
+  // Check D1 database
+  log.info(`Checking D1 database: ${deploymentConfig.databaseName}...`);
+  try {
+    await deploymentUtils.ensureD1Database(process.cwd(), (step, status, details) => {
+      if (status === 'completed') {
+        log.success(details || `D1 database '${deploymentConfig.databaseName}' OK`);
+      } else if (status === 'warning') {
+        log.warn(details);
+                }
+      // Don't log 'info' status for D1 checks - they're too verbose
+    }, deploymentConfig.databaseName);
+    log.success(`D1 database '${deploymentConfig.databaseName}' OK`);
+  } catch (error) {
+    log.warn('Could not verify D1 database (may already exist)');
+  }
+
+  // CORS is handled by Worker responses - no R2 bucket CORS needed
+  log.info('CORS: Handled automatically by Worker (no R2 configuration needed)');
+
+  // Deploy secrets if provided
+  if (Object.keys(deploymentConfig.secrets).length > 0) {
+    log.info('Deploying secrets...');
+    try {
+      await deploymentUtils.deploySecrets(deploymentConfig.secrets, process.cwd(), (step, status, details) => {
+        // Don't log here - executeWithLogs already handles logging
+        // Only report progress for Electron mode
+      }, deploymentConfig.workerName);
+    } catch (error) {
+      log.error('Failed to deploy secrets');
+      throw error;
+    }
+  } else {
+    // Check if secrets are set manually
+    const existingSecrets = deploymentUtils.getSecrets();
+    const requiredVars = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION', 'GOOGLE_VISION_ENDPOINT', 'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'];
+  const missingVars = requiredVars.filter(v => !existingSecrets.includes(v));
+
+  if (missingVars.length > 0) {
+    log.warn(`Missing environment variables: ${missingVars.join(', ')}`);
+    log.warn('You can set secrets manually with: wrangler secret put <NAME>');
+      log.warn('Or provide them in your config file under the "secrets" key');
+  } else {
+    log.success('All environment variables are set');
+    }
+  }
+
+  // Deploy Worker
+  log.info(`Deploying Worker: ${deploymentConfig.workerName}...`);
+  try {
+    workerUrl = await deploymentUtils.deployWorker(process.cwd(), deploymentConfig.workerName, (step, status, details) => {
+      // Don't log here - executeWithLogs already handles logging
+      // Only report progress for Electron mode
+    });
+  } catch (error) {
+    log.error('Worker deployment failed!');
     process.exit(1);
   }
 
+  // Deploy Pages
+  log.info(`Deploying to Cloudflare Pages: ${deploymentConfig.pagesProjectName}...`);
+  const publicPageDir = path.join(process.cwd(), 'public_page');
+
+  if (fs.existsSync(publicPageDir)) {
+    try {
+      pagesUrl = await deploymentUtils.deployPages(process.cwd(), deploymentConfig.pagesProjectName, (step, status, details) => {
+        // Don't log here - executeWithLogs already handles logging
+        // Only report progress for Electron mode
+      });
+    } catch (error) {
+      log.warn('Pages deployment failed (non-critical)');
+    }
+  } else {
+    log.warn('public_page directory not found, skipping Pages deployment');
+  }
+
+  // Summary
   console.log('\n' + '='.repeat(50));
   log.success('Deployment Complete!');
   console.log('\n📌 URLs:');
-  if (result.workerUrl) {
-    console.log(`   ✅ Worker (Backend): ${result.workerUrl}`);
+  if (workerUrl) {
+    console.log(`   ✅ Worker (Backend): ${workerUrl}`);
   }
-  if (result.pagesUrl) {
-    console.log(`   ✅ Pages (Frontend): ${result.pagesUrl}`);
+  if (pagesUrl) {
+    console.log(`   ✅ Pages (Frontend): ${pagesUrl}`);
   } else {
     console.log(`   ✅ Pages (Frontend): https://${deploymentConfig.pagesProjectName}.pages.dev/`);
   }
   console.log('\n');
+
+  // Check if final setup is needed
+  const setupScript = path.join(process.cwd(), 'complete-setup.js');
+  if (fs.existsSync(setupScript)) {
+    log.info('💡 Optional: Run ./complete-setup.js to enable full GCP integration');
+    log.info('   This enables Application Default Credentials for advanced GCP features');
+  }
 }
 
 // Run CLI if this file is executed directly
@@ -2370,3 +1505,4 @@ main().catch((error) => {
   process.exit(1);
 });
 }
+ 
