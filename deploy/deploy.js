@@ -60,10 +60,25 @@ function executeWithLogs(command, cwd, stepName) {
 
     let stdout = '';
     let stderr = '';
+    let promptAnswered = false;
+
+    const checkAndAnswerPrompt = (output) => {
+      if (promptAnswered) return;
+      
+      const fullOutput = (stdout + stderr + output).toLowerCase();
+      if (fullOutput.includes('ok to proceed?') || 
+          (fullOutput.includes('⚠️') && fullOutput.includes('unavailable')) ||
+          (fullOutput.includes('this process may take some time') && fullOutput.includes('ok to proceed'))) {
+        console.log('✓ Auto-confirming D1 database operation...');
+        child.stdin.write('yes\n');
+        promptAnswered = true;
+      }
+    };
 
     child.stdout.on('data', (data) => {
       const output = data.toString();
       stdout += output;
+      checkAndAnswerPrompt(output);
 
       // Only log important status messages, not every line
       const lines = output.split('\n').filter(line => line.trim());
@@ -83,10 +98,6 @@ function executeWithLogs(command, cwd, stepName) {
           console.log(`✓ ${trimmed}`);
         } else if (trimmed.includes('Finished processing secrets file')) {
           console.log(`✓ Secrets upload completed`);
-        } else if (trimmed.startsWith('?') && trimmed.includes('Ok to proceed?')) {
-          // Handle D1 database confirmation automatically
-          console.log('✓ Confirming D1 database operation...');
-          child.stdin.write('y\n');
         } else if (trimmed.includes('Error') || trimmed.includes('✘')) {
           console.log(`✗ ${stepName}: ${trimmed}`);
         } else if (stepName === 'deploy-pages') {
@@ -110,6 +121,7 @@ function executeWithLogs(command, cwd, stepName) {
     child.stderr.on('data', (data) => {
       const output = data.toString();
       stderr += output;
+      checkAndAnswerPrompt(output);
 
       // Log errors immediately
       const lines = output.split('\n').filter(line => line.trim());
@@ -222,17 +234,18 @@ async function loadSecretsConfig() {
       process.exit(1);
     }
 
-    const content = fs.readFileSync(secretsPath, 'utf8');
-    const config = parseConfigObject(JSON.parse(content));
+    let content = fs.readFileSync(secretsPath, 'utf8');
+    let config = parseConfigObject(JSON.parse(content));
     
     if (config._needsCloudflareSetup) {
       log.warn('Cloudflare credentials not configured in secrets.json');
       log.info('Attempting to extract from wrangler login...');
       
       try {
-        const wranglerAuth = await setupCloudflareFromWrangler(config._environment);
-        config.cloudflare.accountId = wranglerAuth.accountId;
-        config.cloudflare.apiToken = wranglerAuth.apiToken;
+        await setupCloudflareFromWrangler(config._environment);
+        log.info('Reloading configuration from file...');
+        content = fs.readFileSync(secretsPath, 'utf8');
+        config = parseConfigObject(JSON.parse(content));
         log.success('Cloudflare credentials extracted and saved');
       } catch (error) {
         log.error(`Failed to setup Cloudflare from wrangler: ${error.message}`);
@@ -293,9 +306,11 @@ function parseConfigObject(config, skipCloudflareValidation = false) {
 
   // Only validate Cloudflare if not skipping (will be auto-filled)
   if (!skipCloudflareValidation) {
-    const hasCloudflare = config.cloudflare.accountId && config.cloudflare.apiToken && 
-                          config.cloudflare.accountId !== 'your_cloudflare_account_id' &&
-                          config.cloudflare.apiToken !== 'your_cloudflare_api_token';
+    const accountId = (config.cloudflare.accountId || '').trim();
+    const apiToken = (config.cloudflare.apiToken || '').trim();
+    const hasCloudflare = accountId && apiToken && 
+                          accountId !== 'your_cloudflare_account_id' &&
+                          apiToken !== 'your_cloudflare_api_token';
     if (!hasCloudflare) {
       config._needsCloudflareSetup = true;
       config._environment = environment;
@@ -307,12 +322,17 @@ function parseConfigObject(config, skipCloudflareValidation = false) {
     throw new Error('Missing GCP projectId or serviceAccountKeyJson in configuration');
   }
 
+  const deployPages = config.deployPages !== undefined 
+    ? config.deployPages 
+    : (process.env.DEPLOY_PAGES === 'true');
+
   const result = {
     name: config.name || 'default',
     workerName: config.workerName,
     pagesProjectName: config.pagesProjectName,
     databaseName: config.databaseName,
     bucketName: config.bucketName,
+    deployPages: deployPages,
     cloudflare: {
       accountId: config.cloudflare.accountId,
       apiToken: config.cloudflare.apiToken
@@ -512,6 +532,12 @@ async function loginWranglerAndExtractToken() {
     log.info('⏳ Please complete the login in your browser...');
     console.log('='.repeat(60) + '\n');
     
+    const originalEnvToken = process.env.CLOUDFLARE_API_TOKEN;
+    const originalEnvAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    
+    delete process.env.CLOUDFLARE_API_TOKEN;
+    delete process.env.CLOUDFLARE_ACCOUNT_ID;
+    
     const wranglerProcess = spawn('wrangler', ['login'], {
       stdio: 'inherit',
       shell: true,
@@ -534,32 +560,76 @@ async function loginWranglerAndExtractToken() {
             console.log('\n' + '='.repeat(60));
             log.success('✅ Wrangler login completed successfully!');
             console.log('='.repeat(60) + '\n');
+            
+            if (originalEnvToken !== undefined) {
+              process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+            }
+            if (originalEnvAccountId !== undefined) {
+              process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+            }
+            
             resolve(tokenInfo);
           } else if (attempts < maxAttempts) {
             setTimeout(checkToken, 1000);
           } else {
+            if (originalEnvToken !== undefined) {
+              process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+            }
+            if (originalEnvAccountId !== undefined) {
+              process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+            }
             reject(new Error('Token not found in wrangler config after login. Please try running "wrangler login" manually.'));
           }
         };
         
         setTimeout(checkToken, 2000);
       } else {
+        if (originalEnvToken !== undefined) {
+          process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+        }
+        if (originalEnvAccountId !== undefined) {
+          process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+        }
         reject(new Error(`Wrangler login failed with code ${code}`));
       }
     });
     
     wranglerProcess.on('error', (error) => {
+      if (originalEnvToken !== undefined) {
+        process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+      }
+      if (originalEnvAccountId !== undefined) {
+        process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+      }
       reject(error);
     });
   });
 }
 
+// Check if token is invalid
+function isInvalidTokenError(error) {
+  const errorMsg = error.message || error.toString() || '';
+  return errorMsg.includes('Invalid access token') ||
+         errorMsg.includes('code: 9109') ||
+         errorMsg.includes('Authentication error') ||
+         errorMsg.includes('Unauthorized') ||
+         errorMsg.includes('Invalid API Token');
+}
+
 // Get account ID from wrangler whoami (preferred method)
+// Note: This function should be called when CLOUDFLARE_API_TOKEN is already set temporarily
+// Returns null if not found, throws error if token is invalid
 function getAccountIdFromWrangler() {
   try {
-    process.env.CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || '';
     const whoamiOutput = execCommand('wrangler whoami', { silent: true, throwOnError: false });
     if (whoamiOutput) {
+      if (whoamiOutput.includes('Invalid access token') || 
+          whoamiOutput.includes('code: 9109') ||
+          whoamiOutput.includes('Authentication error') ||
+          whoamiOutput.includes('Unauthorized')) {
+        throw new Error('Invalid access token');
+      }
+      
       const accountIdMatch = whoamiOutput.match(/Account ID:\s*([a-f0-9]{32})/i);
       if (accountIdMatch) {
         return accountIdMatch[1];
@@ -570,7 +640,9 @@ function getAccountIdFromWrangler() {
       }
     }
   } catch (error) {
-    // Ignore
+    if (isInvalidTokenError(error)) {
+      throw error;
+    }
   }
   return null;
 }
@@ -617,23 +689,25 @@ async function getAccountIdFromToken(token) {
   });
 }
 
-// Setup Cloudflare token from wrangler login
+// Setup Cloudflare token from wrangler login and save to file (DO NOT set ENV)
+// This function ONLY checks deployments-secrets.json file, never ENV or wrangler config
 async function setupCloudflareFromWrangler(environment = null) {
   console.log('\n' + '='.repeat(60));
   log.info('🔧 Setting up Cloudflare authentication from wrangler...');
   console.log('='.repeat(60) + '\n');
   
-  let tokenInfo = extractTokenFromWrangler();
+  const originalEnvToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalEnvAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   
-  if (!tokenInfo) {
-    log.warn('No token found in wrangler config');
-    log.info('Starting automatic login process...');
-    tokenInfo = await loginWranglerAndExtractToken();
-  } else {
-    log.success('Found existing wrangler token');
-  }
+  delete process.env.CLOUDFLARE_API_TOKEN;
+  delete process.env.CLOUDFLARE_ACCOUNT_ID;
   
+  log.info('Credentials are empty in deployments-secrets.json');
+  log.info('Starting automatic login process...');
+  
+  const tokenInfo = await loginWranglerAndExtractToken();
   const token = tokenInfo.token;
+  
   process.env.CLOUDFLARE_API_TOKEN = token;
   
   log.info('Getting account ID...');
@@ -670,19 +744,16 @@ async function setupCloudflareFromWrangler(environment = null) {
           }
         }
       } catch (whoamiError) {
-        log.error('All methods to get account ID failed');
-        throw new Error(`Could not get account ID. Please check your Cloudflare connection. Error: ${error.message}`);
+        // Ignore
       }
     }
   }
   
   if (!accountId) {
-    throw new Error('Could not determine account ID. Please check your Cloudflare authentication.');
+    process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+    process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+    throw new Error('Could not determine account ID. Please check your Cloudflare connection.');
   }
-  
-  process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
-  
-  log.success('Cloudflare environment variables set');
   
   const secretsPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
   if (fs.existsSync(secretsPath)) {
@@ -708,9 +779,15 @@ async function setupCloudflareFromWrangler(environment = null) {
       log.success(`✅ Saved token to deploy/deployments-secrets.json (${env} environment)`);
       console.log('='.repeat(60) + '\n');
     } catch (error) {
+      process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+      process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
       log.warn(`Could not save token to secrets file: ${error.message}`);
+      throw error;
     }
   }
+  
+  process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+  process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
   
   return { accountId, apiToken: token };
 }
@@ -965,11 +1042,7 @@ const deploymentUtils = {
         const schemaPath = path.join(codebasePath, 'schema.sql');
         if (fs.existsSync(schemaPath)) {
           try {
-            execSync(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, {
-              stdio: 'inherit',
-              timeout: 30000,
-              cwd: codebasePath
-            });
+            await this.executeWithLogs(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, codebasePath, 'check-d1');
           } catch (error) {
             // If schema fails, recreate database
             await this.executeWithLogs(`wrangler d1 delete ${databaseName}`, codebasePath, 'check-d1');
@@ -1101,44 +1174,125 @@ const deploymentUtils = {
       throw new Error('No secrets provided');
     }
 
-    // Deploy secrets individually using wrangler secret put
-    // This avoids creating temporary files and works with the single config file approach
     const secretKeys = Object.keys(secrets);
-    let successCount = 0;
+    if (secretKeys.length === 0) {
+      return { success: true, deployed: 0, total: 0 };
+    }
 
-    for (const key of secretKeys) {
-      const value = secrets[key];
-      const command = workerName
-        ? `wrangler secret put ${key} --name ${workerName}`
-        : `wrangler secret put ${key}`;
+    log.info(`Deploying ${secretKeys.length} secrets in batch...`);
 
-      console.log(`[Deploy] Setting secret: ${key}`);
+    const tempSecretsFile = path.join(os.tmpdir(), `wrangler-secrets-${Date.now()}.json`);
+    
+    try {
+      const secretsJson = {};
+      for (const key of secretKeys) {
+        secretsJson[key] = secrets[key];
+      }
+      
+      fs.writeFileSync(tempSecretsFile, JSON.stringify(secretsJson, null, 2), 'utf8');
 
-      // Use echo to pipe the value to wrangler secret put
-      const fullCommand = `echo "${value.replace(/"/g, '\\"')}" | ${command}`;
+      let command;
+      if (workerName) {
+        command = `wrangler secret bulk "${tempSecretsFile}" --name ${workerName}`;
+      } else {
+        command = `wrangler secret bulk "${tempSecretsFile}"`;
+      }
 
       const result = await this.executeWithLogs(
-        fullCommand,
+        command,
         codebasePath,
-        'deploy-secrets'
+        'deploy-secrets-batch'
       );
 
       if (result.success) {
-        successCount++;
+        log.success(`Successfully deployed ${secretKeys.length} secrets in batch`);
+        return { success: true, deployed: secretKeys.length, total: secretKeys.length };
       } else {
-        console.error(`[Deploy] Failed to set secret: ${key}`);
+        log.warn('Batch upload failed, falling back to individual uploads...');
+        
+        let successCount = 0;
+        for (const key of secretKeys) {
+          const value = secrets[key];
+          const individualCommand = workerName
+            ? `wrangler secret put ${key} --name ${workerName}`
+            : `wrangler secret put ${key}`;
+
+          console.log(`[Deploy] Setting secret: ${key}`);
+
+          const fullCommand = `echo "${value.replace(/"/g, '\\"')}" | ${individualCommand}`;
+
+          const individualResult = await this.executeWithLogs(
+            fullCommand,
+            codebasePath,
+            'deploy-secrets'
+          );
+
+          if (individualResult.success) {
+            successCount++;
+          } else {
+            console.error(`[Deploy] Failed to set secret: ${key}`);
+          }
+        }
+
+        if (successCount === 0) {
+          throw new Error('Failed to deploy any secrets');
+        }
+
+        if (successCount < secretKeys.length) {
+          console.warn(`[Deploy] Only ${successCount}/${secretKeys.length} secrets were deployed successfully`);
+        }
+
+        return { success: true, deployed: successCount, total: secretKeys.length };
+      }
+    } catch (error) {
+      log.warn(`Batch upload error: ${error.message}, falling back to individual uploads...`);
+      
+      let successCount = 0;
+      for (const key of secretKeys) {
+        const value = secrets[key];
+        const individualCommand = workerName
+          ? `wrangler secret put ${key} --name ${workerName}`
+          : `wrangler secret put ${key}`;
+
+        console.log(`[Deploy] Setting secret: ${key}`);
+
+        const fullCommand = `echo "${value.replace(/"/g, '\\"')}" | ${individualCommand}`;
+
+        try {
+          const individualResult = await this.executeWithLogs(
+            fullCommand,
+            codebasePath,
+            'deploy-secrets'
+          );
+
+          if (individualResult.success) {
+            successCount++;
+          } else {
+            console.error(`[Deploy] Failed to set secret: ${key}`);
+          }
+        } catch (individualError) {
+          console.error(`[Deploy] Failed to set secret: ${key} - ${individualError.message}`);
+        }
+      }
+
+      if (successCount === 0) {
+        throw new Error('Failed to deploy any secrets');
+      }
+
+      if (successCount < secretKeys.length) {
+        console.warn(`[Deploy] Only ${successCount}/${secretKeys.length} secrets were deployed successfully`);
+      }
+
+      return { success: true, deployed: successCount, total: secretKeys.length };
+    } finally {
+      if (fs.existsSync(tempSecretsFile)) {
+        try {
+          fs.unlinkSync(tempSecretsFile);
+        } catch (error) {
+          // Ignore cleanup errors
+        }
       }
     }
-
-    if (successCount === 0) {
-      throw new Error('Failed to deploy any secrets');
-    }
-
-    if (successCount < secretKeys.length) {
-      console.warn(`[Deploy] Only ${successCount}/${secretKeys.length} secrets were deployed successfully`);
-    }
-
-    return { success: true, deployed: successCount, total: secretKeys.length };
   },
 
   async deployWorker(codebasePath, workerName, deploymentConfig) {
@@ -1237,11 +1391,38 @@ const deploymentUtils = {
     }
   },
 
+  async ensurePagesProject(codebasePath, pagesProjectName) {
+    try {
+      const listResult = await this.executeWithLogs('wrangler pages project list', codebasePath, 'check-pages');
+      const output = listResult.stdout || '';
+
+      if (!output || !output.includes(pagesProjectName)) {
+        log.info(`Pages project '${pagesProjectName}' not found, creating...`);
+        await this.executeWithLogs(`wrangler pages project create ${pagesProjectName} --production-branch=main`, codebasePath, 'create-pages');
+        log.success(`Pages project '${pagesProjectName}' created`);
+      } else {
+        log.success(`Pages project '${pagesProjectName}' already exists`);
+      }
+    } catch (error) {
+      if (error.message && (error.message.includes('Project not found') || error.message.includes('Must specify a production branch'))) {
+        log.info(`Pages project '${pagesProjectName}' not found, creating...`);
+        try {
+          await this.executeWithLogs(`wrangler pages project create ${pagesProjectName} --production-branch=main`, codebasePath, 'create-pages');
+          log.success(`Pages project '${pagesProjectName}' created`);
+        } catch (createError) {
+          log.warn(`Could not create Pages project: ${createError.message}`);
+        }
+      } else {
+        log.warn(`Could not check Pages projects: ${error.message}`);
+      }
+    }
+  },
+
   async deployPages(codebasePath, pagesProjectName) {
-    // Check for public_page in codebasePath first
+    await this.ensurePagesProject(codebasePath, pagesProjectName);
+
     let publicPageDir = path.join(codebasePath, 'public_page');
 
-    // If not found, check in project root (where deploy.js is located)
     if (!fs.existsSync(publicPageDir)) {
       const projectRoot = path.resolve(__dirname);
       const rootPublicPageDir = path.join(projectRoot, 'public_page');
@@ -1250,7 +1431,6 @@ const deploymentUtils = {
       }
     }
 
-    // Always construct the Pages URL from project name
     const pagesUrl = `https://${pagesProjectName}.pages.dev/`;
 
     if (!fs.existsSync(publicPageDir)) {
@@ -1258,10 +1438,8 @@ const deploymentUtils = {
       return pagesUrl;
     }
 
-    // Ensure we use absolute path for the public_page directory
     const absolutePublicPageDir = path.resolve(publicPageDir);
 
-    // Pages deployment doesn't require wrangler.jsonc - it uses direct command with project name
     try {
       const command = `wrangler pages deploy "${absolutePublicPageDir}" --project-name=${pagesProjectName} --branch=main --commit-dirty=true`;
 
@@ -1271,17 +1449,43 @@ const deploymentUtils = {
         'deploy-pages'
       );
 
-      // Check if command succeeded (exit code 0)
       if (result.success) {
         return pagesUrl;
       } else {
-        // Command failed but we still return the URL (deployment might have partially succeeded)
+        if (result.error && result.error.includes('Project not found')) {
+          log.warn('Project not found, attempting to create and retry...');
+          await this.ensurePagesProject(codebasePath, pagesProjectName);
+          const retryResult = await this.executeWithLogs(
+            command,
+            codebasePath,
+            'deploy-pages-retry'
+          );
+          if (retryResult.success) {
+            return pagesUrl;
+          }
+        }
         return pagesUrl;
       }
     } catch (error) {
-      // Pages deployment failed, but return URL anyway (non-critical)
-      log.warn(`Pages deployment error: ${error.message}. URL: ${pagesUrl}`);
-      // Still return the URL as Pages deployment is non-critical
+      if (error.message && error.message.includes('Project not found')) {
+        log.warn('Project not found, attempting to create and retry...');
+        try {
+          await this.ensurePagesProject(codebasePath, pagesProjectName);
+          const command = `wrangler pages deploy "${absolutePublicPageDir}" --project-name=${pagesProjectName} --branch=main --commit-dirty=true`;
+          const retryResult = await this.executeWithLogs(
+            command,
+            codebasePath,
+            'deploy-pages-retry'
+          );
+          if (retryResult.success) {
+            return pagesUrl;
+          }
+        } catch (retryError) {
+          log.warn(`Pages deployment error: ${retryError.message}. URL: ${pagesUrl}`);
+        }
+      } else {
+        log.warn(`Pages deployment error: ${error.message}. URL: ${pagesUrl}`);
+      }
       return pagesUrl;
     }
   }
@@ -1305,6 +1509,7 @@ async function main() {
   console.log('📋 Configuration:');
   console.log(`   Worker Name: ${deploymentConfig.workerName}`);
   console.log(`   Pages Name: ${deploymentConfig.pagesProjectName}`);
+  console.log(`   Deploy Pages: ${deploymentConfig.deployPages ? 'Yes' : 'No (disabled)'}`);
   console.log(`   Database: ${deploymentConfig.databaseName}`);
   console.log(`   Bucket: ${deploymentConfig.bucketName}`);
   console.log('');
@@ -1340,19 +1545,44 @@ async function main() {
     log.success('GCP authenticated successfully');
   }
 
-  // Authenticate with Cloudflare automatically
+  // Authenticate with Cloudflare - set ENV from file ONLY for deployment
+  // IMPORTANT: We use deployments-secrets.json as single source of truth
+  // ENV variables are set temporarily during deployment and cleared afterward
+  // This prevents conflicts when deploying to multiple Cloudflare accounts on same machine
   log.info('Authenticating with Cloudflare...');
   
   const cloudflareToken = deploymentConfig.cloudflare.apiToken;
   const cloudflareAccountId = deploymentConfig.cloudflare.accountId;
   
-  if (!await deploymentUtils.authenticateCloudflare(cloudflareToken, cloudflareAccountId)) {
-    log.error('Cloudflare authentication failed');
-    log.error('Please check your API token and account ID in secrets.json');
-    log.info('Or run "wrangler login" and this script will extract the token automatically');
+  if (!cloudflareToken || !cloudflareAccountId || 
+      cloudflareToken.trim() === '' || cloudflareAccountId.trim() === '') {
+    log.error('Cloudflare credentials are empty in deployments-secrets.json');
+    log.error('This should have been auto-filled. Please check the file.');
     process.exit(1);
-  } else {
-    log.success('Cloudflare authenticated successfully');
+  }
+  
+  // Save original ENV values to restore later
+  const originalEnvToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalEnvAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  
+  // Set ENV from file (temporary, only for this deployment)
+  process.env.CLOUDFLARE_API_TOKEN = cloudflareToken;
+  process.env.CLOUDFLARE_ACCOUNT_ID = cloudflareAccountId;
+  
+  try {
+    if (!await deploymentUtils.authenticateCloudflare(cloudflareToken, cloudflareAccountId)) {
+      process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+      process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+      log.error('Cloudflare authentication failed');
+      log.error('Please check your API token and account ID in secrets.json');
+      process.exit(1);
+    } else {
+      log.success('Cloudflare authenticated successfully');
+    }
+  } catch (error) {
+    process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+    process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+    throw error;
   }
 
   // Check R2 bucket
@@ -1394,18 +1624,22 @@ async function main() {
     process.exit(1);
   }
 
-  // Deploy Pages
-  log.info(`Deploying to Cloudflare Pages: ${deploymentConfig.pagesProjectName}...`);
-  const publicPageDir = path.join(process.cwd(), 'public_page');
+  // Deploy Pages (if enabled)
+  if (deploymentConfig.deployPages) {
+    log.info(`Deploying to Cloudflare Pages: ${deploymentConfig.pagesProjectName}...`);
+    const publicPageDir = path.join(process.cwd(), 'public_page');
 
-  if (fs.existsSync(publicPageDir)) {
-    try {
-      pagesUrl = await deploymentUtils.deployPages(process.cwd(), deploymentConfig.pagesProjectName);
-    } catch (error) {
-      log.warn('Pages deployment failed (non-critical)');
+    if (fs.existsSync(publicPageDir)) {
+      try {
+        pagesUrl = await deploymentUtils.deployPages(process.cwd(), deploymentConfig.pagesProjectName);
+      } catch (error) {
+        log.warn('Pages deployment failed (non-critical)');
+      }
+    } else {
+      log.warn('public_page directory not found, skipping Pages deployment');
     }
   } else {
-    log.warn('public_page directory not found, skipping Pages deployment');
+    log.info('Pages deployment is disabled by default. Set DEPLOY_PAGES=true to enable.');
   }
 
   // Summary
@@ -1421,6 +1655,29 @@ async function main() {
     console.log(`   ✅ Pages (Frontend): https://${deploymentConfig.pagesProjectName}.pages.dev/`);
   }
   console.log('\n');
+
+  // Cleanup: Clear Cloudflare ENV variables after deployment
+  if (originalEnvToken !== undefined) {
+    if (originalEnvToken) {
+      process.env.CLOUDFLARE_API_TOKEN = originalEnvToken;
+    } else {
+      delete process.env.CLOUDFLARE_API_TOKEN;
+    }
+  } else {
+    delete process.env.CLOUDFLARE_API_TOKEN;
+  }
+  
+  if (originalEnvAccountId !== undefined) {
+    if (originalEnvAccountId) {
+      process.env.CLOUDFLARE_ACCOUNT_ID = originalEnvAccountId;
+    } else {
+      delete process.env.CLOUDFLARE_ACCOUNT_ID;
+    }
+  } else {
+    delete process.env.CLOUDFLARE_ACCOUNT_ID;
+  }
+  
+  log.info('Cleared Cloudflare environment variables (credentials remain in deployments-secrets.json)');
 
   // Check if final setup is needed
   const setupScript = path.join(process.cwd(), 'complete-setup.js');

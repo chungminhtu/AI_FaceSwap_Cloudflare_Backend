@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Face Swap AI - API Documentation</title>
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <style>
+    :root {
+      --theme-color: #F82387;
+      --theme-color-dark: #B215FF;
+      --sidebar-width: 280px;
+    }
+    .app-name-link img {
+      max-width: 200px;
+    }
+    .sidebar {
+      background: linear-gradient(135deg, #FDFBFF 0%, #F7F2FF 100%);
+    }
+    .sidebar ul li a {
+      color: #0B0B2E;
+      font-weight: 500;
+    }
+    .sidebar ul li a:hover {
+      color: var(--theme-color);
+    }
+    .sidebar ul li.active > a {
+      color: var(--theme-color);
+      border-left: 3px solid var(--theme-color);
+    }
+    .markdown-section {
+      max-width: 900px;
+    }
+    .markdown-section h1 {
+      color: var(--theme-color);
+      border-bottom: 2px solid var(--theme-color);
+      padding-bottom: 10px;
+    }
+    .markdown-section h2 {
+      color: var(--theme-color-dark);
+      margin-top: 30px;
+    }
+    .markdown-section code {
+      background: rgba(248, 35, 135, 0.1);
+      color: var(--theme-color);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .markdown-section pre {
+      background: #f8f9fa;
+      border-left: 4px solid var(--theme-color);
+    }
+    .markdown-section blockquote {
+      border-left: 4px solid var(--theme-color);
+      background: rgba(248, 35, 135, 0.05);
+    }
+    .app-name {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--theme-color);
+    }
+    .cover {
+      background: linear-gradient(135deg, #FFE0F0 0%, #F4E5FF 35%, #FDFBFF 70%);
+    }
+    .cover-main {
+      color: #0B0B2E;
+    }
+    .cover-main h1 {
+      color: var(--theme-color);
+    }
+    .cover-main p {
+      color: #3A345C;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">Loading...</div>
+  <script>
+    window.$docsify = {
+      name: 'Face Swap AI API',
+      repo: '',
+      loadSidebar: true,
+      subMaxLevel: 3,
+      auto2top: true,
+      homepage: 'README.md',
+      coverpage: false,
+      search: {
+        maxAge: 86400000,
+        paths: 'auto',
+        placeholder: 'Tìm kiếm...',
+        noData: 'Không tìm thấy kết quả',
+        depth: 6
+      },
+      pagination: {
+        previousText: 'Trước',
+        nextText: 'Tiếp',
+        crossChapter: true,
+        crossChapterText: true,
+      },
+      plugins: [
+        function(hook, vm) {
+          hook.beforeEach(function(html) {
+            return html;
+          });
+        }
+      ]
+    }
+  </script>
+  <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/pagination.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/emoji.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/external-script.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/zoom-image.min.js"></script>
+</body>
+</html>
