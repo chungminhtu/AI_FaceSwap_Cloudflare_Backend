@@ -524,7 +524,7 @@ window.deploymentStatus = {
     const cacheEntries = this.loadHistoryEntries(this.currentDeploymentId);
     const deletedTimestamps = this.loadDeletedTimestamps(this.currentDeploymentId);
 
-    // Also try to load from config database
+    // Load from config
     let configEntries = [];
     try {
       const config = window.dashboard?.getCurrentConfig();
@@ -695,7 +695,7 @@ window.deploymentStatus = {
 
     this.saveHistoryEntry(result);
     
-    // Reload config to get latest history from database
+    // Reload config to get latest history
     try {
       await window.dashboard?.loadConfig();
     } catch (error) {

@@ -162,18 +162,14 @@ class AccountSwitcher {
             const jsonData = JSON.parse(whoamiOutput);
             if (jsonData.accountId) {
               currentAccountId = jsonData.accountId.toLowerCase();
-              console.log('[AccountSwitcher] Found account ID via JSON:', currentAccountId);
             } else if (jsonData.account && jsonData.account.id) {
               currentAccountId = jsonData.account.id.toLowerCase();
-              console.log('[AccountSwitcher] Found account ID via JSON (nested):', currentAccountId);
             }
           } catch (jsonError) {
             // JSON parsing failed, fall through to text parsing
-            console.log('[AccountSwitcher] JSON parsing failed, trying text format:', jsonError.message);
           }
         } catch (jsonCmdError) {
           // JSON format not available, try regular whoami
-          console.log('[AccountSwitcher] JSON format not available, using text format');
           whoamiOutput = execSync('wrangler whoami', {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -181,7 +177,6 @@ class AccountSwitcher {
           });
         }
       } catch (error) {
-        console.error('[AccountSwitcher] Failed to execute wrangler whoami:', error.message);
         throw error;
       }
 
@@ -207,7 +202,6 @@ class AccountSwitcher {
             const idMatch = part.match(/([a-f0-9]{32})/i);
             if (idMatch && idMatch[1].length === 32) {
                 currentAccountId = idMatch[1].toLowerCase();
-                console.log('[AccountSwitcher] Found account ID via table parsing:', currentAccountId);
               break;
             }
           }
@@ -222,7 +216,6 @@ class AccountSwitcher {
         const accountIdMatch1 = whoamiOutput.match(/account\s+id:?\s*([a-f0-9]{32})/i);
         if (accountIdMatch1) {
           currentAccountId = accountIdMatch1[1].toLowerCase();
-          console.log('[AccountSwitcher] Found account ID via regex pattern 1:', currentAccountId);
         }
       }
       
@@ -241,17 +234,13 @@ class AccountSwitcher {
           if (validMatches.length > 0) {
           // Use the last match (usually the Account ID)
             currentAccountId = validMatches[validMatches.length - 1].toLowerCase();
-            console.log('[AccountSwitcher] Found account ID via regex pattern 2:', currentAccountId);
         }
         }
       }
 
       // Log final result
       if (currentAccountId) {
-        console.log('[AccountSwitcher] Successfully parsed account ID:', currentAccountId);
       } else {
-        console.warn('[AccountSwitcher] Could not parse account ID from wrangler whoami output');
-        console.warn('[AccountSwitcher] Output was:', whoamiOutput.substring(0, 500));
       }
 
       if (accountConfig && accountConfig.accountId) {

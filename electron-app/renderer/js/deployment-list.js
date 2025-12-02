@@ -28,6 +28,7 @@ window.deploymentList = {
         <div class="deployment-card-header">
           <div class="deployment-name">${this.escapeHtml(deployment.name)}</div>
           <div class="deployment-actions">
+            <button class="btn btn-small btn-secondary btn-duplicate" data-id="${deployment.id}" title="Nhân đôi deployment này">Nhân đôi</button>
             <button class="btn btn-small btn-secondary btn-export" data-id="${deployment.id}" title="Xuất deployment này">Xuất</button>
             <button class="btn btn-small btn-secondary btn-edit" data-id="${deployment.id}">Sửa</button>
             <button class="btn btn-small btn-secondary btn-delete" data-id="${deployment.id}">Xóa</button>
@@ -65,6 +66,14 @@ window.deploymentList = {
     if (btnHistory) {
       btnHistory.addEventListener('click', () => {
         window.deploymentStatus.showHistory(deploymentId);
+      });
+    }
+
+    // Duplicate button
+    const btnDuplicate = document.querySelector(`.btn-duplicate[data-id="${deploymentId}"]`);
+    if (btnDuplicate) {
+      btnDuplicate.addEventListener('click', async () => {
+        await this.duplicateDeployment(deploymentId);
       });
     }
 
@@ -144,6 +153,49 @@ window.deploymentList = {
 
   },
 
+  async duplicateDeployment(deploymentId) {
+    try {
+      const config = window.dashboard?.getCurrentConfig();
+      const originalDeployment = config?.deployments?.find(d => d.id === deploymentId);
+      
+      if (!originalDeployment) {
+        window.toast?.error('Không tìm thấy deployment');
+        return;
+      }
+
+      const duplicatedDeployment = {
+        ...originalDeployment,
+        id: `${originalDeployment.id}-copy-${Date.now()}`,
+        name: `${originalDeployment.name} (Copy)`,
+        status: 'idle',
+        history: []
+      };
+
+      if (!window.deploymentForm) {
+        window.toast?.error('Deployment form chưa được tải. Vui lòng refresh trang.');
+        return;
+      }
+
+      if (typeof window.deploymentForm.show !== 'function') {
+        window.toast?.error('Deployment form không khả dụng');
+        return;
+      }
+
+      await window.deploymentForm.show(duplicatedDeployment);
+      
+      setTimeout(() => {
+        const idField = document.getElementById('form-id');
+        if (idField) {
+          idField.removeAttribute('readonly');
+        }
+      }, 100);
+
+      window.toast?.success(`Đã tạo bản sao của "${originalDeployment.name}"`);
+    } catch (error) {
+      window.toast?.error(`Lỗi nhân đôi deployment: ${error.message}`);
+    }
+  },
+
   async exportDeployment(deploymentId) {
     try {
       const config = window.dashboard?.getCurrentConfig();
@@ -202,7 +254,6 @@ window.deploymentList = {
 
         console.log(`[deleteDeployment] Removing deployment ${deploymentId}, ${beforeCount} -> ${afterCount} deployments`);
 
-        // Save config (this will also delete from SQLite)
         const saveResult = await window.dashboard.saveConfig();
         if (!saveResult || (saveResult.success === false)) {
           const errorMsg = saveResult?.error || 'Failed to save config';

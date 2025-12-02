@@ -576,12 +576,10 @@ window.deploymentForm = {
 
     try {
       this._savingDraft = true;
-      // Save to SQLite database via IPC (non-blocking)
       window.electronAPI.configWrite({
         ...window.dashboard?.getCurrentConfig(),
         formDraft: draft
       }).then(() => {
-        console.log('[Auto-save] Form data saved to SQLite database');
       }).catch((error) => {
         console.error('[Auto-save] Failed to save form draft:', error);
       }).finally(() => {
@@ -595,7 +593,6 @@ window.deploymentForm = {
 
   async loadFormDraft() {
     try {
-      // Load from SQLite database via IPC
       const config = await window.electronAPI.configRead();
       if (config && config.formDraft) {
         console.log('[Auto-load] Found saved form data from:', config.formDraft.savedAt);
@@ -1584,36 +1581,23 @@ window.deploymentForm = {
         GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: flatDeploymentForValidation.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
       };
 
-      // Save flat structure to secrets.json (for CLI compatibility)
-      const saveResult = await window.electronAPI.configSaveDeployment(flatDeployment);
-      if (!saveResult.success) {
-        throw new Error(saveResult.error || 'Failed to save to secrets.json');
-      }
-
-      // Also save deployment with nested structure to config for UI display
-      // Reuse existing config variable (already loaded at line 1165)
       if (!config) {
         throw new Error('Không thể tải cấu hình');
       }
 
-      // Find existing deployment or create new one
       const existingIndex = config.deployments?.findIndex(d => d.id === deployment.id);
       if (existingIndex >= 0) {
-        // Update existing deployment
         config.deployments[existingIndex] = deployment;
       } else {
-        // Add new deployment
         if (!config.deployments) {
           config.deployments = [];
         }
         config.deployments.push(deployment);
       }
 
-      // Save config with nested structure
       const configWriteResult = await window.electronAPI.configWrite(config);
       if (!configWriteResult.success) {
-        console.warn('[Save] Failed to save config:', configWriteResult.error);
-        // Don't throw - secrets.json was saved successfully
+        throw new Error(configWriteResult.error || 'Failed to save deployment');
       }
 
         // Reload config to reflect changes
@@ -1638,7 +1622,6 @@ window.deploymentForm = {
 
   async clearFormDraft() {
     try {
-      // Clear from SQLite database via IPC
       const config = await window.electronAPI.configRead();
       if (config && config.formDraft) {
         delete config.formDraft;

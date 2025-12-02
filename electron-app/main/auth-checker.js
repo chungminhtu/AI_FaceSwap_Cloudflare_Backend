@@ -121,7 +121,6 @@ class AuthChecker {
       let stderr = '';
       let resolved = false;
       
-      console.log('[auth-checker] Starting wrangler login process...');
       
       // Use execSync for a quick test first, then spawn for interactive
       const wranglerProcess = spawn('wrangler', ['login'], {
@@ -140,19 +139,16 @@ class AuthChecker {
       wranglerProcess.stdout?.on('data', (data) => {
         const text = data.toString();
         stdout += text;
-        console.log('[wrangler login] stdout:', text.trim());
       });
 
       wranglerProcess.stderr?.on('data', (data) => {
         const text = data.toString();
         stderr += text;
-        console.log('[wrangler login] stderr:', text.trim());
       });
 
       // Set a timeout (10 minutes for login - user needs time to complete OAuth)
       const timeout = setTimeout(() => {
         if (!resolved) {
-          console.error('[wrangler login] Timeout reached, killing process');
           try {
             wranglerProcess.kill('SIGTERM');
             setTimeout(() => {
@@ -161,7 +157,6 @@ class AuthChecker {
               }
             }, 5000);
           } catch (e) {
-            console.error('[wrangler login] Error killing process:', e);
           }
           // Don't set resolved here - let the close handler set it
           reject(new Error('Login timeout: The login process took too long (10 minutes). Please complete the browser authentication and try again.'));
@@ -174,24 +169,18 @@ class AuthChecker {
 
       wranglerProcess.on('close', (code, signal) => {
         if (resolved) {
-          console.log('[wrangler login] Already resolved, ignoring close event');
           return; // Already handled
         }
         
         cleanup();
-        console.log(`[wrangler login] Process exited with code ${code}, signal ${signal}`);
-        console.log(`[wrangler login] stdout: ${stdout}`);
-        console.log(`[wrangler login] stderr: ${stderr}`);
         
         // Code 0 means success, null might mean killed but we'll check auth anyway
         if (code === 0 || (code === null && signal === null)) {
-          console.log('[wrangler login] Login process completed, verifying...');
           resolved = true; // Mark as resolved to prevent duplicate handling
           
           // Give it a moment for auth to settle
           setTimeout(() => {
             this.checkCloudflare().then(result => {
-              console.log('[wrangler login] Verification result:', result);
               if (result.authenticated) {
                 resolve({
                   success: true,
@@ -201,7 +190,6 @@ class AuthChecker {
               } else {
                 // Even if verification fails, if stdout says "Successfully logged in", trust it
                 if (stdout.includes('Successfully logged in')) {
-                  console.log('[wrangler login] Stdout confirms login, treating as success');
                   resolve({
                     success: true,
                     email: result.email || 'Authenticated',
@@ -216,10 +204,8 @@ class AuthChecker {
                 }
               }
             }).catch(err => {
-              console.error('[wrangler login] Verification error:', err);
               // If stdout says success, trust it even if verification fails
               if (stdout.includes('Successfully logged in')) {
-                console.log('[wrangler login] Stdout confirms login despite verification error');
                 resolve({
                   success: true,
                   email: 'Authenticated',
@@ -233,11 +219,9 @@ class AuthChecker {
         } else if (code !== null) {
           resolved = true;
           const errorMsg = stderr || stdout || `wrangler login exited with code ${code}`;
-          console.error('[wrangler login] Login failed:', errorMsg);
           reject(new Error(`Login failed: ${errorMsg}`));
         } else {
           // Process was killed or terminated
-          console.warn('[wrangler login] Process was terminated');
           resolved = true;
           // Still try to verify - user might have completed login before timeout
           setTimeout(() => {
@@ -262,13 +246,10 @@ class AuthChecker {
         if (resolved) return;
         resolved = true;
         cleanup();
-        console.error('[wrangler login] Process error:', error);
         reject(new Error(`Failed to start login process: ${error.message}. Make sure wrangler is installed and in your PATH.`));
       });
 
       // Log process start
-      console.log('[wrangler login] Process started, PID:', wranglerProcess.pid);
-      console.log('[wrangler login] Waiting for browser authentication...');
     });
   }
 
@@ -286,7 +267,6 @@ class AuthChecker {
       let stderr = '';
       let resolved = false;
       
-      console.log('[auth-checker] Starting gcloud login process...');
       
       const gcloudProcess = spawn('gcloud', ['auth', 'login'], {
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -304,19 +284,16 @@ class AuthChecker {
       gcloudProcess.stdout?.on('data', (data) => {
         const text = data.toString();
         stdout += text;
-        console.log('[gcloud login] stdout:', text.trim());
       });
 
       gcloudProcess.stderr?.on('data', (data) => {
         const text = data.toString();
         stderr += text;
-        console.log('[gcloud login] stderr:', text.trim());
       });
 
       // Set a timeout (10 minutes for login - user needs time to complete OAuth)
       const timeout = setTimeout(() => {
         if (!resolved) {
-          console.error('[gcloud login] Timeout reached, killing process');
           try {
             gcloudProcess.kill('SIGTERM');
             setTimeout(() => {
@@ -325,7 +302,6 @@ class AuthChecker {
               }
             }, 5000);
           } catch (e) {
-            console.error('[gcloud login] Error killing process:', e);
           }
           // Don't set resolved here - let the close handler set it
           reject(new Error('Login timeout: The login process took too long (10 minutes). Please complete the browser authentication and try again.'));
@@ -338,24 +314,18 @@ class AuthChecker {
 
       gcloudProcess.on('close', (code, signal) => {
         if (resolved) {
-          console.log('[gcloud login] Already resolved, ignoring close event');
           return; // Already handled
         }
         
         cleanup();
-        console.log(`[gcloud login] Process exited with code ${code}, signal ${signal}`);
-        console.log(`[gcloud login] stdout: ${stdout}`);
-        console.log(`[gcloud login] stderr: ${stderr}`);
         
         // Code 0 means success, null might mean killed but we'll check auth anyway
         if (code === 0 || (code === null && signal === null)) {
-          console.log('[gcloud login] Login process completed, verifying...');
           resolved = true; // Mark as resolved to prevent duplicate handling
           
           // Give it a moment for auth to settle
           setTimeout(() => {
             this.checkGCP().then(result => {
-              console.log('[gcloud login] Verification result:', result);
               if (result.authenticated) {
                 resolve({
                   success: true,
@@ -366,7 +336,6 @@ class AuthChecker {
               } else {
                 // Even if verification fails, if stdout indicates success, trust it
                 if (stdout.includes('You are now logged in') || stdout.includes('Successfully') || stdout.includes('Authenticated')) {
-                  console.log('[gcloud login] Stdout confirms login, treating as success');
                   resolve({
                     success: true,
                     accounts: result.accounts || [],
@@ -383,10 +352,8 @@ class AuthChecker {
                 }
               }
             }).catch(err => {
-              console.error('[gcloud login] Verification error:', err);
               // If stdout indicates success, trust it even if verification fails
               if (stdout.includes('You are now logged in') || stdout.includes('Successfully') || stdout.includes('Authenticated')) {
-                console.log('[gcloud login] Stdout confirms login despite verification error');
                 resolve({
                   success: true,
                   accounts: [],
@@ -401,11 +368,9 @@ class AuthChecker {
         } else if (code !== null) {
           resolved = true;
           const errorMsg = stderr || stdout || `gcloud auth login exited with code ${code}`;
-          console.error('[gcloud login] Login failed:', errorMsg);
           reject(new Error(`Login failed: ${errorMsg}`));
         } else {
           // Process was killed or terminated
-          console.warn('[gcloud login] Process was terminated');
           resolved = true;
           // Still try to verify - user might have completed login before timeout
           setTimeout(() => {
@@ -431,13 +396,10 @@ class AuthChecker {
         if (resolved) return;
         resolved = true;
         cleanup();
-        console.error('[gcloud login] Process error:', error);
         reject(new Error(`Failed to start login process: ${error.message}. Make sure gcloud is installed and in your PATH.`));
       });
 
       // Log process start
-      console.log('[gcloud login] Process started, PID:', gcloudProcess.pid);
-      console.log('[gcloud login] Waiting for browser authentication...');
     });
   }
 }

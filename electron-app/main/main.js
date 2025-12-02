@@ -5,28 +5,23 @@ const ConfigManager = require('./config-manager');
 const AuthChecker = require('./auth-checker');
 const AccountSwitcher = require('./account-switcher');
 const CommandRunner = require('./command-runner');
-// Import unified deployment utilities
 const { deployFromConfig } = require('../../deploy/deploy.js');
 
-// Auto-reload in development
 if (process.argv.includes('--dev')) {
   try {
     const electronPath = require('electron');
     const appRoot = path.join(__dirname, '..');
-    
+
     require('electron-reload')(appRoot, {
       electron: electronPath,
       hardResetMethod: 'exit',
-      // Watch all files in electron-app directory
       chokidar: {
         ignored: /node_modules|\.git|dist/,
         usePolling: true
       }
     });
-    
-    console.log('[DEV] Auto-reload enabled for:', appRoot);
   } catch (error) {
-    console.warn('[DEV] Failed to enable auto-reload:', error.message);
+    // Ignore auto-reload errors
   }
 }
 
@@ -71,7 +66,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  // Close database connection before quitting
   if (ConfigManager && typeof ConfigManager.close === 'function') {
     ConfigManager.close();
   }
@@ -111,12 +105,8 @@ ipcMain.handle('auth:check-gcp', async () => {
 
 ipcMain.handle('auth:login-cloudflare', async () => {
   try {
-    console.log('[main] Starting Cloudflare login...');
-    const result = await AuthChecker.loginCloudflare();
-    console.log('[main] Cloudflare login completed:', result);
-    return result;
+    return await AuthChecker.loginCloudflare();
   } catch (error) {
-    console.error('[main] Cloudflare login error:', error);
     return {
       success: false,
       error: error.message || 'Login failed',
@@ -127,12 +117,8 @@ ipcMain.handle('auth:login-cloudflare', async () => {
 
 ipcMain.handle('auth:login-gcp', async () => {
   try {
-    console.log('[main] Starting GCP login...');
-    const result = await AuthChecker.loginGCP();
-    console.log('[main] GCP login completed:', result);
-    return result;
+    return await AuthChecker.loginGCP();
   } catch (error) {
-    console.error('[main] GCP login error:', error);
     return {
       success: false,
       error: error.message || 'Login failed',
@@ -155,142 +141,79 @@ ipcMain.handle('account:switch-cloudflare', async (event, accountConfig) => {
   return await AccountSwitcher.switchCloudflare(accountConfig);
 });
 
-// Deployment
 ipcMain.handle('deployment:start', async (event, deploymentId) => {
   if (isDeploying) {
     return { success: false, error: 'Another deployment is already in progress' };
   }
 
   isDeploying = true;
-  
+
   try {
-    let config = ConfigManager.read();
+    const config = ConfigManager.read();
     const deployment = config.deployments.find(d => d.id === deploymentId);
-    
+
     if (!deployment) {
       throw new Error('Deployment not found');
     }
 
-    // Set up progress reporting
-    const reportProgress = (step, status, details, data) => {
-      const progressData = {
+    const reportProgress = (step, status, details) => {
+      mainWindow.webContents.send('deployment:progress', {
         deploymentId,
         step,
         status,
         details
-      };
-      
-      // Pass log data if available
-      if (data && data.log) {
-        progressData.log = data.log;
-      }
-      
-      mainWindow.webContents.send('deployment:progress', progressData);
+      });
     };
 
-    // Handle account switching before deployment
-    try {
-      if (deployment.gcp) {
-        if (deployment.gcp.accountEmail) {
-          const accountSwitch = await AccountSwitcher.switchGCPAccount(deployment.gcp.accountEmail);
-          if (!accountSwitch.success) {
-            throw new Error(`Failed to switch GCP account: ${accountSwitch.error}`);
-          }
-        }
-
-        if (deployment.gcp.projectId) {
-          const projectSwitch = await AccountSwitcher.switchGCPProject(deployment.gcp.projectId);
-          if (!projectSwitch.success) {
-            reportProgress('verify-gcp', 'warning',
-              `GCP verification failed: ${projectSwitch.error}`);
-          } else {
-            reportProgress('verify-gcp', 'completed',
-              projectSwitch.message || `GCP project: ${projectSwitch.projectId}`);
-          }
-        }
-      }
-
-      if (deployment.cloudflare) {
-        const cfSwitch = await AccountSwitcher.switchCloudflare(deployment.cloudflare);
-        if (!cfSwitch.success && cfSwitch.needsLogin) {
-          throw new Error(`Cloudflare authentication required: ${cfSwitch.error}`);
-        }
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-
-    // Get codebase path from config
-    const codebasePath = config.codebasePath || process.cwd();
-
-    // Perform deployment using unified utilities
-    // Convert deployment to flat config format (same as secrets.json)
     const deploymentConfig = {
       workerName: deployment.workerName,
       pagesProjectName: deployment.pagesProjectName,
       databaseName: deployment.databaseName,
       bucketName: deployment.bucketName,
-      RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY,
-      RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
-      RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
-      GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
-      GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || deployment.secrets?.GOOGLE_VERTEX_PROJECT_ID,
-      GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || deployment.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
-      GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT,
-      GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      cloudflare: {
+        accountId: deployment.cloudflare?.accountId || '',
+        apiToken: deployment.cloudflare?.apiToken || ''
+      },
+      gcp: {
+        projectId: deployment.gcp?.projectId || '',
+        serviceAccountKeyJson: deployment.gcp?.serviceAccountKeyJson || null
+      },
+      deployPages: true,
+      secrets: {
+        RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY,
+        RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST,
+        RAPIDAPI_ENDPOINT: deployment.RAPIDAPI_ENDPOINT || deployment.secrets?.RAPIDAPI_ENDPOINT,
+        GOOGLE_VISION_API_KEY: deployment.GOOGLE_VISION_API_KEY || deployment.secrets?.GOOGLE_VISION_API_KEY,
+        GOOGLE_VERTEX_PROJECT_ID: deployment.GOOGLE_VERTEX_PROJECT_ID || deployment.secrets?.GOOGLE_VERTEX_PROJECT_ID,
+        GOOGLE_VERTEX_LOCATION: deployment.GOOGLE_VERTEX_LOCATION || deployment.secrets?.GOOGLE_VERTEX_LOCATION || 'us-central1',
+        GOOGLE_VISION_ENDPOINT: deployment.GOOGLE_VISION_ENDPOINT || deployment.secrets?.GOOGLE_VISION_ENDPOINT,
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: deployment.GOOGLE_SERVICE_ACCOUNT_EMAIL || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: deployment.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || deployment.secrets?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      }
     };
 
-    const result = await deployFromConfig(deploymentConfig, reportProgress, codebasePath);
-    
-    // Save deployment history to config
-    // Re-read config to get latest state before saving history
-    const updatedConfig = ConfigManager.read();
-    const deploymentRecord = updatedConfig.deployments.find(d => d.id === deploymentId);
-      
-    if (deploymentRecord) {
-        // Initialize history array if not exists
-      if (!deploymentRecord.history) {
-        deploymentRecord.history = [];
-        }
+    const result = await deployFromConfig(deploymentConfig, reportProgress, config.codebasePath || process.cwd());
 
-      // Create history entry
+    if (result.success) {
       const historyEntry = {
         id: `${deploymentId}-${Date.now()}`,
         timestamp: new Date().toISOString(),
         endTime: new Date().toISOString(),
-        status: result.success ? 'success' : 'failed',
-        error: result.success ? undefined : result.error,
+        status: 'success',
         results: {
           workerUrl: result.workerUrl,
           pagesUrl: result.pagesUrl
-        },
-        steps: [], // Steps will be populated by frontend
-        fullLogs: [] // Logs will be populated by frontend
-      };
-        
-      // Save to database table
-      ConfigManager.saveDeploymentHistory(deploymentId, historyEntry);
-        
-        // Add new deployment history (keep last 50 deployments)
-      deploymentRecord.history.unshift(historyEntry);
-      if (deploymentRecord.history.length > 50) {
-        deploymentRecord.history = deploymentRecord.history.slice(0, 50);
         }
-        
-        // Save updated config
-      ConfigManager.write(updatedConfig);
+      };
+
+      ConfigManager.saveDeploymentHistory(deploymentId, historyEntry);
     }
-    
+
     return result;
   } catch (error) {
     return {
       success: false,
-      error: error.message,
-      stack: error.stack
+      error: error.message
     };
   } finally {
     isDeploying = false;
@@ -301,7 +224,6 @@ ipcMain.handle('deployment:check-status', async () => {
   return { isDeploying };
 });
 
-// Deploy from JSON configuration (same as CLI)
 ipcMain.handle('deployment:from-config', async (event, configObject, deploymentId) => {
   if (isDeploying) {
     return { success: false, error: 'Another deployment is already in progress' };
@@ -310,37 +232,22 @@ ipcMain.handle('deployment:from-config', async (event, configObject, deploymentI
   isDeploying = true;
 
   try {
-    // Get codebase path from config
     const config = ConfigManager.read();
-    const codebasePath = config.codebasePath || process.cwd();
-
-    // Set up progress reporting
-    const reportProgress = (step, status, details, data) => {
-      const progressData = {
+    const reportProgress = (step, status, details) => {
+      mainWindow.webContents.send('deployment:progress', {
         deploymentId: deploymentId || 'direct-deployment',
         step,
         status,
         details
-      };
-
-      if (data && data.log) {
-        progressData.log = data.log;
-      }
-
-      mainWindow.webContents.send('deployment:progress', progressData);
+      });
     };
 
-    const result = await deployFromConfig(configObject, reportProgress, codebasePath);
-
-    return {
-      success: true,
-      result
-    };
+    const result = await deployFromConfig(configObject, reportProgress, config.codebasePath || process.cwd());
+    return result;
   } catch (error) {
     return {
       success: false,
-      error: error.message,
-      stack: error.stack
+      error: error.message
     };
   } finally {
     isDeploying = false;
