@@ -1479,7 +1479,7 @@ window.deploymentForm = {
           accountId: (formCfAccountIdEl?.value || '').trim(),
           email: (formCfEmailEl?.value || '').trim()
         },
-        // Flat structure for CLI compatibility (same as secrets.json)
+        // Flat structure for CLI compatibility (same as deployments-secrets.json)
         workerName: formWorkerNameEl.value.trim(),
         pagesProjectName: formPagesNameEl.value.trim(),
         databaseName: (formDatabaseNameEl?.value || '').trim(),
@@ -1518,8 +1518,8 @@ window.deploymentForm = {
         hasSecrets: !!(deployment.RAPIDAPI_KEY || deployment.GOOGLE_VISION_API_KEY)
       });
 
-      // Validate flat structure (same as secrets.json format)
-      // The saveDeployment function expects flat structure, not nested
+      // Validate flat structure (same as deployments-secrets.json format)
+      // The saveDeployment function expects flat structure, not nested (for deployments-secrets.json format)
       const flatDeploymentForValidation = {
         workerName: deployment.workerName?.trim() || '',
         pagesProjectName: deployment.pagesProjectName?.trim() || '',

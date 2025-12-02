@@ -193,11 +193,38 @@ function parseCliArgs() {
     process.exit(1);
   }
 
+  if (args.length === 0 || !args[0]) {
+    console.error('Error: Environment name is required.');
+    console.error('Usage: node deploy.js <env-name>');
+    console.error('');
+    console.error('Available environments:');
+    try {
+      const configPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
+      if (fs.existsSync(configPath)) {
+        const content = fs.readFileSync(configPath, 'utf8');
+        const config = JSON.parse(content);
+        if (config.environments) {
+          Object.keys(config.environments).forEach(env => {
+            console.error(`  - ${env}`);
+          });
+        }
+      }
+    } catch (e) {
+      console.error('  Could not read deployments-secrets.json to list environments');
+    }
+    process.exit(1);
+  }
+
   return { envName: args[0] };
 }
 
 // Load configuration from deployments-secrets.json with environment support
 function loadDeploymentConfig(envName) {
+  if (!envName) {
+    console.error('Error: Environment name is required but was not provided.');
+    process.exit(1);
+  }
+
   const configPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
 
   try {
@@ -210,9 +237,15 @@ function loadDeploymentConfig(envName) {
     const content = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(content);
 
-    if (!config.environments || !config.environments[envName]) {
+    if (!config.environments) {
+      console.error('Error: No "environments" section found in deployments-secrets.json');
+      console.error('Expected format: { "environments": { "env-name": { ... } } }');
+      process.exit(1);
+    }
+
+    if (!config.environments[envName]) {
       console.error(`Error: Environment "${envName}" not found in deployments-secrets.json`);
-      console.error(`Available environments: ${Object.keys(config.environments || {}).join(', ')}`);
+      console.error(`Available environments: ${Object.keys(config.environments).join(', ')}`);
       process.exit(1);
     }
 
@@ -1158,20 +1191,11 @@ const deploymentUtils = {
     if (!databaseName) {
       throw new Error('databaseName is required. It must be specified in deployments-secrets.json');
     }
-    // Check cache first
-    const cache = loadCache();
-    const cacheKey = `d1Database_${databaseName}`;
-    if (cache.checks && cache.checks[cacheKey] === true) {
-      if (reportProgress) reportProgress('check-d1', 'completed', `D1 database '${databaseName}' exists`);
-      return;
-    }
-    
+    // Always ensure database exists and get its ID (deployWorker needs the ID)
+    console.log(`[Deploy] Ensuring D1 database exists: ${databaseName}`);
+
     try {
-      const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-      if (accountId) {
-        this.updateWranglerAccountId(codebasePath, accountId);
-      }
-      
+      // No need to update wrangler.jsonc - account_id is set via environment variable
       const listResult = await this.executeWithLogs('wrangler d1 list', codebasePath, 'check-d1', reportProgress);
       const output = listResult.stdout || '';
       const databaseExists = output && output.includes(databaseName);
@@ -1323,35 +1347,52 @@ const deploymentUtils = {
           }
         }
       }
-      
-      // Always update wrangler.jsonc with the correct database binding
-      // This ensures the binding matches even if database already existed
-      console.log(`[Deploy] Updating wrangler.jsonc with D1 database binding for: ${databaseName}`);
-      const d1UpdateResult = this.updateWranglerD1Database(codebasePath, databaseName);
-      if (d1UpdateResult !== null) {
-        wranglerD1Updated = true;
-        wranglerD1UpdateContent = d1UpdateResult;
-        console.log(`[Deploy] Successfully updated wrangler.jsonc with D1 database binding`);
-      } else {
-        console.warn(`[Deploy] Failed to update wrangler.jsonc with D1 database binding - deployment may fail`);
+
+      // Always get and store database ID for deployment
+      console.log(`[Deploy] Getting D1 database ID for: ${databaseName}`);
+      const finalDatabaseId = this.getD1DatabaseId(codebasePath, databaseName);
+      if (!finalDatabaseId) {
+        throw new Error(`ERROR: Could not get database_id for '${databaseName}'. Cannot proceed with deployment.`);
       }
-      
+      console.log(`[Deploy] ✓ Found database_id: ${finalDatabaseId}`);
+
+      // Store database ID in cache for deployment (will be used to create temp wrangler.jsonc)
+      const idCache = loadCache();
+      idCache.databaseId = finalDatabaseId;
+      saveCache(idCache);
+
       if (reportProgress) reportProgress('check-d1', 'completed', 'D1 database OK');
       // Cache the result
-      cache.checks = cache.checks || {};
-      cache.checks[cacheKey] = true;
-      saveCache(cache);
+      const checkCache = loadCache();
+      checkCache.checks = checkCache.checks || {};
+      checkCache.checks[cacheKey] = true;
+      saveCache(checkCache);
     } catch (error) {
-      // Database might already exist - non-fatal
-      // Still cache as OK if it's a non-critical error
       const errorMessage = error.message || error.toString() || '';
+      console.warn(`[Deploy] D1 database setup warning: ${errorMessage}`);
+
+      // For non-critical errors, still try to get the database ID if possible
+      const dbCacheKey = `d1Database_${databaseName}`;
       if (errorMessage.includes('already exists') || errorMessage.includes('no such table')) {
-        const cacheAfter = loadCache();
-        cacheAfter.checks = cacheAfter.checks || {};
-        cacheAfter.checks[cacheKey] = true;
-        saveCache(cacheAfter);
-      }
-      if (!errorMessage.includes('already exists')) {
+        console.log('[Deploy] Database appears to exist despite error, continuing...');
+        const errorCache = loadCache();
+        errorCache.checks = errorCache.checks || {};
+        errorCache.checks[dbCacheKey] = true;
+        saveCache(errorCache);
+      } else {
+        // Try to get database ID even if there were errors
+        console.log('[Deploy] Attempting to get database ID despite errors...');
+        const emergencyDbId = this.getD1DatabaseId(codebasePath, databaseName);
+        if (emergencyDbId) {
+          console.log(`[Deploy] ✓ Emergency database ID retrieval successful: ${emergencyDbId}`);
+          const emergencyCache = loadCache();
+          emergencyCache.databaseId = emergencyDbId;
+          emergencyCache.checks = emergencyCache.checks || {};
+          emergencyCache.checks[dbCacheKey] = true;
+          saveCache(emergencyCache);
+          if (reportProgress) reportProgress('check-d1', 'completed', 'D1 database OK (emergency recovery)');
+          return;
+        }
         throw error;
       }
     }
@@ -1371,37 +1412,8 @@ const deploymentUtils = {
     try {
       fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), 'utf8');
 
-      // Temporarily remove pages_build_output_dir from wrangler.jsonc to avoid Pages project detection
-      // This allows wrangler secret bulk to target the Worker instead of Pages
-      if (fs.existsSync(wranglerConfigPath)) {
-        try {
-          originalConfigContent = fs.readFileSync(wranglerConfigPath, 'utf8');
-          // Parse JSONC (remove comments)
-          const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-          const config = JSON.parse(jsonContent);
-          
-          // Remove both pages_build_output_dir and site fields to prevent Pages project detection
-          // Wrangler detects Pages projects by either of these fields
-          // Preserve account_id if it exists
-          const preservedAccountId = config.account_id;
-          if (config.pages_build_output_dir || config.site) {
-            if (config.pages_build_output_dir) {
-              delete config.pages_build_output_dir;
-            }
-            if (config.site) {
-              delete config.site;
-            }
-            if (preservedAccountId) {
-              config.account_id = preservedAccountId;
-            }
-            fs.writeFileSync(wranglerConfigPath, JSON.stringify(config, null, '\t'), 'utf8');
-            configModified = true;
-            console.log('[Deploy] Temporarily removed pages_build_output_dir and site fields for secret deployment');
-          }
-        } catch (configError) {
-          console.warn('[Deploy] Could not modify wrangler.jsonc:', configError.message);
-        }
-      }
+      // Temporary wrangler.jsonc should already exist from deployWorker
+      // No need to modify it - it's already configured correctly
 
       // Deploy secrets using wrangler - explicitly specify worker name to avoid Pages project detection
       // Use --name flag to ensure we're deploying to the Worker, not Pages
@@ -1431,17 +1443,7 @@ const deploymentUtils = {
       
       return result;
     } finally {
-      // Restore original wrangler.jsonc if we modified it
-      if (configModified && originalConfigContent) {
-        try {
-          fs.writeFileSync(wranglerConfigPath, originalConfigContent, 'utf8');
-          console.log('[Deploy] Restored pages_build_output_dir and site fields in wrangler.jsonc');
-        } catch (restoreError) {
-          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
-        }
-      }
-      
-      // Clean up temporary file
+      // Clean up temporary secrets file
       if (fs.existsSync(secretsPath)) {
         try {
           fs.unlinkSync(secretsPath);
@@ -1449,81 +1451,66 @@ const deploymentUtils = {
           // Ignore cleanup errors
         }
       }
+      // Note: wrangler.jsonc cleanup happens in performDeployment finally block
     }
   },
 
-  async deployWorker(codebasePath, workerName, reportProgress) {
+  async enableWorkersDevSubdomain(accountId, apiToken) {
+    try {
+      console.log('[Deploy] Attempting to enable workers.dev subdomain via API...');
+
+      const curlCommand = 'curl -X PUT "https://api.cloudflare.com/client/v4/accounts/' + accountId + '/workers/subdomain" -H "Authorization: Bearer ' + apiToken + '" -H "Content-Type: application/json" --data \'{"enabled": true}\' --silent --show-error';
+
+      const result = execCommand(curlCommand, { silent: true, throwOnError: false });
+
+      if (result && result.includes('"success":true')) {
+        console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain');
+        return true;
+      } else {
+        console.log('[Deploy] ⚠️  Could not enable workers.dev subdomain via API (may already be enabled or API call failed)');
+        return false;
+      }
+    } catch (error) {
+      console.log('[Deploy] ⚠️  Error enabling workers.dev subdomain:', error.message);
+      return false;
+    }
+  },
+
+  async deployWorker(codebasePath, workerName, databaseName, config, reportProgress) {
+    if (!databaseName) {
+      throw new Error('databaseName is required for deployWorker. It must come from deployments-secrets.json');
+    }
+    if (!config) {
+      throw new Error('config is required for deployWorker. It must come from deployments-secrets.json');
+    }
+
     if (reportProgress) reportProgress('deploy-worker', 'running', `Deploying Worker: ${workerName}...`);
 
-    // Verify D1 database binding exists before deployment
-    const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-    if (fs.existsSync(wranglerPath)) {
-      try {
-        const configContent = fs.readFileSync(wranglerPath, 'utf8');
-        const jsonContent = configContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-        const wranglerConfig = JSON.parse(jsonContent);
-        
-        if (wranglerConfig.d1_databases && wranglerConfig.d1_databases.length > 0) {
-          for (const db of wranglerConfig.d1_databases) {
-            if (!db.database_id) {
-              throw new Error(`D1 database binding '${db.binding}' is missing database_id in wrangler.jsonc. This will cause deployment to fail.`);
-            }
-            if (!db.database_name) {
-              throw new Error(`D1 database binding '${db.binding}' is missing database_name in wrangler.jsonc. This will cause deployment to fail.`);
-            }
-            // Verify database exists
-            const dbInfo = execCommand(`wrangler d1 info ${db.database_name}`, { silent: true, throwOnError: false });
-            if (!dbInfo || !dbInfo.includes(db.database_id)) {
-              console.warn(`[Deploy] WARNING: Database '${db.database_name}' (${db.database_id}) may not exist or ID mismatch`);
-              console.warn(`[Deploy] This may cause deployment error 10021. Verifying...`);
-            } else {
-              console.log(`[Deploy] Verified D1 database binding: ${db.binding} -> ${db.database_name} (${db.database_id})`);
-            }
-          }
-        }
-      } catch (error) {
-        if (error.message.includes('missing database_id') || error.message.includes('missing database_name')) {
-          throw error;
-        }
-        console.warn(`[Deploy] Could not verify D1 binding: ${error.message}`);
-      }
+    // Get database ID from cache (set during ensureD1Database)
+    const cache = loadCache();
+    const databaseId = cache.databaseId;
+    if (!databaseId) {
+      throw new Error(`ERROR: Database ID not found. Ensure D1 database '${databaseName}' exists before deployment.`);
     }
 
-    // Temporarily remove pages_build_output_dir from wrangler.jsonc to avoid Pages project detection
-    let originalConfigContent = null;
-    let configModified = false;
-    
-    if (fs.existsSync(wranglerPath)) {
-      try {
-        originalConfigContent = fs.readFileSync(wranglerPath, 'utf8');
-        // Parse JSONC (remove comments)
-        const jsonContent = originalConfigContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-        const wranglerConfig = JSON.parse(jsonContent);
-        
-        // Remove both pages_build_output_dir and site fields to prevent Pages project detection
-        // Wrangler detects Pages projects by either of these fields
-        // Preserve account_id if it exists
-        const preservedAccountId = wranglerConfig.account_id;
-        if (wranglerConfig.pages_build_output_dir || wranglerConfig.site) {
-          if (wranglerConfig.pages_build_output_dir) {
-            delete wranglerConfig.pages_build_output_dir;
-          }
-          if (wranglerConfig.site) {
-            delete wranglerConfig.site;
-          }
-          if (preservedAccountId) {
-            wranglerConfig.account_id = preservedAccountId;
-          }
-          fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
-          configModified = true;
-          console.log('[Deploy] Temporarily removed pages_build_output_dir and site fields for worker deployment');
-        }
-      } catch (configError) {
-        console.warn('[Deploy] Could not modify wrangler.jsonc:', configError.message);
-      }
+    // CREATE TEMPORARY WRANGLER.JSONC - will be deleted after deployment
+    const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
+    const tempConfigCreated = this.createTempWranglerConfig(codebasePath, config, databaseId, false);
+    if (!tempConfigCreated) {
+      throw new Error('ERROR: Failed to create temporary wrangler.jsonc for deployment.');
     }
+
+    // Try to enable workers.dev subdomain automatically (but continue even if it fails)
+    const subdomainEnabled = await this.enableWorkersDevSubdomain(config.cloudflare.accountId, config.cloudflare.apiToken);
 
     try {
+      // Verify database exists and ID matches
+      const dbInfo = execCommand(`wrangler d1 info ${databaseName}`, { silent: true, throwOnError: false });
+      if (!dbInfo || !dbInfo.includes(databaseId)) {
+        throw new Error(`ERROR: Database '${databaseName}' (${databaseId}) does not exist or ID mismatch. This will cause deployment error 10021.`);
+      }
+      console.log(`[Deploy] ✓ Verified D1 database: ${databaseName} (${databaseId})`);
+
       let result = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
 
       // Handle error 10214: Can't edit settings on non-deployed worker
@@ -1648,19 +1635,11 @@ const deploymentUtils = {
       }
     }
 
-    if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
-      // Don't log here - already logged in executeWithLogs
-    return workerUrl;
+      if (reportProgress) reportProgress('deploy-worker', 'completed', `Worker deployed: ${workerUrl}`);
+      return workerUrl;
     } finally {
-      // Restore original wrangler.jsonc if we modified it
-      if (configModified && originalConfigContent) {
-        try {
-          fs.writeFileSync(wranglerPath, originalConfigContent, 'utf8');
-          console.log('[Deploy] Restored pages_build_output_dir in wrangler.jsonc after worker deployment');
-        } catch (restoreError) {
-          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
-        }
-      }
+      // ALWAYS DELETE TEMPORARY WRANGLER.JSONC - it was only created for deployment
+      this.deleteTempWranglerConfig(codebasePath);
     }
   },
 
@@ -1764,62 +1743,83 @@ const deploymentUtils = {
     }
   },
 
-  updateWranglerAccountId(codebasePath, accountId) {
-    if (!accountId) return null;
-    
+  createTempWranglerConfig(codebasePath, config, databaseId, subdomainEnabled = false) {
     const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-    if (!fs.existsSync(wranglerPath)) {
-      console.warn('[Deploy] wrangler.jsonc not found, cannot set account_id');
-      return null;
-    }
-    
     try {
-      const originalContent = fs.readFileSync(wranglerPath, 'utf8');
-      const jsonContent = originalContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-      const config = JSON.parse(jsonContent);
-      
-      if (config.account_id === accountId) {
-        return null;
-      }
-      
-      config.account_id = accountId;
-      fs.writeFileSync(wranglerPath, JSON.stringify(config, null, '\t'), 'utf8');
-      console.log(`[Deploy] Set account_id in wrangler.jsonc: ${accountId}`);
-      return originalContent;
+      const wranglerConfig = {
+        "name": config.workerName,
+        "main": "src/index.ts",
+        "compatibility_date": "2025-03-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "observability": {
+          "enabled": true,
+          "head_sampling_rate": 1
+        },
+        "r2_buckets": [
+          {
+            "binding": "FACESWAP_IMAGES",
+            "bucket_name": config.bucketName
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "DB",
+            "database_name": config.databaseName,
+            "database_id": databaseId || ""
+          }
+        ],
+        "account_id": config.cloudflare.accountId
+      };
+
+      // Note: workers.dev subdomain should be enabled manually if needed
+      // The deployment will attempt to proceed and provide clear error messages if subdomain is required
+      console.log(`[Deploy] 📋 Note: If deployment fails due to workers.dev subdomain, visit:`);
+      console.log(`[Deploy]     https://dash.cloudflare.com/${config.cloudflare.accountId}/workers/onboarding`);
+
+      fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, '\t'), 'utf8');
+      return wranglerPath;
     } catch (error) {
-      console.warn('[Deploy] Could not update wrangler.jsonc with account_id:', error.message);
+      console.error(`[Deploy] Failed to create temporary wrangler.jsonc: ${error.message}`);
       return null;
     }
   },
 
-  updateWranglerD1Database(codebasePath, databaseName) {
-    if (!databaseName) {
-      console.warn('[Deploy] Database name not provided for wrangler.jsonc update');
-      return null;
-    }
-    
+  deleteTempWranglerConfig(codebasePath) {
     const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-    if (!fs.existsSync(wranglerPath)) {
-      console.warn('[Deploy] wrangler.jsonc not found, cannot update D1 database binding');
+    if (fs.existsSync(wranglerPath)) {
+      try {
+        fs.unlinkSync(wranglerPath);
+        console.log('[Deploy] Deleted temporary wrangler.jsonc');
+      } catch (error) {
+        console.warn('[Deploy] Could not delete temporary wrangler.jsonc:', error.message);
+      }
+    }
+  },
+
+
+  getD1DatabaseId(codebasePath, databaseName) {
+    if (!databaseName) {
       return null;
     }
-    
+
     try {
       // Get database ID using wrangler d1 info (most reliable method)
       let databaseId = null;
-      
+
       // Method 1: Use wrangler d1 info command (most direct)
       const infoOutput = execCommand(`wrangler d1 info ${databaseName}`, { silent: true, throwOnError: false });
       if (infoOutput) {
         // Extract database_id from info output
-        const idMatch = infoOutput.match(/database_id["\s:]+([a-f0-9-]{36})/i) || 
+        const idMatch = infoOutput.match(/database_id["\s:]+([a-f0-9-]{36})/i) ||
                        infoOutput.match(/id["\s:]+([a-f0-9-]{36})/i) ||
                        infoOutput.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
         if (idMatch) {
           databaseId = idMatch[1];
         }
       }
-      
+
       // Method 2: Try JSON format from list
       if (!databaseId) {
         const jsonOutput = execCommand('wrangler d1 list --json', { silent: true, throwOnError: false });
@@ -1827,8 +1827,8 @@ const deploymentUtils = {
           try {
             const databases = JSON.parse(jsonOutput);
             if (Array.isArray(databases)) {
-              const database = databases.find(db => 
-                db.name === databaseName || 
+              const database = databases.find(db =>
+                db.name === databaseName ||
                 db.database_name === databaseName ||
                 (db.name && db.name.toLowerCase() === databaseName.toLowerCase())
               );
@@ -1837,8 +1837,8 @@ const deploymentUtils = {
               }
             } else if (databases && databases.result && Array.isArray(databases.result)) {
               // Some versions return { result: [...] }
-              const database = databases.result.find(db => 
-                db.name === databaseName || 
+              const database = databases.result.find(db =>
+                db.name === databaseName ||
                 db.database_name === databaseName ||
                 (db.name && db.name.toLowerCase() === databaseName.toLowerCase())
               );
@@ -1851,7 +1851,7 @@ const deploymentUtils = {
           }
         }
       }
-      
+
       // Method 3: Try text format from list
       if (!databaseId) {
         const textOutput = execCommand('wrangler d1 list', { silent: true, throwOnError: false });
@@ -1873,7 +1873,7 @@ const deploymentUtils = {
           }
         }
       }
-      
+
       if (!databaseId) {
         console.error(`[Deploy] ERROR: Could not find database_id for '${databaseName}'`);
         console.error('[Deploy] Attempted methods: wrangler d1 info, wrangler d1 list --json, wrangler d1 list');
@@ -1882,47 +1882,13 @@ const deploymentUtils = {
         console.error(`[Deploy]   1. Database '${databaseName}' exists in Cloudflare dashboard`);
         console.error(`[Deploy]   2. You have access to the correct Cloudflare account`);
         console.error(`[Deploy]   3. Run: wrangler d1 list (to see all databases)`);
-        throw new Error(`Database '${databaseName}' not found. Cannot update wrangler.jsonc binding.`);
-      }
-      
-      console.log(`[Deploy] ✓ Found database_id for '${databaseName}': ${databaseId}`);
-      
-      const originalContent = fs.readFileSync(wranglerPath, 'utf8');
-      const jsonContent = originalContent.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-      const config = JSON.parse(jsonContent);
-      
-      // Update or create d1_databases array
-      if (!config.d1_databases) {
-        config.d1_databases = [];
-      }
-      
-      // Find existing DB binding or create new one
-      let dbBinding = config.d1_databases.find(db => db.binding === 'DB');
-      if (!dbBinding) {
-        dbBinding = { binding: 'DB' };
-        config.d1_databases.push(dbBinding);
-      }
-      
-      // Always update database name and ID to ensure they match
-      const oldName = dbBinding.database_name;
-      const oldId = dbBinding.database_id;
-      dbBinding.database_name = databaseName;
-      dbBinding.database_id = databaseId;
-      
-      // Write the updated config
-      fs.writeFileSync(wranglerPath, JSON.stringify(config, null, '\t'), 'utf8');
-      
-      if (oldName !== databaseName || oldId !== databaseId) {
-        console.log(`[Deploy] Updated D1 database binding in wrangler.jsonc:`);
-        console.log(`[Deploy]   Old: ${oldName || 'N/A'} (${oldId || 'N/A'})`);
-        console.log(`[Deploy]   New: ${databaseName} (${databaseId})`);
-        return originalContent;
-      } else {
-        console.log(`[Deploy] D1 database binding already correct: ${databaseName} (${databaseId})`);
         return null;
       }
+
+      console.log(`[Deploy] ✓ Found database_id for '${databaseName}': ${databaseId}`);
+      return databaseId;
     } catch (error) {
-      console.warn('[Deploy] Could not update wrangler.jsonc with D1 database:', error.message);
+      console.error(`[Deploy] Error getting database_id: ${error.message}`);
       return null;
     }
   },
@@ -1930,7 +1896,16 @@ const deploymentUtils = {
   async performDeployment(config = {}, reportProgress) {
     // STRICT VALIDATION - NO DEFAULTS ALLOWED
     // All values MUST come from deployments-secrets.json to prevent configuration mismatches
-    
+
+    // Critical validation - ensure config has all required fields
+    const requiredFields = ['workerName', 'pagesProjectName', 'databaseName', 'bucketName'];
+    const missingFields = requiredFields.filter(field => !config[field]);
+
+    if (missingFields.length > 0) {
+      throw new Error(`ERROR: Missing required config fields: ${missingFields.join(', ')}. Config must come from deployments-secrets.json with proper environment structure.`);
+    }
+
+    // Additional validation for clarity
     if (!config.workerName) {
       throw new Error('ERROR: workerName is required in deployments-secrets.json. Cannot proceed without it.');
     }
@@ -1943,13 +1918,16 @@ const deploymentUtils = {
     if (!config.bucketName) {
       throw new Error('ERROR: bucketName is required in deployments-secrets.json. Cannot proceed without it.');
     }
-    
+
     const codebasePath = config.codebasePath || process.cwd();
     const workerName = config.workerName;
     const pagesProjectName = config.pagesProjectName;
     const databaseName = config.databaseName;
     const bucketName = config.bucketName;
     const secrets = config.secrets;
+
+    // NO WRANGLER.JSONC CREATION - All configuration comes from deployments-secrets.json
+    // Temporary config file will be created only during deployment and deleted immediately after
     
     const savedCredentials = loadCredentials();
     const savedAccountId = savedCredentials?.cloudflare?.accountId;
@@ -1957,13 +1935,10 @@ const deploymentUtils = {
 
     let workerUrl = '';
     let pagesUrl = '';
-    let originalWranglerContent = null;
-    let wranglerD1Updated = false;
 
     try {
-      // Step 0: Set account_id in wrangler.jsonc and environment variable if provided
+      // Step 0: Set account_id in environment variable (no wrangler.jsonc needed)
       if (accountId) {
-        originalWranglerContent = this.updateWranglerAccountId(codebasePath, accountId);
         process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
         console.log(`[Deploy] Set CLOUDFLARE_ACCOUNT_ID environment variable: ${accountId}`);
       }
@@ -2063,7 +2038,7 @@ const deploymentUtils = {
 
       // Step 6: Deploy Worker first (creates the worker if it doesn't exist)
       // This must happen before secrets deployment to avoid error 10214
-      workerUrl = await this.deployWorker(codebasePath, workerName, reportProgress);
+      workerUrl = await this.deployWorker(codebasePath, workerName, databaseName, config, reportProgress);
 
       // Step 7: Deploy secrets (now that worker exists)
       if (secrets) {
@@ -2087,19 +2062,8 @@ const deploymentUtils = {
         pagesUrl
       };
     } finally {
-      // Only restore wrangler.jsonc if D1 database wasn't updated
-      // D1 database binding updates should persist
-      if (originalWranglerContent && !wranglerD1Updated) {
-        try {
-          const wranglerPath = path.join(codebasePath, 'wrangler.jsonc');
-          fs.writeFileSync(wranglerPath, originalWranglerContent, 'utf8');
-          console.log('[Deploy] Restored original wrangler.jsonc');
-        } catch (restoreError) {
-          console.warn('[Deploy] Could not restore wrangler.jsonc:', restoreError.message);
-        }
-      } else if (wranglerD1Updated) {
-        console.log('[Deploy] Keeping D1 database binding update in wrangler.jsonc');
-      }
+      // ALWAYS DELETE TEMPORARY WRANGLER.JSONC - it was only created during deployment
+      this.deleteTempWranglerConfig(codebasePath);
     }
   }
 };
@@ -2191,7 +2155,23 @@ async function main() {
   const result = await deploymentUtils.performDeployment(deploymentConfig, null);
 
   if (!result.success) {
-    log.error(`Deployment failed: ${result.error}`);
+    const errorMessage = result.error || 'Unknown error';
+
+    // Check for workers.dev subdomain error and provide better guidance
+    if (errorMessage.includes('workers.dev subdomain') || errorMessage.includes('register a workers.dev subdomain')) {
+      log.error('🚫 DEPLOYMENT FAILED: workers.dev subdomain required');
+      console.log('');
+      console.log('📋 SOLUTION: Register your workers.dev subdomain');
+      console.log(`   1. Visit: https://dash.cloudflare.com/${deploymentConfig.cloudflare?.accountId || 'your-account'}/workers/onboarding`);
+      console.log('   2. Click "Register workers.dev subdomain"');
+      console.log('   3. Choose and confirm your subdomain (e.g., yourname.workers.dev)');
+      console.log('   4. Run deployment again: node deploy.js ai-office-dev');
+      console.log('');
+      console.log('💡 This is required for Cloudflare Workers to have default *.workers.dev URLs');
+      console.log('   (You can still use custom domains later if needed)');
+    } else {
+      log.error(`Deployment failed: ${errorMessage}`);
+    }
     process.exit(1);
   }
 

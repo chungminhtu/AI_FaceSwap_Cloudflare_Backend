@@ -12,10 +12,10 @@ class ConfigManager {
     this.db = null;
     this.initDatabase();
     
-    // secrets.json path must be in project root (same as CLI uses)
+    // deployments-secrets.json path (updated from secrets.json)
     // __dirname is electron-app/main, so go up two levels to project root
     const projectRoot = path.resolve(__dirname, '../..');
-    this.secretsPath = path.join(projectRoot, 'secrets.json');
+    this.secretsPath = path.join(projectRoot, 'deploy', 'deployments-secrets.json');
   }
 
   initDatabase() {
@@ -124,7 +124,7 @@ class ConfigManager {
     };
   }
 
-  // Read secrets.json (same format as CLI)
+  // Read deployments-secrets.json
   readSecretsFile() {
     try {
       if (!fs.existsSync(this.secretsPath)) {
@@ -133,15 +133,15 @@ class ConfigManager {
       const content = fs.readFileSync(this.secretsPath, 'utf8');
       return JSON.parse(content);
     } catch (error) {
-      console.error('[ConfigManager] Error reading secrets.json:', error);
+      console.error('[ConfigManager] Error reading deployments-secrets.json:', error);
       return null;
     }
   }
 
-  // Write secrets.json (same format as CLI)
+  // Write deployments-secrets.json
   writeSecretsFile(config) {
     try {
-      // Convert to flat format for secrets.json
+      // Convert to flat format for deployments-secrets.json
       const flatConfig = {
         workerName: config.workerName,
         pagesProjectName: config.pagesProjectName,
@@ -168,7 +168,7 @@ class ConfigManager {
       fs.writeFileSync(this.secretsPath, JSON.stringify(flatConfig, null, 2), 'utf8');
       return { success: true };
     } catch (error) {
-      console.error('[ConfigManager] Error writing secrets.json:', error);
+      console.error('[ConfigManager] Error writing deployments-secrets.json:', error);
       return { success: false, error: error.message };
     }
   }
@@ -198,15 +198,15 @@ class ConfigManager {
         }
       }
 
-      // Read deployment config from secrets.json (same as CLI)
+      // Read deployment config from deployments-secrets.json
       const secretsConfig = this.readSecretsFile();
       let deployment = null;
 
       if (secretsConfig) {
-        // Convert flat secrets.json to deployment object
+        // Convert flat deployments-secrets.json to deployment object
         // NO DEFAULT VALUES - if name is missing, deployment will be null
         if (!secretsConfig.name || secretsConfig.name.trim() === '') {
-          console.warn('[ConfigManager] secrets.json has no name, skipping deployment');
+          console.warn('[ConfigManager] deployments-secrets.json has no name, skipping deployment');
           deployment = null;
         } else {
           deployment = {
@@ -323,7 +323,7 @@ class ConfigManager {
           return deployment;
         });
       } else if (deployment) {
-        // Fallback: use deployment from secrets.json if no SQLite deployments
+        // Fallback: use deployment from deployments-secrets.json if no SQLite deployments
         deployments = [deployment];
       }
 
@@ -518,7 +518,7 @@ class ConfigManager {
         });
         transaction();
 
-        // Also write first deployment to secrets.json (for CLI compatibility)
+        // Also write first deployment to deployments-secrets.json (for CLI compatibility)
         // Only write if there's at least one deployment with required fields
         if (config.deployments && config.deployments.length > 0) {
           const firstDeployment = config.deployments[0];
@@ -526,14 +526,14 @@ class ConfigManager {
           if (firstDeployment && firstDeployment.workerName && firstDeployment.pagesProjectName) {
             const writeResult = this.writeSecretsFile(firstDeployment);
             if (!writeResult.success) {
-              console.warn('[ConfigManager] Failed to write secrets.json:', writeResult.error);
+              console.warn('[ConfigManager] Failed to write deployments-secrets.json:', writeResult.error);
               // Don't fail - SQLite save was successful
             }
           } else {
-            console.log('[ConfigManager] Skipping secrets.json write - first deployment incomplete');
+            console.log('[ConfigManager] Skipping deployments-secrets.json write - first deployment incomplete');
           }
         } else {
-          console.log('[ConfigManager] No deployments to write to secrets.json');
+          console.log('[ConfigManager] No deployments to write to deployments-secrets.json');
         }
       }
 
@@ -545,7 +545,7 @@ class ConfigManager {
     }
   }
 
-  // Save a single deployment to secrets.json
+  // Save a single deployment to deployments-secrets.json
   saveDeployment(deployment) {
     try {
       // Validate deployment
@@ -554,7 +554,7 @@ class ConfigManager {
         return { success: false, error: validation.error };
       }
 
-      // Write to secrets.json
+      // Write to deployments-secrets.json
       return this.writeSecretsFile(deployment);
     } catch (error) {
       console.error('Error saving deployment:', error);
@@ -609,7 +609,7 @@ class ConfigManager {
     }
 
     // For UI state saves, only validate basic structure (id, name)
-    // Full secrets validation happens in saveDeployment() for secrets.json
+    // Full secrets validation happens in saveDeployment() for deployments-secrets.json
     // Empty array is valid (allows deleting all deployments)
     for (let i = 0; i < config.deployments.length; i++) {
       const deployment = config.deployments[i];
@@ -632,7 +632,7 @@ class ConfigManager {
   }
 
   validateDeployment(deployment) {
-    // For secrets.json format, we need these fields
+    // For deployments-secrets.json format, we need these fields
     const requiredFields = [
       'workerName', 'pagesProjectName', 'databaseName', 'bucketName',
       'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
