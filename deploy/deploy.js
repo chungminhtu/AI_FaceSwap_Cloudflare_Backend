@@ -616,6 +616,52 @@ function isInvalidTokenError(error) {
          errorMsg.includes('Invalid API Token');
 }
 
+// Check if Cloudflare token is valid
+async function checkCloudflareTokenValid(apiToken, accountId) {
+  try {
+    const https = require('https');
+    
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.cloudflare.com',
+        path: '/client/v4/user/tokens/verify',
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      };
+      
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.success && json.result) {
+              resolve(true);
+            } else {
+              resolve(false);
+            }
+          } catch (e) {
+            resolve(false);
+          }
+        });
+      });
+      
+      req.on('error', () => resolve(false));
+      req.setTimeout(10000, () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end();
+    });
+  } catch (error) {
+    return false;
+  }
+}
+
 // Get account ID from wrangler whoami (preferred method)
 // Note: This function should be called when CLOUDFLARE_API_TOKEN is already set temporarily
 // Returns null if not found, throws error if token is invalid
@@ -1551,14 +1597,47 @@ async function main() {
   // This prevents conflicts when deploying to multiple Cloudflare accounts on same machine
   log.info('Authenticating with Cloudflare...');
   
-  const cloudflareToken = deploymentConfig.cloudflare.apiToken;
-  const cloudflareAccountId = deploymentConfig.cloudflare.accountId;
+  let cloudflareToken = deploymentConfig.cloudflare.apiToken;
+  let cloudflareAccountId = deploymentConfig.cloudflare.accountId;
   
   if (!cloudflareToken || !cloudflareAccountId || 
       cloudflareToken.trim() === '' || cloudflareAccountId.trim() === '') {
     log.error('Cloudflare credentials are empty in deployments-secrets.json');
-    log.error('This should have been auto-filled. Please check the file.');
-    process.exit(1);
+    log.info('Starting automatic login process...');
+    try {
+      const env = process.env.DEPLOY_ENV || 'production';
+      const tokenInfo = await setupCloudflareFromWrangler(env);
+      cloudflareToken = tokenInfo.apiToken;
+      cloudflareAccountId = tokenInfo.accountId;
+      deploymentConfig.cloudflare.apiToken = cloudflareToken;
+      deploymentConfig.cloudflare.accountId = cloudflareAccountId;
+      log.success('Cloudflare credentials saved successfully');
+    } catch (error) {
+      log.error(`Failed to setup Cloudflare credentials: ${error.message}`);
+      process.exit(1);
+    }
+  } else {
+    log.info('Checking if Cloudflare token is still valid...');
+    const isValid = await checkCloudflareTokenValid(cloudflareToken, cloudflareAccountId);
+    
+    if (!isValid) {
+      log.warn('Cloudflare token has expired or is invalid');
+      log.info('Refreshing token by logging in again...');
+      try {
+        const env = process.env.DEPLOY_ENV || 'production';
+        const tokenInfo = await setupCloudflareFromWrangler(env);
+        cloudflareToken = tokenInfo.apiToken;
+        cloudflareAccountId = tokenInfo.accountId;
+        deploymentConfig.cloudflare.apiToken = cloudflareToken;
+        deploymentConfig.cloudflare.accountId = cloudflareAccountId;
+        log.success('Cloudflare token refreshed and saved successfully');
+      } catch (error) {
+        log.error(`Failed to refresh Cloudflare token: ${error.message}`);
+        process.exit(1);
+      }
+    } else {
+      log.success('Cloudflare token is valid');
+    }
   }
   
   // Save original ENV values to restore later
