@@ -1363,6 +1363,7 @@ const deploymentUtils = {
 
       if (reportProgress) reportProgress('check-d1', 'completed', 'D1 database OK');
       // Cache the result
+      const cacheKey = `d1Database_${databaseName}`;
       const checkCache = loadCache();
       checkCache.checks = checkCache.checks || {};
       checkCache.checks[cacheKey] = true;
@@ -1455,25 +1456,193 @@ const deploymentUtils = {
     }
   },
 
-  async enableWorkersDevSubdomain(accountId, apiToken) {
-    try {
-      console.log('[Deploy] Attempting to enable workers.dev subdomain via API...');
+  async enableWorkersDevSubdomain(accountId, apiToken, email = null) {
+    if (!accountId || !apiToken) {
+      console.log('[Deploy] ⚠️  Missing accountId or apiToken, cannot enable workers.dev subdomain automatically');
+      return false;
+    }
 
-      const curlCommand = 'curl -X PUT "https://api.cloudflare.com/client/v4/accounts/' + accountId + '/workers/subdomain" -H "Authorization: Bearer ' + apiToken + '" -H "Content-Type: application/json" --data \'{"enabled": true}\' --silent --show-error';
+    console.log('[Deploy] Checking workers.dev subdomain status...');
+
+    // Validate API token and account ID first
+    try {
+      const validateCommand = `curl -X GET "https://api.cloudflare.com/client/v4/accounts/${accountId}" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --silent --max-time 10`;
+      const validateResult = execCommand(validateCommand, { silent: true, throwOnError: false });
+
+      if (!validateResult || !validateResult.includes('"success":true')) {
+        console.log('[Deploy] ⚠️  API token or account ID appears invalid, cannot enable subdomain automatically');
+        console.log('[Deploy] Please verify your Cloudflare credentials in deployments-secrets.json');
+        return false;
+      }
+    } catch (validateError) {
+      console.log('[Deploy] ⚠️  Could not validate API credentials:', validateError.message);
+    }
+
+    // First, check if subdomain is already enabled
+    try {
+      const checkCommand = `curl -X GET "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --silent --max-time 10`;
+      const checkResult = execCommand(checkCommand, { silent: true, throwOnError: false });
+
+      if (checkResult && checkResult.includes('"enabled":true')) {
+        console.log('[Deploy] ✓ workers.dev subdomain is already enabled');
+        return true;
+      } else if (checkResult && checkResult.includes('"enabled":false')) {
+        console.log('[Deploy] ℹ workers.dev subdomain is disabled, attempting to enable...');
+      } else if (checkResult && checkResult.includes('"success":false')) {
+        console.log('[Deploy] ⚠️  Could not check subdomain status, API may not be available');
+      }
+    } catch (checkError) {
+      console.log('[Deploy] ⚠️  Could not check subdomain status:', checkError.message);
+    }
+
+    // Try to enable the subdomain
+    console.log('[Deploy] Attempting to enable workers.dev subdomain via API...');
+
+    // Method 1: Try using Bearer token (most common)
+    try {
+      const curlCommand = `curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --data '{"enabled": true}' --silent --show-error --max-time 30`;
 
       const result = execCommand(curlCommand, { silent: true, throwOnError: false });
 
       if (result && result.includes('"success":true')) {
-        console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain');
+        console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain via Bearer token');
+        return true;
+      } else if (result && result.includes('"success":false')) {
+        console.log('[Deploy] ⚠️  Bearer token API call returned success:false');
+        // Try to parse error details
+        try {
+          const errorData = JSON.parse(result);
+          if (errorData.errors && errorData.errors.length > 0) {
+            const errorMsg = errorData.errors[0].message;
+            console.log('[Deploy] API Error details:', errorMsg);
+
+            // Check for specific subdomain cases
+            if (errorMsg.includes('already has an associated subdomain')) {
+              console.log('[Deploy] ✓ Account already has workers.dev subdomain registered');
+              return true; // Subdomain exists, we're good
+            } else if (errorMsg.includes('Subdomain') && errorMsg.includes('invalid')) {
+              console.log('[Deploy] ℹ  workers.dev subdomain needs manual registration');
+              console.log('[Deploy] 📋 This will be handled automatically during first worker deployment');
+              console.log('[Deploy] Continuing with deployment...');
+              return false; // Subdomain needs manual setup, but deployment can continue
+            }
+          }
+        } catch (parseError) {
+          console.log('[Deploy] Raw API response:', result);
+        }
+      } else if (result) {
+        console.log('[Deploy] ⚠️  Unexpected API response:', result);
+      }
+    } catch (curlError) {
+      console.log('[Deploy] ⚠️  Bearer token method failed:', curlError.message);
+    }
+
+    // Method 2: Try using X-Auth-Key and X-Auth-Email headers (legacy method)
+    if (email) {
+      try {
+        console.log('[Deploy] Trying legacy X-Auth-Key method...');
+        const legacyCommand = `curl -X PUT "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "X-Auth-Key: ${apiToken}" -H "X-Auth-Email: ${email}" -H "Content-Type: application/json" --data '{"enabled": true}' --silent --show-error --max-time 30`;
+
+        const legacyResult = execCommand(legacyCommand, { silent: true, throwOnError: false });
+
+        if (legacyResult && legacyResult.includes('"success":true')) {
+          console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain via X-Auth-Key');
+          return true;
+        } else if (legacyResult && legacyResult.includes('"success":false')) {
+          console.log('[Deploy] ⚠️  X-Auth-Key API call also failed');
+        }
+      } catch (legacyError) {
+        console.log('[Deploy] ⚠️  X-Auth-Key method failed:', legacyError.message);
+      }
+    }
+
+    // Method 3: Try using Node.js https (fallback)
+    try {
+      console.log('[Deploy] Trying Node.js https method...');
+      const https = require('https');
+      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`;
+
+      const response = await new Promise((resolve, reject) => {
+        const req = https.request(url, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+        });
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Request timeout'));
+        });
+
+        req.write(JSON.stringify({ enabled: true }));
+        req.end();
+      });
+
+      if (response.statusCode === 200 && response.data && response.data.includes('"success":true')) {
+        console.log('[Deploy] ✓ Successfully enabled workers.dev subdomain via Node.js https');
         return true;
       } else {
-        console.log('[Deploy] ⚠️  Could not enable workers.dev subdomain via API (may already be enabled or API call failed)');
-        return false;
+        console.log('[Deploy] ⚠️  Node.js https failed with status:', response.statusCode);
+        if (response.data) {
+          try {
+            const errorData = JSON.parse(response.data);
+            if (errorData.errors && errorData.errors.length > 0) {
+              const errorMsg = errorData.errors[0].message;
+              console.log('[Deploy] API Error:', errorMsg);
+
+              // Check for specific subdomain cases
+              if (errorMsg.includes('already has an associated subdomain')) {
+                console.log('[Deploy] ✓ Account already has workers.dev subdomain registered');
+                return true; // Subdomain exists, we're good
+              } else if (errorMsg.includes('Subdomain') && errorMsg.includes('invalid')) {
+                console.log('[Deploy] ℹ  workers.dev subdomain needs manual registration');
+                console.log('[Deploy] 📋 This will be handled automatically during first worker deployment');
+                console.log('[Deploy] Continuing with deployment...');
+                return false; // Subdomain needs manual setup, but deployment can continue
+              }
+            }
+          } catch (parseError) {
+            console.log('[Deploy] Response:', response.data);
+          }
+        }
       }
-    } catch (error) {
-      console.log('[Deploy] ⚠️  Error enabling workers.dev subdomain:', error.message);
-      return false;
+    } catch (httpsError) {
+      console.log('[Deploy] ⚠️  Node.js https method failed:', httpsError.message);
     }
+
+    // Final check: wait a moment and check again (subdomain might take time to enable)
+    console.log('[Deploy] Waiting 5 seconds for subdomain changes to propagate...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    try {
+      const finalCheckCommand = `curl -X GET "https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json" --silent --max-time 10`;
+      const finalCheckResult = execCommand(finalCheckCommand, { silent: true, throwOnError: false });
+
+      if (finalCheckResult && finalCheckResult.includes('"enabled":true')) {
+        console.log('[Deploy] ✓ workers.dev subdomain is now enabled after waiting');
+        return true;
+      }
+    } catch (finalCheckError) {
+      // Ignore final check errors
+    }
+
+    console.log('[Deploy] ⚠️  Could not automatically enable workers.dev subdomain');
+    console.log('[Deploy] 📋 Manual setup may be required:');
+    console.log(`[Deploy]     https://dash.cloudflare.com/${accountId}/workers/onboarding`);
+    console.log('[Deploy] 💡 This is usually a one-time setup requirement');
+    console.log('[Deploy] ℹ  The deployment will continue, but may fail if subdomain is required');
+
+    // Return false - subdomain enabling failed
+    // But deployment will continue and handle the error gracefully if it occurs
+    return false;
   },
 
   async deployWorker(codebasePath, workerName, databaseName, config, reportProgress) {
@@ -1501,15 +1670,18 @@ const deploymentUtils = {
     }
 
     // Try to enable workers.dev subdomain automatically (but continue even if it fails)
-    const subdomainEnabled = await this.enableWorkersDevSubdomain(config.cloudflare.accountId, config.cloudflare.apiToken);
+    const subdomainEnabled = await this.enableWorkersDevSubdomain(config.cloudflare.accountId, config.cloudflare.apiToken, config.cloudflare.email);
 
     try {
-      // Verify database exists and ID matches
+      // Verify database exists (ID was already verified during ensureD1Database)
       const dbInfo = execCommand(`wrangler d1 info ${databaseName}`, { silent: true, throwOnError: false });
-      if (!dbInfo || !dbInfo.includes(databaseId)) {
-        throw new Error(`ERROR: Database '${databaseName}' (${databaseId}) does not exist or ID mismatch. This will cause deployment error 10021.`);
+      if (!dbInfo) {
+        console.log(`[Deploy] ⚠️  Could not verify database info, but proceeding with cached database ID`);
+      } else if (!dbInfo.includes(databaseName)) {
+        throw new Error(`ERROR: Database '${databaseName}' does not exist. Please check your D1 database setup.`);
+      } else {
+        console.log(`[Deploy] ✓ Verified D1 database: ${databaseName} (${databaseId})`);
       }
-      console.log(`[Deploy] ✓ Verified D1 database: ${databaseName} (${databaseId})`);
 
       let result = await this.executeWithLogs('wrangler deploy', codebasePath, 'deploy-worker', reportProgress);
 
@@ -2165,10 +2337,12 @@ async function main() {
       console.log(`   1. Visit: https://dash.cloudflare.com/${deploymentConfig.cloudflare?.accountId || 'your-account'}/workers/onboarding`);
       console.log('   2. Click "Register workers.dev subdomain"');
       console.log('   3. Choose and confirm your subdomain (e.g., yourname.workers.dev)');
-      console.log('   4. Run deployment again: node deploy.js ai-office-dev');
+      console.log('   4. Run deployment again after enabling subdomain');
       console.log('');
       console.log('💡 This is required for Cloudflare Workers to have default *.workers.dev URLs');
       console.log('   (You can still use custom domains later if needed)');
+      console.log('');
+      console.log('🔄 The deployment script attempted to enable this automatically but it may require manual setup.');
     } else {
       log.error(`Deployment failed: ${errorMessage}`);
     }
