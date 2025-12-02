@@ -52,6 +52,103 @@
             border-top: 6px solid var(--accent);
         }
 
+        body.locked {
+            overflow: hidden;
+        }
+
+        .access-gate {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at top, rgba(15, 11, 46, 0.85), rgba(10, 7, 30, 0.92));
+            backdrop-filter: blur(18px);
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .access-gate.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .gate-card {
+            width: min(420px, 90vw);
+            padding: 32px;
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 25px 60px rgba(18, 0, 56, 0.45);
+            backdrop-filter: blur(26px);
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            text-align: center;
+        }
+
+        .gate-title {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            color: #ffffff;
+        }
+
+        .gate-subtitle {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.65);
+        }
+
+        .gate-input {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: rgba(8, 3, 24, 0.35);
+            color: #ffffff;
+            font-size: 15px;
+            letter-spacing: 4px;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .gate-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(248, 35, 135, 0.25);
+        }
+
+        .gate-button {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .gate-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 25px rgba(248, 35, 135, 0.35);
+        }
+
+        .gate-error {
+            min-height: 18px;
+            font-size: 13px;
+            color: var(--danger);
+        }
+
+        body.locked .main-container {
+            filter: blur(14px);
+            pointer-events: none;
+            user-select: none;
+        }
+
         .main-container {
             width: 100%;
             max-width: 100%;
@@ -195,6 +292,92 @@
             color: var(--accent-strong);
             letter-spacing: 0.4px;
             text-transform: none;
+        }
+
+        .prompt-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .prompt-section.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .prompt-input {
+            width: 100%;
+            min-height: 70px;
+            border-radius: 10px;
+            border: 1px solid rgba(248, 35, 135, 0.25);
+            background: rgba(255, 255, 255, 0.85);
+            padding: 12px 14px;
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 13px;
+            color: var(--text-primary);
+            resize: vertical;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .prompt-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(248, 35, 135, 0.18);
+            outline: none;
+        }
+
+        .prompt-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            letter-spacing: 0.2px;
+        }
+
+        .gender-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .gender-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.3px;
+        }
+
+        .gender-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(248, 35, 135, 0.15);
+            cursor: pointer;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .gender-option input[type="radio"] {
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .gender-option:hover {
+            border-color: var(--accent);
+            box-shadow: 0 6px 18px rgba(248, 35, 135, 0.18);
+        }
+
+        .gender-filter-btn.active {
+            background: var(--accent) !important;
+            color: white !important;
+            border-color: var(--accent) !important;
+        }
+
+        .gender-filter-btn:hover {
+            background: rgba(255, 255, 255, 0.9) !important;
+            border-color: rgba(248, 35, 135, 0.3) !important;
         }
 
         .upload-area {
@@ -651,6 +834,114 @@
             max-height: 100%;
             object-fit: contain;
             display: block;
+        }
+
+        /* Lightbox Styles */
+        .lightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lightbox-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            cursor: pointer;
+        }
+
+        .lightbox-content {
+            position: relative;
+            max-width: 90%;
+            max-height: 90%;
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .lightbox-content img {
+            max-width: 100%;
+            max-height: 85vh;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .lightbox-info {
+            margin-top: 16px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50%;
+            color: #fff;
+            font-size: 28px;
+            cursor: pointer;
+            z-index: 10002;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .lightbox-close:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .lightbox-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 50px;
+            height: 50px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50%;
+            color: #fff;
+            font-size: 32px;
+            cursor: pointer;
+            z-index: 10002;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .lightbox-nav:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        .lightbox-prev {
+            left: 20px;
+        }
+
+        .lightbox-next {
+            right: 20px;
+        }
+
+        .lightbox-nav:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
         }
 
         .action-row .generate-btn {
@@ -1311,6 +1602,15 @@
     </style>
 </head>
 <body>
+    <div id="access-gate" class="access-gate">
+        <div class="gate-card">
+            <div class="gate-title">Restricted Workspace</div>
+            <div class="gate-subtitle">Nhập mã truy cập để tiếp tục</div>
+            <input type="password" id="access-input" class="gate-input" placeholder="••••••" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button id="access-submit" class="gate-button">Unlock</button>
+            <div id="access-error" class="gate-error"></div>
+        </div>
+    </div>
     <div class="main-container">
         <h1>Đổi Mặt AI</h1>
 
@@ -1324,6 +1624,15 @@
                 <!-- Preset Gallery -->
                 <div class="gallery-section">
                     <div class="gallery-title">Thư Viện Mẫu</div>
+                    <!-- Gender Filter for Presets -->
+                    <div class="gender-filter" style="margin-bottom: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;">
+                        <div style="font-size: 12px; font-weight: 500; color: #495057; margin-bottom: 4px;">🔍 Lọc theo giới tính:</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="gender-filter-btn active" data-gender="" data-type="preset" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Tất cả</button>
+                            <button class="gender-filter-btn" data-gender="male" data-type="preset" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nam</button>
+                            <button class="gender-filter-btn" data-gender="female" data-type="preset" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nữ</button>
+                        </div>
+                    </div>
                     <div class="upload-area gallery-upload" id="preset-upload">
                         <div class="upload-icon">📤</div>
                         <div class="upload-text">Nhấp để tải lên hình mẫu</div>
@@ -1339,11 +1648,28 @@
                                 🔍 Quét với Google Vision (Kiểm tra an toàn)
                             </label>
                         </div>
-                        <div class="option-row" style="display: flex; align-items: center;">
+                        <div class="option-row" style="display: flex; align-items: center; margin-bottom: 8px;">
                             <input type="checkbox" id="preset-enable-vertex-prompt" checked style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
                             <label for="preset-enable-vertex-prompt" style="cursor: pointer; font-size: 13px; color: #333; user-select: none;">
                                 🤖 Tạo Prompt với Vertex AI
                             </label>
+                        </div>
+                        <div class="option-row" style="margin-bottom: 8px;">
+                            <div style="font-weight: 500; font-size: 12px; color: #555; margin-bottom: 4px;">👤 Giới tính:</div>
+                            <div style="display: flex; gap: 12px;">
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="radio" name="preset-gender" value="" checked style="margin-right: 4px;">
+                                    Không xác định
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="radio" name="preset-gender" value="male" style="margin-right: 4px;">
+                                    Nam
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="radio" name="preset-gender" value="female" style="margin-right: 4px;">
+                                    Nữ
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
@@ -1361,11 +1687,40 @@
                 <!-- Selfie Gallery -->
                 <div class="gallery-section">
                     <div class="gallery-title">Thư Viện Selfie</div>
+                    <!-- Gender Filter for Selfies -->
+                    <div class="gender-filter" style="margin-bottom: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;">
+                        <div style="font-size: 12px; font-weight: 500; color: #495057; margin-bottom: 4px;">🔍 Lọc theo giới tính:</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="gender-filter-btn active" data-gender="" data-type="selfie" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Tất cả</button>
+                            <button class="gender-filter-btn" data-gender="male" data-type="selfie" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nam</button>
+                            <button class="gender-filter-btn" data-gender="female" data-type="selfie" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nữ</button>
+                        </div>
+                    </div>
                     <div class="upload-area gallery-upload" id="selfie-upload">
                         <div class="upload-icon">📷</div>
                         <div class="upload-text">Nhấp để tải lên hình selfie</div>
                         <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
                         <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                    </div>
+                    <!-- Upload Options for Selfie -->
+                    <div class="upload-options" id="selfie-upload-options" style="margin-top: 10px; padding: 12px; background: #f0f7ff; border: 1px solid #b3d9ff; border-radius: 6px; display: block;">
+                        <div class="option-row">
+                            <div style="font-weight: 500; font-size: 12px; color: #555; margin-bottom: 4px;">👤 Giới tính:</div>
+                            <div style="display: flex; gap: 12px;">
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="radio" name="selfie-gender" value="" checked style="margin-right: 4px;">
+                                    Không xác định
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="radio" name="selfie-gender" value="male" style="margin-right: 4px;">
+                                    Nam
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="radio" name="selfie-gender" value="female" style="margin-right: 4px;">
+                                    Nữ
+                                </label>
+                            </div>
+                        </div>
                     </div>
                     <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
                     <div class="pagination" id="selfie-pagination" style="display: none;">
@@ -1400,6 +1755,27 @@
 
             <div class="section-title">Đổi Mặt</div>
             
+            <div class="section prompt-section" id="prompt-section">
+                <div class="section-title">Tùy Chỉnh Prompt</div>
+                <textarea id="additional-prompt" class="prompt-input" placeholder="Nhập prompt bổ sung để kết hợp với prompt hiện có (chỉ áp dụng cho Google Nano Banana)"></textarea>
+                <div class="prompt-hint">Nội dung sẽ được nối vào cuối prompt hiện tại bằng ký tự +</div>
+                <div class="gender-group">
+                    <span class="gender-label">Chọn giới tính nhân vật:</span>
+                    <label class="gender-option">
+                        <input type="radio" name="character-gender" value="none" checked>
+                        Không xác định
+                    </label>
+                    <label class="gender-option">
+                        <input type="radio" name="character-gender" value="male">
+                        Nam
+                    </label>
+                    <label class="gender-option">
+                        <input type="radio" name="character-gender" value="female">
+                        Nữ
+                    </label>
+                </div>
+            </div>
+
             <div class="workspace">
                 <div class="left-column">
                     <!-- Preset Section (Top) -->
@@ -1459,6 +1835,20 @@
         </div>
     </div>
 
+    <!-- Lightbox for Results -->
+    <div id="lightbox" class="lightbox" style="display: none;">
+        <div class="lightbox-overlay" onclick="closeLightbox()"></div>
+        <button class="lightbox-close" onclick="closeLightbox()">×</button>
+        <button class="lightbox-nav lightbox-prev" onclick="lightboxNavigate(-1)">‹</button>
+        <button class="lightbox-nav lightbox-next" onclick="lightboxNavigate(1)">›</button>
+        <div class="lightbox-content">
+            <img id="lightbox-image" src="" alt="">
+            <div class="lightbox-info">
+                <span id="lightbox-counter"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -1495,10 +1885,74 @@
         const selfieNextBtn = document.getElementById('selfie-next');
         const selfieGalleryEmpty = document.getElementById('selfie-gallery-empty');
 
+        const ACCESS_CODE = '123456';
+        const accessGate = document.getElementById('access-gate');
+        const accessInput = document.getElementById('access-input');
+        const accessSubmit = document.getElementById('access-submit');
+        const accessError = document.getElementById('access-error');
+
         const resultDisplay = document.getElementById('result-display');
         const generateBtn = document.getElementById('generate-btn');
         const apiProviderSelect = document.getElementById('api-provider');
         const apiLogList = document.getElementById('api-log-list');
+        const additionalPromptInput = document.getElementById('additional-prompt');
+        const genderRadios = document.querySelectorAll('input[name="character-gender"]');
+        const promptSection = document.getElementById('prompt-section');
+
+        function unlockInterface() {
+            document.body.classList.remove('locked');
+            if (accessGate) {
+                accessGate.classList.add('hidden');
+            }
+        }
+
+        function handleAccessSuccess() {
+            sessionStorage.setItem('faceswap:authorized', 'true');
+            if (accessError) {
+                accessError.textContent = '';
+            }
+            unlockInterface();
+        }
+
+        function handleAccessAttempt() {
+            if (!accessInput) {
+                return;
+            }
+            const enteredCode = accessInput.value.trim();
+            if (enteredCode === ACCESS_CODE) {
+                handleAccessSuccess();
+            } else {
+                if (accessError) {
+                    accessError.textContent = 'Sai mã truy cập. Vui lòng thử lại.';
+                }
+                accessInput.value = '';
+                accessInput.focus();
+            }
+        }
+
+        function initAccessGate() {
+            if (!accessGate || !accessInput || !accessSubmit) {
+                return;
+            }
+            const authorized = sessionStorage.getItem('faceswap:authorized') === 'true';
+            if (authorized) {
+                unlockInterface();
+                return;
+            }
+            document.body.classList.add('locked');
+            accessGate.classList.remove('hidden');
+            accessSubmit.addEventListener('click', handleAccessAttempt);
+            accessInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleAccessAttempt();
+                }
+            });
+            if (accessError) {
+                accessError.textContent = '';
+            }
+            setTimeout(() => accessInput.focus(), 50);
+        }
 
         // Load checkbox states from localStorage on page load
         function loadCheckboxStates() {
@@ -1547,15 +2001,69 @@
             }
         }
 
+        function getSelectedGender() {
+            let selected = null;
+            genderRadios.forEach((radio) => {
+                if (radio.checked) {
+                    selected = radio.value;
+                }
+            });
+            return selected;
+        }
+
+        function syncPromptControls() {
+            const isVertex = apiProviderSelect?.value === 'google-nano-banana';
+            if (promptSection) {
+                promptSection.classList.toggle('disabled', !isVertex);
+            }
+            if (additionalPromptInput) {
+                additionalPromptInput.disabled = !isVertex;
+            }
+            genderRadios.forEach((radio) => {
+                radio.disabled = !isVertex;
+                if (!isVertex && radio.value === 'none') {
+                    radio.checked = true;
+                }
+            });
+        }
+
+        function setupGenderFilterListeners() {
+            // Add event listeners to gender filter buttons
+            document.querySelectorAll('.gender-filter-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const btn = e.target as HTMLElement;
+                    const gender = btn.dataset.gender || '';
+                    const type = btn.dataset.type as 'preset' | 'selfie';
+
+                    if (!type) return;
+
+                    // Update active state
+                    const container = btn.closest('.gender-filter');
+                    if (container) {
+                        container.querySelectorAll('.gender-filter-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                    }
+
+                    // Load gallery with gender filter
+                    loadGallery(type, gender);
+                });
+            });
+        }
+
         // Initialize checkbox states and listeners when page loads
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
+                initAccessGate();
                 loadCheckboxStates();
                 setupCheckboxListeners();
+                syncPromptControls();
+                setupGenderFilterListeners();
             });
         } else {
+            initAccessGate();
             loadCheckboxStates();
             setupCheckboxListeners();
+            syncPromptControls();
         }
 
         function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
@@ -1569,7 +2077,8 @@
                 state: {
                     items: [],
                     selected: null,
-                    page: 1
+                    page: 1,
+                    genderFilter: ''
                 }
             };
         }
@@ -1798,13 +2307,19 @@
             await Promise.all(galleryKeys.map(loadGallery));
         }
 
-        async function loadGallery(type) {
+        async function loadGallery(type, genderFilter = '') {
             const config = galleries[type];
             try {
-                const response = await fetch(`${WORKER_URL}${config.endpoints.list}`);
+                let url = `${WORKER_URL}${config.endpoints.list}`;
+                if (genderFilter) {
+                    url += `?gender=${genderFilter}`;
+                }
+                const response = await fetch(url);
                 const data = await safeJson(response);
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
+                // Store current gender filter
+                config.state.genderFilter = genderFilter;
                 renderGallery(type);
                 // GET requests are not logged (only POST and PUT)
             } catch (error) {
@@ -1842,21 +2357,31 @@
 
             // Results don't have selection, just display and delete
             if (type === 'results') {
-                gallery.innerHTML = pageItems.map(item => `
+                gallery.innerHTML = pageItems.map((item, index) => {
+                    const globalIndex = startIndex + index;
+                    return `
                     <div class="gallery-item" data-item-id="${item.id}">
-                        <img src="${item.result_url}" alt="${item.preset_name || ''}" loading="lazy" decoding="async">
+                        <img src="${item.result_url}" alt="${item.preset_name || ''}" loading="lazy" decoding="async" onclick="openLightbox(${globalIndex})" style="cursor: pointer;">
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>
-                `).join('');
+                `;
+                }).join('');
             } else {
-                gallery.innerHTML = pageItems.map(item => `
+                gallery.innerHTML = pageItems.map(item => {
+                    const genderIcon = item.gender === 'male' ? '👨' : item.gender === 'female' ? '👩' : '👤';
+                    const genderText = item.gender === 'male' ? 'Nam' : item.gender === 'female' ? 'Nữ' : '';
+                    const genderBadge = item.gender ? `<div class="gender-badge" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 500;">${genderIcon} ${genderText}</div>` : '';
+
+                    return `
                     <div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}"
                          onclick="handleSelect('${type}', '${item.id}', event)"
-                         data-item-id="${item.id}">
+                         data-item-id="${item.id}" style="position: relative;">
                         <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
+                        ${genderBadge}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             }
 
             pageInfo.textContent = `${config.state.page} / ${totalPages}`;
@@ -2149,15 +2674,30 @@
                     if (visionScanCheckbox && visionScanCheckbox.checked) {
                         headers['X-Enable-Vision-Scan'] = 'true';
                     }
-                    
+
                     // Check if Vertex prompt generation is enabled
                     const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
                     if (vertexPromptCheckbox && vertexPromptCheckbox.checked) {
                         headers['X-Enable-Vertex-Prompt'] = 'true';
                         headers['X-Enable-Gemini-Prompt'] = 'true'; // Keep for backward compatibility
                     }
-                    
+
+                    // Get selected gender for preset
+                    const presetGenderRadios = document.querySelectorAll('input[name="preset-gender"]:checked');
+                    if (presetGenderRadios.length > 0 && presetGenderRadios[0].value) {
+                        headers['X-Gender'] = presetGenderRadios[0].value;
+                    }
+
                     headers['X-Preset-Name'] = filename; // Use filename as preset name
+                }
+
+                // Add options headers for selfie uploads
+                if (type === 'selfie') {
+                    // Get selected gender for selfie
+                    const selfieGenderRadios = document.querySelectorAll('input[name="selfie-gender"]:checked');
+                    if (selfieGenderRadios.length > 0 && selfieGenderRadios[0].value) {
+                        headers['X-Gender'] = selfieGenderRadios[0].value;
+                    }
                 }
 
                 const uploadResponse = await fetch(uploadData.uploadUrl, {
@@ -2309,85 +2849,73 @@
                     payload.selfie_id = selfieSelection.id;
                 }
 
+                if (mode === 'vertex') {
+                    if (additionalPromptInput) {
+                        const extraPrompt = additionalPromptInput.value.trim();
+                        if (extraPrompt) {
+                            payload.additional_prompt = extraPrompt;
+                        }
+                    }
+                    const selectedGender = getSelectedGender();
+                    if (selectedGender && selectedGender !== 'none') {
+                        payload.character_gender = selectedGender;
+                    }
+                }
+
                 const response = await fetch(`${WORKER_URL}/faceswap`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
-                // Calculate duration in seconds with one decimal place
                 const endTime = Date.now();
                 const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
 
-                let data = {};
-                let errorText = '';
+                let responseBodyText = '';
+                let responseData = {};
+                let parseFailureMessage = '';
+
                 try {
-                    const text = await response.text();
-                    errorText = text;
-                    try {
-                        data = JSON.parse(text);
-                } catch {
-                        // If JSON parse fails, use the text as error message
-                        data = { message: text || `HTTP ${response.status} ${response.statusText}` };
-                }
+                    responseBodyText = await response.text();
+                    responseData = responseBodyText ? JSON.parse(responseBodyText) : {};
                 } catch (parseError) {
-                    errorText = `Failed to parse response: ${parseError}`;
-                    data = { message: errorText };
+                    parseFailureMessage = `Không phân tích được phản hồi: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+                    responseData = {};
                 }
 
-                // Extract result URL first - handle both response formats
-                const resultUrl = data.data?.resultImageUrl || data.ResultImageUrl || data.debug?.ResultImageUrl;
-                
-                // If HTTP response is OK and we have a result URL, it's definitely a success
-                // This handles cases where response format might vary but we have the essential data
-                if (response.ok && resultUrl) {
-                    // This is a success - continue to display the result
-                    // Reload results gallery to show the new result
-                    if (galleries.results) {
-                        await loadGallery('results');
-                    }
-                } else if (!response.ok || data.status === 'error' || (data.Success === false && !resultUrl)) {
-                    // This is an error - build detailed error message
-                    let errorMessage = data.message || data.Message || 'Đổi mặt thất bại';
-                    
-                    // Add error details if available
-                    if (data.Error) {
-                        errorMessage += `\nChi tiết: ${typeof data.Error === 'string' ? data.Error : JSON.stringify(data.Error)}`;
-                    }
-                    if (data.StatusCode) {
-                        errorMessage += `\nMã lỗi: ${data.StatusCode}`;
-                    }
-                    if (errorText && errorText.length < 500) {
-                        errorMessage += `\nPhản hồi: ${errorText}`;
-                    }
+                const resultUrl = responseData?.data?.resultImageUrl || null;
+                const isSuccessful = response.ok && responseData?.status === 'success' && !!resultUrl;
 
+                if (!isSuccessful) {
+                    let errorMessage = responseData?.message || parseFailureMessage || `HTTP ${response.status} ${response.statusText}`;
+                    const statusCode = responseData?.code || response.status;
+                    if (responseData?.code && !errorMessage.includes(responseData.code)) {
+                        errorMessage = `${errorMessage} (Mã ${responseData.code})`;
+                    }
                     const error = new Error(errorMessage);
-                    error.responseData = data;
-                    error.statusCode = response.status;
+                    error.responseData = responseData;
+                    error.statusCode = statusCode;
+                    error.rawResponse = responseBodyText;
                     throw error;
                 }
-                
-                // If we reach here but no result URL, it's an error
+
                 if (!resultUrl) {
-                    console.error('No result URL found in response. Full response:', JSON.stringify(data, null, 2));
                     throw new Error('Không nhận được hình ảnh kết quả. Vui lòng kiểm tra log để xem chi tiết.');
                 }
 
-                // Show result
                 resultDisplay.innerHTML = `<img src="${resultUrl}" alt="Kết quả đổi mặt" class="result-image">`;
 
-                // Reload results gallery to show the new result
                 if (galleries.results) {
                     await loadGallery('results');
                 }
 
-                showStatusMessage('Đã hoàn thành đổi mặt thành công', 'success');
+                showStatusMessage(responseData.message || 'Đã hoàn thành đổi mặt thành công', 'success');
                 logApiCall({
                     label: `FaceSwap (${mode})`,
                     method: 'POST',
                     url: `${WORKER_URL}/faceswap`,
                     status: 'success',
-                    payload: data,
+                    payload: responseData,
                     duration: `${durationSeconds}s`
                 });
 
@@ -2398,6 +2926,7 @@
                 let errorMessage = error?.message || String(error);
                 const errorData = error?.responseData;
                 const statusCode = error?.statusCode;
+                const rawResponse = error?.rawResponse;
                 
                 // Show detailed error in status message
                 showStatusMessage(`Đổi mặt thất bại: ${errorMessage}`, 'error');
@@ -2416,6 +2945,7 @@
                     payload: {
                         message: errorMessage,
                         error: errorData || error,
+                        rawResponse: rawResponse || null,
                         fullError: error
                     },
                     duration: errorDuration
@@ -2588,12 +3118,86 @@
         if (apiProviderSelect) {
             apiProviderSelect.addEventListener('change', () => {
                 updateGenerateButton();
+                syncPromptControls();
                 const currentPreset = galleries.preset.state.selected;
                 if (apiProviderSelect.value === 'google-nano-banana' && currentPreset && !currentPreset.hasPrompt) {
                     showStatusMessage('Mẫu hiện tại chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) để tạo prompt tự động.', 'info');
                 }
             });
         }
+
+        // Lightbox functionality
+        let currentLightboxIndex = 0;
+        let allResults = [];
+
+        function openLightbox(index) {
+            const config = galleries.results;
+            if (!config || !config.state.items.length) return;
+
+            allResults = config.state.items;
+            currentLightboxIndex = Math.max(0, Math.min(index, allResults.length - 1));
+            
+            const lightbox = document.getElementById('lightbox');
+            const lightboxImage = document.getElementById('lightbox-image');
+            const lightboxCounter = document.getElementById('lightbox-counter');
+            
+            if (lightbox && lightboxImage && allResults[currentLightboxIndex]) {
+                lightboxImage.src = allResults[currentLightboxIndex].result_url;
+                lightboxImage.alt = allResults[currentLightboxIndex].preset_name || '';
+                lightboxCounter.textContent = `${currentLightboxIndex + 1} / ${allResults.length}`;
+                lightbox.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+                
+                updateLightboxNav();
+            }
+        }
+
+        function closeLightbox() {
+            const lightbox = document.getElementById('lightbox');
+            if (lightbox) {
+                lightbox.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        }
+
+        function lightboxNavigate(direction) {
+            if (allResults.length === 0) return;
+            
+            currentLightboxIndex += direction;
+            if (currentLightboxIndex < 0) {
+                currentLightboxIndex = allResults.length - 1;
+            } else if (currentLightboxIndex >= allResults.length) {
+                currentLightboxIndex = 0;
+            }
+            
+            const lightboxImage = document.getElementById('lightbox-image');
+            const lightboxCounter = document.getElementById('lightbox-counter');
+            
+            if (lightboxImage && allResults[currentLightboxIndex]) {
+                lightboxImage.src = allResults[currentLightboxIndex].result_url;
+                lightboxImage.alt = allResults[currentLightboxIndex].preset_name || '';
+                lightboxCounter.textContent = `${currentLightboxIndex + 1} / ${allResults.length}`;
+                updateLightboxNav();
+            }
+        }
+
+        function updateLightboxNav() {
+            // Navigation buttons are always enabled (circular navigation)
+        }
+
+        // Keyboard navigation for lightbox
+        document.addEventListener('keydown', (e) => {
+            const lightbox = document.getElementById('lightbox');
+            if (lightbox && lightbox.style.display !== 'none') {
+                if (e.key === 'Escape') {
+                    closeLightbox();
+                } else if (e.key === 'ArrowLeft') {
+                    lightboxNavigate(-1);
+                } else if (e.key === 'ArrowRight') {
+                    lightboxNavigate(1);
+                }
+            }
+        });
 
         // Initialize the app
         init();

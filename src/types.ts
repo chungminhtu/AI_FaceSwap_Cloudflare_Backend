@@ -25,6 +25,8 @@ export interface FaceSwapRequest {
   source_url: string;
   selfie_id?: string;
   mode?: 'rapidapi' | 'vertex'; // Optional: Face swap mode
+  additional_prompt?: string;
+  character_gender?: 'male' | 'female';
 }
 
 export interface FaceSwapResponse {
@@ -37,6 +39,11 @@ export interface FaceSwapResponse {
   ProcessingTimeSpan?: string;
   ProcessStartedDateTime?: string;
   Error?: string;
+  Debug?: Record<string, any>;
+  VertexResponse?: any;
+  Prompt?: any;
+  CurlCommand?: string | null;
+  FullResponse?: any;
   SafetyCheck?: {
     checked: boolean;
     isSafe: boolean;
@@ -63,6 +70,7 @@ export interface SafeSearchResult {
     racy: string;
   };
   rawResponse?: GoogleVisionResponse; // Full raw response from Vision API
+  debug?: Record<string, any>;
 }
 
 export interface GenericApiResponse<T> {
@@ -90,6 +98,7 @@ export interface UploadUrlRequest {
   type: 'preset' | 'selfie';
   presetName?: string; // Optional: Name for preset collection
   enableVertexPrompt?: boolean; // Optional: Generate Vertex AI prompt automatically
+  gender?: 'male' | 'female'; // Optional: Gender classification for the asset
 }
 
 export interface UploadUrlResponse {
@@ -108,11 +117,35 @@ export interface PresetImage {
   id: string;
   collection_id: string;
   image_url: string;
+  gender?: 'male' | 'female'; // Optional gender classification
+  created_at: string;
+}
+
+export interface Selfie {
+  id: string;
+  image_url: string;
+  filename: string;
+  gender?: 'male' | 'female'; // Optional gender classification
   created_at: string;
 }
 
 export interface PresetListResponse {
   preset_collections: PresetCollection[];
+}
+
+export interface SelfieListResponse {
+  selfies: Selfie[];
+}
+
+export interface AssetsByGenderResponse {
+  male: {
+    presets: PresetImage[];
+    selfies: Selfie[];
+  };
+  female: {
+    presets: PresetImage[];
+    selfies: Selfie[];
+  };
 }
 
 export interface Result {

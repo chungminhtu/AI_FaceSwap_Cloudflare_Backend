@@ -6,7 +6,7 @@ const AuthChecker = require('./auth-checker');
 const AccountSwitcher = require('./account-switcher');
 const CommandRunner = require('./command-runner');
 // Import unified deployment utilities
-const { deployFromConfig } = require('../../deploy.js');
+const { deployFromConfig } = require('../../deploy/deploy.js');
 
 // Auto-reload in development
 if (process.argv.includes('--dev')) {

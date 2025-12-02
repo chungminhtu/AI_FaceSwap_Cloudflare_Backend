@@ -17,4 +17,4 @@ google-api-key.json
 electron-app/*.db
 electron-app/*.db-shm
 electron-app/*.db-wal
-electron-app/electron-config.db
+deployments-secrets.json

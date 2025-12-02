@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import type { Env, FaceSwapRequest, UploadUrlRequest } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest } from './types';
 import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
 import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
@@ -49,6 +49,141 @@ const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string 
     return `${origin}/r2/${key}`;
   }
   throw new Error('Unable to determine R2 public URL. Configure R2_PUBLIC_URL, set R2_USE_R2_DEV=true (if bucket has public access), or ensure worker origin is available.');
+};
+
+const compact = <T extends Record<string, any>>(input: T): Record<string, any> => {
+  const output: Record<string, any> = {};
+  for (const key of Object.keys(input)) {
+    const value = input[key];
+    if (value !== undefined && value !== null) {
+      output[key] = value;
+    }
+  }
+  return output;
+};
+
+const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record<string, any> =>
+  compact({
+    success: result.Success,
+    statusCode: result.StatusCode,
+    message: result.Message,
+    processingTime: result.ProcessingTime || result.ProcessingTimeSpan,
+    processStarted: result.ProcessStartedDateTime,
+    faceSwapCount: result.FaceSwapCount,
+    error: result.Error,
+    originalResultImageUrl: result.ResultImageUrl,
+    finalResultImageUrl: finalUrl,
+    debug: (result as any).Debug,
+  });
+
+const buildVertexDebug = (result: FaceSwapResponse): Record<string, any> | undefined => {
+  const extended = result as FaceSwapResponse & {
+    VertexResponse?: any;
+    Prompt?: any;
+    CurlCommand?: string;
+  };
+  if (!extended.VertexResponse && !extended.Prompt && !extended.CurlCommand) {
+    return undefined;
+  }
+  return compact({
+    prompt: extended.Prompt,
+    response: extended.VertexResponse,
+    curlCommand: extended.CurlCommand,
+  });
+};
+
+const mergeVertexDebug = (result: FaceSwapResponse, promptPayload: any): Record<string, any> | undefined => {
+  const base = buildVertexDebug(result);
+  const debugDetails = (result as any).Debug;
+  let merged = base ? { ...base } : undefined;
+  if (promptPayload && (!merged || !('prompt' in merged))) {
+    merged = {
+      ...(merged ?? {}),
+      prompt: promptPayload,
+    };
+  }
+  if (debugDetails) {
+    merged = {
+      ...(merged ?? {}),
+      debug: debugDetails,
+    };
+  }
+  if (!merged) {
+    return undefined;
+  }
+  return compact(merged);
+};
+
+type SafetyCheckDebug = {
+  checked: boolean;
+  isSafe: boolean;
+  statusCode?: number;
+  violationCategory?: string;
+  violationLevel?: string;
+  details?: {
+    adult: string;
+    spoof?: string;
+    medical?: string;
+    violence: string;
+    racy: string;
+  };
+  error?: string;
+  rawResponse?: unknown;
+  debug?: Record<string, any>;
+};
+
+const buildVisionDebug = (vision?: SafetyCheckDebug | null): Record<string, any> | undefined => {
+  if (!vision) {
+    return undefined;
+  }
+  return compact({
+    checked: vision.checked,
+    isSafe: vision.isSafe,
+    statusCode: vision.statusCode,
+    violationCategory: vision.violationCategory,
+    violationLevel: vision.violationLevel,
+    details: vision.details,
+    error: vision.error,
+    rawResponse: vision.rawResponse,
+    debug: vision.debug,
+  });
+};
+
+const GENDER_PROMPT_HINTS: Record<'male' | 'female', string> = {
+  male: 'Emphasize that the character is male with confident, masculine presence and styling.',
+  female: 'Emphasize that the character is female with graceful, feminine presence and styling.',
+};
+
+const augmentVertexPrompt = (
+  promptPayload: any,
+  additionalPrompt?: string,
+  characterGender?: 'male' | 'female'
+) => {
+  if (!promptPayload || typeof promptPayload !== 'object') {
+    return promptPayload;
+  }
+
+  const clone = JSON.parse(JSON.stringify(promptPayload));
+  const additions: string[] = [];
+
+  if (characterGender && GENDER_PROMPT_HINTS[characterGender]) {
+    additions.push(GENDER_PROMPT_HINTS[characterGender]);
+  }
+
+  const extra = additionalPrompt?.trim();
+  if (extra) {
+    additions.push(extra);
+  }
+
+  if (!additions.length) {
+    return clone;
+  }
+
+  const basePrompt = typeof clone.prompt === 'string' ? clone.prompt : '';
+  const suffix = additions.join(' + ');
+  clone.prompt = basePrompt ? `${basePrompt} + ${suffix}` : suffix;
+
+  return clone;
 };
 
 export default {
@@ -213,10 +348,11 @@ export default {
           console.log('Processing preset upload:', key);
           let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
           // Accept both header names for compatibility
-          const enableVertexPrompt = 
+          const enableVertexPrompt =
             request.headers.get('X-Enable-Vertex-Prompt') === 'true' ||
             request.headers.get('X-Enable-Gemini-Prompt') === 'true';
           const enableVisionScan = request.headers.get('X-Enable-Vision-Scan') === 'true';
+          const gender = request.headers.get('X-Gender') as 'male' | 'female' | undefined;
           console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt, 'Enable Vision Scan:', enableVisionScan);
 
           // Decode base64 if encoded
@@ -374,8 +510,8 @@ export default {
             });
             
             const result = await env.DB.prepare(
-              'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(imageId, collectionId, publicUrl, promptJson, createdAt).run();
+              'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+            ).bind(imageId, collectionId, publicUrl, promptJson, gender, createdAt).run();
 
             if (!result.success) {
               throw new Error(`Database insert failed: ${JSON.stringify(result)}`);
@@ -460,6 +596,7 @@ export default {
           const filename = key.replace('selfie/', '');
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
+          const gender = request.headers.get('X-Gender') as 'male' | 'female' | undefined;
 
           console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
@@ -478,8 +615,8 @@ export default {
             }
 
             const result = await env.DB.prepare(
-              'INSERT INTO selfies (id, image_url, filename, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, filename, createdAt).run();
+              'INSERT INTO selfies (id, image_url, filename, gender, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(selfieId, publicUrl, filename, gender, createdAt).run();
 
             if (!result.success) {
               console.error('Database insert returned success=false:', result);
@@ -563,24 +700,41 @@ export default {
     if (path === '/presets' && request.method === 'GET') {
       try {
         console.log('Fetching presets from database...');
-        // Get all preset images as a flat list
-        const imagesResult = await env.DB.prepare(`
+
+        // Check for gender filter query parameter
+        const url = new URL(request.url);
+        const genderFilter = url.searchParams.get('gender') as 'male' | 'female' | null;
+
+        let query = `
           SELECT
             i.id,
             i.collection_id,
             i.image_url,
             i.prompt_json,
+            i.gender,
             i.created_at,
             c.name as collection_name
           FROM preset_images i
           LEFT JOIN preset_collections c ON i.collection_id = c.id
-          ORDER BY i.created_at DESC
-        `).all();
+        `;
+
+        const params: any[] = [];
+
+        if (genderFilter) {
+          query += ' WHERE i.gender = ?';
+          params.push(genderFilter);
+          console.log(`Filtering presets by gender: ${genderFilter}`);
+        }
+
+        query += ' ORDER BY i.created_at DESC';
+
+        const imagesResult = await env.DB.prepare(query).bind(...params).all();
 
         console.log('Presets query result:', {
           success: imagesResult.success,
           resultsCount: imagesResult.results?.length || 0,
-          meta: imagesResult.meta
+          meta: imagesResult.meta,
+          genderFilter: genderFilter || 'none'
         });
 
         if (!imagesResult || !imagesResult.results) {
@@ -597,10 +751,11 @@ export default {
           collection_name: row.collection_name || 'Unnamed',
           hasPrompt: row.prompt_json ? true : false,
           prompt_json: row.prompt_json || null,
+          gender: row.gender || null,
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
-        console.log(`Returning ${presets.length} presets`);
+        console.log(`Returning ${presets.length} presets${genderFilter ? ` (filtered by gender: ${genderFilter})` : ''}`);
         return jsonResponse({ presets });
       } catch (error) {
         console.error('List presets error:', error);
@@ -721,14 +876,29 @@ export default {
     if (path === '/selfies' && request.method === 'GET') {
       try {
         console.log('Fetching selfies from database...');
-        const result = await env.DB.prepare(
-          'SELECT id, image_url, filename, created_at FROM selfies ORDER BY created_at DESC LIMIT 50'
-        ).all();
+
+        // Check for gender filter query parameter
+        const url = new URL(request.url);
+        const genderFilter = url.searchParams.get('gender') as 'male' | 'female' | null;
+
+        let query = 'SELECT id, image_url, filename, gender, created_at FROM selfies';
+        const params: any[] = [];
+
+        if (genderFilter) {
+          query += ' WHERE gender = ?';
+          params.push(genderFilter);
+          console.log(`Filtering selfies by gender: ${genderFilter}`);
+        }
+
+        query += ' ORDER BY created_at DESC LIMIT 50';
+
+        const result = await env.DB.prepare(query).bind(...params).all();
 
         console.log('Selfies query result:', {
           success: result.success,
           resultsCount: result.results?.length || 0,
-          meta: result.meta
+          meta: result.meta,
+          genderFilter: genderFilter || 'none'
         });
 
         if (!result || !result.results) {
@@ -740,10 +910,11 @@ export default {
           id: row.id || '',
           image_url: row.image_url || '',
           filename: row.filename || '',
+          gender: row.gender || null,
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
-        console.log(`Returning ${selfies.length} selfies`);
+        console.log(`Returning ${selfies.length} selfies${genderFilter ? ` (filtered by gender: ${genderFilter})` : ''}`);
         return jsonResponse({ selfies });
       } catch (error) {
         console.error('List selfies error:', error);
@@ -857,6 +1028,100 @@ export default {
             errorType: error instanceof Error ? error.constructor.name : typeof error
           }
         }, 500);
+      }
+    }
+
+    // Handle assets by gender endpoint
+    if (path === '/assets/by-gender' && request.method === 'GET') {
+      try {
+        console.log('Fetching assets grouped by gender...');
+
+        // Get all preset images with gender
+        const presetsResult = await env.DB.prepare(`
+          SELECT
+            id,
+            collection_id,
+            image_url,
+            gender,
+            created_at
+          FROM preset_images
+          WHERE gender IS NOT NULL
+          ORDER BY created_at DESC
+        `).all();
+
+        // Get all selfies with gender
+        const selfiesResult = await env.DB.prepare(`
+          SELECT
+            id,
+            image_url,
+            filename,
+            gender,
+            created_at
+          FROM selfies
+          WHERE gender IS NOT NULL
+          ORDER BY created_at DESC
+        `).all();
+
+        const presets = presetsResult.results || [];
+        const selfies = selfiesResult.results || [];
+
+        // Group by gender
+        const malePresets = presets.filter((row: any) => row.gender === 'male').map((row: any) => ({
+          id: row.id,
+          collection_id: row.collection_id,
+          image_url: row.image_url,
+          gender: row.gender,
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+        }));
+
+        const femalePresets = presets.filter((row: any) => row.gender === 'female').map((row: any) => ({
+          id: row.id,
+          collection_id: row.collection_id,
+          image_url: row.image_url,
+          gender: row.gender,
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+        }));
+
+        const maleSelfies = selfies.filter((row: any) => row.gender === 'male').map((row: any) => ({
+          id: row.id,
+          image_url: row.image_url,
+          filename: row.filename,
+          gender: row.gender,
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+        }));
+
+        const femaleSelfies = selfies.filter((row: any) => row.gender === 'female').map((row: any) => ({
+          id: row.id,
+          image_url: row.image_url,
+          filename: row.filename,
+          gender: row.gender,
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+        }));
+
+        const response = {
+          male: {
+            presets: malePresets,
+            selfies: maleSelfies
+          },
+          female: {
+            presets: femalePresets,
+            selfies: femaleSelfies
+          }
+        };
+
+        console.log(`Returning assets by gender: male presets=${malePresets.length}, female presets=${femalePresets.length}, male selfies=${maleSelfies.length}, female selfies=${femaleSelfies.length}`);
+        return jsonResponse(response);
+      } catch (error) {
+        console.error('List assets by gender error:', error);
+        console.error('Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        // Return empty structure instead of error to prevent UI breaking
+        return jsonResponse({
+          male: { presets: [], selfies: [] },
+          female: { presets: [], selfies: [] }
+        });
       }
     }
 
@@ -1110,13 +1375,25 @@ export default {
         const requestError = validateRequest(body, resolvedMode);
         if (requestError) return errorResponse(requestError, 400);
 
-        let faceSwapResult;
+        const requestDebug = compact({
+          mode: resolvedMode,
+          targetUrl: body.target_url,
+          sourceUrl: body.source_url,
+          presetImageId: body.preset_image_id,
+          presetCollectionId: body.preset_collection_id,
+          presetName: body.preset_name,
+          selfieId: body.selfie_id,
+          apiProvider: body.api_provider,
+          additionalPrompt: body.additional_prompt,
+          characterGender: body.character_gender,
+        });
 
-        // Check if using Vertex AI mode (Vertex AI-generated prompts)
+        let faceSwapResult: FaceSwapResponse;
+        let vertexPromptPayload: any = null;
+
         if (resolvedMode === 'vertex' && body.preset_image_id) {
           console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
-          // Get the stored Vertex AI-generated prompt JSON from database
           const promptResult = await env.DB.prepare(
             'SELECT prompt_json FROM preset_images WHERE id = ?'
           ).bind(body.preset_image_id).first();
@@ -1126,50 +1403,63 @@ export default {
             return errorResponse('No Vertex AI-generated prompt found for this preset image. Please re-upload the preset image to automatically generate the prompt using Vertex AI API. If you continue to see this error, check that your Google Vertex AI credentials are configured correctly.', 400);
           }
 
-          const promptData = JSON.parse((promptResult as any).prompt_json);
+          const storedPromptPayload = JSON.parse((promptResult as any).prompt_json);
+          const augmentedPromptPayload = augmentVertexPrompt(
+            storedPromptPayload,
+            body.additional_prompt,
+            body.character_gender
+          );
+          vertexPromptPayload = augmentedPromptPayload;
 
-          // Call Nano Banana provider using the stored Vertex AI prompt
           console.log('[Vertex] Dispatching prompt to Nano Banana provider');
-          const nanoResult = await callNanoBanana(promptData, body.target_url, body.source_url, env);
+          const nanoResult = await callNanoBanana(augmentedPromptPayload, body.target_url, body.source_url, env);
 
           if (!nanoResult.Success || !nanoResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(nanoResult, null, 2));
-            
-            // Sanitize error response - replace base64 with "..."
-            let sanitizedError = null;
-            if (nanoResult.FullResponse) {
+
+            let sanitizedVertexFailure: any = null;
+            const fullResponse = (nanoResult as any).FullResponse;
+            if (fullResponse) {
               try {
-                const parsedResponse = typeof nanoResult.FullResponse === 'string' 
-                  ? JSON.parse(nanoResult.FullResponse) 
-                  : nanoResult.FullResponse;
-                sanitizedError = JSON.parse(JSON.stringify(parsedResponse, (key, value) => {
+                const parsedResponse = typeof fullResponse === 'string' ? JSON.parse(fullResponse) : fullResponse;
+                sanitizedVertexFailure = JSON.parse(JSON.stringify(parsedResponse, (key, value) => {
                   if (key === 'data' && typeof value === 'string' && value.length > 100) {
                     return '...';
                   }
                   return value;
                 }));
               } catch (parseErr) {
-                // If parsing fails, use the error string as-is but truncate if too long
-                sanitizedError = typeof nanoResult.FullResponse === 'string' 
-                  ? nanoResult.FullResponse.substring(0, 500) + '...' 
-                  : nanoResult.FullResponse;
+                if (typeof fullResponse === 'string') {
+                  sanitizedVertexFailure = fullResponse.substring(0, 500) + (fullResponse.length > 500 ? '...' : '');
+                } else {
+                  sanitizedVertexFailure = fullResponse;
+                }
               }
             }
-            
+
+            const vertexDebugFailure = compact({
+              prompt: vertexPromptPayload,
+              response: sanitizedVertexFailure || (nanoResult as any).VertexResponse,
+              curlCommand: (nanoResult as any).CurlCommand,
+            });
+
+            const debugPayload = compact({
+              request: requestDebug,
+              provider: buildProviderDebug(nanoResult),
+              vertex: vertexDebugFailure,
+            });
+
+            const failureCode = nanoResult.StatusCode || 500;
+
             return jsonResponse({
+              data: null,
+              debug: debugPayload,
               status: 'error',
               message: nanoResult.Message || 'Nano Banana provider failed to generate image',
-              code: nanoResult.StatusCode || 500,
-              error: nanoResult.Error,
-              details: {
-                ...nanoResult,
-                VertexResponse: sanitizedError, // Sanitized Vertex AI response (base64 replaced with "...")
-                Prompt: promptData, // Include the prompt that was used
-              },
-            }, nanoResult.StatusCode || 500);
+              code: failureCode,
+            }, failureCode);
           }
 
-          // Convert R2 URL format to public URL if needed
           if (nanoResult.ResultImageUrl?.startsWith('r2://')) {
             const r2Key = nanoResult.ResultImageUrl.replace('r2://', '');
             const requestUrl = new URL(request.url);
@@ -1179,153 +1469,208 @@ export default {
 
           faceSwapResult = nanoResult;
         } else {
-          // Use RapidAPI as before
           faceSwapResult = await callFaceSwap(body.target_url, body.source_url, env);
         }
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           console.error('FaceSwap failed:', faceSwapResult);
-          return jsonResponse(faceSwapResult, faceSwapResult.StatusCode || 500);
+          const failureCode = faceSwapResult.StatusCode || 500;
+          const debugPayload = compact({
+            request: requestDebug,
+            provider: buildProviderDebug(faceSwapResult),
+            vertex: resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined,
+          });
+          return jsonResponse({
+            data: null,
+            debug: debugPayload,
+            status: 'error',
+            message: faceSwapResult.Message || 'Face swap provider error',
+            code: failureCode,
+          }, failureCode);
         }
 
-        // Safe search validation - can be disabled via DISABLE_SAFE_SEARCH env variable
-        // Skip safety check for Nano Banana (Vertex AI) - Vision API not needed
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-        const skipSafetyCheckForVertex = resolvedMode === 'vertex'; // Skip Vision API for Nano Banana
-        let safetyCheckResult: { checked: boolean; isSafe: boolean; details?: any; error?: string } | undefined;
-        
+        const skipSafetyCheckForVertex = resolvedMode === 'vertex';
+        let safetyDebug: SafetyCheckDebug | null = null;
+
         if (!disableSafeSearch && !skipSafetyCheckForVertex) {
           console.log('[FaceSwap] Running safety check on result image:', faceSwapResult.ResultImageUrl);
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
-          // Always include safety check info in response so user can see it was called
-          safetyCheckResult = {
+          safetyDebug = {
             checked: true,
-            isSafe: safeSearchResult.isSafe,
+            isSafe: !!safeSearchResult.isSafe,
+            statusCode: safeSearchResult.statusCode,
+            violationCategory: safeSearchResult.violationCategory,
+            violationLevel: safeSearchResult.violationLevel,
             details: safeSearchResult.details,
-            error: safeSearchResult.error
+            error: safeSearchResult.error,
+            rawResponse: safeSearchResult.rawResponse,
+            debug: safeSearchResult.debug,
           };
 
           if (safeSearchResult.error) {
             console.error('[FaceSwap] Safe search error:', safeSearchResult.error);
-            // Return error but include safety check info
+            const debugPayload = compact({
+              request: requestDebug,
+              provider: buildProviderDebug(faceSwapResult),
+              vertex: resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined,
+              vision: buildVisionDebug(safetyDebug),
+            });
             return jsonResponse({
-              Success: false,
-              Message: `Safe search validation failed: ${safeSearchResult.error}`,
-              StatusCode: 500,
-              SafetyCheck: safetyCheckResult
+              data: null,
+              debug: debugPayload,
+              status: 'error',
+              message: `Safe search validation failed: ${safeSearchResult.error}`,
+              code: 500,
             }, 500);
           }
 
           if (!safeSearchResult.isSafe) {
             console.warn('[FaceSwap] Content blocked - unsafe content detected:', safeSearchResult.details);
-            // Get violation info for response
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            const statusCode = safeSearchResult.statusCode || 1002; // Default to VIOLENCE if not set
-            
-            // Return blocked response in GenericApiResponse format
+            const debugPayload = compact({
+              request: requestDebug,
+              provider: buildProviderDebug(faceSwapResult),
+              vertex: resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined,
+              vision: buildVisionDebug(safetyDebug),
+            });
             return jsonResponse({
               data: null,
+              debug: debugPayload,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
-              code: statusCode
-            }, 403);
+              code: 422,
+            }, 422);
           }
           console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
         } else {
           if (skipSafetyCheckForVertex) {
             console.log('[FaceSwap] Safe search validation skipped for Nano Banana (Vertex AI)');
-            safetyCheckResult = {
+            safetyDebug = {
               checked: false,
               isSafe: true,
-              error: 'Safety check skipped for Vertex AI mode'
+              error: 'Safety check skipped for Vertex AI mode',
             };
           } else {
             console.log('[FaceSwap] Safe search validation disabled via DISABLE_SAFE_SEARCH config');
-            safetyCheckResult = {
+            safetyDebug = {
               checked: false,
               isSafe: true,
-              error: 'Safety check disabled via DISABLE_SAFE_SEARCH'
+              error: 'Safety check disabled via DISABLE_SAFE_SEARCH',
             };
           }
         }
 
-        // Try to download result image and store in R2 (non-fatal if it fails)
-        let resultUrl = faceSwapResult.ResultImageUrl; // Use original URL as fallback
-        try {
-        const resultImageResponse = await fetch(faceSwapResult.ResultImageUrl);
-          if (resultImageResponse.ok) {
-        const resultImageData = await resultImageResponse.arrayBuffer();
-        const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
-        
-        await env.FACESWAP_IMAGES.put(resultKey, resultImageData, {
-          httpMetadata: {
-            contentType: 'image/jpeg',
-            cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
-          },
-        });
+        const storageDebug: {
+          attemptedDownload: boolean;
+          downloadStatus: number | null;
+          savedToR2: boolean;
+          r2Key: string | null;
+          publicUrl: string | null;
+          error: string | null;
+        } = {
+          attemptedDownload: false,
+          downloadStatus: null,
+          savedToR2: false,
+          r2Key: null,
+          publicUrl: null,
+          error: null,
+        };
 
+        let resultUrl = faceSwapResult.ResultImageUrl;
+        try {
+          storageDebug.attemptedDownload = true;
+          const resultImageResponse = await fetch(faceSwapResult.ResultImageUrl);
+          storageDebug.downloadStatus = resultImageResponse.status;
+          if (resultImageResponse.ok) {
+            const resultImageData = await resultImageResponse.arrayBuffer();
+            const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+            await env.FACESWAP_IMAGES.put(resultKey, resultImageData, {
+              httpMetadata: {
+                contentType: 'image/jpeg',
+                cacheControl: 'public, max-age=31536000, immutable',
+              },
+            });
+            storageDebug.savedToR2 = true;
+            storageDebug.r2Key = resultKey;
             resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
+            storageDebug.publicUrl = resultUrl;
           } else {
-            console.warn('Failed to download result image, using original URL');
+            storageDebug.error = `Download failed with status ${resultImageResponse.status}`;
           }
         } catch (r2Error) {
-          console.warn('R2 storage error (non-fatal):', r2Error);
-          // Continue with original URL
+          storageDebug.error = r2Error instanceof Error ? r2Error.message : String(r2Error);
         }
 
-        // Save result to database (non-fatal if it fails)
+        const databaseDebug: {
+          attempted: boolean;
+          success: boolean;
+          resultId: string | null;
+          error: string | null;
+          lookupError: string | null;
+        } = {
+          attempted: false,
+          success: false,
+          resultId: null,
+          error: null,
+          lookupError: null,
+        };
+
         if (body.preset_image_id && body.preset_collection_id && body.preset_name) {
+          databaseDebug.attempted = true;
           try {
-          // Use provided selfie_id or find it by matching the source_url with selfies table
-          let selfieId = body.selfie_id;
-          if (!selfieId) {
-            try {
-              const selfieResult = await env.DB.prepare(
-                'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
-              ).bind(body.source_url).first();
-
-              if (selfieResult) {
+            let selfieId = body.selfie_id;
+            if (!selfieId) {
+              try {
+                const selfieResult = await env.DB.prepare(
+                  'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
+                ).bind(body.source_url).first();
+                if (selfieResult) {
                   selfieId = (selfieResult as any).id;
+                }
+              } catch (lookupError) {
+                console.warn('Could not find selfie in database:', lookupError);
+                databaseDebug.lookupError = lookupError instanceof Error ? lookupError.message : String(lookupError);
               }
-            } catch (dbError) {
-              console.warn('Could not find selfie in database:', dbError);
             }
-          }
 
-          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          await env.DB.prepare(
-            'INSERT INTO results (id, selfie_id, preset_collection_id, preset_image_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+            await env.DB.prepare(
+              'INSERT INTO results (id, selfie_id, preset_collection_id, preset_image_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
             ).bind(resultId, selfieId || null, body.preset_collection_id, body.preset_image_id, body.preset_name, resultUrl, Math.floor(Date.now() / 1000)).run();
+            databaseDebug.success = true;
+            databaseDebug.resultId = resultId;
+            databaseDebug.error = null;
           } catch (dbError) {
             console.warn('Database save error (non-fatal):', dbError);
-            // Continue - don't fail the request
+            databaseDebug.error = dbError instanceof Error ? dbError.message : String(dbError);
           }
         }
 
-        // Return success response in GenericApiResponse format
-        // Merge Vertex response and prompt if available (for Vertex AI mode)
-        const vertexData = (faceSwapResult as any).VertexResponse ? {
-          VertexResponse: (faceSwapResult as any).VertexResponse, // Sanitized Vertex AI response (base64 replaced with "...")
-          Prompt: (faceSwapResult as any).Prompt || promptData, // Include the prompt that was used
-          CurlCommand: (faceSwapResult as any).CurlCommand || null, // Include curl command for testing
-        } : null;
+        const providerDebug = buildProviderDebug(faceSwapResult, resultUrl);
+        const vertexDebug = resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined;
+        const visionDebug = buildVisionDebug(safetyDebug);
+        const storageDebugPayload = compact(storageDebug as unknown as Record<string, any>);
+        const databaseDebugPayload = compact(databaseDebug as unknown as Record<string, any>);
+        const debugPayload = compact({
+          request: requestDebug,
+          provider: providerDebug,
+          vertex: vertexDebug,
+          vision: visionDebug,
+          storage: Object.keys(storageDebugPayload).length ? storageDebugPayload : undefined,
+          database: Object.keys(databaseDebugPayload).length ? databaseDebugPayload : undefined,
+        });
 
         return jsonResponse({
           data: {
-            resultImageUrl: resultUrl
+            resultImageUrl: resultUrl,
           },
-          debug: {
-            ...faceSwapResult,
-            ResultImageUrl: resultUrl,
-            SafetyCheck: safetyCheckResult,
-            ...(vertexData || {}) // Merge Vertex response, prompt, and curl command if available
-          },
+          debug: debugPayload,
           status: 'success',
-          message: faceSwapResult.Message || 'Face swap completed successfully',
+          message: faceSwapResult.Message || 'Processing successful',
           code: 200,
-          ...(vertexData?.CurlCommand ? { CurlCommand: vertexData.CurlCommand } : {}) // Also include at top level for easy access
         });
       } catch (error) {
         console.error('Unhandled error:', error);

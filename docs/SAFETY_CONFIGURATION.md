@@ -159,5 +159,5 @@ For detailed information about Google Vision API SafeSearch detection, refer to 
 - **Cloud Vision API Documentation:** https://cloud.google.com/vision/docs
 - **API Reference:** https://cloud.google.com/vision/docs/reference/rest
 
-See `GOOGLE_VISION_API_DOCUMENTATION.md` for complete documentation links and verification.
+See `docs/GOOGLE_VISION_API_DOCUMENTATION.md` for complete documentation links and verification.
 

@@ -11,6 +11,7 @@ export const callFaceSwap = async (
   formData.append('target_url', targetUrl);
   formData.append('source_url', sourceUrl);
 
+  const startTime = Date.now();
   const response = await fetch(env.RAPIDAPI_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -22,20 +23,34 @@ export const callFaceSwap = async (
     body: formData,
   });
 
+  const durationMs = Date.now() - startTime;
+  const responseText = await response.text();
+  const debugInfo: Record<string, any> = {
+    endpoint: env.RAPIDAPI_ENDPOINT,
+    status: response.status,
+    statusText: response.statusText,
+    durationMs,
+    requestPayload: {
+      targetUrl,
+      sourceUrl,
+    },
+  };
+
   if (!response.ok) {
-    const errorText = await response.text();
+    debugInfo.rawResponse = responseText.substring(0, 2000);
     return {
       Success: false,
       Message: `FaceSwap API error: ${response.status} ${response.statusText}`,
       StatusCode: response.status,
-      Error: errorText,
+      Error: responseText,
+      Debug: debugInfo,
     };
   }
 
-  const responseText = await response.text();
   try {
     const data = JSON.parse(responseText);
     console.log('FaceSwap API response:', JSON.stringify(data).substring(0, 200));
+    debugInfo.rawResponse = data;
     
     // Transform API response to match FaceSwapResponse format
     // API returns: { message, file_url, processing_time }
@@ -46,6 +61,7 @@ export const callFaceSwap = async (
       Message: data.message || 'Face swap completed',
       StatusCode: response.status,
       ProcessingTime: data.processing_time?.toString() || data.ProcessingTime,
+      Debug: debugInfo,
     };
     
     // If no file_url and no ResultImageUrl, it's a failure
@@ -58,11 +74,14 @@ export const callFaceSwap = async (
     return transformedResponse;
   } catch (error) {
     console.error('JSON parse error:', error, 'Response:', responseText.substring(0, 200));
+    debugInfo.rawResponse = responseText.substring(0, 2000);
+    debugInfo.parseError = error instanceof Error ? error.message : String(error);
     return {
       Success: false,
       Message: `Failed to parse FaceSwap API response: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
       Error: responseText.substring(0, 200),
+      Debug: debugInfo,
     };
   }
 };
@@ -82,6 +101,8 @@ export const callNanoBanana = async (
       StatusCode: 500,
     };
   }
+
+  let debugInfo: Record<string, any> | undefined;
 
   try {
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
@@ -191,7 +212,19 @@ export const callNanoBanana = async (
   ${geminiEndpoint} \\
   -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
 
+    debugInfo = {
+      endpoint: geminiEndpoint,
+      model: geminiModel,
+      requestPayload: sanitizedRequestBody,
+      curlCommand,
+      inputImageBytes: selfieImageData.length,
+      promptLength: faceSwapPrompt.length,
+      targetUrl,
+      sourceUrl,
+    };
+
     // Call Vertex AI Gemini API
+    const startTime = Date.now();
     const response = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
@@ -202,9 +235,22 @@ export const callNanoBanana = async (
     });
 
     const rawResponse = await response.text();
+    const durationMs = Date.now() - startTime;
+    if (debugInfo) {
+      debugInfo.status = response.status;
+      debugInfo.statusText = response.statusText;
+      debugInfo.durationMs = durationMs;
+    }
 
     if (!response.ok) {
       console.error('[Vertex-NanoBanana] API error:', response.status, rawResponse.substring(0, 500));
+      if (debugInfo) {
+        try {
+          debugInfo.rawResponse = JSON.parse(rawResponse);
+        } catch {
+          debugInfo.rawResponse = rawResponse.substring(0, 2000);
+        }
+      }
       
       return {
         Success: false,
@@ -213,11 +259,20 @@ export const callNanoBanana = async (
         Error: rawResponse, // Include full response text, not truncated
         FullResponse: rawResponse, // Also include in separate field for UI display
         CurlCommand: curlCommand, // Include curl command for testing
+        Debug: debugInfo,
       };
     }
 
     try {
       const data = JSON.parse(rawResponse);
+      if (debugInfo) {
+        debugInfo.rawResponse = JSON.parse(JSON.stringify(data, (key, value) => {
+          if (key === 'data' && typeof value === 'string' && value.length > 100) {
+            return '...';
+          }
+          return value;
+        }));
+      }
       
       // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
       const candidates = data.candidates || [];
@@ -227,6 +282,7 @@ export const callNanoBanana = async (
           Message: 'Vertex AI Gemini API did not return any candidates',
           StatusCode: 500,
           Error: 'No candidates found in response',
+          Debug: debugInfo,
         };
       }
 
@@ -260,6 +316,7 @@ export const callNanoBanana = async (
           Error: 'No inline_data found in response parts',
           FullResponse: JSON.stringify(data, null, 2), // Include full response for debugging
           ResponseParts: JSON.stringify(parts, null, 2), // Include parts for debugging
+          Debug: debugInfo,
         };
       }
       
@@ -279,6 +336,10 @@ export const callNanoBanana = async (
           cacheControl: 'public, max-age=31536000, immutable',
         },
       });
+      if (debugInfo) {
+        debugInfo.r2Key = resultKey;
+        debugInfo.mimeType = mimeType;
+      }
       
       // Get public URL (will be converted by caller)
       const resultImageUrl = `r2://${resultKey}`;
@@ -305,6 +366,11 @@ export const callNanoBanana = async (
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
   -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+      if (debugInfo) {
+        debugInfo.requestPayload = sanitizedRequestBody;
+        debugInfo.curlCommand = curlCommand;
+        debugInfo.response = sanitizedData;
+      }
 
       return {
         Success: true,
@@ -314,25 +380,36 @@ export const callNanoBanana = async (
         VertexResponse: sanitizedData, // Include sanitized Vertex AI response JSON (base64 replaced with "...")
         Prompt: prompt, // Include the prompt that was used
         CurlCommand: curlCommand, // Include curl command for testing
+        Debug: debugInfo,
       };
     } catch (parseError) {
       console.error('[Vertex-NanoBanana] JSON parse error:', parseError);
       console.error('[Vertex-NanoBanana] Full raw response that failed to parse:', rawResponse);
+      if (debugInfo) {
+        debugInfo.rawResponse = rawResponse.substring(0, 2000);
+        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      }
       return {
         Success: false,
         Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
         StatusCode: 500,
         Error: rawResponse, // Include full response text
         FullResponse: rawResponse, // Also include in separate field for UI display
+        Debug: debugInfo,
       };
     }
   } catch (error) {
     console.error('[Vertex-NanoBanana] Unexpected error:', error);
+    const debugPayload = debugInfo;
+    if (debugPayload) {
+      debugPayload.error = error instanceof Error ? error.message : String(error);
+    }
     return {
       Success: false,
       Message: `Vertex AI face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
       Error: error instanceof Error ? error.stack : String(error),
+      Debug: debugPayload,
     };
   }
 };
@@ -366,6 +443,7 @@ export const checkSafeSearch = async (
       }],
     };
 
+    const startTime = Date.now();
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -375,6 +453,15 @@ export const checkSafeSearch = async (
     });
 
     console.log('[SafeSearch] API Response status:', response.status, response.statusText);
+    const durationMs = Date.now() - startTime;
+    const debugInfo: Record<string, any> = {
+      endpoint: env.GOOGLE_VISION_ENDPOINT,
+      status: response.status,
+      statusText: response.statusText,
+      durationMs,
+      requestPayload: requestBody,
+      imageUrl,
+    };
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -383,6 +470,7 @@ export const checkSafeSearch = async (
         statusText: response.statusText,
         error: errorText.substring(0, 500)
       });
+      debugInfo.rawResponse = errorText.substring(0, 2000);
       
       // Provide helpful error message for billing errors
       let errorMessage = `API error: ${response.status} - ${errorText.substring(0, 200)}`;
@@ -390,11 +478,12 @@ export const checkSafeSearch = async (
         errorMessage = `Billing not enabled. Google Vision API requires billing to be enabled. Please enable billing at: https://console.developers.google.com/billing?project=521788129450`;
       }
       
-      return { isSafe: false, error: errorMessage };
+      return { isSafe: false, error: errorMessage, debug: debugInfo };
     }
 
     const data = await response.json() as GoogleVisionResponse;
     console.log('[SafeSearch] API Response data:', JSON.stringify(data, null, 2));
+    debugInfo.response = data;
 
     const annotation = data.responses?.[0]?.safeSearchAnnotation;
 
@@ -403,7 +492,8 @@ export const checkSafeSearch = async (
       return { 
         isSafe: false, 
         error: data.responses[0].error.message,
-        rawResponse: data // Include full raw response even on error
+        rawResponse: data, // Include full raw response even on error
+        debug: debugInfo,
       };
     }
 
@@ -412,7 +502,8 @@ export const checkSafeSearch = async (
       return { 
         isSafe: false, 
         error: 'No safe search annotation',
-        rawResponse: data // Include full raw response
+        rawResponse: data, // Include full raw response
+        debug: debugInfo,
       };
     }
 
@@ -437,7 +528,8 @@ export const checkSafeSearch = async (
       violationCategory: worstViolation?.category,
       violationLevel: worstViolation?.level,
       details: annotation, // Return full safeSearchAnnotation details
-      rawResponse: data // Include full raw Vision API response
+      rawResponse: data, // Include full raw Vision API response
+      debug: debugInfo,
     };
   } catch (error) {
     console.error('[SafeSearch] Exception:', error);
@@ -556,6 +648,11 @@ export const generateVertexPrompt = async (
     };
 
     debugInfo.requestSent = true;
+    debugInfo.requestPayload = {
+      promptLength: faceSwapPrompt.length,
+      imageBytes: imageData.length,
+      imageUrl,
+    };
     
     // Vertex AI requires OAuth token
       if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {

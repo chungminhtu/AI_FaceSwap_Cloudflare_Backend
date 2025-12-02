@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS preset_images (
   collection_id TEXT NOT NULL,
   image_url TEXT NOT NULL,
   prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
+  gender TEXT CHECK(gender IN ('male', 'female')), -- Optional gender classification
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (collection_id) REFERENCES preset_collections(id) ON DELETE CASCADE
 );
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS selfies (
   id TEXT PRIMARY KEY,
   image_url TEXT NOT NULL,
   filename TEXT NOT NULL,
+  gender TEXT CHECK(gender IN ('male', 'female')), -- Optional gender classification
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -43,7 +45,9 @@ CREATE TABLE IF NOT EXISTS results (
 CREATE INDEX IF NOT EXISTS idx_preset_collections_created_at ON preset_collections(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_preset_images_collection_id ON preset_images(collection_id);
 CREATE INDEX IF NOT EXISTS idx_preset_images_created_at ON preset_images(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_preset_images_gender ON preset_images(gender);
 CREATE INDEX IF NOT EXISTS idx_selfies_created_at ON selfies(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_selfies_gender ON selfies(gender);
 CREATE INDEX IF NOT EXISTS idx_results_created_at ON results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_results_selfie_id ON results(selfie_id);
 CREATE INDEX IF NOT EXISTS idx_results_preset_collection_id ON results(preset_collection_id);
@@ -100,4 +104,10 @@ CREATE INDEX IF NOT EXISTS idx_deployments_created_at ON deployments(created_at 
 CREATE INDEX IF NOT EXISTS idx_deployment_secrets_deployment_id ON deployment_secrets(deployment_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_history_deployment_id ON deployment_history(deployment_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_history_timestamp ON deployment_history(timestamp DESC);
+
+-- Migration: Add gender columns to existing tables (safe to run on existing databases)
+-- Note: SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
+-- The deploy script handles duplicate column errors gracefully
+-- These ALTER TABLE statements are only needed for databases created before gender columns were added
+-- If the column already exists (from CREATE TABLE), these will fail with "duplicate column" which is ignored
 
