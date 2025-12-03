@@ -322,7 +322,7 @@ async function getAccountIdFromApi(token) {
   });
 }
 
-async function setupCloudflare(env = null) {
+async function setupCloudflare(env = null, preferredAccountId = null) {
   logWarn('Setting up Cloudflare credentials...');
 
   const origToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -336,16 +336,19 @@ async function setupCloudflare(env = null) {
 
   process.env.CLOUDFLARE_API_TOKEN = token;
 
-  let accountId = getAccountIdFromWrangler();
+  let accountId = preferredAccountId;
 
   if (!accountId) {
-    try {
-      accountId = await getAccountIdFromApi(token);
-    } catch (error) {
-      const output = execCommand('wrangler whoami', { silent: false, throwOnError: false });
-      if (output) {
-        const match = output.match(/Account ID[:\s]+([a-f0-9]{32})/i);
-        accountId = match ? match[1] : null;
+    accountId = getAccountIdFromWrangler();
+    if (!accountId) {
+      try {
+        accountId = await getAccountIdFromApi(token);
+      } catch (error) {
+        const output = execCommand('wrangler whoami', { silent: false, throwOnError: false });
+        if (output) {
+          const match = output.match(/Account ID[:\s]+([a-f0-9]{32})/i);
+          accountId = match ? match[1] : null;
+        }
       }
     }
   }
@@ -355,6 +358,12 @@ async function setupCloudflare(env = null) {
     throw new Error('Could not get account ID');
   }
 
+  if (preferredAccountId && accountId !== preferredAccountId) {
+    logWarn(`Using account ID from config: ${preferredAccountId} (wrangler logged into: ${accountId})`);
+    accountId = preferredAccountId;
+  }
+
+  process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
   saveCloudflareCredentials(accountId, token, env);
 
   restoreEnv();
@@ -628,18 +637,22 @@ async function main() {
   let cfAccountId = config.cloudflare.accountId;
 
   if (!cfToken || !cfAccountId) {
-    const creds = await setupCloudflare(config._environment);
+    const creds = await setupCloudflare(config._environment, cfAccountId);
     cfToken = creds.apiToken;
     cfAccountId = creds.accountId;
     config.cloudflare.apiToken = cfToken;
     config.cloudflare.accountId = cfAccountId;
   } else if (!await validateCloudflareToken(cfToken)) {
     logWarn('Token expired, refreshing...');
-    const creds = await setupCloudflare(config._environment);
+    const creds = await setupCloudflare(config._environment, cfAccountId);
     cfToken = creds.apiToken;
     cfAccountId = creds.accountId;
     config.cloudflare.apiToken = cfToken;
     config.cloudflare.accountId = cfAccountId;
+  }
+  
+  if (cfAccountId) {
+    process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
   }
   logSuccess('Cloudflare ready');
 
