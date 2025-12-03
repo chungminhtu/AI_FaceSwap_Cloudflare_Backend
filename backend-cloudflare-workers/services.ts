@@ -827,3 +827,266 @@ const fetchImageAsBase64 = async (imageUrl: string): Promise<string> => {
 
 // generateVertexPrompt is already defined above
 
+export const callUpscaler4k = async (
+  imageUrl: string,
+  env: Env
+): Promise<FaceSwapResponse> => {
+  if (!env.GOOGLE_VERTEX_PROJECT_ID) {
+    return {
+      Success: false,
+      Message: 'GOOGLE_VERTEX_PROJECT_ID is required',
+      StatusCode: 500,
+    };
+  }
+
+  let debugInfo: Record<string, any> | undefined;
+
+  try {
+    const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    
+    const geminiModel = 'gemini-2.5-flash-image';
+    const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
+
+    const upscalerPrompt = "Transform this image into highly photorealistic quality as if captured by professional DSLR camera with prime lens. Apply natural lighting with accurate shadows and highlights. Add authentic real world details including natural skin texture with visible pores, organic surface imperfections, realistic fabric and material properties, proper depth of field with natural bokeh. Enhance with volumetric lighting, realistic color grading, sharp focus, and physical accuracy. Turn any blurry details into physical, meaningful details. Make the picture 10-20% brighter or more pop up. Output should appear indistinguishable from real professional photography with all elements following real world physics and natural appearance at maximum resolution.";
+
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      console.error('[Upscaler4K] Missing service account credentials');
+      return {
+        Success: false,
+        Message: 'Google Service Account credentials are required for Vertex AI. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY environment variables.',
+        StatusCode: 500,
+        Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
+      };
+    }
+    
+    let accessToken: string;
+    try {
+      accessToken = await getAccessToken(
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
+    } catch (tokenError) {
+      console.error('[Upscaler4K] Failed to get OAuth token:', tokenError);
+      return {
+        Success: false,
+        Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        StatusCode: 500,
+      };
+    }
+
+    let imageData: string;
+    imageData = await fetchImageAsBase64(imageUrl);
+
+    const requestBody = {
+      contents: {
+        role: "USER",
+        parts: [
+          {
+            inline_data: {
+              mimeType: "image/jpeg",
+              data: imageData
+            }
+          },
+          { text: upscalerPrompt }
+        ]
+      },
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: {
+          aspectRatio: "1:1",
+        },
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+      },
+      safetySettings: [{
+        method: "PROBABILITY",
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
+      }]
+    };
+
+    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+      if (key === 'data' && typeof value === 'string' && value.length > 100) {
+        return '...';
+      }
+      return value;
+    }));
+    
+    const curlCommand = `curl -X POST \\
+  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+
+    debugInfo = {
+      endpoint: geminiEndpoint,
+      model: geminiModel,
+      requestPayload: sanitizedRequestBody,
+      curlCommand,
+      inputImageBytes: imageData.length,
+      promptLength: upscalerPrompt.length,
+      imageUrl,
+    };
+
+    const startTime = Date.now();
+    const response = await fetch(geminiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const rawResponse = await response.text();
+    const durationMs = Date.now() - startTime;
+    if (debugInfo) {
+      debugInfo.status = response.status;
+      debugInfo.statusText = response.statusText;
+      debugInfo.durationMs = durationMs;
+    }
+
+    if (!response.ok) {
+      console.error('[Upscaler4K] API error:', response.status, rawResponse.substring(0, 500));
+      if (debugInfo) {
+        try {
+          debugInfo.rawResponse = JSON.parse(rawResponse);
+        } catch {
+          debugInfo.rawResponse = rawResponse.substring(0, 2000);
+        }
+      }
+      
+      return {
+        Success: false,
+        Message: `Vertex AI Gemini API error: ${response.status} ${response.statusText}`,
+        StatusCode: response.status,
+        Error: rawResponse,
+        FullResponse: rawResponse,
+        CurlCommand: curlCommand,
+        Debug: debugInfo,
+      };
+    }
+
+    try {
+      const data = JSON.parse(rawResponse);
+      if (debugInfo) {
+        debugInfo.rawResponse = JSON.parse(JSON.stringify(data, (key, value) => {
+          if (key === 'data' && typeof value === 'string' && value.length > 100) {
+            return '...';
+          }
+          return value;
+        }));
+      }
+      
+      const candidates = data.candidates || [];
+      if (candidates.length === 0) {
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return any candidates',
+          StatusCode: 500,
+          Error: 'No candidates found in response',
+          Debug: debugInfo,
+        };
+      }
+
+      const parts = candidates[0].content?.parts || [];
+      let base64Image: string | null = null;
+      let mimeType = 'image/png';
+
+      for (const part of parts) {
+        if (part.inlineData) {
+          base64Image = part.inlineData.data;
+          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/png';
+          break;
+        }
+        if (part.inline_data) {
+          base64Image = part.inline_data.data;
+          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/png';
+          break;
+        }
+      }
+
+      if (!base64Image) {
+        console.error('[Upscaler4K] No image data found in response');
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return an image in the response',
+          StatusCode: 500,
+          Error: 'No inline_data found in response parts',
+          FullResponse: JSON.stringify(data, null, 2),
+          Debug: debugInfo,
+        };
+      }
+
+      const binaryString = atob(base64Image);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const resultKey = `results/upscaler4k_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'png'}`;
+      
+      const R2_BUCKET = getR2Bucket(env);
+      await R2_BUCKET.put(resultKey, bytes, {
+        httpMetadata: {
+          contentType: mimeType,
+          cacheControl: 'public, max-age=31536000, immutable',
+        },
+      });
+      if (debugInfo) {
+        debugInfo.r2Key = resultKey;
+        debugInfo.mimeType = mimeType;
+      }
+      
+      const resultImageUrl = `r2://${resultKey}`;
+
+      const sanitizedData = JSON.parse(JSON.stringify(data, (key, value) => {
+        if (key === 'data' && typeof value === 'string' && value.length > 100) {
+          return '...';
+        }
+        return value;
+      }));
+
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: 'Upscaler4K image generation completed',
+        StatusCode: response.status,
+        VertexResponse: sanitizedData,
+        Prompt: upscalerPrompt,
+        CurlCommand: curlCommand,
+        Debug: debugInfo,
+      };
+    } catch (parseError) {
+      console.error('[Upscaler4K] JSON parse error:', parseError);
+      console.error('[Upscaler4K] Full raw response that failed to parse:', rawResponse);
+      if (debugInfo) {
+        debugInfo.rawResponse = rawResponse.substring(0, 2000);
+        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      }
+      return {
+        Success: false,
+        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+        StatusCode: 500,
+        Error: rawResponse,
+        FullResponse: rawResponse,
+        Debug: debugInfo,
+      };
+    }
+  } catch (error) {
+    console.error('[Upscaler4K] Unexpected error:', error);
+    const debugPayload = debugInfo;
+    if (debugPayload) {
+      debugPayload.error = error instanceof Error ? error.message : String(error);
+    }
+    return {
+      Success: false,
+      Message: `Upscaler4K request failed: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.stack : String(error),
+      Debug: debugPayload,
+    };
+  }
+};
+

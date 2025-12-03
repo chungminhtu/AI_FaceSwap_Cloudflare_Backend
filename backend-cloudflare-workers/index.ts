@@ -2,7 +2,7 @@
 
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile } from './types';
 import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
-import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt } from './services';
+import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
 
 const DEFAULT_R2_BUCKET_NAME = 'faceswap-images';
@@ -1857,6 +1857,66 @@ export default {
         });
       } catch (error) {
         console.error('Unhandled error:', error);
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle upscaler4k endpoint
+    if (path === '/upscaler4k' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { image_url: string };
+        
+        if (!body.image_url) {
+          return errorResponse('image_url is required', 400);
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+
+        const upscalerResult = await callUpscaler4k(body.image_url, env);
+
+        if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
+          console.error('Upscaler4K failed:', upscalerResult);
+          const failureCode = upscalerResult.StatusCode || 500;
+          const debugPayload = compact({
+            provider: buildProviderDebug(upscalerResult),
+            vertex: buildVertexDebug(upscalerResult),
+          });
+          return jsonResponse({
+            data: null,
+            debug: debugPayload,
+            status: 'error',
+            message: upscalerResult.Message || 'Upscaler4K provider error',
+            code: failureCode,
+          }, failureCode);
+        }
+
+        let resultUrl = upscalerResult.ResultImageUrl;
+        if (upscalerResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = upscalerResult.ResultImageUrl.replace('r2://', '');
+          const requestUrl = new URL(request.url);
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          console.log('[Upscaler4K] Converted R2 URL to public URL:', resultUrl);
+        }
+
+        const providerDebug = buildProviderDebug(upscalerResult, resultUrl);
+        const vertexDebug = buildVertexDebug(upscalerResult);
+        const debugPayload = compact({
+          provider: providerDebug,
+          vertex: vertexDebug,
+        });
+
+        return jsonResponse({
+          data: {
+            resultImageUrl: resultUrl,
+          },
+          debug: debugPayload,
+          status: 'success',
+          message: upscalerResult.Message || 'Upscaling completed',
+          code: 200,
+        });
+      } catch (error) {
+        console.error('Upscaler4K unhandled error:', error);
         return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }

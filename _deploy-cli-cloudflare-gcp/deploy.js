@@ -591,10 +591,7 @@ function isTokenExpired(expirationTime) {
   if (!expirationTime) return true;
   try {
     const date = new Date(expirationTime);
-    if (isNaN(date.getTime())) {
-      return true;
-    }
-    return date <= new Date();
+    return isNaN(date.getTime()) || date <= new Date();
   } catch {
     return true;
   }
@@ -606,40 +603,43 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
   const origToken = process.env.CLOUDFLARE_API_TOKEN;
   const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 
-  delete process.env.CLOUDFLARE_API_TOKEN;
-  delete process.env.CLOUDFLARE_ACCOUNT_ID;
+  let token = origToken;
+  let accountId = preferredAccountId || origAccountId;
 
-  let tokenInfo = getWranglerToken();
-  
-  if (!tokenInfo || isTokenExpired(tokenInfo.expirationTime)) {
-    if (tokenInfo && tokenInfo.refreshToken) {
-      logStep('Access token expired, refreshing...');
-      try {
-        tokenInfo = await loginWrangler();
-      } catch (error) {
-        logWarn(`Refresh failed: ${error.message}. Re-login required.`);
-        tokenInfo = await loginWrangler();
-      }
+  if (!token || !accountId) {
+    delete process.env.CLOUDFLARE_API_TOKEN;
+    delete process.env.CLOUDFLARE_ACCOUNT_ID;
+
+    const tokenInfo = getWranglerToken();
+    
+    if (!tokenInfo || isTokenExpired(tokenInfo.expirationTime)) {
+      logStep('Token expired or missing, logging in...');
+      const newTokenInfo = await loginWrangler();
+      token = newTokenInfo.token;
     } else {
-      logStep('No valid token found, logging in...');
-      tokenInfo = await loginWrangler();
+      const isValid = await validateCloudflareToken(tokenInfo.token);
+      if (!isValid) {
+        logStep('Token invalid, logging in...');
+        const newTokenInfo = await loginWrangler();
+        token = newTokenInfo.token;
+      } else {
+        token = tokenInfo.token;
+      }
     }
-  }
 
-  const token = tokenInfo.token;
-  process.env.CLOUDFLARE_API_TOKEN = token;
+    process.env.CLOUDFLARE_API_TOKEN = token;
 
-  let accountId = preferredAccountId;
-  if (!accountId) {
-    accountId = getAccountIdFromWrangler();
     if (!accountId) {
-      try {
-        accountId = await getAccountIdFromApi(token);
-      } catch (error) {
-        const output = execCommand('wrangler whoami', { silent: false, throwOnError: false });
-        if (output) {
-          const match = output.match(/Account ID[:\s]+([a-f0-9]{32})/i);
-          accountId = match ? match[1] : null;
+      accountId = getAccountIdFromWrangler();
+      if (!accountId) {
+        try {
+          accountId = await getAccountIdFromApi(token);
+        } catch (error) {
+          const output = execCommand('wrangler whoami', { silent: false, throwOnError: false });
+          if (output) {
+            const match = output.match(/Account ID[:\s]+([a-f0-9]{32})/i);
+            accountId = match ? match[1] : null;
+          }
         }
       }
     }
@@ -657,7 +657,8 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
 
   process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
 
-  saveCloudflareCredentials(accountId, token, tokenInfo.refreshToken, tokenInfo.expirationTime, env);
+  const tokenInfo = getWranglerToken();
+  saveCloudflareCredentials(accountId, token, tokenInfo?.refreshToken || null, tokenInfo?.expirationTime || null, env);
   
   restoreEnv(origToken, origAccountId);
   return { accountId, apiToken: token };
