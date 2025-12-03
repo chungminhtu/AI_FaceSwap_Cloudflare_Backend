@@ -730,93 +730,7 @@ export default {
       }
     }
 
-    // Handle data migration
-    if (path === '/migrate' && request.method === 'POST') {
-      try {
-        // Migrate existing data from presets table to new structure
-        await env.DB.prepare(`
-          INSERT OR IGNORE INTO preset_collections (id, name, created_at)
-          SELECT 'collection_' || id, name, created_at FROM presets
-        `).run();
 
-        await env.DB.prepare(`
-          INSERT OR IGNORE INTO preset_images (id, collection_id, image_url, created_at)
-          SELECT 'image_' || id, 'collection_' || id, image_url, created_at FROM presets
-        `).run();
-
-        return jsonResponse({ success: true, message: 'Migration completed' });
-      } catch (error) {
-        console.error('Migration error:', error);
-        return errorResponse('Migration failed', 500);
-      }
-    }
-
-    // Handle gender column migration
-    if (path === '/migrate-gender' && request.method === 'POST') {
-      try {
-        const results: string[] = [];
-        
-        // Check if gender column exists in preset_images
-        try {
-          const presetTableInfo = await env.DB.prepare("PRAGMA table_info(preset_images)").all();
-          const hasPresetGender = (presetTableInfo.results as any[]).some((col: any) => col.name === 'gender');
-          
-          if (!hasPresetGender) {
-            await env.DB.prepare('ALTER TABLE preset_images ADD COLUMN gender TEXT CHECK(gender IN (\'male\', \'female\'))').run();
-            results.push('Added gender column to preset_images');
-          } else {
-            results.push('Gender column already exists in preset_images');
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          if (errorMsg.includes('duplicate column')) {
-            results.push('Gender column already exists in preset_images');
-          } else {
-            throw error;
-          }
-        }
-
-        // Check if gender column exists in selfies
-        try {
-          const selfieTableInfo = await env.DB.prepare("PRAGMA table_info(selfies)").all();
-          const hasSelfieGender = (selfieTableInfo.results as any[]).some((col: any) => col.name === 'gender');
-          
-          if (!hasSelfieGender) {
-            await env.DB.prepare('ALTER TABLE selfies ADD COLUMN gender TEXT CHECK(gender IN (\'male\', \'female\'))').run();
-            results.push('Added gender column to selfies');
-          } else {
-            results.push('Gender column already exists in selfies');
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          if (errorMsg.includes('duplicate column')) {
-            results.push('Gender column already exists in selfies');
-          } else {
-            throw error;
-          }
-        }
-
-        // Create indexes
-        try {
-          await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_preset_images_gender ON preset_images(gender)').run();
-          results.push('Created index on preset_images.gender');
-        } catch (error) {
-          results.push('Index on preset_images.gender already exists or failed');
-        }
-
-        try {
-          await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_selfies_gender ON selfies(gender)').run();
-          results.push('Created index on selfies.gender');
-        } catch (error) {
-          results.push('Index on selfies.gender already exists or failed');
-        }
-
-        return jsonResponse({ success: true, message: 'Gender columns migration completed', results });
-      } catch (error) {
-        console.error('Gender migration error:', error);
-        return errorResponse(`Gender migration failed: ${error instanceof Error ? error.message : String(error)}`, 500);
-      }
-    }
 
     // Handle profile creation
     if (path === '/profiles' && request.method === 'POST') {
@@ -1300,99 +1214,6 @@ export default {
       }
     }
 
-    // Handle assets by gender endpoint
-    if (path === '/assets/by-gender' && request.method === 'GET') {
-      try {
-        console.log('Fetching assets grouped by gender...');
-
-        // Get all preset images with gender
-        const presetsResult = await env.DB.prepare(`
-          SELECT
-            id,
-            collection_id,
-            image_url,
-            gender,
-            created_at
-          FROM preset_images
-          WHERE gender IS NOT NULL
-          ORDER BY created_at DESC
-        `).all();
-
-        // Get all selfies with gender
-        const selfiesResult = await env.DB.prepare(`
-          SELECT
-            id,
-            image_url,
-            filename,
-            gender,
-            created_at
-          FROM selfies
-          WHERE gender IS NOT NULL
-          ORDER BY created_at DESC
-        `).all();
-
-        const presets = presetsResult.results || [];
-        const selfies = selfiesResult.results || [];
-
-        // Group by gender
-        const malePresets = presets.filter((row: any) => row.gender === 'male').map((row: any) => ({
-          id: row.id,
-          collection_id: row.collection_id,
-          image_url: row.image_url,
-          gender: row.gender,
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
-
-        const femalePresets = presets.filter((row: any) => row.gender === 'female').map((row: any) => ({
-          id: row.id,
-          collection_id: row.collection_id,
-          image_url: row.image_url,
-          gender: row.gender,
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
-
-        const maleSelfies = selfies.filter((row: any) => row.gender === 'male').map((row: any) => ({
-          id: row.id,
-          image_url: row.image_url,
-          filename: row.filename,
-          gender: row.gender,
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
-
-        const femaleSelfies = selfies.filter((row: any) => row.gender === 'female').map((row: any) => ({
-          id: row.id,
-          image_url: row.image_url,
-          filename: row.filename,
-          gender: row.gender,
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
-
-        const response = {
-          male: {
-            presets: malePresets,
-            selfies: maleSelfies
-          },
-          female: {
-            presets: femalePresets,
-            selfies: femaleSelfies
-          }
-        };
-
-        console.log(`Returning assets by gender: male presets=${malePresets.length}, female presets=${femalePresets.length}, male selfies=${maleSelfies.length}, female selfies=${femaleSelfies.length}`);
-        return jsonResponse(response);
-      } catch (error) {
-        console.error('List assets by gender error:', error);
-        console.error('Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        });
-        // Return empty structure instead of error to prevent UI breaking
-        return jsonResponse({
-          male: { presets: [], selfies: [] },
-          female: { presets: [], selfies: [] }
-        });
-      }
-    }
 
     // Handle results listing
     if (path === '/results' && request.method === 'GET') {
@@ -1554,30 +1375,6 @@ export default {
       }
     }
 
-    // Handle safety check test endpoint
-    if (path === '/test-safety' && request.method === 'POST') {
-      try {
-        const body: { image_url?: string; imageUrl?: string } = await request.json();
-        const imageUrl = body.image_url || body.imageUrl;
-
-        if (!imageUrl) {
-          return errorResponse('Missing image_url in request body', 400);
-        }
-
-        console.log('[TestSafety] Testing safety check for image:', imageUrl);
-        const safeSearchResult = await checkSafeSearch(imageUrl, env);
-
-        return jsonResponse({
-          success: true,
-          imageUrl: imageUrl,
-          result: safeSearchResult,
-          timestamp: new Date().toISOString()
-        });
-      } catch (error) {
-        console.error('[TestSafety] Error:', error);
-        return errorResponse(`Test failed: ${error instanceof Error ? error.message : String(error)}`, 500);
-      }
-    }
 
     // Test Vertex AI API connectivity
     if (path === '/test-vertex' && request.method === 'GET') {
@@ -1690,7 +1487,7 @@ export default {
           console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
           const promptResult = await env.DB.prepare(
-            'SELECT prompt_json FROM preset_images WHERE id = ?'
+            'SELECT prompt_json FROM presets WHERE id = ?'
           ).bind(body.preset_image_id).first();
 
           if (!promptResult || !(promptResult as any).prompt_json) {

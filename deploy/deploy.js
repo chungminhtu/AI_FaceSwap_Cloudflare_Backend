@@ -488,30 +488,6 @@ const utils = {
           }
         }
       }
-      
-      // Always run gender column migration (safe to run multiple times)
-      const migrationPath = path.join(cwd, 'migrate-gender-columns.sql');
-      if (fs.existsSync(migrationPath)) {
-        logStep('Running gender columns migration...');
-        try {
-          await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${migrationPath}`, cwd);
-          logSuccess('Gender columns migration completed');
-        } catch (migrationError) {
-          const errorMsg = migrationError.message || String(migrationError);
-          const errorOutput = (migrationError.stdout || migrationError.stderr || '').toLowerCase();
-          // Migration might fail if columns already exist - that's OK
-          if (errorMsg.toLowerCase().includes('duplicate column') || 
-              errorMsg.toLowerCase().includes('already exists') ||
-              errorOutput.includes('duplicate column') || 
-              errorOutput.includes('already exists')) {
-            logWarn('Gender columns already exist, migration skipped');
-          } else {
-            // Log warning but don't fail deployment - backend code handles missing columns gracefully
-            logWarn(`Migration note: ${errorMsg.substring(0, 150)}`);
-            logWarn('Backend will work without gender columns. You can run migration manually later.');
-          }
-        }
-      }
     } catch (error) {
       if (!error.message.includes('already exists')) throw error;
     }

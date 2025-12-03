@@ -145,17 +145,6 @@ export interface SelfieListResponse {
   selfies: Selfie[];
 }
 
-export interface AssetsByGenderResponse {
-  male: {
-    presets: PresetImage[];
-    selfies: Selfie[];
-  };
-  female: {
-    presets: PresetImage[];
-    selfies: Selfie[];
-  };
-}
-
 export interface ProfileListResponse {
   profiles: Profile[];
 }
