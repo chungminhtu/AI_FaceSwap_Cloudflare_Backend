@@ -8,30 +8,283 @@ const https = require('https');
 
 const colors = {
   reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
   red: '\x1b[31m',
   cyan: '\x1b[36m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  white: '\x1b[37m',
+  bgGreen: '\x1b[42m',
+  bgRed: '\x1b[41m',
+  bgYellow: '\x1b[43m',
+  bgCyan: '\x1b[46m',
 };
 
-let currentStep = 0;
-const totalSteps = 9;
+class DeploymentLogger {
+  constructor() {
+    this.steps = [];
+    this.currentStepIndex = -1;
+    this.startTime = Date.now();
+    this.lastRenderTime = 0;
+    this.renderThrottle = 100;
+  }
+
+  addStep(name, description = '') {
+    const step = {
+      name,
+      description,
+      status: 'pending',
+      message: '',
+      startTime: null,
+      endTime: null,
+      duration: null
+    };
+    this.steps.push(step);
+    return this.steps.length - 1;
+  }
+
+  findStep(name) {
+    return this.steps.findIndex(s => s.name === name);
+  }
+
+  startStep(nameOrIndex, message = '') {
+    const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
+    if (index >= 0 && index < this.steps.length) {
+      this.steps[index].status = 'running';
+      this.steps[index].message = message;
+      this.steps[index].startTime = Date.now();
+      this.currentStepIndex = index;
+      this.render();
+    }
+  }
+
+  completeStep(nameOrIndex, message = '') {
+    const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
+    if (index >= 0 && index < this.steps.length) {
+      this.steps[index].status = 'completed';
+      this.steps[index].message = message || this.steps[index].message;
+      this.steps[index].endTime = Date.now();
+      if (this.steps[index].startTime) {
+        this.steps[index].duration = this.steps[index].endTime - this.steps[index].startTime;
+      }
+      this.render();
+    }
+  }
+
+  failStep(nameOrIndex, message = '') {
+    const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
+    if (index >= 0 && index < this.steps.length) {
+      this.steps[index].status = 'failed';
+      this.steps[index].message = message || this.steps[index].message;
+      this.steps[index].endTime = Date.now();
+      if (this.steps[index].startTime) {
+        this.steps[index].duration = this.steps[index].endTime - this.steps[index].startTime;
+      }
+      this.render();
+    }
+  }
+
+  warnStep(nameOrIndex, message = '') {
+    const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
+    if (index >= 0 && index < this.steps.length) {
+      if (this.steps[index].status === 'pending') {
+        this.steps[index].status = 'running';
+      }
+      this.steps[index].message = message || this.steps[index].message;
+      this.render();
+    }
+  }
+
+  skipStep(nameOrIndex, message = '') {
+    const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
+    if (index >= 0 && index < this.steps.length) {
+      this.steps[index].status = 'skipped';
+      this.steps[index].message = message || 'Skipped';
+      this.render();
+    }
+  }
+
+  getStatusIcon(status) {
+    switch (status) {
+      case 'completed': return `${colors.green}${colors.bright}✓${colors.reset}`;
+      case 'failed': return `${colors.red}${colors.bright}✗${colors.reset}`;
+      case 'running': return `${colors.cyan}${colors.bright}⟳${colors.reset}`;
+      case 'warning': return `${colors.yellow}${colors.bright}⚠${colors.reset}`;
+      case 'skipped': return `${colors.dim}⊘${colors.reset}`;
+      case 'pending': return `${colors.dim}○${colors.reset}`;
+      default: return ' ';
+    }
+  }
+
+  getStatusText(status) {
+    switch (status) {
+      case 'completed': return `${colors.green}${colors.bright}COMPLETED${colors.reset}`;
+      case 'failed': return `${colors.red}${colors.bright}FAILED${colors.reset}`;
+      case 'running': return `${colors.cyan}${colors.bright}RUNNING${colors.reset}`;
+      case 'warning': return `${colors.yellow}${colors.bright}WARNING${colors.reset}`;
+      case 'skipped': return `${colors.dim}SKIPPED${colors.reset}`;
+      case 'pending': return `${colors.dim}PENDING${colors.reset}`;
+      default: return '';
+    }
+  }
+
+  formatDuration(ms) {
+    if (!ms) return '';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  render() {
+    const now = Date.now();
+    if (now - this.lastRenderTime < this.renderThrottle && this.steps.some(s => s.status === 'running')) {
+      return;
+    }
+    this.lastRenderTime = now;
+
+    process.stdout.write('\x1b[2J\x1b[0f');
+    
+    const header = `${colors.bright}${colors.cyan}╔═══════════════════════════════════════════════════════════════════════════════╗${colors.reset}\n` +
+                   `${colors.bright}${colors.cyan}║${colors.reset} ${colors.bright}${colors.white}🚀 AI FaceSwap Cloudflare Backend - Deployment${colors.reset} ${colors.bright}${colors.cyan}║${colors.reset}\n` +
+                   `${colors.bright}${colors.cyan}╚═══════════════════════════════════════════════════════════════════════════════╝${colors.reset}\n`;
+
+    process.stdout.write(header);
+
+    const tableWidth = 85;
+    const col1Width = 8;
+    const col2Width = 45;
+    const col3Width = 12;
+    const col4Width = 20;
+
+    const separator = `${colors.dim}${'─'.repeat(col1Width)}${'┬'}${'─'.repeat(col2Width)}${'┬'}${'─'.repeat(col3Width)}${'┬'}${'─'.repeat(col4Width)}${colors.reset}\n`;
+    const headerRow = `${colors.bright}${'#'.padEnd(col1Width)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STEP'.padEnd(col2Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STATUS'.padEnd(col3Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'DURATION'.padEnd(col4Width - 1)}${colors.reset}\n`;
+
+    process.stdout.write(separator);
+    process.stdout.write(headerRow);
+    process.stdout.write(separator);
+
+    this.steps.forEach((step, index) => {
+      const stepNum = `${(index + 1).toString().padStart(2, '0')}`;
+      const icon = this.getStatusIcon(step.status);
+      const statusText = this.getStatusText(step.status);
+      const duration = step.duration ? this.formatDuration(step.duration) : (step.status === 'running' ? '...' : '');
+      
+      const nameDisplay = step.name.length > col2Width - 1 ? step.name.substring(0, col2Width - 4) + '...' : step.name;
+      const messageDisplay = step.message ? ` ${colors.dim}${step.message}${colors.reset}` : '';
+      
+      const row = `${stepNum.padEnd(col1Width)}${colors.dim}│${colors.reset} ${icon} ${nameDisplay.padEnd(col2Width - 3)}${colors.dim}│${colors.reset} ${statusText.padEnd(col3Width - 1)}${colors.dim}│${colors.reset} ${duration.padEnd(col4Width - 1)}\n`;
+      process.stdout.write(row);
+      if (messageDisplay) {
+        const msgRow = `${' '.repeat(col1Width)}${colors.dim}│${colors.reset} ${' '.repeat(col2Width)}${colors.dim}│${colors.reset} ${' '.repeat(col3Width)}${colors.dim}│${colors.reset} ${messageDisplay}\n`;
+        process.stdout.write(msgRow);
+      }
+    });
+
+    process.stdout.write(separator);
+
+    const completed = this.steps.filter(s => s.status === 'completed').length;
+    const failed = this.steps.filter(s => s.status === 'failed').length;
+    const running = this.steps.filter(s => s.status === 'running').length;
+    const skipped = this.steps.filter(s => s.status === 'skipped').length;
+    const warning = this.steps.filter(s => s.status === 'warning').length;
+    const total = this.steps.length;
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    const progressBar = this.renderProgressBar(progress);
+    const summary = `${colors.bright}Progress:${colors.reset} ${progressBar} ${colors.bright}${progress}%${colors.reset}\n` +
+                    `${colors.bright}Summary:${colors.reset} ${colors.green}${completed}✓${colors.reset} ` +
+                    `${colors.red}${failed}✗${colors.reset} ` +
+                    `${colors.yellow}${warning}⚠${colors.reset} ` +
+                    `${colors.cyan}${running}⟳${colors.reset} ` +
+                    `${colors.dim}${skipped}⊘${colors.reset} ` +
+                    `| ${total} total\n`;
+    
+    const elapsed = Date.now() - this.startTime;
+    const elapsedText = `${colors.bright}Elapsed:${colors.reset} ${this.formatDuration(elapsed)}\n`;
+    
+    process.stdout.write(summary);
+    process.stdout.write(elapsedText);
+    process.stdout.write('\n');
+  }
+
+  renderProgressBar(percentage) {
+    const width = 40;
+    const filled = Math.round((percentage / 100) * width);
+    const empty = width - filled;
+    return `${colors.green}${'█'.repeat(filled)}${colors.reset}${colors.dim}${'░'.repeat(empty)}${colors.reset}`;
+  }
+
+  renderSummary(results = {}) {
+    const allCompleted = this.steps.every(s => s.status === 'completed' || s.status === 'skipped' || s.status === 'warning');
+    const hasFailures = this.steps.some(s => s.status === 'failed');
+
+    process.stdout.write('\n');
+    process.stdout.write(`${colors.bright}${colors.cyan}╔═══════════════════════════════════════════════════════════════════════════════╗${colors.reset}\n`);
+    process.stdout.write(`${colors.bright}${colors.cyan}║${colors.reset} ${colors.bright}${colors.white}📊 Deployment Summary${colors.reset} ${' '.repeat(60)}${colors.bright}${colors.cyan}║${colors.reset}\n`);
+    process.stdout.write(`${colors.bright}${colors.cyan}╚═══════════════════════════════════════════════════════════════════════════════╝${colors.reset}\n`);
+    process.stdout.write('\n');
+
+    if (allCompleted && !hasFailures) {
+      process.stdout.write(`${colors.green}${colors.bright}✓ Deployment completed successfully!${colors.reset}\n\n`);
+      
+      if (results.workerUrl) {
+        process.stdout.write(`${colors.bright}Backend Worker:${colors.reset} ${colors.cyan}${results.workerUrl}${colors.reset}\n`);
+      }
+      if (results.pagesUrl) {
+        process.stdout.write(`${colors.bright}Frontend Pages:${colors.reset} ${colors.cyan}${results.pagesUrl}${colors.reset}\n`);
+      }
+    } else if (hasFailures) {
+      process.stdout.write(`${colors.red}${colors.bright}✗ Deployment failed!${colors.reset}\n\n`);
+      const failedSteps = this.steps.filter(s => s.status === 'failed');
+      failedSteps.forEach(step => {
+        process.stdout.write(`${colors.red}  ✗ ${step.name}: ${step.message}${colors.reset}\n`);
+      });
+    }
+
+    process.stdout.write('\n');
+  }
+}
+
+let logger = null;
+
+function initLogger() {
+  logger = new DeploymentLogger();
+  return logger;
+}
 
 function logStep(message) {
-  currentStep++;
-  console.log(`${colors.cyan}[${currentStep}/${totalSteps}]${colors.reset} ${message}`);
+  if (logger) {
+    const index = logger.addStep(message);
+    logger.startStep(index);
+  } else {
+    console.log(`${colors.cyan}[STEP]${colors.reset} ${message}`);
+  }
 }
 
 function logSuccess(message) {
-  console.log(`${colors.green}✓${colors.reset} ${message}`);
+  if (logger && logger.currentStepIndex >= 0) {
+    logger.completeStep(logger.currentStepIndex, message);
+  } else {
+    console.log(`${colors.green}✓${colors.reset} ${message}`);
+  }
 }
 
 function logError(message) {
-  console.log(`${colors.red}✗${colors.reset} ${message}`);
+  if (logger && logger.currentStepIndex >= 0) {
+    logger.failStep(logger.currentStepIndex, message);
+  } else {
+    console.log(`${colors.red}✗${colors.reset} ${message}`);
+  }
 }
 
 function logWarn(message) {
-  console.log(`${colors.yellow}⚠${colors.reset} ${message}`);
+  if (logger && logger.currentStepIndex >= 0) {
+    logger.warnStep(logger.currentStepIndex, message);
+  } else {
+    console.log(`${colors.yellow}⚠${colors.reset} ${message}`);
+  }
 }
 
 function execCommand(command, options = {}) {
@@ -763,11 +1016,52 @@ const utils = {
 };
 
 async function deploy(config, progressCallback, cwd, flags = {}) {
+  const useLogger = !progressCallback;
+  if (useLogger) {
+    logger = new DeploymentLogger();
+    
+    const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
+    const DEPLOY_DB = flags.DEPLOY_DB !== false;
+    const DEPLOY_WORKER = flags.DEPLOY_WORKER !== false;
+    const DEPLOY_PAGES = flags.DEPLOY_PAGES !== false;
+    const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
+    const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;
+    const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
+
+    if (needsCloudflare || needsGCP) {
+      logger.addStep('Checking prerequisites', 'Validating required tools');
+    }
+    if (needsGCP) {
+      logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+      logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
+    }
+    if (needsCloudflare) {
+      logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+      if (DEPLOY_R2 || DEPLOY_DB) {
+        logger.addStep('Setting up resources', 'Creating Cloudflare resources');
+      }
+      if (DEPLOY_SECRETS) {
+        logger.addStep('Deploying secrets', 'Configuring environment secrets');
+      }
+      if (DEPLOY_WORKER) {
+        logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
+      }
+      if (DEPLOY_PAGES) {
+        logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+      }
+    }
+    logger.render();
+  }
+
   const report = progressCallback || ((step, status, details) => {
-    if (status === 'running') logStep(step);
-    else if (status === 'completed') logSuccess(details);
-    else if (status === 'failed') logError(details);
-    else if (status === 'warning') logWarn(details);
+    if (!logger) return;
+    const stepIndex = logger.findStep(step);
+    if (stepIndex >= 0) {
+      if (status === 'running') logger.startStep(stepIndex, details);
+      else if (status === 'completed') logger.completeStep(stepIndex, details);
+      else if (status === 'failed') logger.failStep(stepIndex, details);
+      else if (status === 'warning') logger.warnStep(stepIndex, details);
+    }
   });
 
   const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
@@ -862,13 +1156,17 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         report('Deploying frontend...', 'completed', 'Frontend deployed');
       }
 
-      console.log('\n' + '='.repeat(50));
-      console.log('✓ Deployment Complete!');
-      console.log('\n📌 URLs:');
-      if (workerUrl) console.log(`   ✅ Backend: ${workerUrl}`);
-      if (pagesUrl) console.log(`   ✅ Frontend: ${pagesUrl}`);
-      if (!workerUrl && !pagesUrl) console.log(`   ✅ Frontend: https://${config.pagesProjectName}.pages.dev/`);
-      console.log('');
+      if (useLogger && logger) {
+        logger.renderSummary({ workerUrl, pagesUrl });
+      } else {
+        console.log('\n' + '='.repeat(50));
+        console.log('✓ Deployment Complete!');
+        console.log('\n📌 URLs:');
+        if (workerUrl) console.log(`   ✅ Backend: ${workerUrl}`);
+        if (pagesUrl) console.log(`   ✅ Frontend: ${pagesUrl}`);
+        if (!workerUrl && !pagesUrl) console.log(`   ✅ Frontend: https://${config.pagesProjectName}.pages.dev/`);
+        console.log('');
+      }
 
       return { success: true, workerUrl, pagesUrl };
     } finally {
@@ -880,99 +1178,119 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 }
 
 async function main() {
-  console.log('\n🚀 AI FaceSwap Cloudflare Backend - Deployment\n');
-
-  logStep('Loading configuration...');
-  const config = await loadConfig();
-
-  logStep('Checking prerequisites...');
-  if (!utils.checkWrangler()) {
-    logError('Wrangler CLI not found');
-    process.exit(1);
-  }
-  if (!utils.checkGcloud()) {
-    logError('gcloud CLI not found');
-    process.exit(1);
-  }
-
-  logStep('Authenticating with GCP...');
-  if (!await utils.authenticateGCP(config.gcp.serviceAccountKeyJson, config.gcp.projectId)) {
-    logError('GCP authentication failed');
-    process.exit(1);
-  }
-  logSuccess('GCP authenticated');
-
-  logStep('Checking GCP APIs...');
-  const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
-  if (apiResults.failed.length > 0) {
-    const failedApis = apiResults.failed.map(f => f.api).join(', ');
-    logWarn(`Some APIs failed to enable: ${failedApis}. Please enable manually in GCP Console.`);
-  } else if (apiResults.newlyEnabled.length > 0) {
-    logSuccess(`Enabled ${apiResults.newlyEnabled.length} API(s)`);
-  } else {
-    logSuccess('All required APIs are enabled');
-  }
-
-  logStep('Setting up Cloudflare credentials...');
-  let cfToken = config.cloudflare.apiToken;
-  let cfAccountId = config.cloudflare.accountId;
-
-  if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
-    const creds = await setupCloudflare(config._environment, cfAccountId);
-    cfToken = creds.apiToken;
-    cfAccountId = creds.accountId;
-    config.cloudflare.apiToken = cfToken;
-    config.cloudflare.accountId = cfAccountId;
-  }
+  logger = new DeploymentLogger();
   
-  process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
-  logSuccess('Cloudflare ready');
-
-  const origToken = process.env.CLOUDFLARE_API_TOKEN;
-  const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  process.env.CLOUDFLARE_API_TOKEN = cfToken;
-  process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+  logger.addStep('Loading configuration', 'Reading deployment configuration');
+  logger.addStep('Checking prerequisites', 'Validating required tools');
+  logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+  logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
+  logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+  logger.addStep('Setting up resources', 'Creating Cloudflare resources');
+  logger.addStep('Deploying secrets', 'Configuring environment secrets');
+  logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
+  if (true) {
+    logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+  }
+  logger.render();
 
   try {
-    logStep('Setting up resources...');
-    await utils.ensureR2Bucket(process.cwd(), config.bucketName);
-    await utils.ensureD1Database(process.cwd(), config.databaseName);
-    logSuccess('Resources ready');
+    logger.startStep('Loading configuration');
+    const config = await loadConfig();
+    logger.completeStep('Loading configuration', 'Configuration loaded');
 
-    logStep('Deploying secrets...');
-    if (Object.keys(config.secrets).length > 0) {
-      await utils.deploySecrets(config.secrets, process.cwd(), config.workerName);
-      logSuccess('Secrets deployed');
+    logger.startStep('Checking prerequisites');
+    if (!utils.checkWrangler()) {
+      logger.failStep('Checking prerequisites', 'Wrangler CLI not found');
+      process.exit(1);
+    }
+    if (!utils.checkGcloud()) {
+      logger.failStep('Checking prerequisites', 'gcloud CLI not found');
+      process.exit(1);
+    }
+    logger.completeStep('Checking prerequisites', 'Tools validated');
+
+    logger.startStep('Authenticating with GCP');
+    if (!await utils.authenticateGCP(config.gcp.serviceAccountKeyJson, config.gcp.projectId)) {
+      logger.failStep('Authenticating with GCP', 'GCP authentication failed');
+      process.exit(1);
+    }
+    logger.completeStep('Authenticating with GCP', 'GCP authenticated');
+
+    logger.startStep('Checking GCP APIs');
+    const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
+    if (apiResults.failed.length > 0) {
+      const failedApis = apiResults.failed.map(f => f.api).join(', ');
+      logger.warnStep('Checking GCP APIs', `Some APIs failed: ${failedApis}`);
+    } else if (apiResults.newlyEnabled.length > 0) {
+      logger.completeStep('Checking GCP APIs', `Enabled ${apiResults.newlyEnabled.length} API(s)`);
     } else {
-      const existing = utils.getExistingSecrets();
-      const { missing, allSet } = checkSecrets(existing);
-      if (!allSet) {
-        logWarn(`Missing secrets: ${missing.join(', ')}`);
+      logger.completeStep('Checking GCP APIs', 'All required APIs are enabled');
+    }
+
+    logger.startStep('Setting up Cloudflare credentials');
+    let cfToken = config.cloudflare.apiToken;
+    let cfAccountId = config.cloudflare.accountId;
+
+    if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
+      const creds = await setupCloudflare(config._environment, cfAccountId);
+      cfToken = creds.apiToken;
+      cfAccountId = creds.accountId;
+      config.cloudflare.apiToken = cfToken;
+      config.cloudflare.accountId = cfAccountId;
+    }
+    
+    process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+    logger.completeStep('Setting up Cloudflare credentials', 'Cloudflare ready');
+
+    const origToken = process.env.CLOUDFLARE_API_TOKEN;
+    const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    process.env.CLOUDFLARE_API_TOKEN = cfToken;
+    process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+
+    try {
+      logger.startStep('Setting up resources');
+      await utils.ensureR2Bucket(process.cwd(), config.bucketName);
+      await utils.ensureD1Database(process.cwd(), config.databaseName);
+      logger.completeStep('Setting up resources', 'Resources ready');
+
+      logger.startStep('Deploying secrets');
+      if (Object.keys(config.secrets).length > 0) {
+        await utils.deploySecrets(config.secrets, process.cwd(), config.workerName);
+        logger.completeStep('Deploying secrets', 'Secrets deployed');
       } else {
-        logSuccess('All secrets set');
+        const existing = utils.getExistingSecrets();
+        const { missing, allSet } = checkSecrets(existing);
+        if (!allSet) {
+          logger.warnStep('Deploying secrets', `Missing secrets: ${missing.join(', ')}`);
+        } else {
+          logger.completeStep('Deploying secrets', 'All secrets set');
+        }
       }
+
+      logger.startStep('Deploying worker');
+      const workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config);
+      logger.completeStep('Deploying worker', 'Worker deployed');
+
+      let pagesUrl = '';
+      if (config.deployPages) {
+        logger.startStep('Deploying frontend');
+        pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName);
+        logger.completeStep('Deploying frontend', 'Frontend deployed');
+      } else {
+        logger.skipStep('Deploying frontend', 'Skipped (deployPages disabled)');
+      }
+
+      logger.renderSummary({ workerUrl, pagesUrl: pagesUrl || `https://${config.pagesProjectName}.pages.dev/` });
+
+    } finally {
+      restoreEnv(origToken, origAccountId);
     }
-
-    logStep('Deploying worker...');
-    const workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config);
-    logSuccess('Worker deployed');
-
-    let pagesUrl = '';
-    if (config.deployPages) {
-      logStep('Deploying frontend...');
-      pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName);
-      logSuccess('Frontend deployed');
+  } catch (error) {
+    if (logger && logger.currentStepIndex >= 0) {
+      logger.failStep(logger.currentStepIndex, error.message);
     }
-
-    console.log('\n' + '='.repeat(50));
-    logSuccess('Deployment Complete!');
-    console.log('\n📌 URLs:');
-    if (workerUrl) console.log(`   ✅ Backend: ${workerUrl}`);
-    console.log(`   ✅ Frontend: ${pagesUrl || `https://${config.pagesProjectName}.pages.dev/`}`);
-    console.log('');
-
-  } finally {
-    restoreEnv(origToken, origAccountId);
+    if (logger) logger.renderSummary();
+    process.exit(1);
   }
 }
 
