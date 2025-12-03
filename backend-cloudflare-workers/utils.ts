@@ -23,11 +23,11 @@ function getSeverity(level: string): number {
 
 // Default: Only block VERY_LIKELY (loose mode)
 // Strict mode: Block both LIKELY and VERY_LIKELY
-export const getUnsafeLevels = (strictness: 'strict'): string[] => {
+export const getUnsafeLevels = (strictness: 'strict' | 'lenient'): string[] => {
   if (strictness === 'strict') {
     return ['LIKELY', 'VERY_LIKELY'];
   }
-  return ['LIKELY', 'VERY_LIKELY'];
+  return ['VERY_LIKELY'];
 };
 
 export const CORS_HEADERS = {
@@ -48,7 +48,7 @@ export const errorResponse = (message: string, status = 500): Response =>
 
 export const isUnsafe = (
   annotation: { adult: string; violence: string; racy: string },
-  strictness: 'strict' | 'lenient' = 'lenient'
+  strictness: 'strict' | 'lenient'
 ): boolean => {
   const unsafeLevels = getUnsafeLevels(strictness);
   return (

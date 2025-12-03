@@ -6,8 +6,9 @@ export interface Env {
   GOOGLE_VERTEX_PROJECT_ID: string;
   GOOGLE_VERTEX_LOCATION: string;
   GOOGLE_VISION_ENDPOINT: string;
-  FACESWAP_IMAGES: R2Bucket;
-  DB: D1Database;
+  R2_BUCKET_BINDING?: string; // Dynamic R2 bucket binding name (defaults to bucket name)
+  D1_DATABASE_BINDING?: string; // Dynamic D1 database binding name (defaults to database name)
+  [key: string]: any; // Allow dynamic bindings for R2 buckets and D1 databases
   NANO_BANANA_API_URL?: string;
   NANO_BANANA_API_KEY?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string; // Optional: Service account email for OAuth token generation

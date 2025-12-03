@@ -146,20 +146,24 @@ class DeploymentLogger {
 
     process.stdout.write('\x1b[2J\x1b[0f');
     
-    const header = `${colors.bright}${colors.cyan}╔═══════════════════════════════════════════════════════════════════════════════╗${colors.reset}\n` +
-                   `${colors.bright}${colors.cyan}║${colors.reset} ${colors.bright}${colors.white}🚀 AI FaceSwap Cloudflare Backend - Deployment${colors.reset} ${colors.bright}${colors.cyan}║${colors.reset}\n` +
-                   `${colors.bright}${colors.cyan}╚═══════════════════════════════════════════════════════════════════════════════╝${colors.reset}\n`;
+    const headerWidth = 100;
+    const title = '🚀 AI FaceSwap Cloudflare Backend - Deployment';
+    const titlePadding = Math.max(0, headerWidth - title.length - 4);
+    const header = `${colors.bright}${colors.cyan}╔${'═'.repeat(headerWidth - 2)}╗${colors.reset}\n` +
+                   `${colors.bright}${colors.cyan}║${colors.reset} ${colors.bright}${colors.white}${title}${colors.reset}${' '.repeat(titlePadding)}${colors.bright}${colors.cyan}║${colors.reset}\n` +
+                   `${colors.bright}${colors.cyan}╚${'═'.repeat(headerWidth - 2)}╝${colors.reset}\n`;
 
     process.stdout.write(header);
 
-    const tableWidth = 85;
-    const col1Width = 8;
-    const col2Width = 45;
+    const tableWidth = 100;
+    const col1Width = 6;
+    const col2Width = 42;
     const col3Width = 12;
-    const col4Width = 20;
+    const col4Width = 10;
+    const col5Width = 28;
 
-    const separator = `${colors.dim}${'─'.repeat(col1Width)}${'┬'}${'─'.repeat(col2Width)}${'┬'}${'─'.repeat(col3Width)}${'┬'}${'─'.repeat(col4Width)}${colors.reset}\n`;
-    const headerRow = `${colors.bright}${'#'.padEnd(col1Width)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STEP'.padEnd(col2Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STATUS'.padEnd(col3Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'DURATION'.padEnd(col4Width - 1)}${colors.reset}\n`;
+    const separator = `${colors.dim}${'─'.repeat(col1Width)}${'┬'}${'─'.repeat(col2Width)}${'┬'}${'─'.repeat(col3Width)}${'┬'}${'─'.repeat(col4Width)}${'┬'}${'─'.repeat(col5Width)}${colors.reset}\n`;
+    const headerRow = `${colors.bright}${'#'.padEnd(col1Width)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STEP'.padEnd(col2Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STATUS'.padEnd(col3Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'TIME'.padEnd(col4Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'DETAILS'.padEnd(col5Width - 1)}${colors.reset}\n`;
 
     process.stdout.write(separator);
     process.stdout.write(headerRow);
@@ -171,15 +175,18 @@ class DeploymentLogger {
       const statusText = this.getStatusText(step.status);
       const duration = step.duration ? this.formatDuration(step.duration) : (step.status === 'running' ? '...' : '');
       
-      const nameDisplay = step.name.length > col2Width - 1 ? step.name.substring(0, col2Width - 4) + '...' : step.name;
-      const messageDisplay = step.message ? ` ${colors.dim}${step.message}${colors.reset}` : '';
-      
-      const row = `${stepNum.padEnd(col1Width)}${colors.dim}│${colors.reset} ${icon} ${nameDisplay.padEnd(col2Width - 3)}${colors.dim}│${colors.reset} ${statusText.padEnd(col3Width - 1)}${colors.dim}│${colors.reset} ${duration.padEnd(col4Width - 1)}\n`;
-      process.stdout.write(row);
-      if (messageDisplay) {
-        const msgRow = `${' '.repeat(col1Width)}${colors.dim}│${colors.reset} ${' '.repeat(col2Width)}${colors.dim}│${colors.reset} ${' '.repeat(col3Width)}${colors.dim}│${colors.reset} ${messageDisplay}\n`;
-        process.stdout.write(msgRow);
+      let nameDisplay = step.name;
+      if (nameDisplay.length > col2Width - 3) {
+        nameDisplay = nameDisplay.substring(0, col2Width - 6) + '...';
       }
+      
+      let messageDisplay = step.message || '';
+      if (messageDisplay.length > col5Width - 1) {
+        messageDisplay = messageDisplay.substring(0, col5Width - 4) + '...';
+      }
+      
+      const row = `${stepNum.padEnd(col1Width)}${colors.dim}│${colors.reset} ${icon} ${nameDisplay.padEnd(col2Width - 3)}${colors.dim}│${colors.reset} ${statusText.padEnd(col3Width - 1)}${colors.dim}│${colors.reset} ${duration.padEnd(col4Width - 1)}${colors.dim}│${colors.reset} ${messageDisplay.padEnd(col5Width - 1)}${colors.reset}\n`;
+      process.stdout.write(row);
     });
 
     process.stdout.write(separator);
@@ -221,9 +228,12 @@ class DeploymentLogger {
     const hasFailures = this.steps.some(s => s.status === 'failed');
 
     process.stdout.write('\n');
-    process.stdout.write(`${colors.bright}${colors.cyan}╔═══════════════════════════════════════════════════════════════════════════════╗${colors.reset}\n`);
-    process.stdout.write(`${colors.bright}${colors.cyan}║${colors.reset} ${colors.bright}${colors.white}📊 Deployment Summary${colors.reset} ${' '.repeat(60)}${colors.bright}${colors.cyan}║${colors.reset}\n`);
-    process.stdout.write(`${colors.bright}${colors.cyan}╚═══════════════════════════════════════════════════════════════════════════════╝${colors.reset}\n`);
+    const summaryWidth = 100;
+    const summaryTitle = '📊 Deployment Summary';
+    const summaryPadding = Math.max(0, summaryWidth - summaryTitle.length - 4);
+    process.stdout.write(`${colors.bright}${colors.cyan}╔${'═'.repeat(summaryWidth - 2)}╗${colors.reset}\n`);
+    process.stdout.write(`${colors.bright}${colors.cyan}║${colors.reset} ${colors.bright}${colors.white}${summaryTitle}${colors.reset}${' '.repeat(summaryPadding)}${colors.bright}${colors.cyan}║${colors.reset}\n`);
+    process.stdout.write(`${colors.bright}${colors.cyan}╚${'═'.repeat(summaryWidth - 2)}╝${colors.reset}\n`);
     process.stdout.write('\n');
 
     if (allCompleted && !hasFailures) {
@@ -409,17 +419,19 @@ function parseConfig(config) {
       apiToken: config.cloudflare.apiToken || ''
     },
     gcp: config.gcp,
-    secrets: {
-      RAPIDAPI_KEY: config.RAPIDAPI_KEY,
-      RAPIDAPI_HOST: config.RAPIDAPI_HOST,
-      RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
-      GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
-      GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
-      GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
-      GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
-      GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-    },
+      secrets: {
+        RAPIDAPI_KEY: config.RAPIDAPI_KEY,
+        RAPIDAPI_HOST: config.RAPIDAPI_HOST,
+        RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
+        GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
+        GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
+        GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
+        GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
+        GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        R2_BUCKET_BINDING: config.bucketName,
+        D1_DATABASE_BINDING: config.databaseName
+      },
     _needsCloudflareSetup: config._needsCloudflareSetup,
     _environment: config._environment
   };
@@ -431,8 +443,8 @@ function generateWranglerConfig(config) {
     main: 'backend-cloudflare-workers/index.ts',
     compatibility_date: '2024-01-01',
     account_id: config.cloudflare.accountId,
-    d1_databases: [{ binding: 'DB', database_name: config.databaseName }],
-    r2_buckets: [{ binding: 'FACESWAP_IMAGES', bucket_name: config.bucketName }]
+    d1_databases: [{ binding: config.databaseName, database_name: config.databaseName }],
+    r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }]
   };
 }
 
@@ -868,44 +880,49 @@ const utils = {
       const result = await runCommand('wrangler r2 bucket list', cwd);
       if (!result.stdout.includes(bucketName)) {
         await runCommand(`wrangler r2 bucket create ${bucketName}`, cwd);
+        return { exists: false, created: true };
       }
+      return { exists: true, created: false };
     } catch (error) {
       if (!error.message.includes('already exists')) throw error;
+      return { exists: true, created: false };
     }
   },
 
   async ensureD1Database(cwd, databaseName) {
     try {
       const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
+      let exists = output && output.includes(databaseName);
+      let created = false;
 
-      if (!output || !output.includes(databaseName)) {
-        logStep('Creating D1 database...');
+      if (!exists) {
         await runCommand(`wrangler d1 create ${databaseName}`, cwd);
-        logSuccess('Database created');
-      } else {
-        logSuccess('Database already exists');
+        created = true;
+        exists = true;
       }
 
       const schemaPath = path.join(cwd, 'backend-cloudflare-workers', 'schema.sql');
+      let schemaApplied = false;
       if (fs.existsSync(schemaPath)) {
         try {
-          logStep('Initializing database schema...');
           await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd);
-          logSuccess('Database schema initialized');
+          schemaApplied = true;
         } catch (schemaError) {
           const errorMsg = schemaError.message || schemaError.error || '';
           if (!errorMsg.includes('already exists') && !errorMsg.includes('duplicate')) {
-            logWarn(`Schema initialization warning: ${errorMsg}`);
+            throw schemaError;
           }
+          schemaApplied = true;
         }
       }
+
+      return { exists, created, schemaApplied };
     } catch (error) {
       const errorMsg = error.message || error.error || '';
       if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
-        logWarn('Database already exists, will use existing database');
-      } else {
-        throw error;
+        return { exists: true, created: false, schemaApplied: false };
       }
+      throw error;
     }
   },
 
@@ -1037,8 +1054,11 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     }
     if (needsCloudflare) {
       logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
-      if (DEPLOY_R2 || DEPLOY_DB) {
-        logger.addStep('Setting up resources', 'Creating Cloudflare resources');
+      if (DEPLOY_R2) {
+        logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
+      }
+      if (DEPLOY_DB) {
+        logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
       }
       if (DEPLOY_SECRETS) {
         logger.addStep('Deploying secrets', 'Configuring environment secrets');
@@ -1119,11 +1139,33 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
 
     try {
-      if (DEPLOY_R2 || DEPLOY_DB) {
-        report('Setting up resources...', 'running', 'Creating Cloudflare resources');
-        if (DEPLOY_R2) await utils.ensureR2Bucket(cwd, config.bucketName);
-        if (DEPLOY_DB) await utils.ensureD1Database(cwd, config.databaseName);
-        report('Setting up resources...', 'completed', 'Resources ready');
+      if (DEPLOY_R2) {
+        report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'running', 'Checking bucket existence');
+        const r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
+        if (r2Result.created) {
+          report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket created successfully');
+        } else {
+          report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket already exists');
+        }
+      }
+      
+      if (DEPLOY_DB) {
+        report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Checking database existence');
+        const dbResult = await utils.ensureD1Database(cwd, config.databaseName);
+        if (dbResult.created) {
+          report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Database created, applying schema');
+          if (dbResult.schemaApplied) {
+            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created & schema applied');
+          } else {
+            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created');
+          }
+        } else {
+          if (dbResult.schemaApplied) {
+            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database exists, schema verified');
+          } else {
+            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database already exists');
+          }
+        }
       }
 
       if (DEPLOY_SECRETS) {
@@ -1181,22 +1223,25 @@ async function main() {
   logger = new DeploymentLogger();
   
   logger.addStep('Loading configuration', 'Reading deployment configuration');
-  logger.addStep('Checking prerequisites', 'Validating required tools');
-  logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
-  logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
-  logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
-  logger.addStep('Setting up resources', 'Creating Cloudflare resources');
-  logger.addStep('Deploying secrets', 'Configuring environment secrets');
-  logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
-  if (true) {
-    logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
-  }
   logger.render();
 
   try {
     logger.startStep('Loading configuration');
     const config = await loadConfig();
     logger.completeStep('Loading configuration', 'Configuration loaded');
+
+    logger.addStep('Checking prerequisites', 'Validating required tools');
+    logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+    logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
+    logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+    logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
+    logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
+    logger.addStep('Deploying secrets', 'Configuring environment secrets');
+    logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
+    if (config.deployPages) {
+      logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+    }
+    logger.render();
 
     logger.startStep('Checking prerequisites');
     if (!utils.checkWrangler()) {
@@ -1248,10 +1293,29 @@ async function main() {
     process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
 
     try {
-      logger.startStep('Setting up resources');
-      await utils.ensureR2Bucket(process.cwd(), config.bucketName);
-      await utils.ensureD1Database(process.cwd(), config.databaseName);
-      logger.completeStep('Setting up resources', 'Resources ready');
+      logger.startStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`);
+      const r2Result = await utils.ensureR2Bucket(process.cwd(), config.bucketName);
+      if (r2Result.created) {
+        logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket created successfully');
+      } else {
+        logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket already exists');
+      }
+
+      logger.startStep(`[Cloudflare] D1 Database: ${config.databaseName}`);
+      const dbResult = await utils.ensureD1Database(process.cwd(), config.databaseName);
+      if (dbResult.created) {
+        if (dbResult.schemaApplied) {
+          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created & schema applied');
+        } else {
+          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created');
+        }
+      } else {
+        if (dbResult.schemaApplied) {
+          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database exists, schema verified');
+        } else {
+          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database already exists');
+        }
+      }
 
       logger.startStep('Deploying secrets');
       if (Object.keys(config.secrets).length > 0) {

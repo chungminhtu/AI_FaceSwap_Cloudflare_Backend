@@ -1,6 +1,15 @@
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
 import { isUnsafe, getWorstViolation, getAccessToken } from './utils';
 
+const getR2Bucket = (env: Env): R2Bucket => {
+  const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || 'faceswap-images';
+  const bucket = (env as any)[bindingName] as R2Bucket;
+  if (!bucket) {
+    throw new Error(`R2 bucket binding '${bindingName}' not found in environment`);
+  }
+  return bucket;
+};
+
 export const callFaceSwap = async (
   targetUrl: string,
   sourceUrl: string,
@@ -315,7 +324,6 @@ export const callNanoBanana = async (
           StatusCode: 500,
           Error: 'No inline_data found in response parts',
           FullResponse: JSON.stringify(data, null, 2), // Include full response for debugging
-          ResponseParts: JSON.stringify(parts, null, 2), // Include parts for debugging
           Debug: debugInfo,
         };
       }
@@ -330,7 +338,8 @@ export const callNanoBanana = async (
       
       const resultKey = `results/vertex_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'png'}`;
       
-      await env.FACESWAP_IMAGES.put(resultKey, bytes, {
+      const R2_BUCKET = getR2Bucket(env);
+      await R2_BUCKET.put(resultKey, bytes, {
         httpMetadata: {
           contentType: mimeType,
           cacheControl: 'public, max-age=31536000, immutable',
@@ -649,7 +658,7 @@ export const generateVertexPrompt = async (
 
     debugInfo.requestSent = true;
     debugInfo.requestPayload = {
-      promptLength: faceSwapPrompt.length,
+      promptLength: prompt.length,
       imageBytes: imageData.length,
       imageUrl,
     };

@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile } from './types';
 import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
 import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
@@ -14,6 +14,30 @@ const globalScopeWithAccount = globalThis as typeof globalThis & {
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+
+const getR2Bucket = (env: Env): R2Bucket => {
+  const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
+  const bucket = (env as any)[bindingName] as R2Bucket;
+  if (!bucket) {
+    const availableBindings = Object.keys(env).filter(key => 
+      env[key] && typeof (env[key] as any).get === 'function'
+    );
+    throw new Error(`R2 bucket binding '${bindingName}' not found. Available bindings: ${availableBindings.join(', ')}`);
+  }
+  return bucket;
+};
+
+const getD1Database = (env: Env): D1Database => {
+  const bindingName = env.D1_DATABASE_BINDING || env.D1_DATABASE_NAME || 'DB';
+  const database = (env as any)[bindingName] as D1Database;
+  if (!database) {
+    const availableBindings = Object.keys(env).filter(key => 
+      env[key] && typeof (env[key] as any).prepare === 'function'
+    );
+    throw new Error(`D1 database binding '${bindingName}' not found. Available bindings: ${availableBindings.join(', ')}`);
+  }
+  return database;
+};
 
 const resolveAccountId = (env: Env): string | undefined =>
   env.R2_ACCOUNT_ID ||
@@ -188,6 +212,8 @@ const augmentVertexPrompt = (
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const DB = getD1Database(env);
+    const R2_BUCKET = getR2Bucket(env);
     const requestUrl = new URL(request.url);
     const path = requestUrl.pathname;
 
@@ -218,7 +244,7 @@ export default {
         }
 
         // Validate that profile exists
-        const profileResult = await env.DB.prepare(
+        const profileResult = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
 
@@ -252,7 +278,7 @@ export default {
       try {
         const presetImageId = path.replace('/vertex/get-prompt/', '');
 
-        const result = await env.DB.prepare(
+        const result = await DB.prepare(
           'SELECT id, image_url, prompt_json FROM presets WHERE id = ?'
         ).bind(presetImageId).first();
 
@@ -295,7 +321,7 @@ export default {
       if (request.method === 'GET') {
         try {
           const key = path.replace('/upload-proxy/', '');
-          const object = await env.FACESWAP_IMAGES.get(key);
+          const object = await R2_BUCKET.get(key);
           
           if (!object) {
             return errorResponse('File not found', 404);
@@ -337,7 +363,7 @@ export default {
         
         // Upload to R2 with cache-control headers
         try {
-          await env.FACESWAP_IMAGES.put(key, fileData, {
+          await R2_BUCKET.put(key, fileData, {
             httpMetadata: {
               contentType: request.headers.get('Content-Type') || 'image/jpeg',
               cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
@@ -493,10 +519,10 @@ export default {
             // Always save image to database (even if prompt generation or vision scan failed)
             imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             const createdAt = Math.floor(Date.now() / 1000);
+            const filename = key.replace('preset/', '');
             
             console.log(`[DB] Inserting preset image:`, {
               id: imageId,
-              collectionId,
               imageUrl: publicUrl,
               hasPrompt: !!promptJson,
               promptLength: promptJson ? promptJson.length : 0,
@@ -507,7 +533,7 @@ export default {
             const validGender = (gender === 'male' || gender === 'female') ? gender : null;
 
             // Insert into simplified presets table
-            const result = await env.DB.prepare(
+            const result = await DB.prepare(
               'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
             ).bind(imageId, publicUrl, filename, presetName, promptJson, validGender, createdAt).run();
 
@@ -524,7 +550,7 @@ export default {
             });
 
             // Verify the save by querying back
-            const verify = await env.DB.prepare(
+            const verify = await DB.prepare(
               'SELECT id, CASE WHEN prompt_json IS NOT NULL THEN 1 ELSE 0 END as has_prompt FROM presets WHERE id = ?'
             ).bind(imageId).first();
             
@@ -608,7 +634,7 @@ export default {
           }
 
           // Validate that profile exists
-          const profileCheck = await env.DB.prepare(
+          const profileCheck = await DB.prepare(
             'SELECT id FROM profiles WHERE id = ?'
           ).bind(profileId).first();
           if (!profileCheck) {
@@ -631,7 +657,7 @@ export default {
           let dbSaved = false;
           try {
             // First check if selfies table exists
-            const tableCheck = await env.DB.prepare(
+            const tableCheck = await DB.prepare(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
             ).first();
             
@@ -647,7 +673,7 @@ export default {
             // Check if gender column exists
             let hasGenderColumn = false;
             try {
-              const tableInfo = await env.DB.prepare("PRAGMA table_info(selfies)").all();
+              const tableInfo = await DB.prepare("PRAGMA table_info(selfies)").all();
               hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
             } catch {
               // If we can't check, assume it doesn't exist
@@ -656,13 +682,13 @@ export default {
             
             let result;
             if (hasGenderColumn) {
-              result = await env.DB.prepare(
+              result = await DB.prepare(
                 'INSERT INTO selfies (id, image_url, filename, gender, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'
               ).bind(selfieId, publicUrl, filename, validGender, profileId, createdAt).run();
             } else {
               // Insert without gender column (for databases that haven't been migrated yet)
               console.warn('[DB] Gender column not found, inserting without gender');
-              result = await env.DB.prepare(
+              result = await DB.prepare(
                 'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
               ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
             }
@@ -679,7 +705,7 @@ export default {
             });
 
             // Verify it was saved by querying it back
-            const verifyResult = await env.DB.prepare(
+            const verifyResult = await DB.prepare(
               'SELECT id, image_url, filename FROM selfies WHERE id = ?'
             ).bind(selfieId).first();
             
@@ -738,7 +764,7 @@ export default {
         const body = await request.json() as Partial<Profile & { userID?: string; id?: string }>;
         const profileId = body.userID || body.id || `profile_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 
-        const tableCheck = await env.DB.prepare(
+        const tableCheck = await DB.prepare(
           "SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"
         ).first();
         
@@ -749,7 +775,7 @@ export default {
         }
 
         if (body.userID || body.id) {
-          const existingProfile = await env.DB.prepare(
+          const existingProfile = await DB.prepare(
             'SELECT id FROM profiles WHERE id = ?'
           ).bind(profileId).first();
           
@@ -771,7 +797,7 @@ export default {
           updatedAt
         });
 
-        const result = await env.DB.prepare(
+        const result = await DB.prepare(
           'INSERT INTO profiles (id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
         ).bind(
           profileId,
@@ -830,7 +856,7 @@ export default {
     if (path.startsWith('/profiles/') && request.method === 'GET') {
       try {
         const profileId = path.replace('/profiles/', '');
-        const result = await env.DB.prepare(
+        const result = await DB.prepare(
           'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
@@ -861,7 +887,7 @@ export default {
         const profileId = path.replace('/profiles/', '');
         const body = await request.json() as Partial<Profile>;
 
-        const result = await env.DB.prepare(
+        const result = await DB.prepare(
           'UPDATE profiles SET name = ?, email = ?, avatar_url = ?, preferences = ?, updated_at = ? WHERE id = ?'
         ).bind(
           body.name || null,
@@ -877,7 +903,7 @@ export default {
         }
 
         // Return updated profile
-        const updatedResult = await env.DB.prepare(
+        const updatedResult = await DB.prepare(
           'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
@@ -901,7 +927,7 @@ export default {
     // Handle profile listing (for admin/debugging)
     if (path === '/profiles' && request.method === 'GET') {
       try {
-        const results = await env.DB.prepare(
+        const results = await DB.prepare(
           'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
         ).all();
 
@@ -953,7 +979,7 @@ export default {
 
         query += ' ORDER BY created_at DESC';
 
-        const imagesResult = await env.DB.prepare(query).bind(...params).all();
+        const imagesResult = await DB.prepare(query).bind(...params).all();
 
         console.log('Presets query result:', {
           success: imagesResult.success,
@@ -1003,7 +1029,7 @@ export default {
         console.log(`[DELETE] Deleting preset: ${presetId}`);
 
         // First, check if preset exists
-        const checkResult = await env.DB.prepare(
+        const checkResult = await DB.prepare(
           'SELECT id, image_url FROM presets WHERE id = ?'
         ).bind(presetId).first();
 
@@ -1015,7 +1041,7 @@ export default {
         const imageUrl = (checkResult as any).image_url;
 
         // First, delete all related results (to avoid foreign key constraint error)
-        const deleteResultsResult = await env.DB.prepare(
+        const deleteResultsResult = await DB.prepare(
           'DELETE FROM results WHERE preset_id = ?'
         ).bind(presetId).run();
         
@@ -1023,7 +1049,7 @@ export default {
         console.log(`[DELETE] Deleted ${resultsDeleted} related result(s) for preset: ${presetId}`);
 
         // Then delete from database
-        const deleteResult = await env.DB.prepare(
+        const deleteResult = await DB.prepare(
           'DELETE FROM presets WHERE id = ?'
         ).bind(presetId).run();
 
@@ -1058,7 +1084,7 @@ export default {
             const urlParts = imageUrl.split('/');
             r2Key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "preset/filename.jpg")
             
-            await env.FACESWAP_IMAGES.delete(r2Key);
+            await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
             console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
           } catch (r2DeleteError) {
@@ -1109,7 +1135,7 @@ export default {
         }
 
         // Validate that profile exists
-        const profileCheck = await env.DB.prepare(
+        const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
         if (!profileCheck) {
@@ -1132,7 +1158,7 @@ export default {
 
         query += ' ORDER BY created_at DESC LIMIT 50';
 
-        const result = await env.DB.prepare(query).bind(...params).all();
+        const result = await DB.prepare(query).bind(...params).all();
 
         console.log('Selfies query result:', {
           success: result.success,
@@ -1178,7 +1204,7 @@ export default {
         console.log(`[DELETE] Deleting selfie: ${selfieId}`);
 
         // First, check if selfie exists
-        const checkResult = await env.DB.prepare(
+        const checkResult = await DB.prepare(
           'SELECT id, image_url FROM selfies WHERE id = ?'
         ).bind(selfieId).first();
 
@@ -1190,7 +1216,7 @@ export default {
         const imageUrl = (checkResult as any).image_url;
 
         // First, delete all related results (to avoid foreign key constraint error)
-        const deleteResultsResult = await env.DB.prepare(
+        const deleteResultsResult = await DB.prepare(
           'DELETE FROM results WHERE selfie_id = ?'
         ).bind(selfieId).run();
         
@@ -1198,7 +1224,7 @@ export default {
         console.log(`[DELETE] Deleted ${resultsDeleted} related result(s) for selfie: ${selfieId}`);
 
         // Then delete from database
-        const deleteResult = await env.DB.prepare(
+        const deleteResult = await DB.prepare(
           'DELETE FROM selfies WHERE id = ?'
         ).bind(selfieId).run();
 
@@ -1233,7 +1259,7 @@ export default {
             const urlParts = imageUrl.split('/');
             r2Key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "selfie/filename.jpg")
             
-            await env.FACESWAP_IMAGES.delete(r2Key);
+            await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
             console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
           } catch (r2DeleteError) {
@@ -1288,14 +1314,14 @@ export default {
           console.warn('[Results] Invalid gender parameter ignored:', genderParam);
         }
 
-        const profileCheck = await env.DB.prepare(
+        const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
         if (!profileCheck) {
           return errorResponse('Profile not found', 404);
         }
 
-        const result = await env.DB.prepare(
+        const result = await DB.prepare(
           'SELECT id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at FROM results WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
         ).bind(profileId).all();
 
@@ -1335,7 +1361,7 @@ export default {
         console.log(`[DELETE] Deleting result: ${resultId}`);
 
         // First, check if result exists and get the R2 key
-        const checkResult = await env.DB.prepare(
+        const checkResult = await DB.prepare(
           'SELECT result_url FROM results WHERE id = ?'
         ).bind(resultId).first();
 
@@ -1347,7 +1373,7 @@ export default {
         const resultUrl = (checkResult as any).result_url || '';
 
         // Delete from database
-        const deleteResult = await env.DB.prepare(
+        const deleteResult = await DB.prepare(
           'DELETE FROM results WHERE id = ?'
         ).bind(resultId).run();
 
@@ -1381,7 +1407,7 @@ export default {
             }
 
             if (r2Key) {
-              await env.FACESWAP_IMAGES.delete(r2Key);
+              await R2_BUCKET.delete(r2Key);
               r2Deleted = true;
               console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
             }
@@ -1421,7 +1447,7 @@ export default {
     if (path.startsWith('/r2/') && request.method === 'GET') {
       try {
         const key = path.replace('/r2/', '');
-        const object = await env.FACESWAP_IMAGES.get(key);
+        const object = await R2_BUCKET.get(key);
         
         if (!object) {
           return errorResponse('File not found', 404);
@@ -1525,7 +1551,7 @@ export default {
           return errorResponse('profile_id is required', 400);
         }
 
-        const profileCheck = await env.DB.prepare(
+        const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
 
@@ -1551,7 +1577,7 @@ export default {
         if (resolvedMode === 'vertex' && body.preset_image_id) {
           console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
-          const promptResult = await env.DB.prepare(
+          const promptResult = await DB.prepare(
             'SELECT prompt_json FROM presets WHERE id = ?'
           ).bind(body.preset_image_id).first();
 
@@ -1671,7 +1697,7 @@ export default {
             const debugPayload = compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
-              vertex: resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined,
+              vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
             });
             return jsonResponse({
@@ -1690,7 +1716,7 @@ export default {
             const debugPayload = compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
-              vertex: resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined,
+              vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
             });
             return jsonResponse({
@@ -1744,7 +1770,7 @@ export default {
           if (resultImageResponse.ok) {
             const resultImageData = await resultImageResponse.arrayBuffer();
             const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
-            await env.FACESWAP_IMAGES.put(resultKey, resultImageData, {
+            await R2_BUCKET.put(resultKey, resultImageData, {
               httpMetadata: {
                 contentType: 'image/jpeg',
                 cacheControl: 'public, max-age=31536000, immutable',
@@ -1781,7 +1807,7 @@ export default {
             let selfieId = body.selfie_id;
             if (!selfieId) {
               try {
-                const selfieResult = await env.DB.prepare(
+                const selfieResult = await DB.prepare(
                   'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
                 ).bind(body.source_url).first();
                 if (selfieResult) {
@@ -1794,7 +1820,7 @@ export default {
             }
 
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-            await env.DB.prepare(
+            await DB.prepare(
               'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
             ).bind(resultId, selfieId || null, body.preset_image_id, body.preset_name, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
             databaseDebug.success = true;

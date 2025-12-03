@@ -5,7 +5,7 @@
   "main": "backend-cloudflare-workers/index.ts",
   "scripts": {
     "deploy:ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node _deploy-cli-cloudflare-gcp/deploy.js",
-    "dev": "wrangler dev",
+    "------": "wrangler dev",
     "deploy:ai-office-dev": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node _deploy-cli-cloudflare-gcp/deploy.js",
     "deploy:ai-office-prod": "DEPLOY_ENV=ai-office-prod node _deploy-cli-cloudflare-gcp/deploy.js",
     "docs:build": "node frontend-cloudflare-pages/docs/build-static.js"
