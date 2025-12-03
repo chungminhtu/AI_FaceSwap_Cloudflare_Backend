@@ -1617,6 +1617,21 @@
             <a href="/docs/" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(248, 35, 135, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(248, 35, 135, 0.3)'">📖 API Documentation</a>
         </div>
 
+        <div id="profile-section" class="section" style="margin-bottom: 20px; padding: 16px;">
+            <div class="section-title" style="margin-bottom: 12px;">👤 Hồ Sơ Người Dùng</div>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <select id="profile-select" style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                    <option value="">Chọn hồ sơ...</option>
+                </select>
+                <button id="create-profile-btn" style="padding: 8px 16px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform 0.2s ease;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">+ Tạo Hồ Sơ Mới</button>
+                <button id="edit-profile-btn" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='rgba(255, 255, 255, 0.2)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.1)'">✏️ Chỉnh Sửa</button>
+            </div>
+            <div id="profile-info" style="margin-top: 8px; font-size: 12px; color: var(--text-muted); display: none;">
+                <span id="profile-name-display"></span>
+                <span id="profile-email-display" style="margin-left: 12px;"></span>
+            </div>
+        </div>
+
         <div class="app-layout">
             <!-- Main Content (Left Side) -->
             <div class="main-content">
@@ -2053,6 +2068,156 @@
             });
         }
 
+        // Profile Management
+        window.profileManager = {
+            currentProfile: null,
+            profiles: [],
+
+            async loadProfiles() {
+                try {
+                    const response = await fetch(`${WORKER_URL}/profiles`);
+                    const data = await response.json();
+                    this.profiles = data.profiles || [];
+                    this.updateProfileSelect();
+                } catch (error) {
+                    console.error('Failed to load profiles:', error);
+                    showStatusMessage('Không thể tải danh sách hồ sơ', 'error');
+                }
+            },
+
+            updateProfileSelect() {
+                const select = document.getElementById('profile-select');
+                select.innerHTML = '<option value="">Chọn hồ sơ...</option>';
+
+                this.profiles.forEach(profile => {
+                    const option = document.createElement('option');
+                    option.value = profile.id;
+                    option.textContent = profile.name || `Hồ sơ ${profile.id.slice(-8)}`;
+                    select.appendChild(option);
+                });
+
+                // Restore selected profile from localStorage
+                const savedProfileId = localStorage.getItem('selectedProfileId');
+                if (savedProfileId) {
+                    select.value = savedProfileId;
+                    this.selectProfile(savedProfileId);
+                }
+            },
+
+            async createProfile(name, email) {
+                try {
+                    const response = await fetch(`${WORKER_URL}/profiles`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, email })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to create profile');
+                    }
+
+                    const profile = await response.json();
+                    this.profiles.push(profile);
+                    this.updateProfileSelect();
+
+                    // Auto-select the new profile
+                    document.getElementById('profile-select').value = profile.id;
+                    this.selectProfile(profile.id);
+
+                    showStatusMessage('Đã tạo hồ sơ mới thành công!', 'success');
+                    return profile;
+                } catch (error) {
+                    console.error('Failed to create profile:', error);
+                    showStatusMessage('Không thể tạo hồ sơ mới', 'error');
+                    throw error;
+                }
+            },
+
+            async updateProfile(profileId, name, email) {
+                try {
+                    const response = await fetch(`${WORKER_URL}/profiles/${profileId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, email })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to update profile');
+                    }
+
+                    const updatedProfile = await response.json();
+
+                    // Update in local array
+                    const index = this.profiles.findIndex(p => p.id === profileId);
+                    if (index >= 0) {
+                        this.profiles[index] = updatedProfile;
+                    }
+
+                    this.updateProfileSelect();
+                    this.selectProfile(profileId);
+
+                    showStatusMessage('Đã cập nhật hồ sơ thành công!', 'success');
+                    return updatedProfile;
+                } catch (error) {
+                    console.error('Failed to update profile:', error);
+                    showStatusMessage('Không thể cập nhật hồ sơ', 'error');
+                    throw error;
+                }
+            },
+
+            selectProfile(profileId) {
+                if (!profileId) {
+                    this.currentProfile = null;
+                    localStorage.removeItem('selectedProfileId');
+                    document.getElementById('profile-info').style.display = 'none';
+                    document.getElementById('edit-profile-btn').disabled = true;
+                    return;
+                }
+
+                const profile = this.profiles.find(p => p.id === profileId);
+                if (profile) {
+                    this.currentProfile = profile;
+                    localStorage.setItem('selectedProfileId', profileId);
+
+                    const infoDiv = document.getElementById('profile-info');
+                    const nameSpan = document.getElementById('profile-name-display');
+                    const emailSpan = document.getElementById('profile-email-display');
+
+                    nameSpan.textContent = profile.name ? `Tên: ${profile.name}` : '';
+                    emailSpan.textContent = profile.email ? `Email: ${profile.email}` : '';
+
+                    infoDiv.style.display = (profile.name || profile.email) ? 'block' : 'none';
+                    document.getElementById('edit-profile-btn').disabled = false;
+
+                    // Reload galleries with new profile filter
+                    loadSelfies();
+                    loadResults();
+                }
+            },
+
+            showCreateModal() {
+                document.getElementById('create-profile-modal').style.display = 'flex';
+                document.getElementById('new-profile-name').value = '';
+                document.getElementById('new-profile-email').value = '';
+            },
+
+            hideCreateModal() {
+                document.getElementById('create-profile-modal').style.display = 'none';
+            },
+
+            showEditModal() {
+                if (!this.currentProfile) return;
+
+                document.getElementById('edit-profile-modal').style.display = 'flex';
+                document.getElementById('edit-profile-name').value = this.currentProfile.name || '';
+                document.getElementById('edit-profile-email').value = this.currentProfile.email || '';
+            },
+
+            hideEditModal() {
+                document.getElementById('edit-profile-modal').style.display = 'none';
+            }
+        };
+
         // Initialize checkbox states and listeners when page loads
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
@@ -2061,6 +2226,9 @@
                 setupCheckboxListeners();
                 syncPromptControls();
                 setupGenderFilterListeners();
+                // Initialize profile management
+                window.profileManager.loadProfiles();
+                setupProfileListeners();
             });
         } else {
             initAccessGate();
@@ -2314,8 +2482,19 @@
             const config = galleries[type];
             try {
                 let url = `${WORKER_URL}${config.endpoints.list}`;
+                const params = new URLSearchParams();
+
+                // Add profile_id for selfies and results
+                if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
+                    params.append('profile_id', window.profileManager.currentProfile.id);
+                }
+
                 if (genderFilter) {
-                    url += `?gender=${genderFilter}`;
+                    params.append('gender', genderFilter);
+                }
+
+                if (params.toString()) {
+                    url += `?${params.toString()}`;
                 }
                 const response = await fetch(url);
                 const data = await safeJson(response);
@@ -2576,6 +2755,13 @@
         // Handle image upload
         async function handleImageUpload(file, type) {
             const config = galleries[type];
+
+            // Check if profile is selected
+            if (!window.profileManager.currentProfile) {
+                showStatusMessage('Vui lòng chọn hồ sơ trước khi tải lên hình ảnh.', 'error');
+                return;
+            }
+
             // Validate file
             if (!file.type.match('image/(jpeg|jpg|png|webp)')) {
                 showStatusMessage('Loại tệp không hợp lệ. Vui lòng tải lên JPG, PNG hoặc WebP.', 'error');
@@ -2600,7 +2786,7 @@
                 const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename, type })
+                    body: JSON.stringify({ filename, type, profile_id: window.profileManager.currentProfile.id })
                 });
 
                 let uploadData = {};
@@ -2696,6 +2882,9 @@
 
                 // Add options headers for selfie uploads
                 if (type === 'selfie') {
+                    // Add profile ID header
+                    headers['X-Profile-Id'] = window.profileManager.currentProfile.id;
+
                     // Get selected gender for selfie
                     const selfieGenderRadios = document.querySelectorAll('input[name="selfie-gender"]:checked');
                     if (selfieGenderRadios.length > 0 && selfieGenderRadios[0].value && selfieGenderRadios[0].value !== '') {
@@ -2840,13 +3029,18 @@
                     throw new Error('Mẫu chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) sau khi bật Gemini.');
                 }
 
+                // Check if profile is selected
+                if (!window.profileManager.currentProfile) {
+                    throw new Error('Vui lòng chọn hồ sơ trước khi tạo đổi mặt.');
+                }
+
                 const payload = {
                     target_url: presetSelection.image_url,
                     source_url: selfieSelection.image_url,
                     mode,
                     api_provider: apiProvider,
                     preset_image_id: presetSelection.id,
-                    preset_collection_id: presetSelection.collection_id || null,
+                    profile_id: window.profileManager.currentProfile.id,
                 };
 
                 if (presetSelection.collection_name) {
@@ -3353,6 +3547,71 @@
             }
         };
 
+        // Setup profile event listeners
+        function setupProfileListeners() {
+            // Profile select change
+            document.getElementById('profile-select').addEventListener('change', (e) => {
+                window.profileManager.selectProfile(e.target.value);
+            });
+
+            // Create profile button
+            document.getElementById('create-profile-btn').addEventListener('click', () => {
+                window.profileManager.showCreateModal();
+            });
+
+            // Edit profile button
+            document.getElementById('edit-profile-btn').addEventListener('click', () => {
+                window.profileManager.showEditModal();
+            });
+
+            // Create profile modal handlers
+            document.getElementById('cancel-create-profile').addEventListener('click', () => {
+                window.profileManager.hideCreateModal();
+            });
+
+            document.getElementById('confirm-create-profile').addEventListener('click', async () => {
+                const name = document.getElementById('new-profile-name').value.trim();
+                const email = document.getElementById('new-profile-email').value.trim();
+
+                try {
+                    await window.profileManager.createProfile(name || undefined, email || undefined);
+                    window.profileManager.hideCreateModal();
+                } catch (error) {
+                    // Error already shown in createProfile
+                }
+            });
+
+            // Edit profile modal handlers
+            document.getElementById('cancel-edit-profile').addEventListener('click', () => {
+                window.profileManager.hideEditModal();
+            });
+
+            document.getElementById('confirm-edit-profile').addEventListener('click', async () => {
+                const name = document.getElementById('edit-profile-name').value.trim();
+                const email = document.getElementById('edit-profile-email').value.trim();
+
+                try {
+                    await window.profileManager.updateProfile(window.profileManager.currentProfile.id, name || undefined, email || undefined);
+                    window.profileManager.hideEditModal();
+                } catch (error) {
+                    // Error already shown in updateProfile
+                }
+            });
+
+            // Close modals when clicking overlay
+            document.getElementById('create-profile-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'create-profile-modal') {
+                    window.profileManager.hideCreateModal();
+                }
+            });
+
+            document.getElementById('edit-profile-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'edit-profile-modal') {
+                    window.profileManager.hideEditModal();
+                }
+            });
+        }
+
         // Add button to test Vertex API connection (for debugging)
         // You can call window.vertexAPI.testConnection() from browser console
         console.log('Vertex API functions available at window.vertexAPI:');
@@ -3360,5 +3619,46 @@
         console.log('  - testConnection(): Test Vertex AI API connectivity');
         console.log('  - refreshPrompt(presetImageId, imageUrl): Refresh prompt for a preset');
     </script>
+
+    <!-- Profile Management Modals -->
+    <div id="create-profile-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; box-shadow: var(--shadow-strong);">
+            <h3 style="margin: 0 0 20px 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">Tạo Hồ Sơ Mới</h3>
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div>
+                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Tên hồ sơ (tùy chọn)</label>
+                    <input type="text" id="new-profile-name" placeholder="Nhập tên hồ sơ..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Email (tùy chọn)</label>
+                    <input type="email" id="new-profile-email" placeholder="Nhập email..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+                    <button id="cancel-create-profile" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer;">Hủy</button>
+                    <button id="confirm-create-profile" style="padding: 8px 16px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">Tạo Hồ Sơ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="edit-profile-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; box-shadow: var(--shadow-strong);">
+            <h3 style="margin: 0 0 20px 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">Chỉnh Sửa Hồ Sơ</h3>
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div>
+                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Tên hồ sơ</label>
+                    <input type="text" id="edit-profile-name" placeholder="Nhập tên hồ sơ..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Email</label>
+                    <input type="email" id="edit-profile-email" placeholder="Nhập email..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+                    <button id="cancel-edit-profile" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer;">Hủy</button>
+                    <button id="confirm-edit-profile" style="padding: 8px 16px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">Lưu Thay Đổi</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

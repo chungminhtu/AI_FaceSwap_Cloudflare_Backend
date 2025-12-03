@@ -24,6 +24,7 @@ export interface FaceSwapRequest {
   target_url: string;
   source_url: string;
   selfie_id?: string;
+  profile_id: string; // Required: Profile ID for the operation
   mode?: 'rapidapi' | 'vertex'; // Optional: Face swap mode
   additional_prompt?: string;
   character_gender?: 'male' | 'female';
@@ -96,6 +97,7 @@ export interface GoogleVisionResponse {
 export interface UploadUrlRequest {
   filename: string;
   type: 'preset' | 'selfie';
+  profile_id: string; // Required: Profile ID for the upload
   presetName?: string; // Optional: Name for preset collection
   enableVertexPrompt?: boolean; // Optional: Generate Vertex AI prompt automatically
   gender?: 'male' | 'female'; // Optional: Gender classification for the asset
@@ -106,17 +108,22 @@ export interface UploadUrlResponse {
   publicUrl: string;
 }
 
-export interface PresetCollection {
+export interface Profile {
   id: string;
-  name: string;
-  images: PresetImage[];
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  preferences?: string; // JSON string
   created_at: string;
+  updated_at: string;
 }
 
 export interface PresetImage {
   id: string;
-  collection_id: string;
   image_url: string;
+  filename: string;
+  preset_name?: string;
+  prompt_json?: string;
   gender?: 'male' | 'female'; // Optional gender classification
   created_at: string;
 }
@@ -126,11 +133,12 @@ export interface Selfie {
   image_url: string;
   filename: string;
   gender?: 'male' | 'female'; // Optional gender classification
+  profile_id: string;
   created_at: string;
 }
 
 export interface PresetListResponse {
-  preset_collections: PresetCollection[];
+  presets: PresetImage[];
 }
 
 export interface SelfieListResponse {
@@ -148,12 +156,17 @@ export interface AssetsByGenderResponse {
   };
 }
 
+export interface ProfileListResponse {
+  profiles: Profile[];
+}
+
 export interface Result {
   id: string;
-  preset_collection_id: string;
-  preset_image_id: string;
+  selfie_id: string;
+  preset_id: string;
   preset_name: string;
   result_url: string;
+  profile_id: string;
   created_at: string;
 }
 

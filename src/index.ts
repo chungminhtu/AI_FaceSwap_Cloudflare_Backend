@@ -213,8 +213,17 @@ export default {
       try {
         const body: UploadUrlRequest = await request.json();
 
-        if (!body.filename || !body.type) {
-          return errorResponse('Missing required fields: filename and type', 400);
+        if (!body.filename || !body.type || !body.profile_id) {
+          return errorResponse('Missing required fields: filename, type, and profile_id', 400);
+        }
+
+        // Validate that profile exists
+        const profileResult = await env.DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileResult) {
+          return errorResponse('Profile not found', 404);
         }
 
         // Generate a unique key for the file
@@ -244,7 +253,7 @@ export default {
         const presetImageId = path.replace('/vertex/get-prompt/', '');
 
         const result = await env.DB.prepare(
-          'SELECT id, image_url, prompt_json FROM preset_images WHERE id = ?'
+          'SELECT id, image_url, prompt_json FROM presets WHERE id = ?'
         ).bind(presetImageId).first();
 
         if (!result) {
@@ -395,24 +404,6 @@ export default {
           let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
 
           try {
-            // First, check if a collection with this name already exists
-            let collectionResult = await env.DB.prepare(
-              'SELECT id FROM preset_collections WHERE name = ?'
-            ).bind(presetName).first();
-
-            let collectionId: string;
-
-            if (!collectionResult) {
-              // Create new collection
-              collectionId = `collection_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-              const collectionInsert = await env.DB.prepare(
-                'INSERT INTO preset_collections (id, name, created_at) VALUES (?, ?, ?)'
-              ).bind(collectionId, presetName, Math.floor(Date.now() / 1000)).run();
-              console.log(`Created new collection: ${collectionId}`, collectionInsert);
-            } else {
-              collectionId = collectionResult.id as string;
-              console.log(`Using existing collection: ${collectionId}`);
-            }
 
             // Perform Vision API safety scan if enabled
             if (enableVisionScan) {
@@ -514,45 +505,27 @@ export default {
             
             // Validate gender before insert
             const validGender = (gender === 'male' || gender === 'female') ? gender : null;
-            
-            // Check if gender column exists
-            let hasGenderColumn = false;
-            try {
-              const tableInfo = await env.DB.prepare("PRAGMA table_info(preset_images)").all();
-              hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
-            } catch {
-              // If we can't check, assume it doesn't exist
-              hasGenderColumn = false;
-            }
-            
-            let result;
-            if (hasGenderColumn) {
-              result = await env.DB.prepare(
-                'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-              ).bind(imageId, collectionId, publicUrl, promptJson, validGender, createdAt).run();
-            } else {
-              // Insert without gender column (for databases that haven't been migrated yet)
-              console.warn('[DB] Gender column not found, inserting without gender');
-              result = await env.DB.prepare(
-                'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, created_at) VALUES (?, ?, ?, ?, ?)'
-              ).bind(imageId, collectionId, publicUrl, promptJson, createdAt).run();
-            }
+
+            // Insert into simplified presets table
+            const result = await env.DB.prepare(
+              'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            ).bind(imageId, publicUrl, filename, presetName, promptJson, validGender, createdAt).run();
 
             if (!result.success) {
               console.error('[DB] Insert result:', result);
               throw new Error(`Database insert failed: ${JSON.stringify(result)}`);
             }
 
-            console.log(`[DB] Preset image saved successfully:`, {
+            console.log(`[DB] Preset saved successfully:`, {
               imageId,
-              collectionId,
+              presetName,
               hasPrompt: !!promptJson,
               meta: result.meta
             });
 
             // Verify the save by querying back
             const verify = await env.DB.prepare(
-              'SELECT id, CASE WHEN prompt_json IS NOT NULL THEN 1 ELSE 0 END as has_prompt FROM preset_images WHERE id = ?'
+              'SELECT id, CASE WHEN prompt_json IS NOT NULL THEN 1 ELSE 0 END as has_prompt FROM presets WHERE id = ?'
             ).bind(imageId).first();
             
             if (verify) {
@@ -628,15 +601,29 @@ export default {
         } else if (key.startsWith('selfie/')) {
           console.log('Processing selfie upload:', key);
 
+          // Require profile_id for selfie uploads
+          const profileId = request.headers.get('X-Profile-Id');
+          if (!profileId) {
+            return errorResponse('X-Profile-Id header is required for selfie uploads', 400);
+          }
+
+          // Validate that profile exists
+          const profileCheck = await env.DB.prepare(
+            'SELECT id FROM profiles WHERE id = ?'
+          ).bind(profileId).first();
+          if (!profileCheck) {
+            return errorResponse('Profile not found', 404);
+          }
+
           // Extract filename from key (remove 'selfie/' prefix)
           const filename = key.replace('selfie/', '');
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
           const genderHeader = request.headers.get('X-Gender');
-          const gender = (genderHeader && (genderHeader === 'male' || genderHeader === 'female')) 
-            ? genderHeader as 'male' | 'female' 
+          const gender = (genderHeader && (genderHeader === 'male' || genderHeader === 'female'))
+            ? genderHeader as 'male' | 'female'
             : undefined;
-          console.log('Selfie upload - Gender:', gender);
+          console.log('Selfie upload - Profile ID:', profileId, 'Gender:', gender);
 
           console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
@@ -670,14 +657,14 @@ export default {
             let result;
             if (hasGenderColumn) {
               result = await env.DB.prepare(
-                'INSERT INTO selfies (id, image_url, filename, gender, created_at) VALUES (?, ?, ?, ?, ?)'
-              ).bind(selfieId, publicUrl, filename, validGender, createdAt).run();
+                'INSERT INTO selfies (id, image_url, filename, gender, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+              ).bind(selfieId, publicUrl, filename, validGender, profileId, createdAt).run();
             } else {
               // Insert without gender column (for databases that haven't been migrated yet)
               console.warn('[DB] Gender column not found, inserting without gender');
               result = await env.DB.prepare(
-                'INSERT INTO selfies (id, image_url, filename, created_at) VALUES (?, ?, ?, ?)'
-              ).bind(selfieId, publicUrl, filename, createdAt).run();
+                'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+              ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
             }
 
             if (!result.success) {
@@ -831,6 +818,141 @@ export default {
       }
     }
 
+    // Handle profile creation
+    if (path === '/profiles' && request.method === 'POST') {
+      try {
+        const body = await request.json() as Partial<Profile>;
+        const profileId = `profile_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+        const result = await env.DB.prepare(
+          'INSERT INTO profiles (id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind(
+          profileId,
+          body.name || null,
+          body.email || null,
+          body.avatar_url || null,
+          body.preferences || null,
+          Math.floor(Date.now() / 1000),
+          Math.floor(Date.now() / 1000)
+        ).run();
+
+        if (!result.success) {
+          return errorResponse('Failed to create profile', 500);
+        }
+
+        const profile = {
+          id: profileId,
+          name: body.name || undefined,
+          email: body.email || undefined,
+          avatar_url: body.avatar_url || undefined,
+          preferences: body.preferences || undefined,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        return jsonResponse(profile);
+      } catch (error) {
+        console.error('Profile creation error:', error);
+        return errorResponse(`Profile creation failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle profile retrieval
+    if (path.startsWith('/profiles/') && request.method === 'GET') {
+      try {
+        const profileId = path.replace('/profiles/', '');
+        const result = await env.DB.prepare(
+          'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+        ).bind(profileId).first();
+
+        if (!result) {
+          return errorResponse('Profile not found', 404);
+        }
+
+        const profile: Profile = {
+          id: (result as any).id,
+          name: (result as any).name || undefined,
+          email: (result as any).email || undefined,
+          avatar_url: (result as any).avatar_url || undefined,
+          preferences: (result as any).preferences || undefined,
+          created_at: new Date((result as any).created_at * 1000).toISOString(),
+          updated_at: new Date((result as any).updated_at * 1000).toISOString()
+        };
+
+        return jsonResponse(profile);
+      } catch (error) {
+        console.error('Profile retrieval error:', error);
+        return errorResponse(`Profile retrieval failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle profile update
+    if (path.startsWith('/profiles/') && request.method === 'PUT') {
+      try {
+        const profileId = path.replace('/profiles/', '');
+        const body = await request.json() as Partial<Profile>;
+
+        const result = await env.DB.prepare(
+          'UPDATE profiles SET name = ?, email = ?, avatar_url = ?, preferences = ?, updated_at = ? WHERE id = ?'
+        ).bind(
+          body.name || null,
+          body.email || null,
+          body.avatar_url || null,
+          body.preferences || null,
+          Math.floor(Date.now() / 1000),
+          profileId
+        ).run();
+
+        if (!result.success || result.meta?.changes === 0) {
+          return errorResponse('Profile not found or update failed', 404);
+        }
+
+        // Return updated profile
+        const updatedResult = await env.DB.prepare(
+          'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+        ).bind(profileId).first();
+
+        const profile: Profile = {
+          id: (updatedResult as any).id,
+          name: (updatedResult as any).name || undefined,
+          email: (updatedResult as any).email || undefined,
+          avatar_url: (updatedResult as any).avatar_url || undefined,
+          preferences: (updatedResult as any).preferences || undefined,
+          created_at: new Date((updatedResult as any).created_at * 1000).toISOString(),
+          updated_at: new Date((updatedResult as any).updated_at * 1000).toISOString()
+        };
+
+        return jsonResponse(profile);
+      } catch (error) {
+        console.error('Profile update error:', error);
+        return errorResponse(`Profile update failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle profile listing (for admin/debugging)
+    if (path === '/profiles' && request.method === 'GET') {
+      try {
+        const results = await env.DB.prepare(
+          'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
+        ).all();
+
+        const profiles: Profile[] = results.results?.map((row: any) => ({
+          id: row.id,
+          name: row.name || undefined,
+          email: row.email || undefined,
+          avatar_url: row.avatar_url || undefined,
+          preferences: row.preferences || undefined,
+          created_at: new Date(row.created_at * 1000).toISOString(),
+          updated_at: new Date(row.updated_at * 1000).toISOString()
+        })) || [];
+
+        return jsonResponse({ profiles });
+      } catch (error) {
+        console.error('Profile listing error:', error);
+        return errorResponse(`Profile listing failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
     // Handle preset listing
     if (path === '/presets' && request.method === 'GET') {
       try {
@@ -842,26 +964,25 @@ export default {
 
         let query = `
           SELECT
-            i.id,
-            i.collection_id,
-            i.image_url,
-            i.prompt_json,
-            i.gender,
-            i.created_at,
-            c.name as collection_name
-          FROM preset_images i
-          LEFT JOIN preset_collections c ON i.collection_id = c.id
+            id,
+            image_url,
+            filename,
+            preset_name,
+            prompt_json,
+            gender,
+            created_at
+          FROM presets
         `;
 
         const params: any[] = [];
 
         if (genderFilter) {
-          query += ' WHERE i.gender = ?';
+          query += ' WHERE gender = ?';
           params.push(genderFilter);
           console.log(`Filtering presets by gender: ${genderFilter}`);
         }
 
-        query += ' ORDER BY i.created_at DESC';
+        query += ' ORDER BY created_at DESC';
 
         const imagesResult = await env.DB.prepare(query).bind(...params).all();
 
@@ -880,10 +1001,9 @@ export default {
         // Flatten to match frontend expectations
         const presets = imagesResult.results.map((row: any) => ({
           id: row.id || '',
-          collection_id: row.collection_id || '',
           image_url: row.image_url || '',
-          filename: row.image_url?.split('/').pop() || `preset_${row.id}.jpg`,
-          collection_name: row.collection_name || 'Unnamed',
+          filename: row.filename || row.image_url?.split('/').pop() || `preset_${row.id}.jpg`,
+          preset_name: row.preset_name || null,
           hasPrompt: row.prompt_json ? true : false,
           prompt_json: row.prompt_json || null,
           gender: row.gender || null,
@@ -915,7 +1035,7 @@ export default {
 
         // First, check if preset exists
         const checkResult = await env.DB.prepare(
-          'SELECT id, image_url FROM preset_images WHERE id = ?'
+          'SELECT id, image_url FROM presets WHERE id = ?'
         ).bind(presetId).first();
 
         if (!checkResult) {
@@ -927,7 +1047,7 @@ export default {
 
         // First, delete all related results (to avoid foreign key constraint error)
         const deleteResultsResult = await env.DB.prepare(
-          'DELETE FROM results WHERE preset_image_id = ?'
+          'DELETE FROM results WHERE preset_id = ?'
         ).bind(presetId).run();
         
         const resultsDeleted = deleteResultsResult.meta?.changes || 0;
@@ -935,7 +1055,7 @@ export default {
 
         // Then delete from database
         const deleteResult = await env.DB.prepare(
-          'DELETE FROM preset_images WHERE id = ?'
+          'DELETE FROM presets WHERE id = ?'
         ).bind(presetId).run();
 
         console.log(`[DELETE] Database delete result:`, {
@@ -1012,12 +1132,26 @@ export default {
       try {
         console.log('Fetching selfies from database...');
 
-        // Check for gender filter query parameter
+        // Check for required profile_id query parameter
         const url = new URL(request.url);
+        const profileId = url.searchParams.get('profile_id');
+        if (!profileId) {
+          return errorResponse('profile_id query parameter is required', 400);
+        }
+
+        // Validate that profile exists
+        const profileCheck = await env.DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(profileId).first();
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
+        }
+
+        // Check for gender filter query parameter
         const genderFilter = url.searchParams.get('gender') as 'male' | 'female' | null;
 
-        let query = 'SELECT id, image_url, filename, gender, created_at FROM selfies';
-        const params: any[] = [];
+        let query = 'SELECT id, image_url, filename, gender, profile_id, created_at FROM selfies WHERE profile_id = ?';
+        const params: any[] = [profileId];
 
         if (genderFilter) {
           query += ' WHERE gender = ?';
@@ -1263,9 +1397,24 @@ export default {
     // Handle results listing
     if (path === '/results' && request.method === 'GET') {
       try {
+        // Check for required profile_id query parameter
+        const url = new URL(request.url);
+        const profileId = url.searchParams.get('profile_id');
+        if (!profileId) {
+          return errorResponse('profile_id query parameter is required', 400);
+        }
+
+        // Validate that profile exists
+        const profileCheck = await env.DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(profileId).first();
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
+        }
+
         const result = await env.DB.prepare(
-          'SELECT id, selfie_id, preset_collection_id, preset_image_id, preset_name, result_url, created_at FROM results ORDER BY created_at DESC LIMIT 50'
-        ).all();
+          'SELECT id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at FROM results WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
+        ).bind(profileId).all();
 
         if (!result || !result.results) {
           return jsonResponse({ results: [] });
@@ -1274,10 +1423,10 @@ export default {
         const results = result.results.map((row: any) => ({
           id: row.id || '',
           selfie_id: row.selfie_id || '',
-          preset_collection_id: row.preset_collection_id || '',
-          preset_image_id: row.preset_image_id || '',
+          preset_id: row.preset_id || '',
           preset_name: row.preset_name || 'Unnamed',
           result_url: row.result_url || '',
+          profile_id: row.profile_id || '',
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
@@ -1493,7 +1642,6 @@ export default {
       try {
         const body: FaceSwapRequest & {
           preset_image_id?: string;
-          preset_collection_id?: string;
           preset_name?: string;
           mode?: string;
           api_provider?: string;
@@ -1510,12 +1658,24 @@ export default {
         const requestError = validateRequest(body, resolvedMode);
         if (requestError) return errorResponse(requestError, 400);
 
+        // Validate profile_id is provided and exists
+        if (!body.profile_id) {
+          return errorResponse('profile_id is required', 400);
+        }
+
+        const profileCheck = await env.DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
+        }
+
         const requestDebug = compact({
           mode: resolvedMode,
           targetUrl: body.target_url,
           sourceUrl: body.source_url,
           presetImageId: body.preset_image_id,
-          presetCollectionId: body.preset_collection_id,
           presetName: body.preset_name,
           selfieId: body.selfie_id,
           apiProvider: body.api_provider,
@@ -1753,7 +1913,7 @@ export default {
           lookupError: null,
         };
 
-        if (body.preset_image_id && body.preset_collection_id && body.preset_name) {
+        if (body.preset_image_id && body.preset_name) {
           databaseDebug.attempted = true;
           try {
             let selfieId = body.selfie_id;
@@ -1773,8 +1933,8 @@ export default {
 
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             await env.DB.prepare(
-              'INSERT INTO results (id, selfie_id, preset_collection_id, preset_image_id, preset_name, result_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-            ).bind(resultId, selfieId || null, body.preset_collection_id, body.preset_image_id, body.preset_name, resultUrl, Math.floor(Date.now() / 1000)).run();
+              'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            ).bind(resultId, selfieId || null, body.preset_image_id, body.preset_name, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
             databaseDebug.success = true;
             databaseDebug.resultId = resultId;
             databaseDebug.error = null;
