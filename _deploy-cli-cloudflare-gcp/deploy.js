@@ -87,10 +87,10 @@ function restoreEnv(origToken, origAccountId) {
 }
 
 async function loadConfig() {
-  const secretsPath = path.join(process.cwd(), '_cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
+  const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
 
   if (!fs.existsSync(secretsPath)) {
-    logError('_cloudflare-gcp-deploy-cli-ui/deployments-secrets.json not found. Please create it with your configuration.');
+    logError('_deploy-cli-cloudflare-gcp/deployments-secrets.json not found. Please create it with your configuration.');
     process.exit(1);
   }
 
@@ -399,7 +399,7 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
 }
 
 function saveCloudflareCredentials(accountId, token, refreshToken = null, expirationTime = null, env = null) {
-  const secretsPath = path.join(process.cwd(), '_cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
+  const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
   if (!fs.existsSync(secretsPath)) return;
 
   const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
@@ -623,11 +623,71 @@ const utils = {
 
   async ensureD1Database(cwd, databaseName) {
     try {
-      const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd });
+      let databaseExists = false;
+      let databaseId = null;
 
-      if (!output.includes(databaseName)) {
+      try {
+        const output = execSync('wrangler d1 list --json', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
+        if (output && output.trim()) {
+          try {
+            const databases = JSON.parse(output);
+            if (Array.isArray(databases)) {
+              const db = databases.find(d => d.name === databaseName);
+              if (db) {
+                databaseExists = true;
+                databaseId = db.uuid || db.id || db.database_id;
+              }
+            }
+          } catch (parseError) {
+            const textOutput = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
+            if (textOutput && textOutput.includes(databaseName)) {
+              databaseExists = true;
+              const idMatch = textOutput.match(new RegExp(`${databaseName}[\\s\\S]*?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})`, 'i'));
+              if (idMatch) {
+                databaseId = idMatch[1];
+              }
+            }
+          }
+        }
+      } catch (listError) {
+        const textOutput = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
+        if (textOutput && textOutput.includes(databaseName)) {
+          databaseExists = true;
+          const idMatch = textOutput.match(new RegExp(`${databaseName}[\\s\\S]*?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})`, 'i'));
+          if (idMatch) {
+            databaseId = idMatch[1];
+          }
+        }
+      }
+
+      if (databaseExists && databaseId) {
+        try {
+          logStep('Deleting existing D1 database...');
+          await runCommand(`wrangler d1 delete ${databaseId}`, cwd);
+          logSuccess('Database deleted');
+        } catch (deleteError) {
+          const errorMsg = deleteError.message || deleteError.error || '';
+          if (!errorMsg.includes('not found') && !errorMsg.includes('404') && !errorMsg.includes('7404')) {
+            logWarn(`Failed to delete database: ${errorMsg}. Continuing with creation...`);
+          } else {
+            logWarn('Database not found for deletion, will create new one');
+          }
+        }
+      } else if (databaseExists) {
+        logWarn('Database exists but ID not found. Will attempt to create new one (may fail if name conflict)...');
+      }
+
         logStep('Creating D1 database...');
-        await runCommand(`wrangler d1 create ${databaseName}`, cwd);
+      const createResult = await runCommand(`wrangler d1 create ${databaseName}`, cwd);
+      if (createResult.success) {
+        logSuccess('Database created');
+      } else {
+        const errorMsg = createResult.error || '';
+        if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
+          logWarn('Database with this name already exists. Attempting to use existing database...');
+        } else {
+          throw new Error(`Failed to create database: ${errorMsg}`);
+        }
       }
 
       const schemaPath = path.join(cwd, 'backend-cloudflare-workers', 'schema.sql');
@@ -636,12 +696,20 @@ const utils = {
           logStep('Initializing database schema...');
           await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd);
           logSuccess('Database schema initialized');
-        } catch {
-          // Schema might already be applied
+        } catch (schemaError) {
+          const errorMsg = schemaError.message || schemaError.error || '';
+          if (!errorMsg.includes('already exists') && !errorMsg.includes('duplicate')) {
+            logWarn(`Schema initialization warning: ${errorMsg}`);
+          }
         }
       }
     } catch (error) {
-      if (!error.message.includes('already exists')) throw error;
+      const errorMsg = error.message || error.error || '';
+      if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
+        logWarn('Database already exists, will attempt to use existing database');
+      } else {
+        throw error;
+      }
     }
   },
 

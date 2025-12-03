@@ -4,13 +4,10 @@
   "description": "Cloudflare Worker backend and Pages frontend for AI FaceSwap application with GCP integration",
   "main": "backend-cloudflare-workers/index.ts",
   "scripts": {
+    "deploy:ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node _deploy-cli-cloudflare-gcp/deploy.js",
     "dev": "wrangler dev",
-    "deploy:setup": "node _cloudflare-gcp-deploy-cli-ui/deploy.js setup",
-    "deploy:production": "node _cloudflare-gcp-deploy-cli-ui/deploy.js production",
-    "deploy:ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node _cloudflare-gcp-deploy-cli-ui/deploy.js",
-    "deploy:ai-office-dev": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node _cloudflare-gcp-deploy-cli-ui/deploy.js",
-    "deploy:ai-office-prod": "DEPLOY_ENV=ai-office-prod node _cloudflare-gcp-deploy-cli-ui/deploy.js",
-    "deploy:ui": "node _cloudflare-gcp-deploy-cli-ui/deploy-server.js",
+    "deploy:ai-office-dev": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node _deploy-cli-cloudflare-gcp/deploy.js",
+    "deploy:ai-office-prod": "DEPLOY_ENV=ai-office-prod node _deploy-cli-cloudflare-gcp/deploy.js",
     "docs:build": "node frontend-cloudflare-pages/docs/build-static.js"
   },
   "keywords": [
