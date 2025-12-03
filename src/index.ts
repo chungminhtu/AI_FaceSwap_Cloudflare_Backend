@@ -735,8 +735,41 @@ export default {
     // Handle profile creation
     if (path === '/profiles' && request.method === 'POST') {
       try {
-        const body = await request.json() as Partial<Profile>;
-        const profileId = `profile_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const body = await request.json() as Partial<Profile & { userID?: string; id?: string }>;
+        const profileId = body.userID || body.id || `profile_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+
+        const tableCheck = await env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"
+        ).first();
+        
+        if (!tableCheck) {
+          console.error('ERROR: profiles table does not exist in database!');
+          console.error('Database schema needs to be initialized. Run: wrangler d1 execute faceswap-db --remote --file=schema.sql');
+          return errorResponse('Database schema not initialized. Please run database migration.', 500);
+        }
+
+        if (body.userID || body.id) {
+          const existingProfile = await env.DB.prepare(
+            'SELECT id FROM profiles WHERE id = ?'
+          ).bind(profileId).first();
+          
+          if (existingProfile) {
+            return errorResponse(`Profile with ID "${profileId}" already exists`, 409);
+          }
+        }
+
+        const createdAt = Math.floor(Date.now() / 1000);
+        const updatedAt = Math.floor(Date.now() / 1000);
+        
+        console.log('[DB] Attempting to insert profile:', {
+          profileId,
+          name: body.name || null,
+          email: body.email || null,
+          avatar_url: body.avatar_url || null,
+          preferences: body.preferences || null,
+          createdAt,
+          updatedAt
+        });
 
         const result = await env.DB.prepare(
           'INSERT INTO profiles (id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -746,12 +779,29 @@ export default {
           body.email || null,
           body.avatar_url || null,
           body.preferences || null,
-          Math.floor(Date.now() / 1000),
-          Math.floor(Date.now() / 1000)
+          createdAt,
+          updatedAt
         ).run();
 
+        console.log('[DB] Profile insert result:', {
+          success: result.success,
+          meta: result.meta,
+          changes: result.meta?.changes
+        });
+
         if (!result.success) {
-          return errorResponse('Failed to create profile', 500);
+          console.error('[DB] Profile insert failed:', {
+            success: result.success,
+            meta: result.meta,
+            error: (result as any).error
+          });
+          const errorDetails = result.meta?.error || (result as any).error || 'Unknown database error';
+          return errorResponse(`Failed to create profile: ${errorDetails}`, 500);
+        }
+
+        if (result.meta?.changes === 0) {
+          console.error('[DB] Profile insert returned 0 changes');
+          return errorResponse('Failed to create profile: No rows inserted', 500);
         }
 
         const profile = {
@@ -767,6 +817,11 @@ export default {
         return jsonResponse(profile);
       } catch (error) {
         console.error('Profile creation error:', error);
+        console.error('Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          errorType: error instanceof Error ? error.constructor.name : typeof error
+        });
         return errorResponse(`Profile creation failed: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
@@ -1067,10 +1122,12 @@ export default {
         let query = 'SELECT id, image_url, filename, gender, profile_id, created_at FROM selfies WHERE profile_id = ?';
         const params: any[] = [profileId];
 
-        if (genderFilter) {
-          query += ' WHERE gender = ?';
+        if (genderFilter && (genderFilter === 'male' || genderFilter === 'female')) {
+          query += ' AND gender = ?';
           params.push(genderFilter);
           console.log(`Filtering selfies by gender: ${genderFilter}`);
+        } else if (genderFilter) {
+          console.warn('[Selfies] Invalid gender parameter ignored:', genderFilter);
         }
 
         query += ' ORDER BY created_at DESC LIMIT 50';
@@ -1218,14 +1275,19 @@ export default {
     // Handle results listing
     if (path === '/results' && request.method === 'GET') {
       try {
-        // Check for required profile_id query parameter
         const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
+        
         if (!profileId) {
+          console.warn('[Results] Missing profile_id parameter');
           return errorResponse('profile_id query parameter is required', 400);
         }
 
-        // Validate that profile exists
+        const genderParam = url.searchParams.get('gender');
+        if (genderParam && genderParam !== 'male' && genderParam !== 'female' && genderParam !== '') {
+          console.warn('[Results] Invalid gender parameter ignored:', genderParam);
+        }
+
         const profileCheck = await env.DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
@@ -1253,8 +1315,11 @@ export default {
 
         return jsonResponse({ results });
       } catch (error) {
-        console.error('List results error:', error);
-        // Return empty array instead of error to prevent UI breaking
+        console.error('[Results] List results error:', error);
+        console.error('[Results] Error details:', {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
         return jsonResponse({ results: [] });
       }
     }

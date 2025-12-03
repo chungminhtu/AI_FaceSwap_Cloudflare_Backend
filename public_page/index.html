@@ -2104,12 +2104,12 @@
                 }
             },
 
-            async createProfile(name, email) {
+            async createProfile(name, userID) {
                 try {
                     const response = await fetch(`${WORKER_URL}/profiles`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, email })
+                        body: JSON.stringify({ name, userID: userID || undefined })
                     });
 
                     if (!response.ok) {
@@ -2138,7 +2138,7 @@
                     const response = await fetch(`${WORKER_URL}/profiles/${profileId}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, email })
+                        body: JSON.stringify({ name, email: email || undefined })
                     });
 
                     if (!response.ok) {
@@ -2184,9 +2184,9 @@
                     const emailSpan = document.getElementById('profile-email-display');
 
                     nameSpan.textContent = profile.name ? `Tên: ${profile.name}` : '';
-                    emailSpan.textContent = profile.email ? `Email: ${profile.email}` : '';
+                    emailSpan.textContent = profile.id ? `ID: ${profile.id}` : '';
 
-                    infoDiv.style.display = (profile.name || profile.email) ? 'block' : 'none';
+                    infoDiv.style.display = (profile.name || profile.id) ? 'block' : 'none';
                     document.getElementById('edit-profile-btn').disabled = false;
 
                     // Reload galleries with new profile filter
@@ -2198,7 +2198,7 @@
             showCreateModal() {
                 document.getElementById('create-profile-modal').style.display = 'flex';
                 document.getElementById('new-profile-name').value = '';
-                document.getElementById('new-profile-email').value = '';
+                document.getElementById('new-profile-userid').value = '';
             },
 
             hideCreateModal() {
@@ -2210,7 +2210,7 @@
 
                 document.getElementById('edit-profile-modal').style.display = 'flex';
                 document.getElementById('edit-profile-name').value = this.currentProfile.name || '';
-                document.getElementById('edit-profile-email').value = this.currentProfile.email || '';
+                document.getElementById('edit-profile-userid').value = this.currentProfile.id || '';
             },
 
             hideEditModal() {
@@ -3571,10 +3571,10 @@
 
             document.getElementById('confirm-create-profile').addEventListener('click', async () => {
                 const name = document.getElementById('new-profile-name').value.trim();
-                const email = document.getElementById('new-profile-email').value.trim();
+                const userID = document.getElementById('new-profile-userid').value.trim();
 
                 try {
-                    await window.profileManager.createProfile(name || undefined, email || undefined);
+                    await window.profileManager.createProfile(name || undefined, userID || undefined);
                     window.profileManager.hideCreateModal();
                 } catch (error) {
                     // Error already shown in createProfile
@@ -3588,10 +3588,9 @@
 
             document.getElementById('confirm-edit-profile').addEventListener('click', async () => {
                 const name = document.getElementById('edit-profile-name').value.trim();
-                const email = document.getElementById('edit-profile-email').value.trim();
 
                 try {
-                    await window.profileManager.updateProfile(window.profileManager.currentProfile.id, name || undefined, email || undefined);
+                    await window.profileManager.updateProfile(window.profileManager.currentProfile.id, name || undefined, undefined);
                     window.profileManager.hideEditModal();
                 } catch (error) {
                     // Error already shown in updateProfile
@@ -3630,8 +3629,8 @@
                     <input type="text" id="new-profile-name" placeholder="Nhập tên hồ sơ..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Email (tùy chọn)</label>
-                    <input type="email" id="new-profile-email" placeholder="Nhập email..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">User ID (tùy chọn - để trống sẽ tự động tạo)</label>
+                    <input type="text" id="new-profile-userid" placeholder="Nhập User ID hoặc để trống..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
                     <button id="cancel-create-profile" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer;">Hủy</button>
@@ -3650,8 +3649,8 @@
                     <input type="text" id="edit-profile-name" placeholder="Nhập tên hồ sơ..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
                 </div>
                 <div>
-                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Email</label>
-                    <input type="email" id="edit-profile-email" placeholder="Nhập email..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
+                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">User ID (không thể thay đổi)</label>
+                    <input type="text" id="edit-profile-userid" placeholder="User ID" style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.05); color: var(--text-muted); font-size: 14px;" readonly>
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
                     <button id="cancel-edit-profile" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer;">Hủy</button>
