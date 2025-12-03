@@ -15,7 +15,7 @@ const colors = {
 };
 
 let currentStep = 0;
-const totalSteps = 8;
+const totalSteps = 9;
 
 function logStep(message) {
   currentStep++;
@@ -87,10 +87,10 @@ function restoreEnv(origToken, origAccountId) {
 }
 
 async function loadConfig() {
-  const secretsPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
+  const secretsPath = path.join(process.cwd(), 'cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
 
   if (!fs.existsSync(secretsPath)) {
-    logError('deploy/deployments-secrets.json not found. Please create it with your configuration.');
+    logError('cloudflare-gcp-deploy-cli-ui/deployments-secrets.json not found. Please create it with your configuration.');
     process.exit(1);
   }
 
@@ -175,7 +175,7 @@ function parseConfig(config) {
 function generateWranglerConfig(config) {
   return {
     name: config.workerName,
-    main: 'src/index.ts',
+    main: 'backend-cloudflare-workers/index.ts',
     compatibility_date: '2024-01-01',
     account_id: config.cloudflare.accountId,
     d1_databases: [{ binding: 'DB', database_name: config.databaseName }],
@@ -325,7 +325,11 @@ async function getAccountIdFromApi(token) {
 function isTokenExpired(expirationTime) {
   if (!expirationTime) return true;
   try {
-    return new Date(expirationTime) <= new Date();
+    const date = new Date(expirationTime);
+    if (isNaN(date.getTime())) {
+      return true;
+    }
+    return date <= new Date();
   } catch {
     return true;
   }
@@ -395,7 +399,7 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
 }
 
 function saveCloudflareCredentials(accountId, token, refreshToken = null, expirationTime = null, env = null) {
-  const secretsPath = path.join(process.cwd(), 'deploy', 'deployments-secrets.json');
+  const secretsPath = path.join(process.cwd(), 'cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
   if (!fs.existsSync(secretsPath)) return;
 
   const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
@@ -408,7 +412,23 @@ function saveCloudflareCredentials(accountId, token, refreshToken = null, expira
   secrets.environments[targetEnv].cloudflare.accountId = accountId;
   secrets.environments[targetEnv].cloudflare.apiToken = token;
   if (refreshToken) secrets.environments[targetEnv].cloudflare.refreshToken = refreshToken;
-  if (expirationTime) secrets.environments[targetEnv].cloudflare.expirationTime = expirationTime;
+  if (expirationTime) {
+    const date = new Date(expirationTime);
+    const humanReadable = date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZoneName: 'short'
+    });
+    secrets.environments[targetEnv].cloudflare.expirationTime = humanReadable;
+  }
+  
+  if (secrets.environments[targetEnv].cloudflare.email === '') {
+    delete secrets.environments[targetEnv].cloudflare.email;
+  }
 
   fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2));
   logSuccess(`Credentials saved for ${targetEnv} environment`);
@@ -442,7 +462,7 @@ function getWorkerUrl(cwd, workerName) {
 
 function updateWorkerUrlInHtml(cwd, workerUrl) {
   if (!workerUrl) return;
-  const htmlPath = path.join(cwd, 'public_page', 'index.html');
+  const htmlPath = path.join(cwd, 'frontend-cloudflare-pages', 'index.html');
   if (fs.existsSync(htmlPath)) {
     let content = fs.readFileSync(htmlPath, 'utf8');
     content = content.replace(/const WORKER_URL = ['"](.*?)['"]/, `const WORKER_URL = '${workerUrl}'`);
@@ -516,6 +536,67 @@ const utils = {
     }
   },
 
+  async checkGCPApiEnabled(apiName, projectId) {
+    try {
+      const output = execCommand(
+        `gcloud services list --enabled --filter="name:${apiName}" --format="value(name)" --project=${projectId}`,
+        { silent: true, throwOnError: false }
+      );
+      return output && output.trim().includes(apiName);
+    } catch {
+      return false;
+    }
+  },
+
+  async enableGCPApi(apiName, projectId) {
+    try {
+      execCommand(`gcloud services enable ${apiName} --project=${projectId} --quiet`, { silent: true });
+      return true;
+    } catch (error) {
+      if (error.message && error.message.includes('already enabled')) {
+        return true;
+      }
+      throw error;
+    }
+  },
+
+  async ensureGCPApis(projectId) {
+    const requiredApis = [
+      'aiplatform.googleapis.com',
+      'vision.googleapis.com'
+    ];
+
+    const apiNames = {
+      'aiplatform.googleapis.com': 'Vertex AI API',
+      'vision.googleapis.com': 'Vision API'
+    };
+
+    const results = {
+      enabled: [],
+      newlyEnabled: [],
+      failed: []
+    };
+
+    const self = this;
+    for (const api of requiredApis) {
+      const isEnabled = await self.checkGCPApiEnabled(api, projectId);
+      if (isEnabled) {
+        results.enabled.push(api);
+      } else {
+        try {
+          await self.enableGCPApi(api, projectId);
+          results.newlyEnabled.push(api);
+          logSuccess(`${apiNames[api]} enabled`);
+        } catch (error) {
+          results.failed.push({ api, error: error.message });
+          logWarn(`Failed to enable ${apiNames[api]}: ${error.message}`);
+        }
+      }
+    }
+
+    return results;
+  },
+
   getExistingSecrets() {
     try {
       const output = execCommand('wrangler secret list', { silent: true, throwOnError: false });
@@ -549,7 +630,7 @@ const utils = {
         await runCommand(`wrangler d1 create ${databaseName}`, cwd);
       }
 
-      const schemaPath = path.join(cwd, 'schema.sql');
+      const schemaPath = path.join(cwd, 'cloudflare-gcp-deploy-cli-ui', 'schema.sql');
       if (fs.existsSync(schemaPath)) {
         try {
           logStep('Initializing database schema...');
@@ -635,7 +716,7 @@ const utils = {
   },
 
   async deployPages(cwd, pagesProjectName) {
-    const publicDir = path.join(cwd, 'public_page');
+    const publicDir = path.join(cwd, 'frontend-cloudflare-pages');
     if (!fs.existsSync(publicDir)) return `https://${pagesProjectName}.pages.dev/`;
 
     try {
@@ -655,7 +736,7 @@ const utils = {
   }
 };
 
-async function deploy(config, progressCallback, cwd) {
+async function deploy(config, progressCallback, cwd, flags = {}) {
   const report = progressCallback || ((step, status, details) => {
     if (status === 'running') logStep(step);
     else if (status === 'completed') logSuccess(details);
@@ -663,76 +744,112 @@ async function deploy(config, progressCallback, cwd) {
     else if (status === 'warning') logWarn(details);
   });
 
-  report('Checking prerequisites...', 'running', 'Validating tools');
-  if (!utils.checkWrangler()) throw new Error('Wrangler CLI not found');
-  if (!utils.checkGcloud()) throw new Error('gcloud CLI not found');
-  report('Checking prerequisites...', 'completed', 'Tools validated');
+  const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
+  const DEPLOY_DB = flags.DEPLOY_DB !== false;
+  const DEPLOY_WORKER = flags.DEPLOY_WORKER !== false;
+  const DEPLOY_PAGES = flags.DEPLOY_PAGES !== false;
+  const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
 
-  report('Authenticating with GCP...', 'running', 'Connecting to Google Cloud');
-  if (!await utils.authenticateGCP(config.gcp.serviceAccountKeyJson, config.gcp.projectId)) {
-    throw new Error('GCP authentication failed');
+  const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;
+  const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
+
+  if (needsCloudflare || needsGCP) {
+    report('Checking prerequisites...', 'running', 'Validating tools');
+    if (needsCloudflare && !utils.checkWrangler()) throw new Error('Wrangler CLI not found');
+    if (needsGCP && !utils.checkGcloud()) throw new Error('gcloud CLI not found');
+    report('Checking prerequisites...', 'completed', 'Tools validated');
   }
-  report('Authenticating with GCP...', 'completed', 'GCP authenticated');
 
-  report('Setting up Cloudflare credentials...', 'running', 'Configuring Cloudflare access');
-  let cfToken = config.cloudflare.apiToken;
-  let cfAccountId = config.cloudflare.accountId;
+  if (needsGCP) {
+    report('Authenticating with GCP...', 'running', 'Connecting to Google Cloud');
+    if (!await utils.authenticateGCP(config.gcp.serviceAccountKeyJson, config.gcp.projectId)) {
+      throw new Error('GCP authentication failed');
+    }
+    report('Authenticating with GCP...', 'completed', 'GCP authenticated');
 
-  if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
-    const creds = await setupCloudflare(config._environment, cfAccountId);
-    cfToken = creds.apiToken;
-    cfAccountId = creds.accountId;
-    config.cloudflare.apiToken = cfToken;
-    config.cloudflare.accountId = cfAccountId;
-  }
-  report('Setting up Cloudflare credentials...', 'completed', 'Cloudflare ready');
-
-  const origToken = process.env.CLOUDFLARE_API_TOKEN;
-  const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  process.env.CLOUDFLARE_API_TOKEN = cfToken;
-  process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
-
-  try {
-    report('Setting up resources...', 'running', 'Creating Cloudflare resources');
-    await utils.ensureR2Bucket(cwd, config.bucketName);
-    await utils.ensureD1Database(cwd, config.databaseName);
-    report('Setting up resources...', 'completed', 'Resources ready');
-
-    report('Deploying secrets...', 'running', 'Configuring environment secrets');
-    if (Object.keys(config.secrets || {}).length > 0) {
-      await utils.deploySecrets(config.secrets, cwd, config.workerName);
-      report('Deploying secrets...', 'completed', 'Secrets deployed');
+    report('Checking GCP APIs...', 'running', 'Verifying Vertex AI and Vision APIs');
+    const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
+    if (apiResults.failed.length > 0) {
+      const failedApis = apiResults.failed.map(f => f.api).join(', ');
+      report('Checking GCP APIs...', 'warning', `Some APIs failed to enable: ${failedApis}. Please enable manually in GCP Console.`);
+    } else if (apiResults.newlyEnabled.length > 0) {
+      report('Checking GCP APIs...', 'completed', `Enabled ${apiResults.newlyEnabled.length} API(s)`);
     } else {
-      const existing = utils.getExistingSecrets();
-      const { missing, allSet } = checkSecrets(existing);
-      if (!allSet) {
-        report('Deploying secrets...', 'warning', `Missing secrets: ${missing.join(', ')}`);
-      } else {
-        report('Deploying secrets...', 'completed', 'All secrets set');
+      report('Checking GCP APIs...', 'completed', 'All required APIs are enabled');
+    }
+  }
+
+  if (needsCloudflare) {
+    report('Setting up Cloudflare credentials...', 'running', 'Configuring Cloudflare access');
+    let cfToken = config.cloudflare.apiToken;
+    let cfAccountId = config.cloudflare.accountId;
+
+    if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
+      const creds = await setupCloudflare(config._environment, cfAccountId);
+      cfToken = creds.apiToken;
+      cfAccountId = creds.accountId;
+      config.cloudflare.apiToken = cfToken;
+      config.cloudflare.accountId = cfAccountId;
+    }
+    report('Setting up Cloudflare credentials...', 'completed', 'Cloudflare ready');
+
+    const origToken = process.env.CLOUDFLARE_API_TOKEN;
+    const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    process.env.CLOUDFLARE_API_TOKEN = cfToken;
+    process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+
+    try {
+      if (DEPLOY_R2 || DEPLOY_DB) {
+        report('Setting up resources...', 'running', 'Creating Cloudflare resources');
+        if (DEPLOY_R2) await utils.ensureR2Bucket(cwd, config.bucketName);
+        if (DEPLOY_DB) await utils.ensureD1Database(cwd, config.databaseName);
+        report('Setting up resources...', 'completed', 'Resources ready');
       }
+
+      if (DEPLOY_SECRETS) {
+        report('Deploying secrets...', 'running', 'Configuring environment secrets');
+        if (Object.keys(config.secrets || {}).length > 0) {
+          await utils.deploySecrets(config.secrets, cwd, config.workerName);
+          report('Deploying secrets...', 'completed', 'Secrets deployed');
+        } else {
+          const existing = utils.getExistingSecrets();
+          const { missing, allSet } = checkSecrets(existing);
+          if (!allSet) {
+            report('Deploying secrets...', 'warning', `Missing secrets: ${missing.join(', ')}`);
+          } else {
+            report('Deploying secrets...', 'completed', 'All secrets set');
+          }
+        }
+      }
+
+      let workerUrl = '';
+      if (DEPLOY_WORKER) {
+        report('Deploying worker...', 'running', 'Deploying Cloudflare Worker');
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config);
+        report('Deploying worker...', 'completed', 'Worker deployed');
+      }
+
+      let pagesUrl = '';
+      if (DEPLOY_PAGES) {
+        report('Deploying frontend...', 'running', 'Deploying Cloudflare Pages');
+        pagesUrl = await utils.deployPages(cwd, config.pagesProjectName);
+        report('Deploying frontend...', 'completed', 'Frontend deployed');
+      }
+
+      console.log('\n' + '='.repeat(50));
+      console.log('✓ Deployment Complete!');
+      console.log('\n📌 URLs:');
+      if (workerUrl) console.log(`   ✅ Backend: ${workerUrl}`);
+      if (pagesUrl) console.log(`   ✅ Frontend: ${pagesUrl}`);
+      if (!workerUrl && !pagesUrl) console.log(`   ✅ Frontend: https://${config.pagesProjectName}.pages.dev/`);
+      console.log('');
+
+      return { success: true, workerUrl, pagesUrl };
+    } finally {
+      restoreEnv(origToken, origAccountId);
     }
-
-    report('Deploying worker...', 'running', 'Deploying Cloudflare Worker');
-    const workerUrl = await utils.deployWorker(cwd, config.workerName, config);
-    report('Deploying worker...', 'completed', 'Worker deployed');
-
-    let pagesUrl = '';
-    if (config.deployPages) {
-      report('Deploying frontend...', 'running', 'Deploying Cloudflare Pages');
-      pagesUrl = await utils.deployPages(cwd, config.pagesProjectName);
-      report('Deploying frontend...', 'completed', 'Frontend deployed');
-    }
-
-    console.log('\n' + '='.repeat(50));
-    console.log('✓ Deployment Complete!');
-    console.log('\n📌 URLs:');
-    if (workerUrl) console.log(`   ✅ Backend: ${workerUrl}`);
-    console.log(`   ✅ Frontend: ${pagesUrl || `https://${config.pagesProjectName}.pages.dev/`}`);
-    console.log('');
-
-    return { success: true, workerUrl, pagesUrl };
-  } finally {
-    restoreEnv(origToken, origAccountId);
+  } else {
+    return { success: true, message: 'No deployment steps selected' };
   }
 }
 
@@ -758,6 +875,17 @@ async function main() {
     process.exit(1);
   }
   logSuccess('GCP authenticated');
+
+  logStep('Checking GCP APIs...');
+  const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
+  if (apiResults.failed.length > 0) {
+    const failedApis = apiResults.failed.map(f => f.api).join(', ');
+    logWarn(`Some APIs failed to enable: ${failedApis}. Please enable manually in GCP Console.`);
+  } else if (apiResults.newlyEnabled.length > 0) {
+    logSuccess(`Enabled ${apiResults.newlyEnabled.length} API(s)`);
+  } else {
+    logSuccess('All required APIs are enabled');
+  }
 
   logStep('Setting up Cloudflare credentials...');
   let cfToken = config.cloudflare.apiToken;
@@ -823,20 +951,21 @@ async function main() {
 }
 
 module.exports = {
-  deployFromConfig: async (config, progressCallback, cwd) => {
+  deployFromConfig: async (config, progressCallback, cwd, flags = {}) => {
     try {
       if (config.cloudflare?.apiToken) process.env.CLOUDFLARE_API_TOKEN = config.cloudflare.apiToken;
       if (config.cloudflare?.accountId) process.env.CLOUDFLARE_ACCOUNT_ID = config.cloudflare.accountId;
       if (config.deployPages !== undefined) process.env.DEPLOY_PAGES = config.deployPages.toString();
 
-      return await deploy(config, progressCallback, cwd || process.cwd());
+      return await deploy(config, progressCallback, cwd || process.cwd(), flags);
     } catch (error) {
       return {
         success: false,
         error: error.message
       };
     }
-  }
+  },
+  loadConfig
 };
 
 if (require.main === module) {

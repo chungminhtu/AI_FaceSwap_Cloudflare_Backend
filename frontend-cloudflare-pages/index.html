@@ -1599,9 +1599,52 @@
                 max-width: 90%;
             }
         }
+
+        .docs-button-top {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 14px;
+            font-family: 'Lexend Deca', sans-serif;
+            box-shadow: 0 8px 24px rgba(248, 35, 135, 0.4), 0 4px 12px rgba(18, 176, 255, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            letter-spacing: 0.3px;
+        }
+
+        .docs-button-top:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 12px 32px rgba(248, 35, 135, 0.5), 0 6px 16px rgba(18, 176, 255, 0.4);
+            background: linear-gradient(135deg, var(--accent-hover), var(--accent-secondary));
+        }
+
+        .docs-button-top:active {
+            transform: translateY(-1px) scale(1.02);
+        }
+
+        @media (max-width: 768px) {
+            .docs-button-top {
+                top: 12px;
+                right: 12px;
+                padding: 10px 18px;
+                font-size: 13px;
+            }
+        }
     </style>
 </head>
 <body>
+    <a href="/docs/" class="docs-button-top">📖 Docs</a>
     <div id="access-gate" class="access-gate">
         <div class="gate-card">
             <div class="gate-title">Restricted Workspace</div>

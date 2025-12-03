@@ -15,6 +15,6 @@
     "noEmit": true,
     "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["src/**/*"],
+  "include": ["backend-cloudflare-workers/**/*"],
   "exclude": ["node_modules"]
 }
