@@ -469,11 +469,14 @@ const utils = {
       const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd });
 
       if (!output.includes(databaseName)) {
+        logStep('Creating D1 database...');
         await runCommand(`wrangler d1 create ${databaseName}`, cwd);
 
         const schemaPath = path.join(cwd, 'schema.sql');
         if (fs.existsSync(schemaPath)) {
+          logStep('Initializing database schema...');
           await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd);
+          logSuccess('Database schema initialized');
         }
       } else {
         const schemaPath = path.join(cwd, 'schema.sql');
@@ -482,6 +485,30 @@ const utils = {
             await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd);
           } catch {
             // Schema might already be applied
+          }
+        }
+      }
+      
+      // Always run gender column migration (safe to run multiple times)
+      const migrationPath = path.join(cwd, 'migrate-gender-columns.sql');
+      if (fs.existsSync(migrationPath)) {
+        logStep('Running gender columns migration...');
+        try {
+          await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${migrationPath}`, cwd);
+          logSuccess('Gender columns migration completed');
+        } catch (migrationError) {
+          const errorMsg = migrationError.message || String(migrationError);
+          const errorOutput = (migrationError.stdout || migrationError.stderr || '').toLowerCase();
+          // Migration might fail if columns already exist - that's OK
+          if (errorMsg.toLowerCase().includes('duplicate column') || 
+              errorMsg.toLowerCase().includes('already exists') ||
+              errorOutput.includes('duplicate column') || 
+              errorOutput.includes('already exists')) {
+            logWarn('Gender columns already exist, migration skipped');
+          } else {
+            // Log warning but don't fail deployment - backend code handles missing columns gracefully
+            logWarn(`Migration note: ${errorMsg.substring(0, 150)}`);
+            logWarn('Backend will work without gender columns. You can run migration manually later.');
           }
         }
       }

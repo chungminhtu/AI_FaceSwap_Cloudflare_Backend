@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Face Swap AI - API Documentation</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/buble.css">
+  <style>
+    * {
+      font-family: 'Lexend Deca', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    :root {
+      --theme-color: #3b82f6;
+      --theme-color-dark: #2563eb;
+      --sidebar-width: 380px;
+      --content-max-width: 95%;
+    }
+    
+    body {
+      font-family: 'Lexend Deca', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-weight: 400;
+    }
+    
+    .app-name-link img {
+      max-width: 200px;
+    }
+    
+    .sidebar {
+      background: #ffffff;
+      border-right: 1px solid #e5e7eb;
+      width: var(--sidebar-width) !important;
+    }
+    
+    .sidebar-toggle {
+      display: none !important;
+    }
+    
+    @media (max-width: 768px) {
+      .sidebar {
+        width: var(--sidebar-width) !important;
+        transform: translateX(0) !important;
+      }
+    }
+    
+    .sidebar ul li a {
+      color: #374151;
+      font-weight: 400;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    .sidebar ul li a:hover {
+      color: var(--theme-color);
+      background: rgba(59, 130, 246, 0.05);
+    }
+    
+    .sidebar ul li.active > a {
+      color: var(--theme-color);
+      background: rgba(59, 130, 246, 0.1);
+      border-left: 3px solid var(--theme-color);
+      font-weight: 500;
+    }
+    
+    .markdown-section {
+      max-width: var(--content-max-width) !important;
+      width: var(--content-max-width) !important;
+      padding: 2rem 3rem;
+    }
+    
+    @media (min-width: 1400px) {
+      .markdown-section {
+        max-width: 1400px !important;
+        width: 1400px !important;
+      }
+    }
+    
+    .markdown-section h1 {
+      color: #1f2937;
+      border-bottom: 2px solid var(--theme-color);
+      padding-bottom: 10px;
+      font-weight: 600;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    .markdown-section h2 {
+      color: #374151;
+      margin-top: 40px;
+      font-weight: 600;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    .markdown-section h3 {
+      color: #4b5563;
+      margin-top: 30px;
+      font-weight: 500;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    .markdown-section p,
+    .markdown-section li {
+      font-family: 'Lexend Deca', sans-serif;
+      font-weight: 400;
+      line-height: 1.7;
+      color: #4b5563;
+    }
+    
+    .markdown-section code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace !important;
+      background: #f3f4f6;
+      color: #dc2626;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-weight: 400;
+    }
+    
+    .markdown-section pre {
+      background: #1f2937;
+      border-left: 4px solid var(--theme-color);
+      border-radius: 6px;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+    
+    .markdown-section pre code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace !important;
+      background: transparent;
+      color: #e5e7eb;
+      padding: 0;
+      font-size: 0.9em;
+      font-weight: 400;
+      line-height: 1.6;
+    }
+    
+    .markdown-section blockquote {
+      border-left: 4px solid var(--theme-color);
+      background: rgba(59, 130, 246, 0.05);
+      padding: 1rem 1.5rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
+    }
+    
+    .markdown-section blockquote p {
+      color: #4b5563;
+      margin: 0;
+    }
+    
+    .app-name {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--theme-color);
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    .cover {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #bfdbfe 100%);
+    }
+    
+    .cover-main {
+      color: #1f2937;
+    }
+    
+    .cover-main h1 {
+      color: var(--theme-color);
+      font-family: 'Lexend Deca', sans-serif;
+      font-weight: 600;
+    }
+    
+    .cover-main p {
+      color: #4b5563;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+    
+    table th,
+    table td {
+      padding: 0.75rem;
+      border: 1px solid #e5e7eb;
+      text-align: left;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #374151;
+    }
+    
+    table tr:hover {
+      background: #f9fafb;
+    }
+    
+    .search input {
+      font-family: 'Lexend Deca', sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">Loading...</div>
+  
+  <script>
+    // Embedded markdown content
+    window.__staticDocs = {
+      'API_TONG_QUAN_VI.md': `# Tổng quan API Face Swap AI
+
+Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp sau khi cập nhật cấu trúc phản hồi với trường \`debug\`.
+
+## 1. POST \`/faceswap\`
+
+### Nội dung yêu cầu
+
+- \`target_url\` (string, bắt buộc): URL ảnh mục tiêu (preset).
+- \`source_url\` (string, bắt buộc): URL ảnh nguồn (selfie).
+- \`mode\` (string, tùy chọn): \`rapidapi\` hoặc \`vertex\`. Mặc định \`rapidapi\`.
+- \`api_provider\` (string, tùy chọn): chấp nhận \`google-nano-banana\` để kích hoạt chế độ Vertex.
+- \`preset_image_id\`, \`preset_collection_id\`, \`preset_name\` (string, tùy chọn): thông tin preset đã chọn.
+- \`selfie_id\` (string, tùy chọn): mã selfie đã lưu trong cơ sở dữ liệu.
+- \`additional_prompt\` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường \`prompt\` bằng ký tự \`+\` (chỉ áp dụng cho chế độ Vertex).
+- \`character_gender\` (string, tùy chọn): \`male\`, \`female\` hoặc bỏ trống (\`none\`). Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối \`prompt\`.
+
+### Phản hồi thành công
+
+\`\`\`json
+{
+  "data": {
+    "resultImageUrl": "https://.../results/result_123.jpg"
+  },
+  "debug": {
+    "request": {
+      "mode": "vertex",
+      "targetUrl": "https://...",
+      "sourceUrl": "https://..."
+    },
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Processing successful",
+      "finalResultImageUrl": "https://.../results/result_123.jpg",
+      "debug": {
+        "endpoint": "https://...",
+        "status": 200,
+        "durationMs": 843
+      }
+    },
+    "vertex": {
+      "prompt": { "...": "..." },
+      "debug": {
+        "endpoint": "https://.../generateContent",
+        "status": 200,
+        "durationMs": 5180,
+        "requestPayload": {
+          "promptLength": 746,
+          "imageBytes": 921344
+        }
+      }
+    },
+    "vision": {
+      "checked": false,
+      "isSafe": true,
+      "error": "Safety check skipped for Vertex AI mode"
+    },
+    "storage": {
+      "attemptedDownload": true,
+      "downloadStatus": 200,
+      "savedToR2": true,
+      "r2Key": "results/result_123.jpg",
+      "publicUrl": "https://.../results/result_123.jpg"
+    },
+    "database": {
+      "attempted": true,
+      "success": true,
+      "resultId": "result_..."
+    }
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200
+}
+\`\`\`
+
+### Phản hồi lỗi
+
+- Lỗi kiểm duyệt (Google Vision) trả về HTTP 422:
+
+\`\`\`json
+{
+  "data": null,
+  "debug": {
+    "provider": { "...": "..." },
+    "vision": {
+      "checked": true,
+      "isSafe": false,
+      "violationCategory": "adult",
+      "violationLevel": "VERY_LIKELY",
+      "debug": {
+        "endpoint": "https://vision.googleapis.com/v1/images:annotate",
+        "status": 200
+      }
+    }
+  },
+  "status": "error",
+  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
+  "code": 422
+}
+\`\`\`
+
+- Các lỗi khác (RapidAPI, Vertex, lưu trữ...) trả về HTTP tương ứng với thông tin chi tiết trong \`debug.provider.debug\` hoặc \`debug.vertex.debug\`.
+
+## 2. POST \`/upload-url\`
+
+### Mục đích
+
+Tạo URL tạm để trình duyệt tải ảnh lên thông qua Worker (\`/upload-proxy/{key}\`) và lấy URL công khai R2.
+
+### Nội dung yêu cầu
+
+- \`filename\` (string, bắt buộc): tên tệp.
+- \`type\` (string, bắt buộc): \`preset\` hoặc \`selfie\`.
+- \`presetName\` (string, tùy chọn): tên bộ sưu tập preset.
+- \`enableVertexPrompt\` (boolean, tùy chọn): bật tạo prompt Vertex khi upload preset.
+
+### Phản hồi
+
+\`\`\`json
+{
+  "uploadUrl": "https://<worker-domain>/upload-proxy/preset/example.jpg",
+  "publicUrl": "https://pub-...r2.dev/preset/example.jpg",
+  "key": "preset/example.jpg",
+  "presetName": "Studio Neon",
+  "enableVertexPrompt": true
+}
+\`\`\`
+
+## 3. PUT \`/upload-proxy/{key}\`
+
+### Mục đích
+
+Nhận dữ liệu nhị phân từ trình duyệt, lưu vào R2 và cập nhật cơ sở dữ liệu (preset/selfie).
+
+### Header quan trọng
+
+- \`Content-Type\`: mime-type ảnh.
+- \`X-Preset-Name\` (tùy chọn): tên bộ sưu tập preset.
+- \`X-Enable-Vertex-Prompt\`, \`X-Enable-Vision-Scan\` (tùy chọn): bật Vertex/Vision.
+
+### Phản hồi thành công (preset)
+
+\`\`\`json
+{
+  "success": true,
+  "url": "https://.../preset/example.jpg",
+  "id": "image_...",
+  "filename": "example.jpg",
+  "hasPrompt": true,
+  "prompt_json": { "...": "..." },
+  "vertex_info": {
+    "success": true,
+    "promptKeys": ["prompt", "style", "..."],
+    "debug": {
+      "endpoint": "https://.../generateContent",
+      "status": 200,
+      "responseTimeMs": 4200
+    }
+  },
+  "vision_scan": {
+    "success": true,
+    "isSafe": true,
+    "rawResponse": { "...": "..." }
+  }
+}
+\`\`\`
+
+### Phản hồi thành công (selfie)
+
+\`\`\`json
+{
+  "success": true,
+  "url": "https://.../selfie/example.jpg",
+  "id": "selfie_...",
+  "filename": "example.jpg"
+}
+\`\`\`
+
+## 4. GET \`/presets\`
+
+- Trả về danh sách preset trong cơ sở dữ liệu.
+- Phản hồi dạng \`{ "presets": [ { "id": "...", "image_url": "...", "prompt_json": "...", ... } ] }\`.
+
+## 5. DELETE \`/presets/{id}\`
+
+- Xóa preset khỏi D1 và R2.
+- Phản hồi:
+
+\`\`\`json
+{
+  "success": true,
+  "message": "Preset deleted successfully",
+  "debug": {
+    "presetId": "...",
+    "databaseDeleted": 1,
+    "r2Deleted": true,
+    "r2Key": "preset/example.jpg"
+  }
+}
+\`\`\`
+
+## 6. GET \`/selfies\`
+
+- Trả về tối đa 50 selfie gần nhất.
+- Phản hồi dạng \`{ "selfies": [ { "id": "...", "image_url": "...", "filename": "...", ... } ] }\`.
+
+## 7. DELETE \`/selfies/{id}\`
+
+- Xóa selfie và kết quả liên quan.
+- Phản hồi tương tự \`/presets/{id}\` với trường \`debug\` mô tả tác vụ.
+
+## 8. GET \`/results\`
+
+- Trả về tối đa 50 kết quả face swap gần nhất.
+- Phản hồi: \`{ "results": [ { "id": "...", "result_url": "...", ... } ] }\`.
+
+## 9. DELETE \`/results/{id}\`
+
+- Xóa kết quả khỏi D1 và R2.
+- Phản hồi:
+
+\`\`\`json
+{
+  "success": true,
+  "message": "Result deleted successfully",
+  "debug": {
+    "resultId": "...",
+    "databaseDeleted": 1,
+    "r2Deleted": true,
+    "r2Key": "results/result_123.jpg"
+  }
+}
+\`\`\`
+
+## 10. GET \`/vertex/get-prompt/{preset_image_id}\`
+
+- Trả về prompt đã lưu cho preset.
+- Phản hồi:
+
+\`\`\`json
+{
+  "success": true,
+  "presetImage": {
+    "id": "...",
+    "image_url": "...",
+    "hasPrompt": true,
+    "promptJson": { "...": "..." }
+  }
+}
+\`\`\`
+
+## 11. POST \`/test-safety\`
+
+- Body: \`{ "image_url": "https://..." }\`.
+- Phản hồi: \`{ "success": true, "imageUrl": "...", "result": { "isSafe": true, ... }, "timestamp": "..." }\`.
+
+## 12. GET \`/test-vertex\`
+
+- Kiểm tra kết nối Vertex (liệt kê model).
+- Phản hồi chứa trạng thái HTTP thực tế, danh sách model và lỗi nếu có.
+
+---
+
+Các phản hồi lỗi từ Worker đều tuân thủ một trong hai dạng:
+
+1. Lỗi chung: \`{ "Success": false, "Message": "...", "StatusCode": 500, "Debug": { ... } }\` (đối với các endpoint cũ chưa chuyển sang cấu trúc mới).
+2. Lỗi chuẩn hóa: \`{ "data": null, "debug": { ... }, "status": "error", "message": "...", "code": 4xx/5xx }\`.
+
+Trường \`debug\` luôn chứa thông tin chi tiết giúp truy vết: endpoint gọi tới, thời gian phản hồi, payload gửi đi, phản hồi gốc (đã được khử dữ liệu nhạy cảm như base64) và các khóa phụ (\`vertex\`, \`vision\`, \`storage\`, \`database\`) tùy vào ngữ cảnh.
+
+`,
+      'README.md': `# Static Docsify Documentation
+
+This directory contains the API documentation that can be built as a fully static HTML file with working search functionality.
+
+## Building Static Documentation
+
+To generate a static HTML file with all content embedded and working search:
+
+\`\`\`bash
+node build-static.js
+\`\`\`
+
+This will create \`index-static.html\` which is a single, self-contained HTML file that:
+- ✅ Contains all markdown content embedded
+- ✅ Has working search functionality
+- ✅ Works without a server (can be opened directly in browser)
+- ✅ Can be deployed to any static hosting (Cloudflare Pages, GitHub Pages, etc.)
+
+## Usage
+
+### For Local Development
+
+1. Use the regular \`index.html\` with Docsify server:
+   \`\`\`bash
+   docsify serve .
+   \`\`\`
+
+### For Static Hosting
+
+1. Build the static version:
+   \`\`\`bash
+   node build-static.js
+   \`\`\`
+
+2. Deploy \`index-static.html\` to your static hosting:
+   - **Cloudflare Pages**: Upload \`index-static.html\` and rename it to \`index.html\`
+   - **GitHub Pages**: Commit \`index-static.html\` as \`index.html\`
+   - **Any static host**: Just upload the HTML file
+
+## How It Works
+
+The static builder:
+1. Reads all \`.md\` files in the directory
+2. Embeds all content directly in the HTML
+3. Pre-generates a search index
+4. Overrides \`fetch()\` to serve content from memory
+5. Works completely offline - no server needed!
+
+## File Structure
+
+\`\`\`
+docs/
+├── index.html          # Regular Docsify (needs server)
+├── index-static.html   # Static version (no server needed)
+├── build-static.js     # Build script
+├── _sidebar.md         # Sidebar navigation
+└── *.md                # Documentation files
+\`\`\`
+
+## Search Functionality
+
+The static version includes a pre-generated search index that works client-side. Search will:
+- Index all headings (H1, H2, H3)
+- Index content text
+- Work offline
+- No external API calls needed
+
+`
+    };
+    
+    // Embedded sidebar
+    window.__staticSidebar = `* [📚 Tổng quan API](API_TONG_QUAN_VI.md) `;
+    
+    // Pre-generated search index
+    window.__staticSearchIndex = [{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"# Tổng quan API Face Swap AI","url":"#/API_TONG_QUAN_VI.md","level":1},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp sau khi cập nhật cấu trúc phản hồi với trường `debug`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 1. POST `/faceswap`","heading":"1. POST `/faceswap`","text":"## 1. POST `/faceswap`","url":"#/API_TONG_QUAN_VI.md?id=1-post-faceswap","level":2},{"title":"Tổng quan API Face Swap AI - Nội dung yêu cầu","heading":"Nội dung yêu cầu","text":"### Nội dung yêu cầu","url":"#/API_TONG_QUAN_VI.md?id=ni-dung-yu-cu","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `target_url` (string, bắt buộc): URL ảnh mục tiêu (preset).","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `source_url` (string, bắt buộc): URL ảnh nguồn (selfie).","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `mode` (string, tùy chọn): `rapidapi` hoặc `vertex`. Mặc định `rapidapi`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `api_provider` (string, tùy chọn): chấp nhận `google-nano-banana` để kích hoạt chế độ Vertex.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `preset_image_id`, `preset_collection_id`, `preset_name` (string, tùy chọn): thông tin preset đã chọn.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `selfie_id` (string, tùy chọn): mã selfie đã lưu trong cơ sở dữ liệu.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+` (chỉ áp dụng cho chế độ Vertex).","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `character_gender` (string, tùy chọn): `male`, `female` hoặc bỏ trống (`none`). Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Phản hồi thành công","heading":"Phản hồi thành công","text":"### Phản hồi thành công","url":"#/API_TONG_QUAN_VI.md?id=phn-hi-thnh-cng","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"resultImageUrl\": \"https://.../results/result_123.jpg\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"request\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"mode\": \"vertex\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"targetUrl\": \"https://...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"sourceUrl\": \"https://...\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"provider\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"statusCode\": 200,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"message\": \"Processing successful\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"finalResultImageUrl\": \"https://.../results/result_123.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"endpoint\": \"https://...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"status\": 200,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"durationMs\": 843","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"vertex\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"prompt\": { \"...\": \"...\" },","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"endpoint\": \"https://.../generateContent\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"status\": 200,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"durationMs\": 5180,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"requestPayload\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"promptLength\": 746,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"imageBytes\": 921344","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"vision\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"checked\": false,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"isSafe\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"error\": \"Safety check skipped for Vertex AI mode\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"storage\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"attemptedDownload\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"downloadStatus\": 200,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"savedToR2\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"r2Key\": \"results/result_123.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"publicUrl\": \"https://.../results/result_123.jpg\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"database\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"attempted\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"resultId\": \"result_...\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"status\": \"success\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"message\": \"Processing successful\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"code\": 200","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Phản hồi lỗi","heading":"Phản hồi lỗi","text":"### Phản hồi lỗi","url":"#/API_TONG_QUAN_VI.md?id=phn-hi-li","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Lỗi kiểm duyệt (Google Vision) trả về HTTP 422:","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"data\": null,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"provider\": { \"...\": \"...\" },","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"vision\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"checked\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"isSafe\": false,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"violationCategory\": \"adult\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"violationLevel\": \"VERY_LIKELY\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"endpoint\": \"https://vision.googleapis.com/v1/images:annotate\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"status\": 200","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"status\": \"error\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"message\": \"Content blocked: Image contains adult content (VERY_LIKELY)\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"code\": 422","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Các lỗi khác (RapidAPI, Vertex, lưu trữ...) trả về HTTP tương ứng với thông tin chi tiết trong `debug.provider.debug` hoặc `debug.vertex.debug`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 2. POST `/upload-url`","heading":"2. POST `/upload-url`","text":"## 2. POST `/upload-url`","url":"#/API_TONG_QUAN_VI.md?id=2-post-upload-url","level":2},{"title":"Tổng quan API Face Swap AI - Mục đích","heading":"Mục đích","text":"### Mục đích","url":"#/API_TONG_QUAN_VI.md?id=mc-ch","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"Tạo URL tạm để trình duyệt tải ảnh lên thông qua Worker (`/upload-proxy/{key}`) và lấy URL công khai R2.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Nội dung yêu cầu","heading":"Nội dung yêu cầu","text":"### Nội dung yêu cầu","url":"#/API_TONG_QUAN_VI.md?id=ni-dung-yu-cu","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `filename` (string, bắt buộc): tên tệp.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `type` (string, bắt buộc): `preset` hoặc `selfie`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `presetName` (string, tùy chọn): tên bộ sưu tập preset.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `enableVertexPrompt` (boolean, tùy chọn): bật tạo prompt Vertex khi upload preset.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Phản hồi","heading":"Phản hồi","text":"### Phản hồi","url":"#/API_TONG_QUAN_VI.md?id=phn-hi","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"uploadUrl\": \"https://<worker-domain>/upload-proxy/preset/example.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"publicUrl\": \"https://pub-...r2.dev/preset/example.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"key\": \"preset/example.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"presetName\": \"Studio Neon\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"enableVertexPrompt\": true","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 3. PUT `/upload-proxy/{key}`","heading":"3. PUT `/upload-proxy/{key}`","text":"## 3. PUT `/upload-proxy/{key}`","url":"#/API_TONG_QUAN_VI.md?id=3-put-upload-proxykey","level":2},{"title":"Tổng quan API Face Swap AI - Mục đích","heading":"Mục đích","text":"### Mục đích","url":"#/API_TONG_QUAN_VI.md?id=mc-ch","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"Nhận dữ liệu nhị phân từ trình duyệt, lưu vào R2 và cập nhật cơ sở dữ liệu (preset/selfie).","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Header quan trọng","heading":"Header quan trọng","text":"### Header quan trọng","url":"#/API_TONG_QUAN_VI.md?id=header-quan-trng","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `Content-Type`: mime-type ảnh.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `X-Preset-Name` (tùy chọn): tên bộ sưu tập preset.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- `X-Enable-Vertex-Prompt`, `X-Enable-Vision-Scan` (tùy chọn): bật Vertex/Vision.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Phản hồi thành công (preset)","heading":"Phản hồi thành công (preset)","text":"### Phản hồi thành công (preset)","url":"#/API_TONG_QUAN_VI.md?id=phn-hi-thnh-cng-preset","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"url\": \"https://.../preset/example.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"id\": \"image_...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"filename\": \"example.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"hasPrompt\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"prompt_json\": { \"...\": \"...\" },","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"vertex_info\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"promptKeys\": [\"prompt\", \"style\", \"...\"],","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"endpoint\": \"https://.../generateContent\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"status\": 200,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"responseTimeMs\": 4200","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"vision_scan\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"isSafe\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"rawResponse\": { \"...\": \"...\" }","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - Phản hồi thành công (selfie)","heading":"Phản hồi thành công (selfie)","text":"### Phản hồi thành công (selfie)","url":"#/API_TONG_QUAN_VI.md?id=phn-hi-thnh-cng-selfie","level":3},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"url\": \"https://.../selfie/example.jpg\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"id\": \"selfie_...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"filename\": \"example.jpg\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 4. GET `/presets`","heading":"4. GET `/presets`","text":"## 4. GET `/presets`","url":"#/API_TONG_QUAN_VI.md?id=4-get-presets","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Trả về danh sách preset trong cơ sở dữ liệu.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi dạng `{ \"presets\": [ { \"id\": \"...\", \"image_url\": \"...\", \"prompt_json\": \"...\", ... } ] }`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 5. DELETE `/presets/{id}`","heading":"5. DELETE `/presets/{id}`","text":"## 5. DELETE `/presets/{id}`","url":"#/API_TONG_QUAN_VI.md?id=5-delete-presetsid","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Xóa preset khỏi D1 và R2.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi:","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"message\": \"Preset deleted successfully\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"presetId\": \"...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"databaseDeleted\": 1,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"r2Deleted\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"r2Key\": \"preset/example.jpg\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 6. GET `/selfies`","heading":"6. GET `/selfies`","text":"## 6. GET `/selfies`","url":"#/API_TONG_QUAN_VI.md?id=6-get-selfies","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Trả về tối đa 50 selfie gần nhất.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi dạng `{ \"selfies\": [ { \"id\": \"...\", \"image_url\": \"...\", \"filename\": \"...\", ... } ] }`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 7. DELETE `/selfies/{id}`","heading":"7. DELETE `/selfies/{id}`","text":"## 7. DELETE `/selfies/{id}`","url":"#/API_TONG_QUAN_VI.md?id=7-delete-selfiesid","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Xóa selfie và kết quả liên quan.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi tương tự `/presets/{id}` với trường `debug` mô tả tác vụ.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 8. GET `/results`","heading":"8. GET `/results`","text":"## 8. GET `/results`","url":"#/API_TONG_QUAN_VI.md?id=8-get-results","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Trả về tối đa 50 kết quả face swap gần nhất.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi: `{ \"results\": [ { \"id\": \"...\", \"result_url\": \"...\", ... } ] }`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 9. DELETE `/results/{id}`","heading":"9. DELETE `/results/{id}`","text":"## 9. DELETE `/results/{id}`","url":"#/API_TONG_QUAN_VI.md?id=9-delete-resultsid","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Xóa kết quả khỏi D1 và R2.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi:","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"message\": \"Result deleted successfully\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"resultId\": \"...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"databaseDeleted\": 1,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"r2Deleted\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"r2Key\": \"results/result_123.jpg\"","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 10. GET `/vertex/get-prompt/{preset_image_id}`","heading":"10. GET `/vertex/get-prompt/{preset_image_id}`","text":"## 10. GET `/vertex/get-prompt/{preset_image_id}`","url":"#/API_TONG_QUAN_VI.md?id=10-get-vertexget-promptpreset_image_id","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Trả về prompt đã lưu cho preset.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi:","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"success\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"presetImage\": {","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"id\": \"...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"image_url\": \"...\",","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"hasPrompt\": true,","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"\"promptJson\": { \"...\": \"...\" }","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 11. POST `/test-safety`","heading":"11. POST `/test-safety`","text":"## 11. POST `/test-safety`","url":"#/API_TONG_QUAN_VI.md?id=11-post-test-safety","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Body: `{ \"image_url\": \"https://...\" }`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi: `{ \"success\": true, \"imageUrl\": \"...\", \"result\": { \"isSafe\": true, ... }, \"timestamp\": \"...\" }`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI - 12. GET `/test-vertex`","heading":"12. GET `/test-vertex`","text":"## 12. GET `/test-vertex`","url":"#/API_TONG_QUAN_VI.md?id=12-get-test-vertex","level":2},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Kiểm tra kết nối Vertex (liệt kê model).","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"- Phản hồi chứa trạng thái HTTP thực tế, danh sách model và lỗi nếu có.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"Các phản hồi lỗi từ Worker đều tuân thủ một trong hai dạng:","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"1. Lỗi chung: `{ \"Success\": false, \"Message\": \"...\", \"StatusCode\": 500, \"Debug\": { ... } }` (đối với các endpoint cũ chưa chuyển sang cấu trúc mới).","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"2. Lỗi chuẩn hóa: `{ \"data\": null, \"debug\": { ... }, \"status\": \"error\", \"message\": \"...\", \"code\": 4xx/5xx }`.","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Tổng quan API Face Swap AI","heading":"Tổng quan API Face Swap AI","text":"Trường `debug` luôn chứa thông tin chi tiết giúp truy vết: endpoint gọi tới, thời gian phản hồi, payload gửi đi, phản hồi gốc (đã được khử dữ liệu nhạ","url":"#/API_TONG_QUAN_VI.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"# Static Docsify Documentation","url":"#/README.md","level":1},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"This directory contains the API documentation that can be built as a fully static HTML file with working search functionality.","url":"#/README.md","level":0},{"title":"Static Docsify Documentation - Building Static Documentation","heading":"Building Static Documentation","text":"## Building Static Documentation","url":"#/README.md?id=building-static-documentation","level":2},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"To generate a static HTML file with all content embedded and working search:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"node build-static.js","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"This will create `index-static.html` which is a single, self-contained HTML file that:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- ✅ Contains all markdown content embedded","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- ✅ Has working search functionality","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- ✅ Works without a server (can be opened directly in browser)","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- ✅ Can be deployed to any static hosting (Cloudflare Pages, GitHub Pages, etc.)","url":"#/README.md","level":0},{"title":"Static Docsify Documentation - Usage","heading":"Usage","text":"## Usage","url":"#/README.md?id=usage","level":2},{"title":"Static Docsify Documentation - For Local Development","heading":"For Local Development","text":"### For Local Development","url":"#/README.md?id=for-local-development","level":3},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"1. Use the regular `index.html` with Docsify server:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"docsify serve .","url":"#/README.md","level":0},{"title":"Static Docsify Documentation - For Static Hosting","heading":"For Static Hosting","text":"### For Static Hosting","url":"#/README.md?id=for-static-hosting","level":3},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"1. Build the static version:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"node build-static.js","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"2. Deploy `index-static.html` to your static hosting:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- **Cloudflare Pages**: Upload `index-static.html` and rename it to `index.html`","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- **GitHub Pages**: Commit `index-static.html` as `index.html`","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- **Any static host**: Just upload the HTML file","url":"#/README.md","level":0},{"title":"Static Docsify Documentation - How It Works","heading":"How It Works","text":"## How It Works","url":"#/README.md?id=how-it-works","level":2},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"The static builder:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"1. Reads all `.md` files in the directory","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"2. Embeds all content directly in the HTML","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"3. Pre-generates a search index","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"4. Overrides `fetch()` to serve content from memory","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"5. Works completely offline - no server needed!","url":"#/README.md","level":0},{"title":"Static Docsify Documentation - File Structure","heading":"File Structure","text":"## File Structure","url":"#/README.md?id=file-structure","level":2},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"├── index.html          # Regular Docsify (needs server)","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"├── index-static.html   # Static version (no server needed)","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"├── build-static.js     # Build script","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"├── _sidebar.md         # Sidebar navigation","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"└── *.md                # Documentation files","url":"#/README.md","level":0},{"title":"Static Docsify Documentation - Search Functionality","heading":"Search Functionality","text":"## Search Functionality","url":"#/README.md?id=search-functionality","level":2},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"The static version includes a pre-generated search index that works client-side. Search will:","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- Index all headings (H1, H2, H3)","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- Index content text","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- Work offline","url":"#/README.md","level":0},{"title":"Static Docsify Documentation","heading":"Static Docsify Documentation","text":"- No external API calls needed","url":"#/README.md","level":0}];
+    
+    // Configure Docsify
+    window.$docsify = {
+      name: 'Face Swap AI API',
+      repo: '',
+      loadSidebar: true,
+      subMaxLevel: 3,
+      auto2top: true,
+      homepage: 'API_TONG_QUAN_VI.md',
+      coverpage: false,
+      search: {
+        maxAge: 86400000,
+        paths: ["API_TONG_QUAN_VI.md","README.md"],
+        placeholder: 'Tìm kiếm...',
+        noData: 'Không tìm thấy kết quả',
+        depth: 6
+      },
+      notFoundPage: true,
+      executeScript: true,
+      pagination: {
+        previousText: 'Trước',
+        nextText: 'Tiếp',
+        crossChapter: true,
+        crossChapterText: true,
+      },
+      plugins: [
+        function(hook, vm) {
+          // Override sidebar loading
+          hook.beforeEach(function(html) {
+            return html;
+          });
+          
+          hook.mounted(function() {
+            // Inject sidebar content
+            const sidebarEl = document.querySelector('.sidebar');
+            if (sidebarEl && window.__staticSidebar) {
+              // Docsify will load sidebar, but we can pre-populate it
+            }
+            
+            // Ensure sidebar is expanded by default
+            setTimeout(() => {
+              const sidebar = document.querySelector('.sidebar');
+              const app = document.querySelector('#app');
+              if (sidebar && app) {
+                sidebar.style.transform = 'translateX(0)';
+                sidebar.style.display = 'block';
+                app.classList.remove('close');
+              }
+            }, 100);
+          });
+          
+          // Override fetch to serve from embedded content
+          const originalFetch = window.fetch;
+          window.fetch = function(url, options) {
+            if (typeof url === 'string') {
+              // Handle markdown files
+              if (url.endsWith('.md') || url.includes('.md')) {
+                const fileName = url.split('/').pop().split('?')[0];
+                if (window.__staticDocs[fileName]) {
+                  return Promise.resolve(new Response(
+                    window.__staticDocs[fileName],
+                    { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } }
+                  ));
+                }
+              }
+              // Handle sidebar
+              if (url.includes('_sidebar.md') || url.endsWith('_sidebar')) {
+                return Promise.resolve(new Response(
+                  window.__staticSidebar,
+                  { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } }
+                ));
+              }
+            }
+            return originalFetch.apply(this, arguments);
+          };
+          
+          // Inject search index when search plugin loads
+          hook.doneEach(function() {
+            if (window.Docsify && window.Docsify.util && window.__staticSearchIndex) {
+              // Try to set search index
+              setTimeout(() => {
+                const searchPlugin = window.Docsify.dom.find('.search input');
+                if (searchPlugin && !window.__searchIndexSet) {
+                  // Store index globally for search plugin
+                  window.DocsifySearchIndex = window.__staticSearchIndex;
+                  window.__searchIndexSet = true;
+                }
+              }, 100);
+            }
+          });
+        },
+        // Custom search plugin that uses pre-generated index
+        function(hook, vm) {
+          hook.ready(function() {
+            if (window.__staticSearchIndex) {
+              // Override search functionality
+              const searchInput = document.querySelector('.search input');
+              if (searchInput) {
+                searchInput.addEventListener('input', function(e) {
+                  const query = e.target.value.toLowerCase().trim();
+                  if (query.length < 2) return;
+                  
+                  const results = window.__staticSearchIndex.filter(item => {
+                    const searchText = (item.title + ' ' + item.text).toLowerCase();
+                    return searchText.includes(query);
+                  });
+                  
+                  // Display results (simplified - Docsify will handle UI)
+                  console.log('Search results:', results.length);
+                });
+              }
+            }
+          });
+        }
+      ]
+    };
+  </script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/pagination.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/emoji.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/external-script.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/zoom-image.min.js"></script>
+</body>
+</html>

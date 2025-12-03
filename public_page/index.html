@@ -1861,7 +1861,7 @@
     </button>
 
     <script>
-        const WORKER_URL = 'https://ai-faceswap-backend-office-dev.Thanhlx273.workers.dev';
+        const WORKER_URL = 'https://ai-faceswap-backend.Chungminhtu03.workers.dev';
         const ITEMS_PER_PAGE = 12;
 
         const presetUpload = document.getElementById('preset-upload');
@@ -2687,7 +2687,7 @@
 
                     // Get selected gender for preset
                     const presetGenderRadios = document.querySelectorAll('input[name="preset-gender"]:checked');
-                    if (presetGenderRadios.length > 0 && presetGenderRadios[0].value) {
+                    if (presetGenderRadios.length > 0 && presetGenderRadios[0].value && presetGenderRadios[0].value !== '') {
                         headers['X-Gender'] = presetGenderRadios[0].value;
                     }
 
@@ -2698,7 +2698,7 @@
                 if (type === 'selfie') {
                     // Get selected gender for selfie
                     const selfieGenderRadios = document.querySelectorAll('input[name="selfie-gender"]:checked');
-                    if (selfieGenderRadios.length > 0 && selfieGenderRadios[0].value) {
+                    if (selfieGenderRadios.length > 0 && selfieGenderRadios[0].value && selfieGenderRadios[0].value !== '') {
                         headers['X-Gender'] = selfieGenderRadios[0].value;
                     }
                 }
@@ -2716,8 +2716,15 @@
                 const responseText = await uploadResponse.text();
                 try {
                     uploadResult = JSON.parse(responseText);
-                    if (uploadResult.message) {
+                    // Handle both errorResponse format (Message) and jsonResponse format (message/error)
+                    if (uploadResult.Message) {
+                        errorMessage = uploadResult.Message;
+                    } else if (uploadResult.message) {
                         errorMessage = uploadResult.message;
+                    } else if (uploadResult.error) {
+                        errorMessage = uploadResult.error;
+                    } else if (uploadResult.warning) {
+                        errorMessage = uploadResult.warning;
                     }
                 } catch (parseError) {
                     // Response is not JSON, use text as error message

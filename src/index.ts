@@ -352,8 +352,11 @@ export default {
             request.headers.get('X-Enable-Vertex-Prompt') === 'true' ||
             request.headers.get('X-Enable-Gemini-Prompt') === 'true';
           const enableVisionScan = request.headers.get('X-Enable-Vision-Scan') === 'true';
-          const gender = request.headers.get('X-Gender') as 'male' | 'female' | undefined;
-          console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt, 'Enable Vision Scan:', enableVisionScan);
+          const genderHeader = request.headers.get('X-Gender');
+          const gender = (genderHeader && (genderHeader === 'male' || genderHeader === 'female')) 
+            ? genderHeader as 'male' | 'female' 
+            : undefined;
+          console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt, 'Enable Vision Scan:', enableVisionScan, 'Gender:', gender);
 
           // Decode base64 if encoded
           const isEncoded = request.headers.get('X-Preset-Name-Encoded') === 'base64';
@@ -509,11 +512,34 @@ export default {
               createdAt
             });
             
-            const result = await env.DB.prepare(
-              'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-            ).bind(imageId, collectionId, publicUrl, promptJson, gender, createdAt).run();
+            // Validate gender before insert
+            const validGender = (gender === 'male' || gender === 'female') ? gender : null;
+            
+            // Check if gender column exists
+            let hasGenderColumn = false;
+            try {
+              const tableInfo = await env.DB.prepare("PRAGMA table_info(preset_images)").all();
+              hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
+            } catch {
+              // If we can't check, assume it doesn't exist
+              hasGenderColumn = false;
+            }
+            
+            let result;
+            if (hasGenderColumn) {
+              result = await env.DB.prepare(
+                'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+              ).bind(imageId, collectionId, publicUrl, promptJson, validGender, createdAt).run();
+            } else {
+              // Insert without gender column (for databases that haven't been migrated yet)
+              console.warn('[DB] Gender column not found, inserting without gender');
+              result = await env.DB.prepare(
+                'INSERT INTO preset_images (id, collection_id, image_url, prompt_json, created_at) VALUES (?, ?, ?, ?, ?)'
+              ).bind(imageId, collectionId, publicUrl, promptJson, createdAt).run();
+            }
 
             if (!result.success) {
+              console.error('[DB] Insert result:', result);
               throw new Error(`Database insert failed: ${JSON.stringify(result)}`);
             }
 
@@ -540,6 +566,16 @@ export default {
               errorType: dbError instanceof Error ? dbError.constructor.name : typeof dbError
             });
             
+            const errorMsg = dbError instanceof Error ? dbError.message : String(dbError);
+            let errorMessage = `Database save failed: ${errorMsg}`;
+            let warning = 'File uploaded to R2 but not saved to database. Please retry or contact support.';
+            
+            // Check if it's a missing column error
+            if (errorMsg.includes('no column named gender')) {
+              errorMessage = 'Gender column missing. Please run migration: POST /migrate-gender';
+              warning = 'File uploaded to R2 but not saved to database. Run migration to add gender column.';
+            }
+            
             // Return error response - don't silently fail
             // File was uploaded to R2, but DB save failed - this is a critical error
             return jsonResponse({
@@ -548,8 +584,8 @@ export default {
               id: null,
               filename: key.replace('preset/', ''),
               hasPrompt: false,
-              error: `Database save failed: ${dbError instanceof Error ? dbError.message : String(dbError)}`,
-              warning: 'File uploaded to R2 but not saved to database. Please retry or contact support.'
+              error: errorMessage,
+              warning: warning
             }, 500);
           }
 
@@ -596,7 +632,11 @@ export default {
           const filename = key.replace('selfie/', '');
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
-          const gender = request.headers.get('X-Gender') as 'male' | 'female' | undefined;
+          const genderHeader = request.headers.get('X-Gender');
+          const gender = (genderHeader && (genderHeader === 'male' || genderHeader === 'female')) 
+            ? genderHeader as 'male' | 'female' 
+            : undefined;
+          console.log('Selfie upload - Gender:', gender);
 
           console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
@@ -614,12 +654,35 @@ export default {
               return errorResponse('Database schema not initialized. Please run database migration.', 500);
             }
 
-            const result = await env.DB.prepare(
-              'INSERT INTO selfies (id, image_url, filename, gender, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, filename, gender, createdAt).run();
+            // Validate gender before insert
+            const validGender = (gender === 'male' || gender === 'female') ? gender : null;
+            
+            // Check if gender column exists
+            let hasGenderColumn = false;
+            try {
+              const tableInfo = await env.DB.prepare("PRAGMA table_info(selfies)").all();
+              hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
+            } catch {
+              // If we can't check, assume it doesn't exist
+              hasGenderColumn = false;
+            }
+            
+            let result;
+            if (hasGenderColumn) {
+              result = await env.DB.prepare(
+                'INSERT INTO selfies (id, image_url, filename, gender, created_at) VALUES (?, ?, ?, ?, ?)'
+              ).bind(selfieId, publicUrl, filename, validGender, createdAt).run();
+            } else {
+              // Insert without gender column (for databases that haven't been migrated yet)
+              console.warn('[DB] Gender column not found, inserting without gender');
+              result = await env.DB.prepare(
+                'INSERT INTO selfies (id, image_url, filename, created_at) VALUES (?, ?, ?, ?)'
+              ).bind(selfieId, publicUrl, filename, createdAt).run();
+            }
 
             if (!result.success) {
               console.error('Database insert returned success=false:', result);
+              console.error('Insert details:', { selfieId, publicUrl, filename, gender: validGender, createdAt });
               return errorResponse('Failed to save selfie to database', 500);
             }
 
@@ -651,6 +714,11 @@ export default {
             const errorMsg = dbError instanceof Error ? dbError.message : String(dbError);
             if (errorMsg.includes('no such table') || errorMsg.includes('selfies')) {
               return errorResponse('Database schema not initialized. Please run: wrangler d1 execute faceswap-db --remote --file=schema.sql', 500);
+            }
+            
+            // Check if it's a missing column error
+            if (errorMsg.includes('no column named gender')) {
+              return errorResponse('Gender column missing. Please run migration: POST /migrate-gender or wrangler d1 execute faceswap-db --remote --file=migrate-gender-columns.sql', 500);
             }
             
             return errorResponse(`Database save failed: ${errorMsg}`, 500);
@@ -693,6 +761,73 @@ export default {
       } catch (error) {
         console.error('Migration error:', error);
         return errorResponse('Migration failed', 500);
+      }
+    }
+
+    // Handle gender column migration
+    if (path === '/migrate-gender' && request.method === 'POST') {
+      try {
+        const results: string[] = [];
+        
+        // Check if gender column exists in preset_images
+        try {
+          const presetTableInfo = await env.DB.prepare("PRAGMA table_info(preset_images)").all();
+          const hasPresetGender = (presetTableInfo.results as any[]).some((col: any) => col.name === 'gender');
+          
+          if (!hasPresetGender) {
+            await env.DB.prepare('ALTER TABLE preset_images ADD COLUMN gender TEXT CHECK(gender IN (\'male\', \'female\'))').run();
+            results.push('Added gender column to preset_images');
+          } else {
+            results.push('Gender column already exists in preset_images');
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (errorMsg.includes('duplicate column')) {
+            results.push('Gender column already exists in preset_images');
+          } else {
+            throw error;
+          }
+        }
+
+        // Check if gender column exists in selfies
+        try {
+          const selfieTableInfo = await env.DB.prepare("PRAGMA table_info(selfies)").all();
+          const hasSelfieGender = (selfieTableInfo.results as any[]).some((col: any) => col.name === 'gender');
+          
+          if (!hasSelfieGender) {
+            await env.DB.prepare('ALTER TABLE selfies ADD COLUMN gender TEXT CHECK(gender IN (\'male\', \'female\'))').run();
+            results.push('Added gender column to selfies');
+          } else {
+            results.push('Gender column already exists in selfies');
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (errorMsg.includes('duplicate column')) {
+            results.push('Gender column already exists in selfies');
+          } else {
+            throw error;
+          }
+        }
+
+        // Create indexes
+        try {
+          await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_preset_images_gender ON preset_images(gender)').run();
+          results.push('Created index on preset_images.gender');
+        } catch (error) {
+          results.push('Index on preset_images.gender already exists or failed');
+        }
+
+        try {
+          await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_selfies_gender ON selfies(gender)').run();
+          results.push('Created index on selfies.gender');
+        } catch (error) {
+          results.push('Index on selfies.gender already exists or failed');
+        }
+
+        return jsonResponse({ success: true, message: 'Gender columns migration completed', results });
+      } catch (error) {
+        console.error('Gender migration error:', error);
+        return errorResponse(`Gender migration failed: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
 

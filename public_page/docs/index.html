@@ -4,72 +4,204 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Face Swap AI - API Documentation</title>
-  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/buble.css">
   <style>
-    :root {
-      --theme-color: #F82387;
-      --theme-color-dark: #B215FF;
-      --sidebar-width: 280px;
+    * {
+      font-family: 'Lexend Deca', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
+    
+    :root {
+      --theme-color: #3b82f6;
+      --theme-color-dark: #2563eb;
+      --sidebar-width: 380px;
+      --content-max-width: 95%;
+    }
+    
+    body {
+      font-family: 'Lexend Deca', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-weight: 400;
+    }
+    
     .app-name-link img {
       max-width: 200px;
     }
+    
     .sidebar {
-      background: linear-gradient(135deg, #FDFBFF 0%, #F7F2FF 100%);
+      background: #ffffff;
+      border-right: 1px solid #e5e7eb;
+      width: var(--sidebar-width) !important;
     }
+    
+    .sidebar-toggle {
+      display: none !important;
+    }
+    
+    @media (max-width: 768px) {
+      .sidebar {
+        width: var(--sidebar-width) !important;
+        transform: translateX(0) !important;
+      }
+    }
+    
     .sidebar ul li a {
-      color: #0B0B2E;
-      font-weight: 500;
+      color: #374151;
+      font-weight: 400;
+      font-family: 'Lexend Deca', sans-serif;
     }
+    
     .sidebar ul li a:hover {
       color: var(--theme-color);
+      background: rgba(59, 130, 246, 0.05);
     }
+    
     .sidebar ul li.active > a {
       color: var(--theme-color);
+      background: rgba(59, 130, 246, 0.1);
       border-left: 3px solid var(--theme-color);
+      font-weight: 500;
     }
+    
     .markdown-section {
-      max-width: 900px;
+      max-width: var(--content-max-width) !important;
+      width: var(--content-max-width) !important;
+      padding: 2rem 3rem;
     }
+    
+    @media (min-width: 1400px) {
+      .markdown-section {
+        max-width: 1400px !important;
+        width: 1400px !important;
+      }
+    }
+    
     .markdown-section h1 {
-      color: var(--theme-color);
+      color: #1f2937;
       border-bottom: 2px solid var(--theme-color);
       padding-bottom: 10px;
+      font-weight: 600;
+      font-family: 'Lexend Deca', sans-serif;
     }
+    
     .markdown-section h2 {
-      color: var(--theme-color-dark);
+      color: #374151;
+      margin-top: 40px;
+      font-weight: 600;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    .markdown-section h3 {
+      color: #4b5563;
       margin-top: 30px;
+      font-weight: 500;
+      font-family: 'Lexend Deca', sans-serif;
     }
+    
+    .markdown-section p,
+    .markdown-section li {
+      font-family: 'Lexend Deca', sans-serif;
+      font-weight: 400;
+      line-height: 1.7;
+      color: #4b5563;
+    }
+    
     .markdown-section code {
-      background: rgba(248, 35, 135, 0.1);
-      color: var(--theme-color);
+      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace !important;
+      background: #f3f4f6;
+      color: #dc2626;
       padding: 2px 6px;
-      border-radius: 3px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-weight: 400;
     }
+    
     .markdown-section pre {
-      background: #f8f9fa;
+      background: #1f2937;
       border-left: 4px solid var(--theme-color);
+      border-radius: 6px;
+      padding: 1.5rem;
+      overflow-x: auto;
     }
+    
+    .markdown-section pre code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace !important;
+      background: transparent;
+      color: #e5e7eb;
+      padding: 0;
+      font-size: 0.9em;
+      font-weight: 400;
+      line-height: 1.6;
+    }
+    
     .markdown-section blockquote {
       border-left: 4px solid var(--theme-color);
-      background: rgba(248, 35, 135, 0.05);
+      background: rgba(59, 130, 246, 0.05);
+      padding: 1rem 1.5rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
     }
+    
+    .markdown-section blockquote p {
+      color: #4b5563;
+      margin: 0;
+    }
+    
     .app-name {
       font-size: 24px;
-      font-weight: 700;
+      font-weight: 600;
       color: var(--theme-color);
+      font-family: 'Lexend Deca', sans-serif;
     }
+    
     .cover {
-      background: linear-gradient(135deg, #FFE0F0 0%, #F4E5FF 35%, #FDFBFF 70%);
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #bfdbfe 100%);
     }
+    
     .cover-main {
-      color: #0B0B2E;
+      color: #1f2937;
     }
+    
     .cover-main h1 {
       color: var(--theme-color);
+      font-family: 'Lexend Deca', sans-serif;
+      font-weight: 600;
     }
+    
     .cover-main p {
-      color: #3A345C;
+      color: #4b5563;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+    
+    table th,
+    table td {
+      padding: 0.75rem;
+      border: 1px solid #e5e7eb;
+      text-align: left;
+      font-family: 'Lexend Deca', sans-serif;
+    }
+    
+    table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #374151;
+    }
+    
+    table tr:hover {
+      background: #f9fafb;
+    }
+    
+    .search input {
+      font-family: 'Lexend Deca', sans-serif;
     }
   </style>
 </head>
@@ -91,6 +223,8 @@
         noData: 'Không tìm thấy kết quả',
         depth: 6
       },
+      notFoundPage: true,
+      executeScript: true,
       pagination: {
         previousText: 'Trước',
         nextText: 'Tiếp',
@@ -101,6 +235,19 @@
         function(hook, vm) {
           hook.beforeEach(function(html) {
             return html;
+          });
+          
+          hook.mounted(function() {
+            // Ensure sidebar is expanded by default
+            setTimeout(() => {
+              const sidebar = document.querySelector('.sidebar');
+              const app = document.querySelector('#app');
+              if (sidebar && app) {
+                sidebar.style.transform = 'translateX(0)';
+                sidebar.style.display = 'block';
+                app.classList.remove('close');
+              }
+            }, 100);
           });
         }
       ]

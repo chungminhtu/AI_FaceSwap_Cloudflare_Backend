@@ -10,7 +10,8 @@
     "deploy-production": "node deploy/deploy.js production",
     "deploy-ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node deploy/deploy.js",
     "deploy-ai-office-dev-with-pages": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node deploy/deploy.js",
-    "deploy-ai-office-prod": "DEPLOY_ENV=ai-office-prod node deploy/deploy.js"
+    "deploy-ai-office-prod": "DEPLOY_ENV=ai-office-prod node deploy/deploy.js",
+    "docs:build-static": "node public_page/docs/build-static.js"
   },
   "keywords": [
     "cloudflare",

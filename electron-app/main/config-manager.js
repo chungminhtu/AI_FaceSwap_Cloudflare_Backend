@@ -5,12 +5,12 @@ class ConfigManager {
   constructor() {
     const projectRoot = path.resolve(__dirname, '../..');
     this.secretsPath = path.join(projectRoot, 'deploy', 'deployments-secrets.json');
-    this.configPath = path.join(projectRoot, 'deploy', 'electron-config.json');
+    this.projectRoot = projectRoot;
   }
 
   getDefaultConfig() {
     return {
-      codebasePath: process.cwd(),
+      codebasePath: this.projectRoot,
       deployments: []
     };
   }
@@ -40,34 +40,9 @@ class ConfigManager {
     }
   }
 
-  readConfigFile() {
-    try {
-      if (!fs.existsSync(this.configPath)) {
-        return { codebasePath: process.cwd() };
-      }
-      const content = fs.readFileSync(this.configPath, 'utf8');
-      return JSON.parse(content);
-    } catch (error) {
-      return { codebasePath: process.cwd() };
-    }
-  }
-
-  writeConfigFile(config) {
-    try {
-      const dir = path.dirname(this.configPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf8');
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
 
   read() {
     try {
-      const uiConfig = this.readConfigFile();
       const secretsData = this.readSecretsFile();
 
       const deployments = [];
@@ -122,10 +97,13 @@ class ConfigManager {
         }
       }
 
+      // Always use project root as codebase path
+      const codebasePath = this.projectRoot;
+
       return {
-        codebasePath: uiConfig.codebasePath || process.cwd(),
+        codebasePath,
         deployments,
-        formDraft: uiConfig.formDraft || null
+        formDraft: null
       };
     } catch (error) {
       return this.getDefaultConfig();
@@ -139,11 +117,7 @@ class ConfigManager {
         throw new Error(`Invalid config: ${validation.error}`);
       }
 
-      const uiConfig = {
-        codebasePath: config.codebasePath || process.cwd(),
-        formDraft: config.formDraft || null
-      };
-      this.writeConfigFile(uiConfig);
+      // No need to save UI state - just save deployments
 
       const existingSecrets = this.readSecretsFile();
       const secretsData = { environments: {} };
@@ -299,7 +273,7 @@ class ConfigManager {
   }
 
   getConfigPath() {
-    return this.configPath;
+    return null; // No config file
   }
 
   getSecretsPath() {

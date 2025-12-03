@@ -192,7 +192,21 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
       }
     };
 
-    const result = await deployFromConfig(deploymentConfig, reportProgress, config.codebasePath || process.cwd());
+    // Ensure codebase path is valid (default to project root)
+    const projectRoot = path.resolve(__dirname, '../..');
+    let codebasePath = config.codebasePath;
+    if (codebasePath && fs.existsSync(codebasePath)) {
+      // Check if it has required directories
+      const hasDeploy = fs.existsSync(path.join(codebasePath, 'deploy'));
+      const hasSrc = fs.existsSync(path.join(codebasePath, 'src'));
+      if (!hasDeploy || !hasSrc) {
+        codebasePath = projectRoot;
+      }
+    } else {
+      codebasePath = projectRoot;
+    }
+    
+    const result = await deployFromConfig(deploymentConfig, reportProgress, codebasePath);
 
     if (result.success) {
       const historyEntry = {
@@ -242,7 +256,21 @@ ipcMain.handle('deployment:from-config', async (event, configObject, deploymentI
       });
     };
 
-    const result = await deployFromConfig(configObject, reportProgress, config.codebasePath || process.cwd());
+    // Ensure codebase path is valid (default to project root)
+    const projectRoot = path.resolve(__dirname, '../..');
+    let codebasePath = config.codebasePath;
+    if (codebasePath && fs.existsSync(codebasePath)) {
+      // Check if it has required directories
+      const hasDeploy = fs.existsSync(path.join(codebasePath, 'deploy'));
+      const hasSrc = fs.existsSync(path.join(codebasePath, 'src'));
+      if (!hasDeploy || !hasSrc) {
+        codebasePath = projectRoot;
+      }
+    } else {
+      codebasePath = projectRoot;
+    }
+    
+    const result = await deployFromConfig(configObject, reportProgress, codebasePath);
     return result;
   } catch (error) {
     return {
