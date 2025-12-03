@@ -117,9 +117,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (pathname.startsWith('/cloudflare-gcp-deploy-cli-ui/')) {
-    const filePath = pathname.replace('/cloudflare-gcp-deploy-cli-ui/', '');
-    serveStatic(path.join(__dirname, filePath), res);
+  if (pathname.startsWith('/_cloudflare-gcp-deploy-cli-ui/')) {
+    serveStatic(path.join(__dirname, pathname.replace('/_cloudflare-gcp-deploy-cli-ui', '')), res);
     return;
   }
 

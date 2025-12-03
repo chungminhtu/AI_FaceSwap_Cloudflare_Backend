@@ -87,10 +87,10 @@ function restoreEnv(origToken, origAccountId) {
 }
 
 async function loadConfig() {
-  const secretsPath = path.join(process.cwd(), 'cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
+  const secretsPath = path.join(process.cwd(), '_cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
 
   if (!fs.existsSync(secretsPath)) {
-    logError('cloudflare-gcp-deploy-cli-ui/deployments-secrets.json not found. Please create it with your configuration.');
+    logError('_cloudflare-gcp-deploy-cli-ui/deployments-secrets.json not found. Please create it with your configuration.');
     process.exit(1);
   }
 
@@ -399,7 +399,7 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
 }
 
 function saveCloudflareCredentials(accountId, token, refreshToken = null, expirationTime = null, env = null) {
-  const secretsPath = path.join(process.cwd(), 'cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
+  const secretsPath = path.join(process.cwd(), '_cloudflare-gcp-deploy-cli-ui', 'deployments-secrets.json');
   if (!fs.existsSync(secretsPath)) return;
 
   const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
@@ -630,7 +630,7 @@ const utils = {
         await runCommand(`wrangler d1 create ${databaseName}`, cwd);
       }
 
-      const schemaPath = path.join(cwd, 'cloudflare-gcp-deploy-cli-ui', 'schema.sql');
+      const schemaPath = path.join(cwd, 'backend-cloudflare-workers', 'schema.sql');
       if (fs.existsSync(schemaPath)) {
         try {
           logStep('Initializing database schema...');

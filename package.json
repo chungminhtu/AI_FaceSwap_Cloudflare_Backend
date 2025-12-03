@@ -1,26 +1,27 @@
 {
   "name": "ai-faceswap-cloudflare-backend",
   "version": "1.0.0",
-  "description": "Cloudflare Worker backend for AI FaceSwap mobile app",
+  "description": "Cloudflare Worker backend and Pages frontend for AI FaceSwap application with GCP integration",
   "main": "backend-cloudflare-workers/index.ts",
   "scripts": {
     "dev": "wrangler dev",
-    "setup:gcp": "node setup-google-cloud.js",
-    "deploy-setup": "node cloudflare-gcp-deploy-cli-ui/deploy.js setup",
-    "deploy-production": "node cloudflare-gcp-deploy-cli-ui/deploy.js production",
-    "deploy-ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node cloudflare-gcp-deploy-cli-ui/deploy.js",
-    "deploy-ai-office-dev-with-pages": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node cloudflare-gcp-deploy-cli-ui/deploy.js",
-    "deploy-ai-office-prod": "DEPLOY_ENV=ai-office-prod node cloudflare-gcp-deploy-cli-ui/deploy.js",
-    "docs:build-static": "node frontend-cloudflare-pages/docs/build-static.js",
-    "deploy-ui": "node cloudflare-gcp-deploy-cli-ui/deploy-server.js"
+    "deploy:setup": "node _cloudflare-gcp-deploy-cli-ui/deploy.js setup",
+    "deploy:production": "node _cloudflare-gcp-deploy-cli-ui/deploy.js production",
+    "deploy:ai-office": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office node _cloudflare-gcp-deploy-cli-ui/deploy.js",
+    "deploy:ai-office-dev": "DEPLOY_PAGES=true DEPLOY_ENV=ai-office-dev node _cloudflare-gcp-deploy-cli-ui/deploy.js",
+    "deploy:ai-office-prod": "DEPLOY_ENV=ai-office-prod node _cloudflare-gcp-deploy-cli-ui/deploy.js",
+    "deploy:ui": "node _cloudflare-gcp-deploy-cli-ui/deploy-server.js",
+    "docs:build": "node frontend-cloudflare-pages/docs/build-static.js"
   },
   "keywords": [
     "cloudflare",
     "worker",
+    "pages",
     "faceswap",
-    "api"
+    "api",
+    "gcp",
+    "vertex-ai"
   ],
-  "author": "",
   "license": "MIT",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241106.0",

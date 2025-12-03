@@ -59,3 +59,4 @@ CREATE INDEX IF NOT EXISTS idx_results_created_at ON results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_results_selfie_id ON results(selfie_id);
 CREATE INDEX IF NOT EXISTS idx_results_preset_id ON results(preset_id);
 CREATE INDEX IF NOT EXISTS idx_results_profile_id ON results(profile_id);
+
