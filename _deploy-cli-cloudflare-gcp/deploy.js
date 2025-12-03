@@ -623,71 +623,14 @@ const utils = {
 
   async ensureD1Database(cwd, databaseName) {
     try {
-      let databaseExists = false;
-      let databaseId = null;
+      const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
 
-      try {
-        const output = execSync('wrangler d1 list --json', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
-        if (output && output.trim()) {
-          try {
-            const databases = JSON.parse(output);
-            if (Array.isArray(databases)) {
-              const db = databases.find(d => d.name === databaseName);
-              if (db) {
-                databaseExists = true;
-                databaseId = db.uuid || db.id || db.database_id;
-              }
-            }
-          } catch (parseError) {
-            const textOutput = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
-            if (textOutput && textOutput.includes(databaseName)) {
-              databaseExists = true;
-              const idMatch = textOutput.match(new RegExp(`${databaseName}[\\s\\S]*?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})`, 'i'));
-              if (idMatch) {
-                databaseId = idMatch[1];
-              }
-            }
-          }
-        }
-      } catch (listError) {
-        const textOutput = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
-        if (textOutput && textOutput.includes(databaseName)) {
-          databaseExists = true;
-          const idMatch = textOutput.match(new RegExp(`${databaseName}[\\s\\S]*?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})`, 'i'));
-          if (idMatch) {
-            databaseId = idMatch[1];
-          }
-        }
-      }
-
-      if (databaseExists && databaseId) {
-        try {
-          logStep('Deleting existing D1 database...');
-          await runCommand(`wrangler d1 delete ${databaseId}`, cwd);
-          logSuccess('Database deleted');
-        } catch (deleteError) {
-          const errorMsg = deleteError.message || deleteError.error || '';
-          if (!errorMsg.includes('not found') && !errorMsg.includes('404') && !errorMsg.includes('7404')) {
-            logWarn(`Failed to delete database: ${errorMsg}. Continuing with creation...`);
-          } else {
-            logWarn('Database not found for deletion, will create new one');
-          }
-        }
-      } else if (databaseExists) {
-        logWarn('Database exists but ID not found. Will attempt to create new one (may fail if name conflict)...');
-      }
-
+      if (!output || !output.includes(databaseName)) {
         logStep('Creating D1 database...');
-      const createResult = await runCommand(`wrangler d1 create ${databaseName}`, cwd);
-      if (createResult.success) {
+        await runCommand(`wrangler d1 create ${databaseName}`, cwd);
         logSuccess('Database created');
       } else {
-        const errorMsg = createResult.error || '';
-        if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
-          logWarn('Database with this name already exists. Attempting to use existing database...');
-        } else {
-          throw new Error(`Failed to create database: ${errorMsg}`);
-        }
+        logSuccess('Database already exists');
       }
 
       const schemaPath = path.join(cwd, 'backend-cloudflare-workers', 'schema.sql');
@@ -706,7 +649,7 @@ const utils = {
     } catch (error) {
       const errorMsg = error.message || error.error || '';
       if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
-        logWarn('Database already exists, will attempt to use existing database');
+        logWarn('Database already exists, will use existing database');
       } else {
         throw error;
       }
@@ -755,6 +698,21 @@ const utils = {
   },
 
   async deployWorker(cwd, workerName, config) {
+    const wranglerConfigFiles = [
+      path.join(cwd, 'wrangler.json'),
+      path.join(cwd, 'wrangler.jsonc'),
+      path.join(cwd, 'wrangler.toml')
+    ];
+
+    for (const configFile of wranglerConfigFiles) {
+      if (fs.existsSync(configFile)) {
+        try {
+          fs.unlinkSync(configFile);
+        } catch {
+        }
+      }
+    }
+
     const wranglerPath = path.join(cwd, 'wrangler.jsonc');
     let createdConfig = false;
 
