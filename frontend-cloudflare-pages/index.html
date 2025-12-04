@@ -1674,7 +1674,7 @@
                             <div style="font-weight: 500; font-size: 12px; color: #555; margin-bottom: 4px;">👤 Giới tính:</div>
                             <div style="display: flex; gap: 12px;">
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="preset-gender" value="" checked style="margin-right: 4px;">
+                                    <input type="radio" name="preset-gender" value="" style="margin-right: 4px;">
                                     Không xác định
                                 </label>
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
@@ -1682,7 +1682,7 @@
                                     Nam
                                 </label>
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="preset-gender" value="female" style="margin-right: 4px;">
+                                    <input type="radio" name="preset-gender" value="female" checked style="margin-right: 4px;">
                                     Nữ
                                 </label>
                             </div>
@@ -1724,7 +1724,7 @@
                             <div style="font-weight: 500; font-size: 12px; color: #555; margin-bottom: 4px;">👤 Giới tính:</div>
                             <div style="display: flex; gap: 12px;">
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="selfie-gender" value="" checked style="margin-right: 4px;">
+                                    <input type="radio" name="selfie-gender" value="" style="margin-right: 4px;">
                                     Không xác định
                                 </label>
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
@@ -1732,7 +1732,7 @@
                                     Nam
                                 </label>
                                 <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="selfie-gender" value="female" style="margin-right: 4px;">
+                                    <input type="radio" name="selfie-gender" value="female" checked style="margin-right: 4px;">
                                     Nữ
                                 </label>
                             </div>
@@ -1991,6 +1991,30 @@
             }
         }
 
+        // Load gender states from localStorage on page load
+        function loadGenderStates() {
+            try {
+                const presetGender = localStorage.getItem('preset-gender');
+                const selfieGender = localStorage.getItem('selfie-gender');
+                
+                if (presetGender !== null) {
+                    const presetRadio = document.querySelector(`input[name="preset-gender"][value="${presetGender}"]`);
+                    if (presetRadio) {
+                        presetRadio.checked = true;
+                    }
+                }
+                
+                if (selfieGender !== null) {
+                    const selfieRadio = document.querySelector(`input[name="selfie-gender"][value="${selfieGender}"]`);
+                    if (selfieRadio) {
+                        selfieRadio.checked = true;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading gender states:', error);
+            }
+        }
+
         // Save checkbox states to localStorage when changed
         function setupCheckboxListeners() {
             const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
@@ -2015,6 +2039,32 @@
                     }
                 });
             }
+        }
+
+        // Save gender states to localStorage when changed
+        function setupGenderListeners() {
+            const presetGenderRadios = document.querySelectorAll('input[name="preset-gender"]');
+            const selfieGenderRadios = document.querySelectorAll('input[name="selfie-gender"]');
+            
+            presetGenderRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    try {
+                        localStorage.setItem('preset-gender', e.target.value);
+                    } catch (error) {
+                        console.error('Error saving preset gender state:', error);
+                    }
+                });
+            });
+            
+            selfieGenderRadios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    try {
+                        localStorage.setItem('selfie-gender', e.target.value);
+                    } catch (error) {
+                        console.error('Error saving selfie gender state:', error);
+                    }
+                });
+            });
         }
 
         function getSelectedGender() {
@@ -2208,6 +2258,8 @@
                 initAccessGate();
                 loadCheckboxStates();
                 setupCheckboxListeners();
+                loadGenderStates();
+                setupGenderListeners();
                 syncPromptControls();
                 setupGenderFilterListeners();
                 // Initialize single user profile
@@ -2217,6 +2269,8 @@
             initAccessGate();
             loadCheckboxStates();
             setupCheckboxListeners();
+            loadGenderStates();
+            setupGenderListeners();
             syncPromptControls();
             setupGenderFilterListeners();
             // Initialize single user profile

@@ -51,7 +51,8 @@ const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2
 
 const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
   if (env.CUSTOM_DOMAIN) {
-    return `${trimTrailingSlash(env.CUSTOM_DOMAIN)}/${key}`;
+    const bucketName = resolveBucketName(env);
+    return `${trimTrailingSlash(env.CUSTOM_DOMAIN)}/${bucketName}/${key}`;
   }
   if (fallbackOrigin) {
     return `${trimTrailingSlash(fallbackOrigin)}/r2/${key}`;
