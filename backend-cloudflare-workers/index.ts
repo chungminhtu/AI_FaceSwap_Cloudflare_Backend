@@ -49,30 +49,14 @@ const resolveAccountId = (env: Env): string | undefined =>
 
 const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
 
-const buildR2DevBaseUrl = (env: Env): string | undefined => {
-  // Use the correct public r2.dev URL assigned by Cloudflare
-  // This was generated when enabling public access: https://pub-961528defa6742bb9d9cac7150eda479.r2.dev
-  return 'https://pub-961528defa6742bb9d9cac7150eda479.r2.dev';
-};
-
-const resolveR2PublicBase = (env: Env): string | undefined => {
-  // Always use r2.dev URL for direct CDN access (requires bucket public access enabled)
-  // Format: https://<bucket-name>.r2.dev
-  // This provides better performance by avoiding Worker execution
-  return buildR2DevBaseUrl(env);
-};
-
 const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
-  const baseUrl = resolveR2PublicBase(env);
-  if (baseUrl) {
-    return `${baseUrl}/${key}`;
+  if (env.CUSTOM_DOMAIN) {
+    return `${trimTrailingSlash(env.CUSTOM_DOMAIN)}/${key}`;
   }
   if (fallbackOrigin) {
-    const origin = trimTrailingSlash(fallbackOrigin);
-    // Use worker proxy route - this works even if bucket doesn't have public access
-    return `${origin}/r2/${key}`;
+    return `${trimTrailingSlash(fallbackOrigin)}/r2/${key}`;
   }
-  throw new Error('Unable to determine R2 public URL. Configure R2_PUBLIC_URL, set R2_USE_R2_DEV=true (if bucket has public access), or ensure worker origin is available.');
+  throw new Error('Unable to determine R2 public URL. Configure CUSTOM_DOMAIN environment variable.');
 };
 
 const compact = <T extends Record<string, any>>(input: T): Record<string, any> => {
@@ -255,7 +239,6 @@ export default {
         // Generate a unique key for the file
         const key = `${body.type}/${body.filename}`;
 
-        // Get R2 public URL (direct r2.dev CDN URL)
         const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
 
         // For R2, we'll use a worker endpoint that handles metadata but upload goes to worker first
@@ -1080,9 +1063,8 @@ export default {
         let r2Error = null;
         if (imageUrl) {
           try {
-            // Extract key from URL (handle both r2.dev and worker proxy URLs)
             const urlParts = imageUrl.split('/');
-            r2Key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "preset/filename.jpg")
+            r2Key = urlParts.slice(-2).join('/');
             
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
@@ -1255,9 +1237,8 @@ export default {
         let r2Error = null;
         if (imageUrl) {
           try {
-            // Extract key from URL (handle both r2.dev and worker proxy URLs)
             const urlParts = imageUrl.split('/');
-            r2Key = urlParts.slice(-2).join('/'); // Get last two parts (e.g., "selfie/filename.jpg")
+            r2Key = urlParts.slice(-2).join('/');
             
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
@@ -1303,27 +1284,35 @@ export default {
       try {
         const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
-        
-        if (!profileId) {
-          console.warn('[Results] Missing profile_id parameter');
-          return errorResponse('profile_id query parameter is required', 400);
-        }
 
         const genderParam = url.searchParams.get('gender');
-        if (genderParam && genderParam !== 'male' && genderParam !== 'female' && genderParam !== '') {
-          console.warn('[Results] Invalid gender parameter ignored:', genderParam);
+        let genderFilter: 'male' | 'female' | null = null;
+
+        if (genderParam) {
+          if (genderParam === 'male' || genderParam === 'female') {
+            genderFilter = genderParam;
+          } else {
+            return errorResponse(`Invalid gender parameter. Must be 'male' or 'female', received: '${genderParam}'`, 400);
+        }
         }
 
+        let query = 'SELECT id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at FROM results';
+        const params: any[] = [];
+
+        if (profileId) {
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
         if (!profileCheck) {
           return errorResponse('Profile not found', 404);
         }
+          query += ' WHERE profile_id = ?';
+          params.push(profileId);
+        }
 
-        const result = await DB.prepare(
-          'SELECT id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at FROM results WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50'
-        ).bind(profileId).all();
+        query += ' ORDER BY created_at DESC LIMIT 50';
+
+        const result = await DB.prepare(query).bind(...params).all();
 
         if (!result || !result.results) {
           return jsonResponse({ results: [] });
@@ -1397,12 +1386,6 @@ export default {
               r2Key = resultUrl.split('/results/')[1];
               if (!r2Key.startsWith('results/')) {
                 r2Key = `results/${r2Key}`;
-              }
-            } else if (resultUrl.includes('r2.dev') && resultUrl.includes('/results/')) {
-              // Extract from public R2 URL: https://pub-xxx.r2.dev/results/xxx.jpg
-              const urlParts = resultUrl.split('/results/');
-              if (urlParts.length > 1) {
-                r2Key = `results/${urlParts[1]}`;
               }
             }
 

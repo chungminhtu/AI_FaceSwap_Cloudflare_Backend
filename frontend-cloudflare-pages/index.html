@@ -1599,52 +1599,9 @@
                 max-width: 90%;
             }
         }
-
-        .docs-button-top {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            color: white;
-            text-decoration: none;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 14px;
-            font-family: 'Lexend Deca', sans-serif;
-            box-shadow: 0 8px 24px rgba(248, 35, 135, 0.4), 0 4px 12px rgba(18, 176, 255, 0.3);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            letter-spacing: 0.3px;
-        }
-
-        .docs-button-top:hover {
-            transform: translateY(-3px) scale(1.05);
-            box-shadow: 0 12px 32px rgba(248, 35, 135, 0.5), 0 6px 16px rgba(18, 176, 255, 0.4);
-            background: linear-gradient(135deg, var(--accent-hover), var(--accent-secondary));
-        }
-
-        .docs-button-top:active {
-            transform: translateY(-1px) scale(1.02);
-        }
-
-        @media (max-width: 768px) {
-            .docs-button-top {
-                top: 12px;
-                right: 12px;
-                padding: 10px 18px;
-                font-size: 13px;
-            }
-        }
     </style>
 </head>
 <body>
-    <a href="/docs/" class="docs-button-top">📖 Docs</a>
     <div id="access-gate" class="access-gate">
         <div class="gate-card">
             <div class="gate-title">Restricted Workspace</div>
@@ -1657,21 +1614,19 @@
     <div class="main-container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h1 style="margin: 0;">Đổi Mặt AI</h1>
-            <a href="/docs/" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(248, 35, 135, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(248, 35, 135, 0.3)'">📖 API Documentation</a>
+            <a href="/docs/" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(248, 35, 135, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(248, 35, 135, 0.3)'">📖 API Documentation</a>
         </div>
 
         <div id="profile-section" class="section" style="margin-bottom: 20px; padding: 16px;">
             <div class="section-title" style="margin-bottom: 12px;">👤 Hồ Sơ Người Dùng</div>
-            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                <select id="profile-select" style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
-                    <option value="">Chọn hồ sơ...</option>
-                </select>
-                <button id="create-profile-btn" style="padding: 8px 16px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform 0.2s ease;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">+ Tạo Hồ Sơ Mới</button>
-                <button id="edit-profile-btn" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='rgba(255, 255, 255, 0.2)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.1)'">✏️ Chỉnh Sửa</button>
+            <div id="profile-status" style="font-size: 13px; color: var(--text-muted); font-style: italic;">
+                Đang tải thông tin hồ sơ...
             </div>
-            <div id="profile-info" style="margin-top: 8px; font-size: 12px; color: var(--text-muted); display: none;">
-                <span id="profile-name-display"></span>
-                <span id="profile-email-display" style="margin-left: 12px;"></span>
+            <div id="profile-info" style="font-size: 13px; color: var(--text-primary); margin-top: 8px; display: none;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div><strong>ID:</strong> <span id="profile-id-display" style="font-family: monospace; color: var(--accent);"></span></div>
+                    <div id="profile-name-wrapper" style="display: none;"><strong>Tên:</strong> <span id="profile-name-display"></span></div>
+                </div>
             </div>
         </div>
 
@@ -2111,39 +2066,59 @@
             });
         }
 
-        // Profile Management
+        // Profile Management - Single User System
         window.profileManager = {
             currentProfile: null,
-            profiles: [],
 
-            async loadProfiles() {
+            async initializeProfile() {
+                const statusDiv = document.getElementById('profile-status');
+                statusDiv.textContent = 'Đang kiểm tra hồ sơ...';
+                statusDiv.style.color = 'var(--text-muted)';
+                
                 try {
-                    const response = await fetch(`${WORKER_URL}/profiles`);
-                    const data = await response.json();
-                    this.profiles = data.profiles || [];
-                    this.updateProfileSelect();
+                    let profileId = localStorage.getItem('userProfileId');
+                    
+                    if (profileId) {
+                        statusDiv.textContent = 'Đang tải hồ sơ từ máy chủ...';
+                try {
+                            const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
+                            if (response.ok) {
+                                const profile = await response.json();
+                                this.currentProfile = profile;
+                                this.updateProfileDisplay();
+                                if (typeof loadGallery === 'function') {
+                                    loadGallery('selfie');
+                                    loadGallery('results');
+                                }
+                                return profile;
+                            } else {
+                                localStorage.removeItem('userProfileId');
+                                statusDiv.textContent = 'Hồ sơ không tồn tại, đang tạo mới...';
+                            }
                 } catch (error) {
-                    console.error('Failed to load profiles:', error);
-                    showStatusMessage('Không thể tải danh sách hồ sơ', 'error');
+                            console.warn('Profile not found, creating new one:', error);
+                            localStorage.removeItem('userProfileId');
+                            statusDiv.textContent = 'Hồ sơ không tồn tại, đang tạo mới...';
                 }
-            },
+                    } else {
+                        statusDiv.textContent = 'Đang tạo hồ sơ mới...';
+                    }
 
-            updateProfileSelect() {
-                const select = document.getElementById('profile-select');
-                select.innerHTML = '<option value="">Chọn hồ sơ...</option>';
-
-                this.profiles.forEach(profile => {
-                    const option = document.createElement('option');
-                    option.value = profile.id;
-                    option.textContent = profile.name || `Hồ sơ ${profile.id.slice(-8)}`;
-                    select.appendChild(option);
-                });
-
-                // Restore selected profile from localStorage
-                const savedProfileId = localStorage.getItem('selectedProfileId');
-                if (savedProfileId) {
-                    select.value = savedProfileId;
-                    this.selectProfile(savedProfileId);
+                    const profile = await this.createProfile();
+                    localStorage.setItem('userProfileId', profile.id);
+                    this.currentProfile = profile;
+                    this.updateProfileDisplay();
+                    if (typeof loadGallery === 'function') {
+                        loadGallery('selfie');
+                        loadGallery('results');
+                    }
+                    return profile;
+                } catch (error) {
+                    console.error('Failed to initialize profile:', error);
+                    statusDiv.textContent = '✗ Không thể khởi tạo hồ sơ';
+                    statusDiv.style.color = 'var(--danger)';
+                    showStatusMessage('Không thể khởi tạo hồ sơ người dùng', 'error');
+                    throw error;
                 }
             },
 
@@ -2160,20 +2135,43 @@
                     }
 
                     const profile = await response.json();
-                    this.profiles.push(profile);
-                    this.updateProfileSelect();
-
-                    // Auto-select the new profile
-                    document.getElementById('profile-select').value = profile.id;
-                    this.selectProfile(profile.id);
-
-                    showStatusMessage('Đã tạo hồ sơ mới thành công!', 'success');
                     return profile;
                 } catch (error) {
                     console.error('Failed to create profile:', error);
                     showStatusMessage('Không thể tạo hồ sơ mới', 'error');
                     throw error;
                 }
+            },
+
+            updateProfileDisplay() {
+                const statusDiv = document.getElementById('profile-status');
+                const infoDiv = document.getElementById('profile-info');
+                const idSpan = document.getElementById('profile-id-display');
+                const nameSpan = document.getElementById('profile-name-display');
+                const nameWrapper = document.getElementById('profile-name-wrapper');
+
+                if (!this.currentProfile) {
+                    statusDiv.textContent = 'Không có hồ sơ';
+                    statusDiv.style.color = 'var(--text-muted)';
+                    infoDiv.style.display = 'none';
+                    return;
+                }
+
+                statusDiv.textContent = '✓ Hồ sơ đã sẵn sàng';
+                statusDiv.style.color = 'var(--success)';
+                
+                if (this.currentProfile.id) {
+                    idSpan.textContent = this.currentProfile.id;
+                }
+                
+                if (this.currentProfile.name) {
+                    nameSpan.textContent = this.currentProfile.name;
+                    nameWrapper.style.display = 'block';
+                } else {
+                    nameWrapper.style.display = 'none';
+                }
+                
+                infoDiv.style.display = 'block';
             },
 
             async updateProfile(profileId, name, email) {
@@ -2190,14 +2188,8 @@
 
                     const updatedProfile = await response.json();
 
-                    // Update in local array
-                    const index = this.profiles.findIndex(p => p.id === profileId);
-                    if (index >= 0) {
-                        this.profiles[index] = updatedProfile;
-                    }
-
-                    this.updateProfileSelect();
-                    this.selectProfile(profileId);
+                    this.currentProfile = updatedProfile;
+                    this.updateProfileDisplay();
 
                     showStatusMessage('Đã cập nhật hồ sơ thành công!', 'success');
                     return updatedProfile;
@@ -2208,57 +2200,6 @@
                 }
             },
 
-            selectProfile(profileId) {
-                if (!profileId) {
-                    this.currentProfile = null;
-                    localStorage.removeItem('selectedProfileId');
-                    document.getElementById('profile-info').style.display = 'none';
-                    document.getElementById('edit-profile-btn').disabled = true;
-                    return;
-                }
-
-                const profile = this.profiles.find(p => p.id === profileId);
-                if (profile) {
-                    this.currentProfile = profile;
-                    localStorage.setItem('selectedProfileId', profileId);
-
-                    const infoDiv = document.getElementById('profile-info');
-                    const nameSpan = document.getElementById('profile-name-display');
-                    const emailSpan = document.getElementById('profile-email-display');
-
-                    nameSpan.textContent = profile.name ? `Tên: ${profile.name}` : '';
-                    emailSpan.textContent = profile.id ? `ID: ${profile.id}` : '';
-
-                    infoDiv.style.display = (profile.name || profile.id) ? 'block' : 'none';
-                    document.getElementById('edit-profile-btn').disabled = false;
-
-                    // Reload galleries with new profile filter
-                    loadSelfies();
-                    loadResults();
-                }
-            },
-
-            showCreateModal() {
-                document.getElementById('create-profile-modal').style.display = 'flex';
-                document.getElementById('new-profile-name').value = '';
-                document.getElementById('new-profile-userid').value = '';
-            },
-
-            hideCreateModal() {
-                document.getElementById('create-profile-modal').style.display = 'none';
-            },
-
-            showEditModal() {
-                if (!this.currentProfile) return;
-
-                document.getElementById('edit-profile-modal').style.display = 'flex';
-                document.getElementById('edit-profile-name').value = this.currentProfile.name || '';
-                document.getElementById('edit-profile-userid').value = this.currentProfile.id || '';
-            },
-
-            hideEditModal() {
-                document.getElementById('edit-profile-modal').style.display = 'none';
-            }
         };
 
         // Initialize checkbox states and listeners when page loads
@@ -2269,15 +2210,17 @@
                 setupCheckboxListeners();
                 syncPromptControls();
                 setupGenderFilterListeners();
-                // Initialize profile management
-                window.profileManager.loadProfiles();
-                setupProfileListeners();
+                // Initialize single user profile
+                window.profileManager.initializeProfile();
             });
         } else {
             initAccessGate();
             loadCheckboxStates();
             setupCheckboxListeners();
             syncPromptControls();
+            setupGenderFilterListeners();
+            // Initialize single user profile
+            window.profileManager.initializeProfile();
         }
 
         function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
@@ -2518,12 +2461,39 @@
             galleryKeys.forEach(type => {
                 if (type !== 'results') resetPreview(type);
             });
-            await Promise.all(galleryKeys.map(loadGallery));
+            
+            // Load presets immediately (don't need profile)
+            await loadGallery('preset');
+            
+            // Wait for profile to be initialized before loading selfies and results
+            if (window.profileManager && window.profileManager.currentProfile) {
+                await Promise.all(['selfie', 'results'].map(type => loadGallery(type)));
+            } else {
+                // Profile will load selfies and results when ready
+                console.log('Waiting for profile initialization before loading selfies and results...');
+            }
         }
 
         async function loadGallery(type, genderFilter = '') {
             const config = galleries[type];
             try {
+                // Skip loading selfies and results if profile is not ready
+                if ((type === 'selfie' || type === 'results')) {
+                    if (!window.profileManager || !window.profileManager.currentProfile) {
+                        console.log(`Skipping ${type} gallery load - profile not ready`);
+                        config.state.items = [];
+                        config.state.page = 1;
+                        renderGallery(type);
+                        return;
+                    }
+                }
+
+                // Clear invalid stored gender filter
+                if (config.state.genderFilter && config.state.genderFilter !== 'male' && config.state.genderFilter !== 'female' && config.state.genderFilter !== '') {
+                    console.warn(`Clearing invalid stored gender filter: ${config.state.genderFilter}`);
+                    config.state.genderFilter = '';
+                }
+
                 let url = `${WORKER_URL}${config.endpoints.list}`;
                 const params = new URLSearchParams();
 
@@ -2532,14 +2502,26 @@
                     params.append('profile_id', window.profileManager.currentProfile.id);
                 }
 
-                if (genderFilter) {
+                // Validate gender filter - only allow 'male' or 'female', or empty string
+                if (genderFilter && genderFilter !== '') {
+                    if (genderFilter === 'male' || genderFilter === 'female') {
                     params.append('gender', genderFilter);
+                    } else {
+                        console.warn(`Invalid gender filter ignored: ${genderFilter}`);
+                        genderFilter = ''; // Reset to empty if invalid
+                    }
                 }
 
                 if (params.toString()) {
                     url += `?${params.toString()}`;
                 }
                 const response = await fetch(url);
+                
+                if (!response.ok) {
+                    const errorData = await safeJson(response);
+                    throw new Error(errorData.Message || `HTTP ${response.status}`);
+                }
+                
                 const data = await safeJson(response);
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
@@ -2550,7 +2532,17 @@
             } catch (error) {
                 console.error(`Lỗi tải ${type}:`, error);
                 const typeName = type === 'preset' ? 'mẫu' : type === 'selfie' ? 'selfie' : 'kết quả';
+                
+                // Don't show error for results/selfies if profile is not ready
+                if ((type === 'selfie' || type === 'results') && (!window.profileManager || !window.profileManager.currentProfile)) {
+                    console.log(`Skipping error message for ${type} - profile not ready`);
+                } else {
                 showStatusMessage(`Lỗi tải ${typeName}`, 'error');
+                }
+                
+                config.state.items = [];
+                config.state.page = 1;
+                renderGallery(type);
                 // GET requests are not logged (only POST and PUT)
             }
         }
@@ -3590,69 +3582,6 @@
             }
         };
 
-        // Setup profile event listeners
-        function setupProfileListeners() {
-            // Profile select change
-            document.getElementById('profile-select').addEventListener('change', (e) => {
-                window.profileManager.selectProfile(e.target.value);
-            });
-
-            // Create profile button
-            document.getElementById('create-profile-btn').addEventListener('click', () => {
-                window.profileManager.showCreateModal();
-            });
-
-            // Edit profile button
-            document.getElementById('edit-profile-btn').addEventListener('click', () => {
-                window.profileManager.showEditModal();
-            });
-
-            // Create profile modal handlers
-            document.getElementById('cancel-create-profile').addEventListener('click', () => {
-                window.profileManager.hideCreateModal();
-            });
-
-            document.getElementById('confirm-create-profile').addEventListener('click', async () => {
-                const name = document.getElementById('new-profile-name').value.trim();
-                const userID = document.getElementById('new-profile-userid').value.trim();
-
-                try {
-                    await window.profileManager.createProfile(name || undefined, userID || undefined);
-                    window.profileManager.hideCreateModal();
-                } catch (error) {
-                    // Error already shown in createProfile
-                }
-            });
-
-            // Edit profile modal handlers
-            document.getElementById('cancel-edit-profile').addEventListener('click', () => {
-                window.profileManager.hideEditModal();
-            });
-
-            document.getElementById('confirm-edit-profile').addEventListener('click', async () => {
-                const name = document.getElementById('edit-profile-name').value.trim();
-
-                try {
-                    await window.profileManager.updateProfile(window.profileManager.currentProfile.id, name || undefined, undefined);
-                    window.profileManager.hideEditModal();
-                } catch (error) {
-                    // Error already shown in updateProfile
-                }
-            });
-
-            // Close modals when clicking overlay
-            document.getElementById('create-profile-modal').addEventListener('click', (e) => {
-                if (e.target.id === 'create-profile-modal') {
-                    window.profileManager.hideCreateModal();
-                }
-            });
-
-            document.getElementById('edit-profile-modal').addEventListener('click', (e) => {
-                if (e.target.id === 'edit-profile-modal') {
-                    window.profileManager.hideEditModal();
-                }
-            });
-        }
 
         // Add button to test Vertex API connection (for debugging)
         // You can call window.vertexAPI.testConnection() from browser console
@@ -3662,45 +3591,5 @@
         console.log('  - refreshPrompt(presetImageId, imageUrl): Refresh prompt for a preset');
     </script>
 
-    <!-- Profile Management Modals -->
-    <div id="create-profile-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-        <div class="modal-content" style="background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; box-shadow: var(--shadow-strong);">
-            <h3 style="margin: 0 0 20px 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">Tạo Hồ Sơ Mới</h3>
-            <div style="display: flex; flex-direction: column; gap: 16px;">
-                <div>
-                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Tên hồ sơ (tùy chọn)</label>
-                    <input type="text" id="new-profile-name" placeholder="Nhập tên hồ sơ..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
-                </div>
-                <div>
-                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">User ID (tùy chọn - để trống sẽ tự động tạo)</label>
-                    <input type="text" id="new-profile-userid" placeholder="Nhập User ID hoặc để trống..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
-                </div>
-                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
-                    <button id="cancel-create-profile" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer;">Hủy</button>
-                    <button id="confirm-create-profile" style="padding: 8px 16px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">Tạo Hồ Sơ</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="edit-profile-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.8); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-        <div class="modal-content" style="background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; box-shadow: var(--shadow-strong);">
-            <h3 style="margin: 0 0 20px 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">Chỉnh Sửa Hồ Sơ</h3>
-            <div style="display: flex; flex-direction: column; gap: 16px;">
-                <div>
-                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">Tên hồ sơ</label>
-                    <input type="text" id="edit-profile-name" placeholder="Nhập tên hồ sơ..." style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); font-size: 14px;">
-                </div>
-                <div>
-                    <label style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px; font-weight: 500;">User ID (không thể thay đổi)</label>
-                    <input type="text" id="edit-profile-userid" placeholder="User ID" style="width: 100%; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: rgba(255, 255, 255, 0.05); color: var(--text-muted); font-size: 14px;" readonly>
-                </div>
-                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
-                    <button id="cancel-edit-profile" style="padding: 8px 16px; background: rgba(255, 255, 255, 0.1); color: var(--text-primary); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; font-size: 14px; cursor: pointer;">Hủy</button>
-                    <button id="confirm-edit-profile" style="padding: 8px 16px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">Lưu Thay Đổi</button>
-                </div>
-            </div>
-        </div>
-    </div>
 </body>
 </html>

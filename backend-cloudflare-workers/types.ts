@@ -17,6 +17,7 @@ export interface Env {
   CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
   ACCOUNT_ID?: string; // Fallback alias
   R2_BUCKET_NAME?: string; // Optional override for the R2 bucket name used to build public URLs
+  CUSTOM_DOMAIN?: string; // Custom domain for R2 public URLs (e.g., https://d.shotpix.app)
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
   SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
 }
