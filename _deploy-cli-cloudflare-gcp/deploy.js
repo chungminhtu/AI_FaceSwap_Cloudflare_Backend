@@ -438,14 +438,44 @@ function parseConfig(config) {
 }
 
 function generateWranglerConfig(config) {
-  return {
+  const wranglerConfig = {
     name: config.workerName,
     main: 'backend-cloudflare-workers/index.ts',
     compatibility_date: '2024-01-01',
     account_id: config.cloudflare.accountId,
     d1_databases: [{ binding: config.databaseName, database_name: config.databaseName }],
-    r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }]
+    r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }],
+    observability: {
+      logs: {
+        enabled: true,
+        head_sampling_rate: 1,
+        invocation_logs: true,
+        persist: true
+      },
+      traces: {
+        enabled: false,
+        head_sampling_rate: 1,
+        persist: true
+      }
+    },
+    placement: {
+      mode: 'smart'
+    }
   };
+
+  // Add custom domain routes if configured
+  if (config.workerCustomDomain) {
+    const domains = Array.isArray(config.workerCustomDomain) 
+      ? config.workerCustomDomain 
+      : [config.workerCustomDomain];
+    
+    wranglerConfig.routes = domains.map(domain => ({
+      pattern: domain,
+      custom_domain: true
+    }));
+  }
+
+  return wranglerConfig;
 }
 
 function getWranglerToken() {
