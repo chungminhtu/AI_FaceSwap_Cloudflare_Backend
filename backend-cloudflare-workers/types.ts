@@ -17,7 +17,7 @@ export interface Env {
   CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
   ACCOUNT_ID?: string; // Fallback alias
   R2_BUCKET_NAME?: string; // Optional override for the R2 bucket name used to build public URLs
-  CUSTOM_DOMAIN?: string; // Custom domain for R2 public URLs (e.g., https://d.shotpix.app)
+  CUSTOM_DOMAIN?: string; // Custom domain for R2 public URLs (e.g., https://resources.d.shotpix.app)
   WORKER_CUSTOM_DOMAIN?: string; // Custom domain for Worker API (e.g., https://api.d.shotpix.app)
   WAVESPEED_API_KEY?: string; // WaveSpeed.ai API key
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
@@ -25,11 +25,9 @@ export interface Env {
 }
 
 export interface FaceSwapRequest {
-  target_url: string;
-  source_url: string;
-  selfie_id?: string;
+  preset_image_id: string; // Required: Preset image ID from database
+  selfie_id: string; // Required: Selfie ID from database
   profile_id: string; // Required: Profile ID for the operation
-  mode?: 'rapidapi' | 'vertex'; // Optional: Face swap mode
   additional_prompt?: string;
   character_gender?: 'male' | 'female';
 }

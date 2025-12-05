@@ -21,12 +21,12 @@ export const validateEnv = (env: Env, mode: 'rapidapi' | 'vertex' = 'rapidapi'):
   return null;
 };
 
-export const validateRequest = (body: any, mode: 'rapidapi' | 'vertex' = 'rapidapi'): string | null => {
-  if (!body?.target_url || !body?.source_url) {
-    return 'Missing required fields: target_url and source_url';
+export const validateRequest = (body: any): string | null => {
+  if (!body?.preset_image_id) {
+    return 'Missing required field: preset_image_id';
   }
-  if (mode === 'vertex' && !body?.preset_image_id) {
-    return 'Missing preset_image_id for Vertex AI mode';
+  if (!body?.selfie_id) {
+    return 'Missing required field: selfie_id';
   }
   return null;
 };

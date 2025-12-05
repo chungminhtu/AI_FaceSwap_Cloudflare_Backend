@@ -219,137 +219,56 @@ export default {
       return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
     }
 
-    // Handle upload URL generation endpoint - now generates presigned URLs for direct R2 upload
+    // Handle direct file upload endpoint - handles both preset and selfie uploads
     if (path === '/upload-url' && request.method === 'POST') {
       try {
-        const body: UploadUrlRequest = await request.json();
+        const contentType = request.headers.get('Content-Type') || '';
+        if (!contentType.includes('multipart/form-data')) {
+          return errorResponse('Content-Type must be multipart/form-data', 400);
+        }
 
-        if (!body.filename || !body.type || !body.profile_id) {
-          return errorResponse('Missing required fields: filename, type, and profile_id', 400);
+        const formData = await request.formData();
+        const file = formData.get('file') as File;
+        const type = formData.get('type') as string;
+        const profileId = formData.get('profile_id') as string;
+        const presetName = formData.get('presetName') as string;
+        const enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
+        const enableVisionScan = formData.get('enableVisionScan') === 'true';
+        const gender = formData.get('gender') as 'male' | 'female';
+
+        if (!file || !type || !profileId) {
+          return errorResponse('Missing required fields: file, type, and profile_id', 400);
+        }
+
+        if (type !== 'preset' && type !== 'selfie') {
+          return errorResponse('Type must be either "preset" or "selfie"', 400);
         }
 
         // Validate that profile exists
         const profileResult = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
-        ).bind(body.profile_id).first();
+        ).bind(profileId).first();
 
         if (!profileResult) {
           return errorResponse('Profile not found', 404);
         }
 
-        // Generate a unique key for the file
-        const key = `${body.type}/${body.filename}`;
-
-        const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
-
-        // For R2, we'll use a worker endpoint that handles metadata but upload goes to worker first
-        // then worker uploads to R2 with proper cache headers
-        return jsonResponse({
-          uploadUrl: `${requestUrl.origin}/upload-proxy/${key}`,
-          publicUrl,
-          key,
-          presetName: body.presetName, // Pass through preset name for frontend
-          enableVertexPrompt: body.enableVertexPrompt // Pass through Vertex AI prompt flag
-        });
-      } catch (error) {
-        console.error('Upload URL generation error:', error);
-        return errorResponse(`Failed to generate upload URL: ${error instanceof Error ? error.message : String(error)}`, 500);
-      }
-    }
-
-    // Handle Vertex AI prompt retrieval for presets
-    if (path.startsWith('/vertex/get-prompt/') && request.method === 'GET') {
-      try {
-        const presetImageId = path.replace('/vertex/get-prompt/', '');
-
-        const result = await DB.prepare(
-          'SELECT id, image_url, prompt_json FROM presets WHERE id = ?'
-        ).bind(presetImageId).first();
-
-        if (!result) {
-          return errorResponse('Preset image not found', 404);
-        }
-
-        const promptJson = result.prompt_json ? JSON.parse(result.prompt_json as string) : null;
-
-        return jsonResponse({
-          success: true,
-          presetImage: {
-            id: result.id,
-            image_url: result.image_url,
-            hasPrompt: !!promptJson,
-            promptJson: promptJson
-          }
-        });
-      } catch (error) {
-        console.error('[Vertex] Prompt retrieval error:', error);
-        return errorResponse(`Prompt retrieval failed: ${error instanceof Error ? error.message : String(error)}`, 500);
-      }
-    }
-
-    // Handle proxy upload endpoint (for direct browser uploads)
-    if (path.startsWith('/upload-proxy/')) {
-      // OPTIONS already handled above, but double-check
-      if (request.method === 'OPTIONS') {
-        return new Response(null, { 
-          status: 204, 
-          headers: { 
-            ...CORS_HEADERS, 
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Max-Age': '86400' 
-          } 
-        });
-      }
-      
-      // Allow GET to serve the file (for viewing uploaded files)
-      if (request.method === 'GET') {
-        try {
-          const key = path.replace('/upload-proxy/', '');
-          const object = await R2_BUCKET.get(key);
-          
-          if (!object) {
-            return errorResponse('File not found', 404);
-          }
-          
-          const headers = new Headers();
-          object.writeHttpMetadata(headers);
-          headers.set('etag', object.httpEtag);
-          headers.set('Cache-Control', 'public, max-age=31536000');
-          headers.set('Access-Control-Allow-Origin', '*');
-          
-          return new Response(object.body, { headers });
-        } catch (error) {
-          console.error('Error serving file:', error);
-          return errorResponse(`Failed to serve file: ${error instanceof Error ? error.message : String(error)}`, 500);
-        }
-      }
-      
-      if (request.method !== 'PUT') {
-        return new Response(JSON.stringify({ 
-          Success: false, 
-          Message: `Method not allowed. Use PUT or GET. Got: ${request.method}`, 
-          StatusCode: 405 
-        }), {
-          status: 405,
-          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
-        });
-      }
-      
-      try {
-        const key = path.replace('/upload-proxy/', '');
-        console.log(`Upload request: method=${request.method}, key=${key}, content-type=${request.headers.get('Content-Type')}`);
-        
-        const fileData = await request.arrayBuffer();
-        
+        const fileData = await file.arrayBuffer();
         if (!fileData || fileData.byteLength === 0) {
           return errorResponse('Empty file data', 400);
         }
-        
+
+        // Generate a unique key for the file
+        const filename = file.name || `upload_${Date.now()}`;
+        const key = `${type}/${filename}`;
+
+        console.log(`Upload request: type=${type}, key=${key}, content-type=${file.type}, size=${fileData.byteLength}`);
+
         // Upload to R2 with cache-control headers
         try {
           await R2_BUCKET.put(key, fileData, {
             httpMetadata: {
-              contentType: request.headers.get('Content-Type') || 'image/jpeg',
+              contentType: file.type || 'image/jpeg',
               cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
             },
           });
@@ -359,383 +278,209 @@ export default {
           return errorResponse(`R2 upload failed: ${r2Error instanceof Error ? r2Error.message : String(r2Error)}`, 500);
         }
 
-        // Get the public URL (R2 CDN URL, not worker proxy)
+        // Get the public URL (R2 CDN URL)
         const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
 
         // Save upload metadata to database based on type
-        if (key.startsWith('preset/')) {
+        if (type === 'preset') {
           console.log('Processing preset upload:', key);
-          let presetName = request.headers.get('X-Preset-Name') || `Preset ${Date.now()}`;
-          // Accept both header names for compatibility
-          const enableVertexPrompt =
-            request.headers.get('X-Enable-Vertex-Prompt') === 'true' ||
-            request.headers.get('X-Enable-Gemini-Prompt') === 'true';
-          const enableVisionScan = request.headers.get('X-Enable-Vision-Scan') === 'true';
-          const genderHeader = request.headers.get('X-Gender');
-          const gender = (genderHeader && (genderHeader === 'male' || genderHeader === 'female')) 
-            ? genderHeader as 'male' | 'female' 
-            : undefined;
-          console.log('Raw preset name:', presetName, 'Enable Vertex AI Prompt:', enableVertexPrompt, 'Enable Vision Scan:', enableVisionScan, 'Gender:', gender);
 
-          // Decode base64 if encoded
-          const isEncoded = request.headers.get('X-Preset-Name-Encoded') === 'base64';
-          if (isEncoded) {
+          // Perform Vision API safety scan if enabled
+          let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
+          if (enableVisionScan) {
+            console.log('[Vision] Scanning preset image with Google Vision API for safety check...');
             try {
-              presetName = decodeURIComponent(escape(atob(presetName)));
-              console.log('Decoded preset name:', presetName);
-            } catch (e) {
-              console.warn('Failed to decode preset name, using as-is:', e);
+              const visionResult = await checkSafeSearch(publicUrl, env);
+              visionScanResult = {
+                success: visionResult.isSafe !== undefined,
+                isSafe: visionResult.isSafe,
+                error: visionResult.error,
+                rawResponse: visionResult.rawResponse
+              };
+              if (visionResult.isSafe) {
+                console.log('[Vision] ✅ Image passed safety check');
+              } else {
+                console.warn('[Vision] ⚠️ Image failed safety check:', visionResult.error);
+              }
+            } catch (visionError) {
+              console.error('[Vision] ❌ Error during Vision API scan:', visionError);
+              visionScanResult = {
+                success: false,
+                error: visionError instanceof Error ? visionError.message : String(visionError)
+              };
             }
+          } else {
+            console.log('[Vision] Vision API scan skipped (not enabled)');
           }
 
-          // Save to database - ensure this always happens
-          let imageId: string | undefined;
+          // Generate Vertex AI prompt only if enabled
+          let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };
           let promptJson: string | null = null;
-          
-          // Track Vertex AI API call details for response (declared outside try block for access in return)
-          let vertexCallInfo: { 
-            success: boolean; 
-            error?: string; 
-            promptKeys?: string[];
-            debug?: {
-              endpoint?: string;
-              model?: string;
-              requestSent?: boolean;
-              httpStatus?: number;
-              httpStatusText?: string;
-              responseTimeMs?: number;
-              responseStructure?: string;
-              errorDetails?: string;
-              rawError?: string;
-            };
-          } = { success: false };
-          
-          // Track Vision API scan results for response (declared outside try block for access in return)
-          let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
 
-          try {
-
-            // Perform Vision API safety scan if enabled
-            if (enableVisionScan) {
-              console.log('[Vision] Scanning preset image with Google Vision API for safety check...');
-              try {
-                const visionResult = await checkSafeSearch(publicUrl, env);
-                visionScanResult = {
-                  success: visionResult.isSafe !== undefined,
-                  isSafe: visionResult.isSafe,
-                  error: visionResult.error,
-                  rawResponse: visionResult.rawResponse // Include full raw Vision API response
-                };
-                if (visionResult.isSafe) {
-                  console.log('[Vision] ✅ Image passed safety check');
-                } else {
-                  console.warn('[Vision] ⚠️ Image failed safety check:', visionResult.error);
-                }
-              } catch (visionError) {
-                console.error('[Vision] ❌ Error during Vision API scan:', visionError);
-                visionScanResult = {
-                  success: false,
-                  error: visionError instanceof Error ? visionError.message : String(visionError)
-                };
-              }
-            } else {
-              console.log('[Vision] Vision API scan skipped (not enabled)');
-            }
-
-            // Generate Vertex AI prompt only if enabled
-            if (enableVertexPrompt) {
-              console.log('[Vertex] Generating prompt for uploaded preset image:', publicUrl);
-            console.log('[Vertex] Calling Vertex AI API with exact prompt text and preset image');
-            } else {
-              console.log('[Vertex] Vertex AI prompt generation skipped (not enabled)');
-            }
-            
-            if (enableVertexPrompt) {
+          if (enableVertexPrompt) {
+            console.log('[Vertex] Generating prompt for uploaded preset image:', publicUrl);
             try {
               const promptResult = await generateVertexPrompt(publicUrl, env);
               if (promptResult.success && promptResult.prompt) {
                 promptJson = JSON.stringify(promptResult.prompt);
                 const promptKeys = Object.keys(promptResult.prompt);
-                vertexCallInfo = { 
-                  success: true, 
+                vertexCallInfo = {
+                  success: true,
                   promptKeys,
-                  debug: promptResult.debug 
+                  debug: promptResult.debug
                 };
                 console.log('[Vertex] ✅ Generated prompt successfully, length:', promptJson.length);
-                console.log('[Vertex] Prompt keys:', promptKeys);
-                console.log('[Vertex] ✅ Will store prompt_json in database');
-                if (promptResult.debug) {
-                  console.log('[Vertex] Debug info:', JSON.stringify(promptResult.debug));
-                }
               } else {
-                vertexCallInfo = { 
-                  success: false, 
+                vertexCallInfo = {
+                  success: false,
                   error: promptResult.error || 'Unknown error',
-                  debug: promptResult.debug 
+                  debug: promptResult.debug
                 };
                 console.error('[Vertex] ❌ Failed to generate prompt:', promptResult.error);
-                console.error('[Vertex] Error details:', promptResult.error);
-                if (promptResult.debug) {
-                  console.error('[Vertex] Debug info:', JSON.stringify(promptResult.debug));
-                }
-                console.error('[Vertex] ⚠️ Image will be saved without prompt_json. Please check your GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY and ensure Vertex AI API is enabled.');
-                // Continue without prompt - image will still be saved
               }
             } catch (vertexError) {
               const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
-              const errorStack = vertexError instanceof Error ? vertexError.stack : undefined;
-              vertexCallInfo = { 
-                success: false, 
+              vertexCallInfo = {
+                success: false,
                 error: errorMsg,
-                debug: {
-                  errorDetails: errorMsg,
-                  rawError: errorStack || String(vertexError)
-                }
+                debug: { errorDetails: errorMsg }
               };
               console.error('[Vertex] ❌ Exception during prompt generation:', vertexError);
-              console.error('[Vertex] Error type:', vertexError instanceof Error ? vertexError.constructor.name : typeof vertexError);
-              console.error('[Vertex] Stack trace:', errorStack || 'No stack trace');
-              console.error('[Vertex] ⚠️ Image will be saved without prompt_json due to exception.');
-              // Continue without prompt - image will still be saved
-              }
-            }
-
-            // Always save image to database (even if prompt generation or vision scan failed)
-            imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-            const createdAt = Math.floor(Date.now() / 1000);
-            const filename = key.replace('preset/', '');
-            
-            console.log(`[DB] Inserting preset image:`, {
-              id: imageId,
-              imageUrl: publicUrl,
-              hasPrompt: !!promptJson,
-              promptLength: promptJson ? promptJson.length : 0,
-              createdAt
-            });
-            
-            // Validate gender before insert
-            const validGender = (gender === 'male' || gender === 'female') ? gender : null;
-
-            // Insert into simplified presets table
-            const result = await DB.prepare(
-              'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-            ).bind(imageId, publicUrl, filename, presetName, promptJson, validGender, createdAt).run();
-
-            if (!result.success) {
-              console.error('[DB] Insert result:', result);
-              throw new Error(`Database insert failed: ${JSON.stringify(result)}`);
-            }
-
-            console.log(`[DB] Preset saved successfully:`, {
-              imageId,
-              presetName,
-              hasPrompt: !!promptJson,
-              meta: result.meta
-            });
-
-            // Verify the save by querying back
-            const verify = await DB.prepare(
-              'SELECT id, CASE WHEN prompt_json IS NOT NULL THEN 1 ELSE 0 END as has_prompt FROM presets WHERE id = ?'
-            ).bind(imageId).first();
-            
-            if (verify) {
-              console.log(`[DB] Verified save: id=${(verify as any).id}, has_prompt=${(verify as any).has_prompt}`);
-            }
-          } catch (dbError) {
-            console.error('[DB] Database save error:', dbError);
-            console.error('[DB] Error details:', {
-              message: dbError instanceof Error ? dbError.message : String(dbError),
-              stack: dbError instanceof Error ? dbError.stack : undefined,
-              errorType: dbError instanceof Error ? dbError.constructor.name : typeof dbError
-            });
-            
-            const errorMsg = dbError instanceof Error ? dbError.message : String(dbError);
-            let errorMessage = `Database save failed: ${errorMsg}`;
-            let warning = 'File uploaded to R2 but not saved to database. Please retry or contact support.';
-            
-            // Check if it's a missing column error
-            if (errorMsg.includes('no column named gender')) {
-              errorMessage = 'Gender column missing. Please run migration: POST /migrate-gender';
-              warning = 'File uploaded to R2 but not saved to database. Run migration to add gender column.';
-            }
-            
-            // Return error response - don't silently fail
-            // File was uploaded to R2, but DB save failed - this is a critical error
-            return jsonResponse({
-              success: false,
-              url: publicUrl,
-              id: null,
-              filename: key.replace('preset/', ''),
-              hasPrompt: false,
-              error: errorMessage,
-              warning: warning
-            }, 500);
-          }
-
-          // Only return success if database save completed
-          if (!imageId) {
-            console.error('[DB] No imageId generated - database save must have failed');
-            return jsonResponse({
-              success: false,
-              url: publicUrl,
-              error: 'Database save failed - no image ID was generated'
-            }, 500);
-          }
-
-          // Parse prompt_json for response (it's stored as string in DB)
-          let promptJsonObject = null;
-          if (promptJson) {
-            try {
-              promptJsonObject = JSON.parse(promptJson);
-              console.log('[Upload] Returning prompt_json in response:', {
-                hasPrompt: true,
-                keys: Object.keys(promptJsonObject)
-              });
-            } catch (parseError) {
-              console.error('[Upload] Failed to parse prompt_json for response:', parseError);
             }
           } else {
-            console.log('[Upload] No prompt_json to return');
+            console.log('[Vertex] Vertex AI prompt generation skipped (not enabled)');
+          }
+
+          // Always save image to database (even if prompt generation or vision scan failed)
+          const imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          const createdAt = Math.floor(Date.now() / 1000);
+
+          console.log(`[DB] Inserting preset image:`, {
+            id: imageId,
+            imageUrl: publicUrl,
+            hasPrompt: !!promptJson,
+            promptLength: promptJson ? promptJson.length : 0,
+            createdAt
+          });
+
+          // Validate gender before insert
+          const validGender = (gender === 'male' || gender === 'female') ? gender : null;
+
+          // Insert into simplified presets table
+          const result = await DB.prepare(
+            'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(imageId, publicUrl, filename, presetName || `Preset ${Date.now()}`, promptJson, validGender, createdAt).run();
+
+          if (!result.success) {
+            console.error('[DB] Insert result:', result);
+            throw new Error(`Database insert failed: ${JSON.stringify(result)}`);
+          }
+
+          console.log(`[DB] Preset saved successfully:`, {
+            imageId,
+            presetName,
+            hasPrompt: !!promptJson,
+            meta: result.meta
+          });
+
+          // Verify the save by querying back
+          const verify = await DB.prepare(
+            'SELECT id, CASE WHEN prompt_json IS NOT NULL THEN 1 ELSE 0 END as has_prompt FROM presets WHERE id = ?'
+          ).bind(imageId).first();
+
+          if (verify) {
+            console.log(`[DB] Verified save: id=${(verify as any).id}, has_prompt=${(verify as any).has_prompt}`);
           }
 
           return jsonResponse({
             success: true,
             url: publicUrl,
             id: imageId,
-            filename: key.replace('preset/', ''),
+            filename: filename,
             hasPrompt: !!promptJson,
-            prompt_json: promptJsonObject,
-            vertex_info: vertexCallInfo,  // Include Vertex AI API call details for frontend logging
-            vision_scan: visionScanResult  // Include Vision API scan results for frontend logging
+            prompt_json: promptJson ? JSON.parse(promptJson) : null,
+            vertex_info: vertexCallInfo,
+            vision_scan: visionScanResult
           });
-        } else if (key.startsWith('selfie/')) {
+
+        } else if (type === 'selfie') {
           console.log('Processing selfie upload:', key);
 
-          // Require profile_id for selfie uploads
-          const profileId = request.headers.get('X-Profile-Id');
-          if (!profileId) {
-            return errorResponse('X-Profile-Id header is required for selfie uploads', 400);
-          }
+          // Extract gender from form data
+          const selfieGender = gender;
 
-          // Validate that profile exists
-          const profileCheck = await DB.prepare(
-            'SELECT id FROM profiles WHERE id = ?'
-          ).bind(profileId).first();
-          if (!profileCheck) {
-            return errorResponse('Profile not found', 404);
-          }
-
-          // Extract filename from key (remove 'selfie/' prefix)
-          const filename = key.replace('selfie/', '');
+          // Save to database - this MUST succeed for the upload to be considered successful
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
-          const genderHeader = request.headers.get('X-Gender');
-          const gender = (genderHeader && (genderHeader === 'male' || genderHeader === 'female'))
-            ? genderHeader as 'male' | 'female'
-            : undefined;
-          console.log('Selfie upload - Profile ID:', profileId, 'Gender:', gender);
 
           console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
-          // Save to database - this MUST succeed for the upload to be considered successful
-          let dbSaved = false;
+          // First check if selfies table exists
+          const tableCheck = await DB.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
+          ).first();
+
+          if (!tableCheck) {
+            console.error('ERROR: selfies table does not exist in database!');
+            return errorResponse('Database schema not initialized. Please run database migration.', 500);
+          }
+
+          // Validate gender before insert
+          const validGender = (selfieGender === 'male' || selfieGender === 'female') ? selfieGender : null;
+
+          // Check if gender column exists
+          let hasGenderColumn = false;
           try {
-            // First check if selfies table exists
-            const tableCheck = await DB.prepare(
-              "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
-            ).first();
-            
-            if (!tableCheck) {
-              console.error('ERROR: selfies table does not exist in database!');
-              console.error('Database schema needs to be initialized. Run: wrangler d1 execute faceswap-db --remote --file=schema.sql');
-              return errorResponse('Database schema not initialized. Please run database migration.', 500);
-            }
-
-            // Validate gender before insert
-            const validGender = (gender === 'male' || gender === 'female') ? gender : null;
-            
-            // Check if gender column exists
-            let hasGenderColumn = false;
-            try {
-              const tableInfo = await DB.prepare("PRAGMA table_info(selfies)").all();
-              hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
-            } catch {
-              // If we can't check, assume it doesn't exist
-              hasGenderColumn = false;
-            }
-            
-            let result;
-            if (hasGenderColumn) {
-              result = await DB.prepare(
-                'INSERT INTO selfies (id, image_url, filename, gender, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-              ).bind(selfieId, publicUrl, filename, validGender, profileId, createdAt).run();
-            } else {
-              // Insert without gender column (for databases that haven't been migrated yet)
-              console.warn('[DB] Gender column not found, inserting without gender');
-              result = await DB.prepare(
-                'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-              ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
-            }
-
-            if (!result.success) {
-              console.error('Database insert returned success=false:', result);
-              console.error('Insert details:', { selfieId, publicUrl, filename, gender: validGender, createdAt });
-              return errorResponse('Failed to save selfie to database', 500);
-            }
-
-            console.log(`Selfie saved to database successfully: ${selfieId}`, {
-              success: result.success,
-              meta: result.meta
-            });
-
-            // Verify it was saved by querying it back
-            const verifyResult = await DB.prepare(
-              'SELECT id, image_url, filename FROM selfies WHERE id = ?'
-            ).bind(selfieId).first();
-            
-            if (verifyResult) {
-              console.log('Selfie verified in database:', verifyResult);
-              dbSaved = true;
-            } else {
-              console.error('CRITICAL: Selfie not found in database after insert!');
-              return errorResponse('Selfie was not saved to database properly', 500);
-            }
-          } catch (dbError) {
-            console.error('Selfie database save error:', dbError);
-            console.error('Error details:', {
-              message: dbError instanceof Error ? dbError.message : String(dbError),
-              stack: dbError instanceof Error ? dbError.stack : undefined
-            });
-            
-            // Check if it's a table missing error
-            const errorMsg = dbError instanceof Error ? dbError.message : String(dbError);
-            if (errorMsg.includes('no such table') || errorMsg.includes('selfies')) {
-              return errorResponse('Database schema not initialized. Please run: wrangler d1 execute faceswap-db --remote --file=schema.sql', 500);
-            }
-            
-            // Check if it's a missing column error
-            if (errorMsg.includes('no column named gender')) {
-              return errorResponse('Gender column missing. Please run migration: POST /migrate-gender or wrangler d1 execute faceswap-db --remote --file=migrate-gender-columns.sql', 500);
-            }
-            
-            return errorResponse(`Database save failed: ${errorMsg}`, 500);
+            const tableInfo = await DB.prepare("PRAGMA table_info(selfies)").all();
+            hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
+          } catch {
+            hasGenderColumn = false;
           }
 
-          if (!dbSaved) {
-            return errorResponse('Failed to verify selfie was saved to database', 500);
+          let result;
+          if (hasGenderColumn) {
+            result = await DB.prepare(
+              'INSERT INTO selfies (id, image_url, filename, gender, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+            ).bind(selfieId, publicUrl, filename, validGender, profileId, createdAt).run();
+          } else {
+            console.warn('[DB] Gender column not found, inserting without gender');
+            result = await DB.prepare(
+              'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
           }
 
-          return jsonResponse({
-            success: true,
-            url: publicUrl,
-            id: selfieId,
-            filename: filename
+          if (!result.success) {
+            console.error('Database insert returned success=false:', result);
+            return errorResponse('Failed to save selfie to database', 500);
+          }
+
+          console.log(`Selfie saved to database successfully: ${selfieId}`, {
+            success: result.success,
+            meta: result.meta
           });
+
+          // Verify it was saved by querying it back
+          const verifyResult = await DB.prepare(
+            'SELECT id, image_url, filename FROM selfies WHERE id = ?'
+          ).bind(selfieId).first();
+
+          if (verifyResult) {
+            console.log('Selfie verified in database:', verifyResult);
+            return jsonResponse({
+              success: true,
+              url: publicUrl,
+              id: selfieId,
+              filename: filename
+            });
+          } else {
+            console.error('CRITICAL: Selfie not found in database after insert!');
+            return errorResponse('Selfie was not saved to database properly', 500);
+          }
         }
 
         return jsonResponse({ success: true, url: publicUrl });
       } catch (error) {
-        console.error('Upload proxy error:', error);
+        console.error('Upload error:', error);
         return errorResponse(`Upload failed: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }
@@ -1427,107 +1172,18 @@ export default {
       }
     }
 
-    // Handle R2 file serving (if no public URL configured)
-    if (path.startsWith('/r2/') && request.method === 'GET') {
+
+
+
+    // Handle face swap endpoint
+    if (path === '/faceswap' && request.method === 'POST') {
       try {
-        const key = path.replace('/r2/', '');
-        const object = await R2_BUCKET.get(key);
-        
-        if (!object) {
-          return errorResponse('File not found', 404);
-        }
+        const body: FaceSwapRequest = await request.json();
 
-        const headers = new Headers();
-        object.writeHttpMetadata(headers);
-        headers.set('etag', object.httpEtag);
-        headers.set('Cache-Control', 'public, max-age=31536000');
-        headers.set('Access-Control-Allow-Origin', '*');
-
-        return new Response(object.body, { headers });
-      } catch (error) {
-        console.error('R2 serve error:', error);
-        return errorResponse(`Failed to serve file: ${error instanceof Error ? error.message : String(error)}`, 500);
-      }
-    }
-
-
-    // Test Vertex AI API connectivity
-    if (path === '/test-vertex' && request.method === 'GET') {
-      try {
-        if (!env.GOOGLE_VERTEX_PROJECT_ID) {
-          return errorResponse('Vertex AI project ID not configured', 500);
-        }
-
-        if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
-          return errorResponse('Vertex AI service account credentials not configured. GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required.', 500);
-        }
-
-        const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
-        const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
-        console.log('[Test-Vertex] Testing Vertex AI API connectivity...');
-
-        // Generate OAuth token from service account
-        const { getAccessToken } = await import('./utils');
-        const accessToken = await getAccessToken(
-          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-        );
-
-        const testEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/models`;
-        const listResponse = await fetch(testEndpoint, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-
-        const rawBody = await listResponse.text();
-        let models: string[] = [];
-        if (listResponse.ok) {
-          try {
-            const parsed = JSON.parse(rawBody);
-            if (Array.isArray(parsed.models)) {
-              models = parsed.models.slice(0, 5).map((model: any) => model.name);
-            }
-          } catch {
-            // Ignore JSON parse errors for the list response
-          }
-        }
-
-        console.log('[Test-Vertex] Response status:', listResponse.status);
-        console.log('[Test-Vertex] Response body:', rawBody.substring(0, 200));
-
-        return jsonResponse({
-          message: listResponse.ok ? 'Vertex AI API reachable' : 'Vertex AI API returned an error',
-          hasApiKey: true,
-          status: listResponse.status,
-          ok: listResponse.ok,
-          models,
-          error: listResponse.ok ? null : rawBody.substring(0, 500)
-        });
-      } catch (error) {
-        return errorResponse(`Vertex AI test failed: ${error instanceof Error ? error.message : String(error)}`, 500);
-      }
-    }
-
-    // Handle face swap endpoint (root path or /faceswap)
-    if ((path === '/' || path === '/faceswap') && request.method === 'POST') {
-      try {
-        const body: FaceSwapRequest & {
-          preset_image_id?: string;
-          preset_name?: string;
-          mode?: string;
-          api_provider?: string;
-        } = await request.json();
-
-        const resolvedMode: 'rapidapi' | 'vertex' =
-          body.mode === 'vertex' || body.api_provider === 'google-nano-banana'
-            ? 'vertex'
-            : 'rapidapi';
-
-        const envError = validateEnv(env, resolvedMode);
+        const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        const requestError = validateRequest(body, resolvedMode);
+        const requestError = validateRequest(body);
         if (requestError) return errorResponse(requestError, 400);
 
         // Validate profile_id is provided and exists
@@ -1543,43 +1199,59 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
+        // Look up preset image URL from database
+        const presetResult = await DB.prepare(
+          'SELECT id, image_url, preset_name FROM presets WHERE id = ?'
+        ).bind(body.preset_image_id).first();
+
+        if (!presetResult) {
+          return errorResponse('Preset image not found', 404);
+        }
+
+        // Look up selfie image URL from database
+        const selfieResult = await DB.prepare(
+          'SELECT id, image_url FROM selfies WHERE id = ?'
+        ).bind(body.selfie_id).first();
+
+        if (!selfieResult) {
+          return errorResponse('Selfie not found', 404);
+        }
+
+        const targetUrl = (presetResult as any).image_url;
+        const sourceUrl = (selfieResult as any).image_url;
+        const presetName = (presetResult as any).preset_name || 'Unnamed Preset';
+
         const requestDebug = compact({
-          mode: resolvedMode,
-          targetUrl: body.target_url,
-          sourceUrl: body.source_url,
+          targetUrl: targetUrl,
+          sourceUrl: sourceUrl,
           presetImageId: body.preset_image_id,
-          presetName: body.preset_name,
+          presetName: presetName,
           selfieId: body.selfie_id,
-          apiProvider: body.api_provider,
           additionalPrompt: body.additional_prompt,
           characterGender: body.character_gender,
         });
 
-        let faceSwapResult: FaceSwapResponse;
-        let vertexPromptPayload: any = null;
+        console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
-        if (resolvedMode === 'vertex' && body.preset_image_id) {
-          console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
+        const promptResult = await DB.prepare(
+          'SELECT prompt_json FROM presets WHERE id = ?'
+        ).bind(body.preset_image_id).first();
 
-          const promptResult = await DB.prepare(
-            'SELECT prompt_json FROM presets WHERE id = ?'
-          ).bind(body.preset_image_id).first();
+        if (!promptResult || !(promptResult as any).prompt_json) {
+          console.error('[Vertex] No prompt_json found in database for preset:', body.preset_image_id);
+          return errorResponse('No Vertex AI-generated prompt found for this preset image. Please re-upload the preset image to automatically generate the prompt using Vertex AI API. If you continue to see this error, check that your Google Vertex AI credentials are configured correctly.', 400);
+        }
 
-          if (!promptResult || !(promptResult as any).prompt_json) {
-            console.error('[Vertex] No prompt_json found in database for preset:', body.preset_image_id);
-            return errorResponse('No Vertex AI-generated prompt found for this preset image. Please re-upload the preset image to automatically generate the prompt using Vertex AI API. If you continue to see this error, check that your Google Vertex AI credentials are configured correctly.', 400);
-          }
+        const storedPromptPayload = JSON.parse((promptResult as any).prompt_json);
+        const augmentedPromptPayload = augmentVertexPrompt(
+          storedPromptPayload,
+          body.additional_prompt,
+          body.character_gender
+        );
+        const vertexPromptPayload = augmentedPromptPayload;
 
-          const storedPromptPayload = JSON.parse((promptResult as any).prompt_json);
-          const augmentedPromptPayload = augmentVertexPrompt(
-            storedPromptPayload,
-            body.additional_prompt,
-            body.character_gender
-          );
-          vertexPromptPayload = augmentedPromptPayload;
-
-          console.log('[Vertex] Dispatching prompt to Nano Banana provider');
-          const nanoResult = await callNanoBanana(augmentedPromptPayload, body.target_url, body.source_url, env);
+        console.log('[Vertex] Dispatching prompt to Nano Banana provider');
+        const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env);
 
           if (!nanoResult.Success || !nanoResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(nanoResult, null, 2));
@@ -1620,10 +1292,10 @@ export default {
 
             return jsonResponse({
               data: null,
-              debug: debugPayload,
               status: 'error',
               message: nanoResult.Message || 'Nano Banana provider failed to generate image',
               code: failureCode,
+              debug: debugPayload,
             }, failureCode);
           }
 
@@ -1634,10 +1306,7 @@ export default {
             console.log('[Vertex] Converted R2 URL to public URL:', nanoResult.ResultImageUrl);
           }
 
-          faceSwapResult = nanoResult;
-        } else {
-          faceSwapResult = await callFaceSwap(body.target_url, body.source_url, env);
-        }
+          const faceSwapResult = nanoResult;
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           console.error('FaceSwap failed:', faceSwapResult);
@@ -1645,19 +1314,19 @@ export default {
           const debugPayload = compact({
             request: requestDebug,
             provider: buildProviderDebug(faceSwapResult),
-            vertex: resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined,
+            vertex: mergeVertexDebug(faceSwapResult, vertexPromptPayload),
           });
           return jsonResponse({
             data: null,
-            debug: debugPayload,
             status: 'error',
             message: faceSwapResult.Message || 'Face swap provider error',
             code: failureCode,
+            debug: debugPayload,
           }, failureCode);
         }
 
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-        const skipSafetyCheckForVertex = resolvedMode === 'vertex';
+        const skipSafetyCheckForVertex = true; // Always skip for Vertex AI mode
         let safetyDebug: SafetyCheckDebug | null = null;
 
         if (!disableSafeSearch && !skipSafetyCheckForVertex) {
@@ -1686,10 +1355,10 @@ export default {
             });
             return jsonResponse({
               data: null,
-              debug: debugPayload,
               status: 'error',
               message: `Safe search validation failed: ${safeSearchResult.error}`,
               code: 500,
+              debug: debugPayload,
             }, 500);
           }
 
@@ -1705,10 +1374,10 @@ export default {
             });
             return jsonResponse({
               data: null,
-              debug: debugPayload,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
               code: 422,
+              debug: debugPayload,
             }, 422);
           }
           console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
@@ -1785,7 +1454,7 @@ export default {
           lookupError: null,
         };
 
-        if (body.preset_image_id && body.preset_name) {
+        if (body.preset_image_id) {
           databaseDebug.attempted = true;
           try {
             let selfieId = body.selfie_id;
@@ -1806,7 +1475,7 @@ export default {
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             await DB.prepare(
               'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-            ).bind(resultId, selfieId || null, body.preset_image_id, body.preset_name, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+            ).bind(resultId, selfieId || null, body.preset_image_id, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
             databaseDebug.success = true;
             databaseDebug.resultId = resultId;
             databaseDebug.error = null;
@@ -1817,7 +1486,7 @@ export default {
         }
 
         const providerDebug = buildProviderDebug(faceSwapResult, resultUrl);
-        const vertexDebug = resolvedMode === 'vertex' ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined;
+        const vertexDebug = mergeVertexDebug(faceSwapResult, vertexPromptPayload);
         const visionDebug = buildVisionDebug(safetyDebug);
         const storageDebugPayload = compact(storageDebug as unknown as Record<string, any>);
         const databaseDebugPayload = compact(databaseDebug as unknown as Record<string, any>);
@@ -1834,10 +1503,10 @@ export default {
           data: {
             resultImageUrl: resultUrl,
           },
-          debug: debugPayload,
           status: 'success',
           message: faceSwapResult.Message || 'Processing successful',
           code: 200,
+          debug: debugPayload,
         });
       } catch (error) {
         console.error('Unhandled error:', error);

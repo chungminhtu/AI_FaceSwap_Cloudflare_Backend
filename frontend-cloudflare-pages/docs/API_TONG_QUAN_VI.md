@@ -2,21 +2,17 @@
 
 Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp. Base URL: `https://api.d.shotpix.app`
 
-## 1. POST `/faceswap` hoặc POST `/`
+## 1. POST `/faceswap`
 
 ### Mục đích
-Thực hiện face swap giữa ảnh preset và ảnh selfie.
+Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex).
 
 ### Nội dung yêu cầu
 
-- `target_url` (string, bắt buộc): URL ảnh mục tiêu (preset).
-- `source_url` (string, bắt buộc): URL ảnh nguồn (selfie).
+- `preset_image_id` (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu.
+- `selfie_id` (string, bắt buộc): ID ảnh selfie đã lưu trong cơ sở dữ liệu.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
-- `mode` (string, tùy chọn): `rapidapi` hoặc `vertex`. Mặc định `rapidapi`.
-- `api_provider` (string, tùy chọn): chấp nhận `google-nano-banana` để kích hoạt chế độ Vertex.
-- `preset_image_id`, `preset_name` (string, tùy chọn): thông tin preset đã chọn.
-- `selfie_id` (string, tùy chọn): mã selfie đã lưu trong cơ sở dữ liệu.
-- `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+` (chỉ áp dụng cho chế độ Vertex).
+- `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, tùy chọn): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
 
 ### Phản hồi thành công
@@ -24,19 +20,21 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie.
 ```json
 {
   "data": {
-    "resultImageUrl": "https://d.shotpix.app/faceswap-images/results/result_123.jpg"
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
   },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200,
   "debug": {
     "request": {
-      "mode": "vertex",
-      "targetUrl": "https://...",
-      "sourceUrl": "https://..."
+      "targetUrl": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+      "sourceUrl": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg"
     },
     "provider": {
       "success": true,
       "statusCode": 200,
       "message": "Processing successful",
-      "finalResultImageUrl": "https://d.shotpix.app/faceswap-images/results/result_123.jpg",
+      "finalResultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
       "debug": {
         "endpoint": "https://...",
         "status": 200,
@@ -65,17 +63,14 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie.
       "downloadStatus": 200,
       "savedToR2": true,
       "r2Key": "results/result_123.jpg",
-      "publicUrl": "https://d.shotpix.app/faceswap-images/results/result_123.jpg"
+      "publicUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
     },
     "database": {
       "attempted": true,
       "success": true,
       "resultId": "result_..."
     }
-  },
-  "status": "success",
-  "message": "Processing successful",
-  "code": 200
+  }
 }
 ```
 
@@ -86,6 +81,9 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie.
 ```json
 {
   "data": null,
+  "status": "error",
+  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
+  "code": 422,
   "debug": {
     "provider": { "...": "..." },
     "vision": {
@@ -98,10 +96,7 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie.
         "status": 200
       }
     }
-  },
-  "status": "error",
-  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
-  "code": 422
+  }
 }
 ```
 
@@ -110,49 +105,24 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie.
 ## 2. POST `/upload-url`
 
 ### Mục đích
-Tạo URL tạm để trình duyệt tải ảnh lên thông qua Worker (`/upload-proxy/{key}`) và lấy URL công khai R2.
+Tải ảnh trực tiếp lên server và lưu vào cơ sở dữ liệu với xử lý tự động (Vision scan, Vertex prompt generation).
 
-### Nội dung yêu cầu
+### Nội dung yêu cầu (multipart/form-data)
 
-- `filename` (string, bắt buộc): tên tệp.
+- `file` (file, bắt buộc): file ảnh cần upload.
 - `type` (string, bắt buộc): `preset` hoặc `selfie`.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `presetName` (string, tùy chọn): tên bộ sưu tập preset.
-- `enableVertexPrompt` (boolean, tùy chọn): bật tạo prompt Vertex khi upload preset.
-
-### Phản hồi
-
-```json
-{
-  "uploadUrl": "https://api.d.shotpix.app/upload-proxy/preset/example.jpg",
-  "publicUrl": "https://d.shotpix.app/faceswap-images/preset/example.jpg",
-  "key": "preset/example.jpg",
-  "presetName": "Studio Neon",
-  "enableVertexPrompt": true
-}
-```
-
-## 3. PUT `/upload-proxy/{key}`
-
-### Mục đích
-Nhận dữ liệu nhị phân từ trình duyệt, lưu vào R2 và cập nhật cơ sở dữ liệu (preset/selfie).
-
-### Header quan trọng
-
-- `Content-Type`: mime-type ảnh.
-- `X-Preset-Name` (tùy chọn): tên bộ sưu tập preset.
-- `X-Preset-Name-Encoded` (tùy chọn): `base64` nếu preset name được encode.
-- `X-Enable-Vertex-Prompt`, `X-Enable-Gemini-Prompt` (tùy chọn): bật Vertex prompt generation.
-- `X-Enable-Vision-Scan` (tùy chọn): bật Vision API safety scan.
-- `X-Gender` (tùy chọn): `male` hoặc `female`.
-- `X-Profile-Id` (bắt buộc cho selfie): ID profile.
+- `enableVertexPrompt` (string, tùy chọn): `"true"` để bật tạo prompt Vertex khi upload preset.
+- `enableVisionScan` (string, tùy chọn): `"true"` để bật Vision API safety scan.
+- `gender` (string, tùy chọn): `"male"` hoặc `"female"`.
 
 ### Phản hồi thành công (preset)
 
 ```json
 {
   "success": true,
-  "url": "https://d.shotpix.app/faceswap-images/preset/example.jpg",
+  "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
   "id": "image_...",
   "filename": "example.jpg",
   "hasPrompt": true,
@@ -179,24 +149,13 @@ Nhận dữ liệu nhị phân từ trình duyệt, lưu vào R2 và cập nhậ
 ```json
 {
   "success": true,
-  "url": "https://d.shotpix.app/faceswap-images/selfie/example.jpg",
+  "url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
   "id": "selfie_...",
   "filename": "example.jpg"
 }
 ```
 
-## 4. GET `/upload-proxy/{key}`
-
-### Mục đích
-Lấy file đã upload từ R2 thông qua Worker proxy.
-
-### Phản hồi
-Trả về file binary với headers:
-- `Content-Type`: mime-type của file
-- `Cache-Control`: `public, max-age=31536000`
-- `Access-Control-Allow-Origin`: `*`
-
-## 5. GET `/presets`
+## 3. GET `/presets`
 
 ### Mục đích
 Trả về danh sách preset trong cơ sở dữ liệu.
@@ -212,7 +171,7 @@ Trả về danh sách preset trong cơ sở dữ liệu.
   "presets": [
     {
       "id": "...",
-      "image_url": "https://d.shotpix.app/faceswap-images/preset/example.jpg",
+      "image_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
       "filename": "example.jpg",
       "preset_name": "Studio Neon",
       "hasPrompt": true,
@@ -247,7 +206,7 @@ Xóa preset khỏi D1 và R2, đồng thời xóa tất cả kết quả liên q
 }
 ```
 
-## 7. GET `/selfies`
+## 4. GET `/selfies`
 
 ### Mục đích
 Trả về tối đa 50 selfie gần nhất của một profile.
@@ -264,7 +223,7 @@ Trả về tối đa 50 selfie gần nhất của một profile.
   "selfies": [
     {
       "id": "...",
-      "image_url": "https://d.shotpix.app/faceswap-images/selfie/example.jpg",
+      "image_url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
       "filename": "example.jpg",
       "gender": "male",
       "created_at": "2024-01-01T00:00:00.000Z"
@@ -296,7 +255,7 @@ Xóa selfie và tất cả kết quả liên quan khỏi D1 và R2.
 }
 ```
 
-## 9. GET `/results`
+## 5. GET `/results`
 
 ### Mục đích
 Trả về tối đa 50 kết quả face swap gần nhất.
@@ -316,7 +275,7 @@ Trả về tối đa 50 kết quả face swap gần nhất.
       "selfie_id": "...",
       "preset_id": "...",
       "preset_name": "Studio Neon",
-      "result_url": "https://d.shotpix.app/faceswap-images/results/result_123.jpg",
+      "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
       "profile_id": "...",
       "created_at": "2024-01-01T00:00:00.000Z"
     }
@@ -346,54 +305,7 @@ Xóa kết quả khỏi D1 và R2.
 }
 ```
 
-## 11. GET `/vertex/get-prompt/{preset_image_id}`
-
-### Mục đích
-Trả về prompt đã lưu cho preset (nếu có).
-
-### Phản hồi
-
-```json
-{
-  "success": true,
-  "presetImage": {
-    "id": "...",
-    "image_url": "https://d.shotpix.app/faceswap-images/preset/example.jpg",
-    "hasPrompt": true,
-    "promptJson": {
-      "prompt": "...",
-      "style": "...",
-      "lighting": "...",
-      "composition": "...",
-      "camera": "...",
-      "background": "..."
-    }
-  }
-}
-```
-
-## 12. GET `/test-vertex`
-
-### Mục đích
-Kiểm tra kết nối Vertex AI API và liệt kê các model có sẵn.
-
-### Phản hồi
-
-```json
-{
-  "message": "Vertex AI API reachable",
-  "hasApiKey": true,
-  "status": 200,
-  "ok": true,
-  "models": [
-    "projects/ai-photo-office/locations/us-central1/models/gemini-2.5-flash",
-    "..."
-  ],
-  "error": null
-}
-```
-
-## 13. POST `/upscaler4k`
+## 6. POST `/upscaler4k`
 
 ### Mục đích
 Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
@@ -407,14 +319,14 @@ Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
 ```json
 {
   "data": {
-    "resultImageUrl": "https://d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
   },
   "debug": {
     "provider": {
       "success": true,
       "statusCode": 200,
       "message": "Upscaler4K image upscaling completed",
-      "finalResultImageUrl": "https://d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
+      "finalResultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
     },
     "vertex": {
       "debug": {
@@ -468,7 +380,7 @@ Tạo profile mới.
 }
 ```
 
-## 15. GET `/profiles/{id}`
+## 7. GET `/profiles/{id}`
 
 ### Mục đích
 Lấy thông tin profile theo ID.
@@ -502,7 +414,7 @@ Cập nhật thông tin profile.
 ### Phản hồi
 Trả về profile đã được cập nhật (format giống GET `/profiles/{id}`).
 
-## 17. GET `/profiles`
+## 8. GET `/profiles`
 
 ### Mục đích
 Liệt kê tất cả profiles (dùng cho admin/debugging).
@@ -525,7 +437,7 @@ Liệt kê tất cả profiles (dùng cho admin/debugging).
 }
 ```
 
-## 18. GET `/r2/{key}`
+## 9. GET `/r2/{key}`
 
 ### Mục đích
 Phục vụ file từ R2 bucket thông qua Worker (fallback khi không có CUSTOM_DOMAIN).
@@ -533,7 +445,7 @@ Phục vụ file từ R2 bucket thông qua Worker (fallback khi không có CUSTO
 ### Phản hồi
 Trả về file binary với headers tương tự GET `/upload-proxy/{key}`.
 
-## 19. GET `/config`
+## 10. GET `/config`
 
 ### Mục đích
 Lấy cấu hình public của Worker (custom domains).
@@ -543,7 +455,7 @@ Lấy cấu hình public của Worker (custom domains).
 ```json
 {
   "workerCustomDomain": "https://api.d.shotpix.app",
-  "customDomain": "https://d.shotpix.app"
+  "customDomain": "https://resources.d.shotpix.app"
 }
 ```
 
@@ -551,39 +463,27 @@ Lấy cấu hình public của Worker (custom domains).
 
 ## Tổng kết
 
-**Tổng số API endpoints: 19**
+**Tổng số API endpoints: 13**
 
-1. POST `/faceswap` hoặc POST `/` - Face swap
-2. POST `/upload-url` - Tạo upload URL
-3. PUT `/upload-proxy/{key}` - Upload file
-4. GET `/upload-proxy/{key}` - Lấy file đã upload
-5. GET `/presets` - Liệt kê presets
-6. DELETE `/presets/{id}` - Xóa preset
-7. GET `/selfies` - Liệt kê selfies
-8. DELETE `/selfies/{id}` - Xóa selfie
-9. GET `/results` - Liệt kê results
-10. DELETE `/results/{id}` - Xóa result
-11. GET `/vertex/get-prompt/{preset_image_id}` - Lấy Vertex prompt
-12. GET `/test-vertex` - Test Vertex AI
-13. POST `/upscaler4k` - Upscale ảnh 4K
-14. POST `/profiles` - Tạo profile
-15. GET `/profiles/{id}` - Lấy profile
-16. PUT `/profiles/{id}` - Cập nhật profile
-17. GET `/profiles` - Liệt kê profiles
-18. GET `/r2/{key}` - Phục vụ R2 file
-19. GET `/config` - Lấy config
+1. POST `/faceswap` - Face swap (luôn dùng Vertex AI)
+2. POST `/upload-url` - Upload file trực tiếp
+3. GET `/presets` - Liệt kê presets
+4. DELETE `/presets/{id}` - Xóa preset
+5. GET `/selfies` - Liệt kê selfies
+6. DELETE `/selfies/{id}` - Xóa selfie
+7. GET `/results` - Liệt kê results
+8. DELETE `/results/{id}` - Xóa result
+9. POST `/upscaler4k` - Upscale ảnh 4K
+10. POST `/profiles` - Tạo profile
+11. GET `/profiles/{id}` - Lấy profile
+12. PUT `/profiles/{id}` - Cập nhật profile
+13. GET `/profiles` - Liệt kê profiles
+14. GET `/config` - Lấy config
+ 
 
 ## Lưu ý về Custom Domain
 
 - **Worker API Domain**: `https://api.d.shotpix.app` - Dùng cho tất cả API endpoints
-- **R2 Public Domain**: `https://d.shotpix.app` - Dùng cho public URLs của files trong R2 bucket
-- Format R2 public URL: `https://d.shotpix.app/{bucket-name}/{key}`
-
-## Cấu trúc phản hồi lỗi
-
-Các phản hồi lỗi từ Worker đều tuân thủ một trong hai dạng:
-
-1. Lỗi chuẩn hóa: `{ "data": null, "debug": { ... }, "status": "error", "message": "...", "code": 4xx/5xx }`
-2. Lỗi cũ (legacy): `{ "Success": false, "Message": "...", "StatusCode": 500, "Debug": { ... } }`
-
-Trường `debug` luôn chứa thông tin chi tiết giúp truy vết: endpoint gọi tới, thời gian phản hồi, payload gửi đi, phản hồi gốc (đã được khử dữ liệu nhạy cảm như base64) và các khóa phụ (`vertex`, `vision`, `storage`, `database`) tùy vào ngữ cảnh.
+- **R2 Public Domain**: `https://resources.d.shotpix.app` - Dùng cho public URLs của files trong R2 bucket
+- Format R2 public URL: `https://resources.d.shotpix.app/{bucket-name}/{key}`
+ 

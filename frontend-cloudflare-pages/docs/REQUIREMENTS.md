@@ -589,21 +589,24 @@ A minimal web application for face swapping that allows users to upload preset i
   5. Return `{ url: string }` (the final accessible URL that can be used directly, no conversion needed)
 
 #### POST `/faceswap`
-- Body: 
+- Body:
   ```json
   {
-    "target_url": "preset_image_url",
-    "source_url": "selfie_image_url"
+    "preset_image_id": "preset_id_from_database",
+    "selfie_id": "selfie_id_from_database",
+    "profile_id": "user_profile_id"
   }
   ```
-- Returns: 
+- Returns:
   ```json
   {
-    "status": "success",
     "data": {
       "resultImageUrl": "result_url"
     },
-    "message": "message"
+    "status": "success",
+    "message": "Processing successful",
+    "code": 200,
+    "debug": {}
   }
   ```
 
