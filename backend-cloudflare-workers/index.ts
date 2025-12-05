@@ -1857,6 +1857,40 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
+        // Check input image safety before upscaling
+        const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
+        let inputSafetyDebug: SafetyCheckDebug | null = null;
+
+        if (!disableSafeSearch) {
+          console.log('[Upscaler4K] Running safety check on input image:', body.image_url);
+          const inputSafeSearchResult = await checkSafeSearch(body.image_url, env);
+          inputSafetyDebug = {
+            checked: true,
+            isSafe: !!inputSafeSearchResult.isSafe,
+            statusCode: inputSafeSearchResult.statusCode,
+            violationCategory: inputSafeSearchResult.violationCategory,
+            violationLevel: inputSafeSearchResult.violationLevel,
+            details: inputSafeSearchResult.details,
+            error: inputSafeSearchResult.error,
+            rawResponse: inputSafeSearchResult.rawResponse,
+            debug: inputSafeSearchResult.debug,
+          };
+
+          if (!inputSafeSearchResult.isSafe) {
+            console.warn('[Upscaler4K] Input image failed safety check');
+            const debugPayload = compact({
+              inputSafety: buildVisionDebug(inputSafetyDebug),
+            });
+            return jsonResponse({
+              data: null,
+              debug: debugPayload,
+              status: 'error',
+              message: `Input image failed safety check: ${inputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
+              code: 400,
+            }, 400);
+          }
+        }
+
         const upscalerResult = await callUpscaler4k(body.image_url, env);
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
@@ -1865,6 +1899,7 @@ export default {
           const debugPayload = compact({
             provider: buildProviderDebug(upscalerResult),
             vertex: buildVertexDebug(upscalerResult),
+            inputSafety: buildVisionDebug(inputSafetyDebug),
           });
           return jsonResponse({
             data: null,
@@ -1883,11 +1918,49 @@ export default {
           console.log('[Upscaler4K] Converted R2 URL to public URL:', resultUrl);
         }
 
+        // Check output image safety after upscaling
+        let outputSafetyDebug: SafetyCheckDebug | null = null;
+
+        if (!disableSafeSearch) {
+          console.log('[Upscaler4K] Running safety check on output image:', resultUrl);
+          const outputSafeSearchResult = await checkSafeSearch(resultUrl, env);
+          outputSafetyDebug = {
+            checked: true,
+            isSafe: !!outputSafeSearchResult.isSafe,
+            statusCode: outputSafeSearchResult.statusCode,
+            violationCategory: outputSafeSearchResult.violationCategory,
+            violationLevel: outputSafeSearchResult.violationLevel,
+            details: outputSafeSearchResult.details,
+            error: outputSafeSearchResult.error,
+            rawResponse: outputSafeSearchResult.rawResponse,
+            debug: outputSafeSearchResult.debug,
+          };
+
+          if (!outputSafeSearchResult.isSafe) {
+            console.warn('[Upscaler4K] Output image failed safety check');
+            const debugPayload = compact({
+              provider: buildProviderDebug(upscalerResult, resultUrl),
+              vertex: buildVertexDebug(upscalerResult),
+              inputSafety: buildVisionDebug(inputSafetyDebug),
+              outputSafety: buildVisionDebug(outputSafetyDebug),
+            });
+            return jsonResponse({
+              data: null,
+              debug: debugPayload,
+              status: 'error',
+              message: `Upscaled image failed safety check: ${outputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
+              code: 400,
+            }, 400);
+          }
+        }
+
         const providerDebug = buildProviderDebug(upscalerResult, resultUrl);
         const vertexDebug = buildVertexDebug(upscalerResult);
         const debugPayload = compact({
           provider: providerDebug,
           vertex: vertexDebug,
+          inputSafety: buildVisionDebug(inputSafetyDebug),
+          outputSafety: buildVisionDebug(outputSafetyDebug),
         });
 
         return jsonResponse({
@@ -1903,6 +1976,17 @@ export default {
         console.error('Upscaler4K unhandled error:', error);
         return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
+    }
+
+    // Handle config endpoint - returns public configuration
+    if (path === '/config' && request.method === 'GET') {
+      const workerCustomDomain = env.WORKER_CUSTOM_DOMAIN;
+      const customDomain = env.CUSTOM_DOMAIN;
+
+      return jsonResponse({
+        workerCustomDomain: workerCustomDomain || null,
+        customDomain: customDomain || null,
+      });
     }
 
     // 404 for unmatched routes

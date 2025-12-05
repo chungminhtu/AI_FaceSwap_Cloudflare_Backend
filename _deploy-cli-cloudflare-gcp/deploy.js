@@ -308,15 +308,42 @@ function execCommand(command, options = {}) {
 
 function runCommand(command, cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, [], { cwd: cwd || process.cwd(), shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const env = { ...process.env };
+    const child = spawn(command, [], { 
+      cwd: cwd || process.cwd(), 
+      shell: true, 
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: env
+    });
     let stdout = '', stderr = '', answered = false;
 
     const answerPrompt = (output) => {
       if (answered) return;
       const full = (stdout + stderr + output).toLowerCase();
-      if (full.includes('ok to proceed?') || (full.includes('⚠️') && full.includes('unavailable')) ||
-          (full.includes('this process may take some time') && full.includes('ok to proceed'))) {
-        child.stdin.write('yes\n');
+      const prompts = [
+        'ok to proceed?',
+        'continue?',
+        'proceed?',
+        'yes/no',
+        'y/n',
+        'unavailable',
+        'this process may take some time',
+        'are you sure',
+        'confirm',
+        'press enter',
+        'press any key',
+        'do you want to',
+        'would you like to'
+      ];
+      
+      if (prompts.some(prompt => full.includes(prompt))) {
+        if (full.includes('y/n') || full.includes('yes/no')) {
+          child.stdin.write('y\n');
+        } else if (full.includes('press enter') || full.includes('press any key')) {
+          child.stdin.write('\n');
+        } else {
+          child.stdin.write('yes\n');
+        }
         answered = true;
       }
     };
@@ -340,6 +367,30 @@ function runCommand(command, cwd) {
 
     child.on('error', reject);
   });
+}
+
+async function runCommandWithRetry(command, cwd, maxRetries = 3, retryDelay = 2000) {
+  let lastError;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await runCommand(command, cwd);
+    } catch (error) {
+      lastError = error;
+      const errorMsg = error.message || error.error || '';
+      const isRetryable = errorMsg.includes('timeout') || 
+                         errorMsg.includes('network') || 
+                         errorMsg.includes('temporary') ||
+                         errorMsg.includes('rate limit') ||
+                         errorMsg.includes('429');
+      
+      if (i < maxRetries && isRetryable) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay * (i + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 function restoreEnv(origToken, origAccountId) {
@@ -414,36 +465,42 @@ function parseConfig(config) {
     databaseName: config.databaseName,
     bucketName: config.bucketName,
     deployPages: config.deployPages || process.env.DEPLOY_PAGES === 'true',
+    workerCustomDomain: config.workerCustomDomain,
     cloudflare: {
       accountId: config.cloudflare.accountId || '',
       apiToken: config.cloudflare.apiToken || ''
     },
     gcp: config.gcp,
-      secrets: {
-        RAPIDAPI_KEY: config.RAPIDAPI_KEY,
-        RAPIDAPI_HOST: config.RAPIDAPI_HOST,
-        RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
-        GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
-        GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
-        GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
-        GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
-        GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-        R2_BUCKET_BINDING: config.bucketName,
-        D1_DATABASE_BINDING: config.databaseName
-      },
+      secrets: (() => {
+        const secrets = {
+          RAPIDAPI_KEY: config.RAPIDAPI_KEY,
+          RAPIDAPI_HOST: config.RAPIDAPI_HOST,
+          RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
+          GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
+          GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
+          GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
+          GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+          R2_BUCKET_BINDING: config.bucketName,
+          D1_DATABASE_BINDING: config.databaseName
+        };
+        if (config.CUSTOM_DOMAIN) secrets.CUSTOM_DOMAIN = config.CUSTOM_DOMAIN;
+        if (config.workerCustomDomain) secrets.WORKER_CUSTOM_DOMAIN = `https://${config.workerCustomDomain}`;
+        if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
+        return secrets;
+      })(),
     _needsCloudflareSetup: config._needsCloudflareSetup,
     _environment: config._environment
   };
 }
 
-function generateWranglerConfig(config) {
+function generateWranglerConfig(config, skipD1 = false) {
   const wranglerConfig = {
     name: config.workerName,
     main: 'backend-cloudflare-workers/index.ts',
     compatibility_date: '2024-01-01',
     account_id: config.cloudflare.accountId,
-    d1_databases: [{ binding: config.databaseName, database_name: config.databaseName }],
     r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }],
     observability: {
       logs: {
@@ -463,87 +520,16 @@ function generateWranglerConfig(config) {
     }
   };
 
-  // Add custom domain routes if configured
-  if (config.workerCustomDomain) {
-    const domains = Array.isArray(config.workerCustomDomain) 
-      ? config.workerCustomDomain 
-      : [config.workerCustomDomain];
-    
-    wranglerConfig.routes = domains.map(domain => ({
-      pattern: domain,
-      custom_domain: true
-    }));
+  if (!skipD1) {
+    wranglerConfig.d1_databases = [{ binding: config.databaseName, database_name: config.databaseName }];
   }
+
+  // Note: Custom domains for Workers are configured separately in Cloudflare dashboard
+  // Routes are not needed for custom domains - they're handled via Cloudflare's custom domain feature
 
   return wranglerConfig;
 }
 
-function getWranglerToken() {
-  const configPath = path.join(os.homedir(), '.wrangler', 'config', 'default.toml');
-  if (!fs.existsSync(configPath)) return null;
-
-  const content = fs.readFileSync(configPath, 'utf8');
-  const oauthMatch = content.match(/oauth_token\s*=\s*"([^"]+)"/);
-  const refreshMatch = content.match(/refresh_token\s*=\s*"([^"]+)"/);
-  const expMatch = content.match(/expiration_time\s*=\s*"([^"]+)"/);
-
-  if (oauthMatch) {
-    return {
-      type: 'oauth_token',
-      token: oauthMatch[1],
-      refreshToken: refreshMatch ? refreshMatch[1] : null,
-      expirationTime: expMatch ? expMatch[1] : null
-    };
-  }
-
-  return null;
-}
-
-async function loginWrangler() {
-  return new Promise((resolve, reject) => {
-    console.log('\n🔐 Cloudflare login required. Complete in browser...\n');
-
-    const origToken = process.env.CLOUDFLARE_API_TOKEN;
-    const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-
-    delete process.env.CLOUDFLARE_API_TOKEN;
-    delete process.env.CLOUDFLARE_ACCOUNT_ID;
-
-    const proc = spawn('wrangler', ['login'], {
-      stdio: 'inherit',
-      shell: true,
-      env: { ...process.env, BROWSER: process.env.BROWSER || 'default' }
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        let attempts = 0;
-        const checkToken = () => {
-          attempts++;
-          const token = getWranglerToken();
-          if (token) {
-            restoreEnv(origToken, origAccountId);
-            resolve(token);
-          } else if (attempts < 10) {
-            setTimeout(checkToken, 1000);
-          } else {
-            restoreEnv(origToken, origAccountId);
-            reject(new Error('Token not found after login'));
-          }
-        };
-        setTimeout(checkToken, 2000);
-      } else {
-        restoreEnv(origToken, origAccountId);
-        reject(new Error(`Login failed with code ${code}`));
-      }
-    });
-
-    proc.on('error', (error) => {
-      restoreEnv(origToken, origAccountId);
-      reject(error);
-    });
-  });
-}
 
 async function validateCloudflareToken(token) {
   return new Promise((resolve) => {
@@ -571,24 +557,6 @@ async function validateCloudflareToken(token) {
   });
 }
 
-function getAccountIdFromWrangler() {
-  try {
-    const output = execCommand('wrangler whoami', { silent: true, throwOnError: false });
-    if (!output) return null;
-
-    const msg = output.toLowerCase();
-    if (msg.includes('invalid access token') || msg.includes('code: 9109') ||
-        msg.includes('authentication error') || msg.includes('unauthorized')) {
-      throw new Error('Invalid token');
-    }
-
-    const match = output.match(/Account ID:\s*([a-f0-9]{32})/i) || output.match(/([a-f0-9]{32})/);
-    return match ? match[1] : null;
-  } catch (error) {
-    if (error.message === 'Invalid token') throw error;
-    return null;
-  }
-}
 
 async function getAccountIdFromApi(token) {
   return new Promise((resolve, reject) => {
@@ -617,14 +585,155 @@ async function getAccountIdFromApi(token) {
   });
 }
 
-function isTokenExpired(expirationTime) {
-  if (!expirationTime) return true;
+
+
+
+async function getAllEditPermissionGroups(token, accountId) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.cloudflare.com',
+      path: `/client/v4/accounts/${accountId}/tokens/permission_groups`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        const json = JSON.parse(data);
+        if (!json.success) {
+          reject(new Error(`Failed to get permission groups: ${JSON.stringify(json.errors)}`));
+          return;
+        }
+        const allGroups = json.result || [];
+        const editGroups = allGroups.filter(g => {
+          const name = (g.name || '').toLowerCase();
+          return name.includes('edit') || name.includes('write');
+        });
+        resolve(editGroups);
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.end();
+  });
+}
+
+async function getTokenId(token) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.cloudflare.com',
+      path: '/client/v4/user/tokens/verify',
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        const json = JSON.parse(data);
+        if (!json.success || !json.result?.id) {
+          reject(new Error(`Failed to get token ID: ${JSON.stringify(json.errors || json)}`));
+          return;
+        }
+        resolve(json.result.id);
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.end();
+  });
+}
+
+async function updateTokenWithAllEditPermissions(currentToken, accountId) {
+  const tokenId = await getTokenId(currentToken);
+  
+  // Try to get permission groups with current token
+  let editGroups;
+  let permissionGroupsError = null;
   try {
-    const date = new Date(expirationTime);
-    return isNaN(date.getTime()) || date <= new Date();
-  } catch {
-    return true;
+    editGroups = await getAllEditPermissionGroups(currentToken, accountId);
+  } catch (error) {
+    permissionGroupsError = error;
+    // If current token can't access permission groups, try to use a working token from another environment
+    // Note: Permission groups are GLOBAL (same across all Cloudflare accounts), so we can use any token
+    // from any account/environment to get the list. However, the token UPDATE must be done with a token
+    // that has permission to update tokens in the target account.
+    logWarn('Current token cannot access permission groups, trying fallback from other environments...');
+    const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+    if (fs.existsSync(secretsPath)) {
+      const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+      // Try to find a working token from any environment (permission groups are global, same across accounts)
+      for (const envName in secrets.environments || {}) {
+        const envConfig = secrets.environments[envName];
+        if (envConfig?.cloudflare?.apiToken && envConfig.cloudflare.apiToken !== currentToken) {
+          try {
+            // Use any account ID to get permission groups (they're the same globally)
+            const fallbackAccountId = envConfig.cloudflare.accountId || accountId;
+            editGroups = await getAllEditPermissionGroups(envConfig.cloudflare.apiToken, fallbackAccountId);
+            logSuccess(`Using permission groups from ${envName} environment (account: ${fallbackAccountId})`);
+            break;
+          } catch (e) {
+            // Continue to next environment
+          }
+        }
+      }
+    }
+    
+    if (!editGroups || editGroups.length === 0) {
+      throw new Error(`Cannot get permission groups. Current token error: ${permissionGroupsError.message}. Please ensure your token has access to read permission groups, or provide a working token with permission to read permission groups in another environment in deployments-secrets.json.`);
+    }
   }
+  
+  if (editGroups.length === 0) {
+    throw new Error('No edit permission groups found');
+  }
+
+  const tokenData = {
+    policies: [{
+      effect: 'allow',
+      permission_groups: editGroups.map(g => ({ id: g.id })),
+      resources: {
+        [`com.cloudflare.api.account.${accountId}`]: '*'
+      }
+    }]
+  };
+
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify(tokenData);
+    const req = https.request({
+      hostname: 'api.cloudflare.com',
+      path: `/client/v4/user/tokens/${tokenId}`,
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${currentToken}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 30000
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        const json = JSON.parse(data);
+        if (!json.success) {
+          reject(new Error(`Failed to update token: ${JSON.stringify(json.errors || json)}`));
+          return;
+        }
+        resolve(currentToken);
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.write(postData);
+    req.end();
+  });
 }
 
 async function setupCloudflare(env = null, preferredAccountId = null) {
@@ -633,68 +742,71 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
   const origToken = process.env.CLOUDFLARE_API_TOKEN;
   const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 
-  let token = origToken;
-  let accountId = preferredAccountId || origAccountId;
-
-  if (!token || !accountId) {
-    delete process.env.CLOUDFLARE_API_TOKEN;
-    delete process.env.CLOUDFLARE_ACCOUNT_ID;
-
-    const tokenInfo = getWranglerToken();
-    
-    if (!tokenInfo || isTokenExpired(tokenInfo.expirationTime)) {
-      logStep('Token expired or missing, logging in...');
-      const newTokenInfo = await loginWrangler();
-      token = newTokenInfo.token;
-    } else {
-      const isValid = await validateCloudflareToken(tokenInfo.token);
-      if (!isValid) {
-        logStep('Token invalid, logging in...');
-        const newTokenInfo = await loginWrangler();
-        token = newTokenInfo.token;
-      } else {
-        token = tokenInfo.token;
-      }
-    }
-
-    process.env.CLOUDFLARE_API_TOKEN = token;
-
-    if (!accountId) {
-      accountId = getAccountIdFromWrangler();
-      if (!accountId) {
-        try {
-          accountId = await getAccountIdFromApi(token);
-        } catch (error) {
-          const output = execCommand('wrangler whoami', { silent: false, throwOnError: false });
-          if (output) {
-            const match = output.match(/Account ID[:\s]+([a-f0-9]{32})/i);
-            accountId = match ? match[1] : null;
-          }
-        }
-      }
-    }
+  const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+  if (!fs.existsSync(secretsPath)) {
+    restoreEnv(origToken, origAccountId);
+    throw new Error('deployments-secrets.json not found');
   }
+
+  const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+  const targetEnv = env || process.env.DEPLOY_ENV || 'production';
+  const envConfig = secrets.environments?.[targetEnv];
+  
+  if (!envConfig?.cloudflare) {
+    restoreEnv(origToken, origAccountId);
+    throw new Error(`No Cloudflare config found for environment: ${targetEnv}`);
+  }
+
+  const config = envConfig.cloudflare;
+  let token = origToken || config.apiToken;
+  let accountId = preferredAccountId || origAccountId || config.accountId;
 
   if (!accountId) {
     restoreEnv(origToken, origAccountId);
-    throw new Error('Could not get account ID');
+    throw new Error(`No account ID found for environment: ${targetEnv}`);
+  }
+
+  if (!token) {
+    restoreEnv(origToken, origAccountId);
+    throw new Error(`No API token found for environment: ${targetEnv}. Please add apiToken to deployments-secrets.json`);
+  }
+
+  const isValid = await validateCloudflareToken(token);
+  if (!isValid) {
+    restoreEnv(origToken, origAccountId);
+    throw new Error(`API token validation failed for environment: ${targetEnv}. Please check your API token in deployments-secrets.json`);
   }
 
   if (preferredAccountId && accountId !== preferredAccountId) {
-    logWarn(`Using account ID from config: ${preferredAccountId} (wrangler logged into: ${accountId})`);
+    logWarn(`Using account ID from config: ${preferredAccountId} (config has: ${accountId})`);
     accountId = preferredAccountId;
   }
 
+  logStep('Updating API token with all edit permissions...');
+  try {
+    await updateTokenWithAllEditPermissions(token, accountId);
+    logSuccess('Token updated with all edit permissions');
+    // Re-validate token after update
+    const isValidAfterUpdate = await validateCloudflareToken(token);
+    if (!isValidAfterUpdate) {
+      restoreEnv(origToken, origAccountId);
+      throw new Error('Token validation failed after update. Please check your API token.');
+    }
+  } catch (error) {
+    restoreEnv(origToken, origAccountId);
+    throw new Error(`Failed to update token with all edit permissions: ${error.message}. Please ensure your token has "User API Tokens:Edit" permission.`);
+  }
+
+  process.env.CLOUDFLARE_API_TOKEN = token;
   process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
 
-  const tokenInfo = getWranglerToken();
-  saveCloudflareCredentials(accountId, token, tokenInfo?.refreshToken || null, tokenInfo?.expirationTime || null, env);
-  
+  logSuccess(`Using API token for account ${accountId}`);
+
   restoreEnv(origToken, origAccountId);
   return { accountId, apiToken: token };
 }
 
-function saveCloudflareCredentials(accountId, token, refreshToken = null, expirationTime = null, env = null) {
+function saveCloudflareCredentials(accountId, token, env = null) {
   const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
   if (!fs.existsSync(secretsPath)) return;
 
@@ -707,27 +819,9 @@ function saveCloudflareCredentials(accountId, token, refreshToken = null, expira
 
   secrets.environments[targetEnv].cloudflare.accountId = accountId;
   secrets.environments[targetEnv].cloudflare.apiToken = token;
-  if (refreshToken) secrets.environments[targetEnv].cloudflare.refreshToken = refreshToken;
-  if (expirationTime) {
-    const date = new Date(expirationTime);
-    const humanReadable = date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZoneName: 'short'
-    });
-    secrets.environments[targetEnv].cloudflare.expirationTime = humanReadable;
-  }
-  
-  if (secrets.environments[targetEnv].cloudflare.email === '') {
-    delete secrets.environments[targetEnv].cloudflare.email;
-  }
 
   fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2));
-  logSuccess(`Credentials saved for ${targetEnv} environment`);
+  logSuccess(`API token saved for ${targetEnv} environment`);
 }
 
 const REQUIRED_SECRETS = ['RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT', 'GOOGLE_VISION_API_KEY',
@@ -756,14 +850,37 @@ function getWorkerUrl(cwd, workerName) {
   return '';
 }
 
-function updateWorkerUrlInHtml(cwd, workerUrl) {
-  if (!workerUrl) return;
+function updateWorkerUrlInHtml(cwd, workerUrl, config) {
   const htmlPath = path.join(cwd, 'frontend-cloudflare-pages', 'index.html');
-  if (fs.existsSync(htmlPath)) {
-    let content = fs.readFileSync(htmlPath, 'utf8');
-    content = content.replace(/const WORKER_URL = ['"](.*?)['"]/, `const WORKER_URL = '${workerUrl}'`);
-    fs.writeFileSync(htmlPath, content);
+  if (!fs.existsSync(htmlPath)) return;
+  
+  let content = fs.readFileSync(htmlPath, 'utf8');
+  
+  // Determine the actual worker URL to use (custom domain if available, otherwise workers.dev)
+  let finalWorkerUrl = workerUrl;
+  if (config?.workerCustomDomain) {
+    finalWorkerUrl = config.workerCustomDomain.startsWith('http')
+      ? config.workerCustomDomain
+      : `https://${config.workerCustomDomain}`;
+    console.log(`[Deploy] Using custom domain from config: ${finalWorkerUrl}`);
+  } else {
+    console.log(`[Deploy] No custom domain in config, using workers.dev: ${finalWorkerUrl}`);
   }
+  
+  // Replace the WORKER_URL initialization
+  const workerUrlPattern = /let WORKER_URL = ['"](.*?)['"]; \/\/ Fallback/g;
+  if (workerUrlPattern.test(content)) {
+    content = content.replace(workerUrlPattern, `let WORKER_URL = '${finalWorkerUrl}'; // Injected during deployment`);
+  }
+  
+  // Also replace the fallbackUrl constant
+  const fallbackUrlPattern = /const fallbackUrl = ['"](.*?)['"];/g;
+  if (fallbackUrlPattern.test(content)) {
+    content = content.replace(fallbackUrlPattern, `const fallbackUrl = '${finalWorkerUrl}';`);
+  }
+  
+  fs.writeFileSync(htmlPath, content);
+  console.log(`[Deploy] ✓ Updated frontend HTML with worker URL: ${finalWorkerUrl}`);
 }
 
 const utils = {
@@ -922,34 +1039,80 @@ const utils = {
 
   async ensureD1Database(cwd, databaseName) {
     try {
-      const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false });
+      const env = { ...process.env };
+      const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+      
+      if (output && (output.includes('Authentication error') || output.includes('code: 10000'))) {
+        logWarn('API token does not have D1 permissions. Skipping D1 database operations.');
+        return { exists: false, created: false, schemaApplied: false, skipped: true };
+      }
+      
       let exists = output && output.includes(databaseName);
       let created = false;
 
       if (!exists) {
-        await runCommand(`wrangler d1 create ${databaseName}`, cwd);
-        created = true;
-        exists = true;
+        let createResult;
+        try {
+          createResult = await runCommandWithRetry(`wrangler d1 create ${databaseName}`, cwd, 2, 2000);
+        } catch (error) {
+          const errorMsg = error.message || error.error || '';
+          if (errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) {
+            logWarn('API token does not have D1 permissions. Skipping D1 database creation.');
+            return { exists: false, created: false, schemaApplied: false, skipped: true };
+          }
+          createResult = { success: false, error: errorMsg };
+        }
+        if (createResult && createResult.success) {
+          created = true;
+          exists = true;
+        }
       }
 
       const schemaPath = path.join(cwd, 'backend-cloudflare-workers', 'schema.sql');
       let schemaApplied = false;
-      if (fs.existsSync(schemaPath)) {
+      if (exists && fs.existsSync(schemaPath)) {
         try {
-          await runCommand(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd);
-          schemaApplied = true;
+          const migrations = [
+            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE selfies ADD COLUMN profile_id TEXT;"`,
+            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN profile_id TEXT;"`,
+            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN preset_id TEXT;"`,
+            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN preset_name TEXT;"`,
+            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN selfie_id TEXT;"`
+          ];
+          for (const migrationCmd of migrations) {
+            try {
+              await runCommandWithRetry(migrationCmd, cwd, 2, 1000);
+            } catch (migError) {
+              const migMsg = migError.message || migError.error || '';
+              if (!migMsg.includes('duplicate column name') && !migMsg.includes('already exists') && !migMsg.includes('no such table')) {
+                logWarn(`Migration warning: ${migMsg}`);
+              }
+            }
+          }
+          
+          const execResult = await runCommandWithRetry(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd, 2, 2000);
+          if (execResult.success) {
+            schemaApplied = true;
+          }
         } catch (schemaError) {
           const errorMsg = schemaError.message || schemaError.error || '';
-          if (!errorMsg.includes('already exists') && !errorMsg.includes('duplicate')) {
+          if (errorMsg.includes('already exists') || errorMsg.includes('duplicate')) {
+            schemaApplied = true;
+          } else if (errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) {
+            logWarn('API token does not have D1 permissions. Skipping schema application.');
+          } else {
             throw schemaError;
           }
-          schemaApplied = true;
         }
       }
 
       return { exists, created, schemaApplied };
     } catch (error) {
       const errorMsg = error.message || error.error || '';
+      if (errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) {
+        logWarn('API token does not have D1 permissions. Skipping D1 database operations.');
+        return { exists: false, created: false, schemaApplied: false, skipped: true };
+      }
       if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
         return { exists: true, created: false, schemaApplied: false };
       }
@@ -966,7 +1129,7 @@ const utils = {
     try {
       fs.writeFileSync(tempFile, JSON.stringify(secrets, null, 2));
       const cmd = workerName ? `wrangler secret bulk "${tempFile}" --name ${workerName}` : `wrangler secret bulk "${tempFile}"`;
-      const result = await runCommand(cmd, cwd);
+      const result = await runCommandWithRetry(cmd, cwd, 2, 2000);
       if (result.success) {
         logSuccess(`Deployed ${keys.length} secrets`);
         return { success: true, deployed: keys.length, total: keys.length };
@@ -998,7 +1161,7 @@ const utils = {
     return { success: true, deployed: successCount, total: keys.length };
   },
 
-  async deployWorker(cwd, workerName, config) {
+  async deployWorker(cwd, workerName, config, skipD1 = false) {
     const wranglerConfigFiles = [
       path.join(cwd, 'wrangler.json'),
       path.join(cwd, 'wrangler.jsonc'),
@@ -1018,18 +1181,30 @@ const utils = {
     let createdConfig = false;
 
     try {
-      const wranglerConfig = generateWranglerConfig(config);
+      const wranglerConfig = generateWranglerConfig(config, skipD1);
       fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
       createdConfig = true;
 
-      let result = await runCommand('wrangler deploy', cwd);
-      if (!result.success && result.error?.includes('code: 10214')) {
-        result = await runCommand('wrangler deploy', cwd);
+      let result;
+      try {
+        result = await runCommandWithRetry('wrangler deploy', cwd, 3, 2000);
+      } catch (error) {
+        const errorMsg = error.message || error.error || '';
+        if (errorMsg.includes('code: 10214')) {
+          result = await runCommandWithRetry('wrangler deploy', cwd, 2, 3000);
+        } else if ((errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) && !skipD1) {
+          logWarn('Worker deployment failed due to D1 permissions. Retrying without D1 binding...');
+          const wranglerConfigNoD1 = generateWranglerConfig(config, true);
+          fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfigNoD1, null, 2));
+          result = await runCommandWithRetry('wrangler deploy', cwd, 2, 3000);
+        } else {
+          throw error;
+        }
       }
-      if (!result.success) throw new Error(result.error || 'Worker deployment failed');
+      if (!result || !result.success) throw new Error(result?.error || 'Worker deployment failed');
 
       const workerUrl = getWorkerUrl(cwd, workerName);
-      updateWorkerUrlInHtml(cwd, workerUrl);
+      updateWorkerUrlInHtml(cwd, workerUrl, config);
       return workerUrl;
     } finally {
       if (createdConfig && fs.existsSync(wranglerPath)) {
@@ -1047,14 +1222,14 @@ const utils = {
     if (!fs.existsSync(publicDir)) return `https://${pagesProjectName}.pages.dev/`;
 
     try {
-      await runCommand(`wrangler pages project create ${pagesProjectName} --production-branch=main`, cwd);
+      await runCommandWithRetry(`wrangler pages project create ${pagesProjectName} --production-branch=main`, cwd, 2, 1000);
     } catch {
-      // Project might already exist
+      // Project might already exist, continue
     }
 
     try {
       const absDir = path.resolve(publicDir);
-      await runCommand(`wrangler pages deploy "${absDir}" --project-name=${pagesProjectName} --branch=main --commit-dirty=true`, cwd);
+      await runCommandWithRetry(`wrangler pages deploy "${absDir}" --project-name=${pagesProjectName} --branch=main --commit-dirty=true`, cwd, 3, 2000);
     } catch {
       // Deployment might have issues but continue
     }
@@ -1180,10 +1355,13 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         }
       }
       
+      let dbResult = null;
       if (DEPLOY_DB) {
         report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Checking database existence');
-        const dbResult = await utils.ensureD1Database(cwd, config.databaseName);
-        if (dbResult.created) {
+        dbResult = await utils.ensureD1Database(cwd, config.databaseName);
+        if (dbResult.skipped) {
+          report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'warning', 'Skipped (API token lacks D1 permissions)');
+        } else if (dbResult.created) {
           report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Database created, applying schema');
           if (dbResult.schemaApplied) {
             report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created & schema applied');
@@ -1197,6 +1375,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
             report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database already exists');
           }
         }
+      } else {
+        dbResult = await utils.ensureD1Database(cwd, config.databaseName);
       }
 
       if (DEPLOY_SECRETS) {
@@ -1218,7 +1398,11 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       let workerUrl = '';
       if (DEPLOY_WORKER) {
         report('Deploying worker...', 'running', 'Deploying Cloudflare Worker');
-        workerUrl = await utils.deployWorker(cwd, config.workerName, config);
+        if (!dbResult) {
+          dbResult = await utils.ensureD1Database(cwd, config.databaseName);
+        }
+        const skipD1 = dbResult.skipped || false;
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1);
         report('Deploying worker...', 'completed', 'Worker deployed');
       }
 
@@ -1334,7 +1518,9 @@ async function main() {
 
       logger.startStep(`[Cloudflare] D1 Database: ${config.databaseName}`);
       const dbResult = await utils.ensureD1Database(process.cwd(), config.databaseName);
-      if (dbResult.created) {
+      if (dbResult.skipped) {
+        logger.warnStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Skipped (API token lacks D1 permissions)');
+      } else if (dbResult.created) {
         if (dbResult.schemaApplied) {
           logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created & schema applied');
         } else {
@@ -1363,7 +1549,8 @@ async function main() {
       }
 
       logger.startStep('Deploying worker');
-      const workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config);
+      const skipD1 = dbResult.skipped || false;
+      const workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1);
       logger.completeStep('Deploying worker', 'Worker deployed');
 
       let pagesUrl = '';

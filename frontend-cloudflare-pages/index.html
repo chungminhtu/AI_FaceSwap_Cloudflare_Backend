@@ -1874,7 +1874,37 @@
     </button>
 
     <script>
-        const WORKER_URL = 'https://ai-faceswap-backend-office-dev.Thanhlx273.workers.dev';
+        // Worker URL - injected during deployment from deployments-secrets.json
+        // This will be replaced by the deploy script with the custom domain if available
+        let WORKER_URL = 'https://api.d.shotpix.app'; // Custom domain from deployments-secrets.json
+        const fallbackUrl = 'https://api.d.shotpix.app';
+        
+        // Function to fetch and update worker URL from backend config (optional, for runtime updates)
+        async function loadWorkerConfig() {
+          try {
+            // Try to fetch config from current WORKER_URL
+            const response = await fetch(`${WORKER_URL}/config`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+              const config = await response.json();
+              if (config.workerCustomDomain) {
+                const newUrl = config.workerCustomDomain.startsWith('http')
+                  ? config.workerCustomDomain
+                  : `https://${config.workerCustomDomain}`;
+                if (newUrl !== WORKER_URL) {
+                  WORKER_URL = newUrl;
+                  console.log('[Config] Updated to custom domain from backend:', WORKER_URL);
+                  return true;
+                }
+              }
+            }
+          } catch (error) {
+            // Silently fail - use injected URL
+          }
+          return false;
+        }
         const ITEMS_PER_PAGE = 12;
 
         const presetUpload = document.getElementById('preset-upload');
@@ -2512,6 +2542,10 @@
 
         // Initialize the application
         async function init() {
+            // Load worker config first to get custom domain
+            await loadWorkerConfig();
+            console.log('[Config] Using API URL:', WORKER_URL);
+            
             galleryKeys.forEach(type => {
                 if (type !== 'results') resetPreview(type);
             });
