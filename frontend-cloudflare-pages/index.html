@@ -2282,9 +2282,8 @@
 
         };
 
-        // Initialize checkbox states and listeners when page loads
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
+            document.addEventListener('DOMContentLoaded', async () => {
                 initAccessGate();
                 loadCheckboxStates();
                 setupCheckboxListeners();
@@ -2292,8 +2291,8 @@
                 setupGenderListeners();
                 syncPromptControls();
                 setupGenderFilterListeners();
-                // Initialize single user profile
                 window.profileManager.initializeProfile();
+                await init();
             });
         } else {
             initAccessGate();
@@ -2303,8 +2302,8 @@
             setupGenderListeners();
             syncPromptControls();
             setupGenderFilterListeners();
-            // Initialize single user profile
             window.profileManager.initializeProfile();
+            init();
         }
 
         function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
@@ -2713,6 +2712,14 @@
             setSelectedItem(type, item, { showMessage: true });
         }
 
+        function updateGenerateButton() {
+            if (!generateBtn) return;
+            const presetSelected = galleries.preset.state.selected;
+            const selfieSelected = galleries.selfie.state.selected;
+            const canGenerate = presetSelected && selfieSelected;
+            generateBtn.disabled = !canGenerate;
+        }
+
         function setSelectedItem(type, item, options = {}) {
             const config = galleries[type];
             config.state.selected = item || null;
@@ -2752,6 +2759,7 @@
             const config = galleries[type];
             config.state.selected = null;
             updatePreview(type);
+            updateGenerateButton();
         }
 
         function clearSelection(type, event) {
@@ -2840,21 +2848,25 @@
             }
         }
 
-        // Handle preset file upload (support multiple files)
+        presetUpload.addEventListener('click', () => {
+            presetInput.click();
+        });
+
+        selfieUpload.addEventListener('click', () => {
+            selfieInput.click();
+        });
+
         presetInput.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files || []);
             if (files.length === 0) return;
 
-            // Process all files sequentially
             for (const file of files) {
                 await handleImageUpload(file, 'preset');
             }
             
-            // Reset input to allow re-uploading same files
             e.target.value = '';
         });
 
-        // Handle selfie file upload
         selfieInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -2875,7 +2887,17 @@
             setSelectedItem(type, refreshed);
         }
 
-        // Handle image upload
+        function setUploadLoading(type, isLoading) {
+            const uploadArea = type === 'preset' ? presetUpload : selfieUpload;
+            if (uploadArea) {
+                if (isLoading) {
+                    uploadArea.classList.add('loading');
+                } else {
+                    uploadArea.classList.remove('loading');
+                }
+            }
+        }
+
         async function handleImageUpload(file, type) {
             const config = galleries[type];
 
@@ -2905,179 +2927,82 @@
                 const extension = sanitizedName.split('.').pop().toLowerCase();
                 const filename = `${type}-${timestamp}-${randomStr}.${extension}`;
 
-                // Get upload URL
-                const uploadUrlResponse = await fetch(`${WORKER_URL}/upload-url`, {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('type', type);
+                formData.append('profile_id', window.profileManager.currentProfile.id);
+
+                if (type === 'preset') {
+                    const enableVisionScan = document.getElementById('preset-enable-vision-scan')?.checked || false;
+                    const enableVertexPrompt = document.getElementById('preset-enable-vertex-prompt')?.checked || false;
+                    const genderRadio = document.querySelector('input[name="preset-gender"]:checked');
+                    const gender = genderRadio?.value || '';
+
+                    formData.append('enableVisionScan', enableVisionScan ? 'true' : 'false');
+                    formData.append('enableVertexPrompt', enableVertexPrompt ? 'true' : 'false');
+                    formData.append('presetName', 'User Upload');
+                    if (gender) {
+                        formData.append('gender', gender);
+                    }
+                } else if (type === 'selfie') {
+                    const genderRadio = document.querySelector('input[name="selfie-gender"]:checked');
+                    const gender = genderRadio?.value || '';
+                    if (gender) {
+                        formData.append('gender', gender);
+                    }
+                }
+
+                // Upload file directly
+                const uploadResponse = await fetch(`${WORKER_URL}/upload-url`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename, type, profile_id: window.profileManager.currentProfile.id })
+                    body: formData
+                    // Note: Don't set Content-Type header - browser will set it automatically with boundary
                 });
 
                 let uploadData = {};
                 let uploadResponseText = '';
                 try {
-                    uploadResponseText = await uploadUrlResponse.text();
+                    uploadResponseText = await uploadResponse.text();
                     if (uploadResponseText) {
                         uploadData = JSON.parse(uploadResponseText);
                     }
                 } catch (parseError) {
-                    console.error('Failed to parse upload URL response:', parseError);
+                    console.error('Failed to parse upload response:', parseError);
                     console.error('Response text:', uploadResponseText);
-                    uploadData = { 
+                    uploadData = {
                         error: 'Failed to parse response',
                         message: uploadResponseText || 'Unknown error'
                     };
                 }
 
-                if (!uploadUrlResponse.ok) {
-                    // Backend errorResponse returns { Success: false, Message: ..., StatusCode: ... }
-                    const errorMsg = uploadData.Message || uploadData.message || uploadData.error || uploadResponseText || `HTTP ${uploadUrlResponse.status} ${uploadUrlResponse.statusText}`;
+                if (!uploadResponse.ok) {
+                    const errorMsg = uploadData.Message || uploadData.message || uploadData.error || uploadResponseText || `HTTP ${uploadResponse.status} ${uploadResponse.statusText}`;
                     logApiCall({
-                        label: `Xin URL Tải Lên (${config.logName})`,
+                        label: `Tải Lên Trực Tiếp (${config.logName})`,
                         method: 'POST',
                         url: '/upload-url',
                         status: 'error',
-                        payload: { ...uploadData, status: uploadUrlResponse.status, statusText: uploadUrlResponse.statusText }
+                        payload: { ...uploadData, status: uploadResponse.status, statusText: uploadResponse.statusText }
                     });
                     throw new Error(errorMsg);
                 }
 
-                // Validate that uploadUrl exists in response
-                if (!uploadData.uploadUrl) {
-                    console.error('Upload URL response missing uploadUrl field:', uploadData);
-                    throw new Error('Response missing uploadUrl field. Server may be misconfigured.');
-                }
-
                 logApiCall({
-                    label: `Xin URL Tải Lên (${config.logName})`,
+                    label: `Tải Lên Trực Tiếp (${config.logName})`,
                     method: 'POST',
                     url: '/upload-url',
                     status: 'success',
                     payload: uploadData
                 });
 
-                if (uploadData.exists) {
-                    const existingImage = {
-                        id: uploadData.id || filename,
-                        filename,
-                        image_url: uploadData.url,
-                        created_at: new Date().toISOString()
-                    };
-                    logApiCall({
-                        label: `Hình Ảnh Đã Tồn Tại (${config.logName})`,
-                        method: 'HEAD',
-                        url: uploadData.url || 'existing',
-                        status: 'info',
-                        payload: existingImage
-                    });
-
-                    addNewItem(type, existingImage);
-                    setSelectedItem(type, existingImage);
-                    showStatusMessage('Hình ảnh đã tồn tại. Sử dụng phiên bản hiện có.', 'info');
-                    return;
-                }
-
-                // Upload new file
-                const headers = { 'Content-Type': file.type };
-
-                // Add options headers for preset uploads
-                if (type === 'preset') {
-                    // Check if Vision scan is enabled
-                    const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
-                    if (visionScanCheckbox && visionScanCheckbox.checked) {
-                        headers['X-Enable-Vision-Scan'] = 'true';
-                    }
-
-                    // Check if Vertex prompt generation is enabled
-                    const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
-                    if (vertexPromptCheckbox && vertexPromptCheckbox.checked) {
-                        headers['X-Enable-Vertex-Prompt'] = 'true';
-                        headers['X-Enable-Gemini-Prompt'] = 'true'; // Keep for backward compatibility
-                    }
-
-                    // Get selected gender for preset
-                    const presetGenderRadios = document.querySelectorAll('input[name="preset-gender"]:checked');
-                    if (presetGenderRadios.length > 0 && presetGenderRadios[0].value && presetGenderRadios[0].value !== '') {
-                        headers['X-Gender'] = presetGenderRadios[0].value;
-                    }
-
-                    headers['X-Preset-Name'] = filename; // Use filename as preset name
-                }
-
-                // Add options headers for selfie uploads
-                if (type === 'selfie') {
-                    // Add profile ID header
-                    headers['X-Profile-Id'] = window.profileManager.currentProfile.id;
-
-                    // Get selected gender for selfie
-                    const selfieGenderRadios = document.querySelectorAll('input[name="selfie-gender"]:checked');
-                    if (selfieGenderRadios.length > 0 && selfieGenderRadios[0].value && selfieGenderRadios[0].value !== '') {
-                        headers['X-Gender'] = selfieGenderRadios[0].value;
-                    }
-                }
-
-                const uploadResponse = await fetch(uploadData.uploadUrl, {
-                    method: 'PUT',
-                    body: file,
-                    headers: headers
-                });
-
-                let uploadResult = {};
-                let errorMessage = 'Tải lên thất bại';
-                
-                // Read response body once
-                const responseText = await uploadResponse.text();
-                try {
-                    uploadResult = JSON.parse(responseText);
-                    // Handle both errorResponse format (Message) and jsonResponse format (message/error)
-                    if (uploadResult.Message) {
-                        errorMessage = uploadResult.Message;
-                    } else if (uploadResult.message) {
-                        errorMessage = uploadResult.message;
-                    } else if (uploadResult.error) {
-                        errorMessage = uploadResult.error;
-                    } else if (uploadResult.warning) {
-                        errorMessage = uploadResult.warning;
-                    }
-                } catch (parseError) {
-                    // Response is not JSON, use text as error message
-                    errorMessage = responseText || `Tải lên thất bại (HTTP ${uploadResponse.status})`;
-                }
-
-                if (!uploadResponse.ok) {
-                    logApiCall({
-                        label: `Tải Lên Hình Ảnh (${config.logName})`,
-                        method: 'PUT',
-                        url: uploadData.uploadUrl,
-                        status: 'error',
-                        payload: uploadResult
-                    });
-                    throw new Error(errorMessage);
-                }
-                
-                // Parse JSON for successful response
-                try {
-                    uploadResult = JSON.parse(responseText);
-                } catch {
-                    uploadResult = {};
-                }
-
-                // Log with Vertex and Vision info if present (for preset uploads)
-                logApiCall({
-                    label: `Tải Lên Hình Ảnh (${config.logName})`,
-                    method: 'PUT',
-                    url: uploadData.uploadUrl,
-                    status: uploadResult.success ? 'success' : 'error',
-                    payload: uploadResult
-                });
-
                 // Add to local state
                 const newImage = {
-                    id: uploadResult.id || filename,
-                    filename: filename,
-                    image_url: uploadResult.url,
+                    id: uploadData.id || filename,
+                    filename: uploadData.filename || filename,
+                    image_url: uploadData.url,
                     created_at: new Date().toISOString(),
-                    hasPrompt: uploadResult.hasPrompt || false,
-                    prompt_json: uploadResult.prompt_json || null
+                    hasPrompt: uploadData.hasPrompt || false,
+                    prompt_json: uploadData.prompt_json || null
                 };
 
                 addNewItem(type, newImage);
@@ -3089,595 +3014,195 @@
                 showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
                 logApiCall({
                     label: `Upload (${config.logName})`,
-                    method: 'UPLOAD',
-                    url: config.endpoints.list,
+                    method: 'POST',
+                    url: '/upload-url',
                     status: 'error',
-                    payload: { message: error?.message || String(error) }
+                    payload: { error: error.message }
                 });
             } finally {
                 setUploadLoading(type, false);
             }
         }
 
-        function setUploadLoading(type, isLoading) {
-            const target = galleries[type]?.elements.upload;
-            if (!target) return;
-            target.classList.toggle('loading', isLoading);
-        }
-
-        // Update generate button state
-        function updateGenerateButton() {
-            const presetSelection = galleries.preset.state.selected;
-            const selfieSelection = galleries.selfie.state.selected;
-            const hasPreset = Boolean(presetSelection);
-            const hasSelfie = Boolean(selfieSelection);
-            const requiresGeminiPrompt = apiProviderSelect?.value === 'google-nano-banana';
-            const hasGeminiPrompt = requiresGeminiPrompt ? Boolean(presetSelection?.hasPrompt) : true;
-            generateBtn.disabled = !(hasPreset && hasSelfie && hasGeminiPrompt);
-        }
-
-        // Generate face swap
-        async function generateFaceSwap() {
-            const presetSelection = galleries.preset.state.selected;
-            const selfieSelection = galleries.selfie.state.selected;
-
-            if (!presetSelection || !selfieSelection) {
-                showStatusMessage('Vui lòng chọn cả hình mẫu và selfie', 'error');
-                return;
-            }
-
-            // Show loading state
-            generateBtn.disabled = true;
-            generateBtn.classList.add('loading');
-            generateBtn.textContent = 'Đang tạo...';
-
-            const loadingOverlay = document.createElement('div');
-            loadingOverlay.className = 'loading-overlay';
-            loadingOverlay.innerHTML = `
-                <div class="loading-content">
-                    <div class="spinner"></div>
-                    <div class="loading-text">Đang xử lý đổi mặt...</div>
-                    <div class="loading-subtext">Quá trình này có thể mất 10-30 giây</div>
-                </div>
-            `;
-            document.body.appendChild(loadingOverlay);
-
-            // Declare mode and startTime outside try block so they're accessible in catch
-                const apiProvider = document.getElementById('api-provider').value;
-            const mode = apiProvider === 'google-nano-banana' ? 'vertex' : 'rapidapi';
-            const startTime = Date.now(); // Track start time for duration calculation
-
+        // Utility functions
+        async function safeJson(response) {
+            const text = await response.text();
             try {
-                if (mode === 'vertex' && !presetSelection.hasPrompt) {
-                    throw new Error('Mẫu chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) sau khi bật Gemini.');
-                }
-
-                // Check if profile is selected
-                if (!window.profileManager.currentProfile) {
-                    throw new Error('Vui lòng chọn hồ sơ trước khi tạo đổi mặt.');
-                }
-
-                const payload = {
-                    target_url: presetSelection.image_url,
-                    source_url: selfieSelection.image_url,
-                    mode,
-                    api_provider: apiProvider,
-                    preset_image_id: presetSelection.id,
-                    profile_id: window.profileManager.currentProfile.id,
-                };
-
-                if (presetSelection.collection_name) {
-                    payload.preset_name = presetSelection.collection_name;
-                } else if (presetSelection.filename) {
-                    payload.preset_name = presetSelection.filename;
-                }
-
-                if (selfieSelection.id) {
-                    payload.selfie_id = selfieSelection.id;
-                }
-
-                if (mode === 'vertex') {
-                    if (additionalPromptInput) {
-                        const extraPrompt = additionalPromptInput.value.trim();
-                        if (extraPrompt) {
-                            payload.additional_prompt = extraPrompt;
-                        }
-                    }
-                    const selectedGender = getSelectedGender();
-                    if (selectedGender && selectedGender !== 'none') {
-                        payload.character_gender = selectedGender;
-                    }
-                }
-
-                const response = await fetch(`${WORKER_URL}/faceswap`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const endTime = Date.now();
-                const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
-
-                let responseBodyText = '';
-                let responseData = {};
-                let parseFailureMessage = '';
-
-                try {
-                    responseBodyText = await response.text();
-                    responseData = responseBodyText ? JSON.parse(responseBodyText) : {};
-                } catch (parseError) {
-                    parseFailureMessage = `Không phân tích được phản hồi: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
-                    responseData = {};
-                }
-
-                const resultUrl = responseData?.data?.resultImageUrl || null;
-                const isSuccessful = response.ok && responseData?.status === 'success' && !!resultUrl;
-
-                if (!isSuccessful) {
-                    let errorMessage = responseData?.message || parseFailureMessage || `HTTP ${response.status} ${response.statusText}`;
-                    const statusCode = responseData?.code || response.status;
-                    if (responseData?.code && !errorMessage.includes(responseData.code)) {
-                        errorMessage = `${errorMessage} (Mã ${responseData.code})`;
-                    }
-                    const error = new Error(errorMessage);
-                    error.responseData = responseData;
-                    error.statusCode = statusCode;
-                    error.rawResponse = responseBodyText;
-                    throw error;
-                }
-
-                if (!resultUrl) {
-                    throw new Error('Không nhận được hình ảnh kết quả. Vui lòng kiểm tra log để xem chi tiết.');
-                }
-
-                resultDisplay.innerHTML = `<img src="${resultUrl}" alt="Kết quả đổi mặt" class="result-image">`;
-
-                if (galleries.results) {
-                    await loadGallery('results');
-                }
-
-                showStatusMessage(responseData.message || 'Đã hoàn thành đổi mặt thành công', 'success');
-                logApiCall({
-                    label: `FaceSwap (${mode})`,
-                    method: 'POST',
-                    url: `${WORKER_URL}/faceswap`,
-                    status: 'success',
-                    payload: responseData,
-                    duration: `${durationSeconds}s`
-                });
-
+                return JSON.parse(text);
             } catch (error) {
-                console.error('Lỗi đổi mặt:', error);
-                
-                // Build detailed error message for UI
-                let errorMessage = error?.message || String(error);
-                const errorData = error?.responseData;
-                const statusCode = error?.statusCode;
-                const rawResponse = error?.rawResponse;
-                
-                // Show detailed error in status message
-                showStatusMessage(`Đổi mặt thất bại: ${errorMessage}`, 'error');
-                
-                // Calculate duration even for errors
-                const errorEndTime = Date.now();
-                const errorDuration = `${((errorEndTime - startTime) / 1000).toFixed(1)}s`;
-
-                // Log detailed error to API log panel
-                logApiCall({
-                    label: `FaceSwap (${mode || 'unknown'})`,
-                    method: 'POST',
-                    url: `${WORKER_URL}/faceswap`,
-                    status: 'error',
-                    statusCode: statusCode || 500,
-                    payload: {
-                        message: errorMessage,
-                        error: errorData || error,
-                        rawResponse: rawResponse || null,
-                        fullError: error
-                    },
-                    duration: errorDuration
-                });
-            } finally {
-                // Hide loading state
-                generateBtn.disabled = false;
-                generateBtn.classList.remove('loading');
-                generateBtn.textContent = 'Tạo Đổi Mặt';
-                document.body.removeChild(loadingOverlay);
+                console.error('JSON parse error:', error);
+                console.error('Response text:', text);
+                throw new Error('Invalid JSON response from server');
             }
         }
 
-        // Toast notification system
-        window.toast = {
-            show(message, type = 'info', duration = 4000) {
-                const container = document.getElementById('toast-container');
-                if (!container) {
-                    console.warn('Toast container not found');
-                    return;
+        function showStatusMessage(message, type = 'info') {
+            const existingMessages = document.querySelectorAll('.status-message');
+            existingMessages.forEach(msg => msg.remove());
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `status-message status-${type}`;
+            messageDiv.textContent = message;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'status-close';
+            closeBtn.innerHTML = '×';
+            closeBtn.onclick = () => messageDiv.remove();
+            messageDiv.appendChild(closeBtn);
+
+            document.body.appendChild(messageDiv);
+
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.remove();
                 }
-
-                const toast = document.createElement('div');
-                toast.className = `toast toast-${type}`;
-                
-                const icons = {
-                    success: '✅',
-                    error: '❌',
-                    warning: '⚠️',
-                    info: 'ℹ️'
-                };
-
-                const titles = {
-                    success: 'Thành công',
-                    error: 'Lỗi',
-                    warning: 'Cảnh báo',
-                    info: 'Thông tin'
-                };
-
-                // Split message into title and content if it contains newlines
-                const parts = message.split('\n');
-                const title = parts.length > 1 ? parts[0] : titles[type];
-                const content = parts.length > 1 ? parts.slice(1).join('\n') : message;
-
-                toast.innerHTML = `
-                    <div class="toast-icon">${icons[type] || icons.info}</div>
-                    <div class="toast-content">
-                        <div class="toast-title">${this.escapeHtml(title)}</div>
-                        ${content ? `<div class="toast-message">${this.escapeHtml(content)}</div>` : ''}
-                    </div>
-                    <button class="toast-close" onclick="window.toast.remove(this.closest('.toast'))">&times;</button>
-                `;
-
-                container.appendChild(toast);
-
-                // Auto remove after duration
-                if (duration > 0) {
-                    setTimeout(() => {
-                        this.remove(toast);
-                    }, duration);
-                }
-
-                return toast;
-            },
-
-            remove(toast) {
-                if (toast && toast.parentNode) {
-                    toast.classList.add('toast-exiting');
-                    setTimeout(() => {
-                        if (toast.parentNode) {
-                            toast.remove();
-                        }
-                    }, 300);
-                }
-            },
-
-            success(message, duration = 3000) {
-                return this.show(message, 'success', duration);
-            },
-
-            error(message, duration = 5000) {
-                return this.show(message, 'error', duration);
-            },
-
-            warning(message, duration = 4000) {
-                return this.show(message, 'warning', duration);
-            },
-
-            info(message, duration = 3000) {
-                return this.show(message, 'info', duration);
-            },
-
-            escapeHtml(text) {
-                if (text === null || text === undefined) return '';
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
-        };
-
-        // Show status message (now using toast)
-        function showStatusMessage(message, type) {
-            const toastType = type === 'success' ? 'success' : type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'info';
-            window.toast[toastType](message);
+            }, 5000);
         }
 
-        // Handle drag and drop
-        function setupDragAndDrop(element, type) {
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                element.addEventListener(eventName, preventDefaults, false);
-            });
-
-            function preventDefaults(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-
-            ['dragenter', 'dragover'].forEach(eventName => {
-                element.addEventListener(eventName, () => {
-                    element.classList.add('dragover');
-                }, false);
-            });
-
-            ['dragleave', 'drop'].forEach(eventName => {
-                element.addEventListener(eventName, () => {
-                    element.classList.remove('dragover');
-                }, false);
-            });
-
-            element.addEventListener('drop', (e) => {
-                const dt = e.dataTransfer;
-                const files = dt.files;
-                if (files.length > 0) {
-                    handleImageUpload(files[0], type);
-                }
-            }, false);
-
-            element.addEventListener('click', (e) => {
-                // Don't prevent default on click - let the file dialog open
-                e.stopPropagation();
-                if (type === 'preset') {
-                    if (presetInput) {
-                        presetInput.click();
-                    } else {
-                        console.error('presetInput not found');
-                    }
-                } else {
-                    if (selfieInput) {
-                        selfieInput.click();
-                    } else {
-                        console.error('selfieInput not found');
-                    }
-                }
-            });
-        }
-
-        // Setup drag and drop for upload areas
-        if (presetUpload && presetInput) {
-            setupDragAndDrop(presetUpload, 'preset');
-        } else {
-            console.error('presetUpload or presetInput not found');
-        }
-        
-        if (selfieUpload && selfieInput) {
-            setupDragAndDrop(selfieUpload, 'selfie');
-        } else {
-            console.error('selfieUpload or selfieInput not found');
-        }
-
-        if (apiProviderSelect) {
-            apiProviderSelect.addEventListener('change', () => {
-                updateGenerateButton();
-                syncPromptControls();
-                const currentPreset = galleries.preset.state.selected;
-                if (apiProviderSelect.value === 'google-nano-banana' && currentPreset && !currentPreset.hasPrompt) {
-                    showStatusMessage('Mẫu hiện tại chưa có prompt Gemini. Vui lòng tải lại hình mẫu (Nhấp để tải lên hình mẫu) để tạo prompt tự động.', 'info');
-                }
-            });
-        }
-
-        // Lightbox functionality
-        let currentLightboxIndex = 0;
-        let allResults = [];
+        let lightboxCurrentIndex = -1;
+        let lightboxItems = [];
 
         function openLightbox(index) {
-            const config = galleries.results;
-            if (!config || !config.state.items.length) return;
+            const resultsConfig = galleries.results;
+            const allItems = resultsConfig.state.items;
+            if (index < 0 || index >= allItems.length) return;
 
-            allResults = config.state.items;
-            currentLightboxIndex = Math.max(0, Math.min(index, allResults.length - 1));
-            
-            const lightbox = document.getElementById('lightbox');
-            const lightboxImage = document.getElementById('lightbox-image');
-            const lightboxCounter = document.getElementById('lightbox-counter');
-            
-            if (lightbox && lightboxImage && allResults[currentLightboxIndex]) {
-                lightboxImage.src = allResults[currentLightboxIndex].result_url;
-                lightboxImage.alt = allResults[currentLightboxIndex].preset_name || '';
-                lightboxCounter.textContent = `${currentLightboxIndex + 1} / ${allResults.length}`;
-                lightbox.style.display = 'flex';
-                document.body.style.overflow = 'hidden';
-                
-                updateLightboxNav();
-            }
+            lightboxItems = allItems;
+            lightboxCurrentIndex = index;
+            updateLightbox();
         }
 
         function closeLightbox() {
             const lightbox = document.getElementById('lightbox');
             if (lightbox) {
                 lightbox.style.display = 'none';
-                document.body.style.overflow = '';
             }
+            lightboxCurrentIndex = -1;
+            lightboxItems = [];
         }
 
-        function lightboxNavigate(direction) {
-            if (allResults.length === 0) return;
-            
-            currentLightboxIndex += direction;
-            if (currentLightboxIndex < 0) {
-                currentLightboxIndex = allResults.length - 1;
-            } else if (currentLightboxIndex >= allResults.length) {
-                currentLightboxIndex = 0;
-            }
-            
+        function lightboxNavigate(delta) {
+            if (lightboxItems.length === 0) return;
+            lightboxCurrentIndex = (lightboxCurrentIndex + delta + lightboxItems.length) % lightboxItems.length;
+            updateLightbox();
+        }
+
+        function updateLightbox() {
+            const lightbox = document.getElementById('lightbox');
             const lightboxImage = document.getElementById('lightbox-image');
             const lightboxCounter = document.getElementById('lightbox-counter');
-            
-            if (lightboxImage && allResults[currentLightboxIndex]) {
-                lightboxImage.src = allResults[currentLightboxIndex].result_url;
-                lightboxImage.alt = allResults[currentLightboxIndex].preset_name || '';
-                lightboxCounter.textContent = `${currentLightboxIndex + 1} / ${allResults.length}`;
-                updateLightboxNav();
+            const prevBtn = document.querySelector('.lightbox-prev');
+            const nextBtn = document.querySelector('.lightbox-next');
+
+            if (!lightbox || !lightboxImage || lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) {
+                return;
             }
+
+            const item = lightboxItems[lightboxCurrentIndex];
+            lightboxImage.src = item.result_url || item.image_url || '';
+            lightboxImage.alt = item.preset_name || item.filename || '';
+
+            if (lightboxCounter) {
+                lightboxCounter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
+            }
+
+            if (prevBtn) {
+                prevBtn.disabled = lightboxItems.length <= 1;
+            }
+            if (nextBtn) {
+                nextBtn.disabled = lightboxItems.length <= 1;
+            }
+
+            lightbox.style.display = 'flex';
         }
 
-        function updateLightboxNav() {
-            // Navigation buttons are always enabled (circular navigation)
-        }
+        async function generateFaceSwap() {
+            if (!generateBtn) return;
 
-        // Keyboard navigation for lightbox
-        document.addEventListener('keydown', (e) => {
-            const lightbox = document.getElementById('lightbox');
-            if (lightbox && lightbox.style.display !== 'none') {
-                if (e.key === 'Escape') {
-                    closeLightbox();
-                } else if (e.key === 'ArrowLeft') {
-                    lightboxNavigate(-1);
-                } else if (e.key === 'ArrowRight') {
-                    lightboxNavigate(1);
-                }
+            const presetSelected = galleries.preset.state.selected;
+            const selfieSelected = galleries.selfie.state.selected;
+
+            if (!presetSelected || !selfieSelected) {
+                showStatusMessage('Vui lòng chọn cả mẫu và selfie trước khi tạo đổi mặt.', 'error');
+                return;
             }
-        });
 
-        // Initialize the app
-        init();
+            if (!window.profileManager?.currentProfile) {
+                showStatusMessage('Vui lòng chọn hồ sơ trước khi tạo đổi mặt.', 'error');
+                return;
+            }
 
-        async function safeJson(response) {
+            generateBtn.disabled = true;
+            generateBtn.classList.add('loading');
+
+            const additionalPrompt = additionalPromptInput?.value.trim() || '';
+            const characterGenderRadio = document.querySelector('input[name="character-gender"]:checked');
+            const characterGender = characterGenderRadio?.value === 'none' ? '' : (characterGenderRadio?.value || '');
+
             try {
-                return await response.json();
-            } catch {
-                return {};
+                const requestBody = {
+                    preset_image_id: presetSelected.id,
+                    selfie_ids: [selfieSelected.id],
+                    profile_id: window.profileManager.currentProfile.id,
+                    additional_prompt: additionalPrompt,
+                    character_gender: characterGender || undefined
+                };
+
+                const startTime = Date.now();
+                const response = await fetch(`${WORKER_URL}/faceswap`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const duration = Date.now() - startTime;
+                const data = await safeJson(response);
+
+                if (!response.ok) {
+                    logApiCall({
+                        label: 'Tạo Đổi Mặt',
+                        method: 'POST',
+                        url: '/faceswap',
+                        status: 'error',
+                        payload: data,
+                        duration
+                    });
+                    throw new Error(data.message || data.Message || `HTTP ${response.status}`);
+                }
+
+                logApiCall({
+                    label: 'Tạo Đổi Mặt',
+                    method: 'POST',
+                    url: '/faceswap',
+                    status: 'success',
+                    payload: data,
+                    duration
+                });
+
+                if (data.data?.resultImageUrl) {
+                    const newResult = {
+                        id: data.data.id || `result-${Date.now()}`,
+                        result_url: data.data.resultImageUrl,
+                        preset_name: presetSelected.preset_name || presetSelected.filename,
+                        created_at: new Date().toISOString()
+                    };
+
+                    addNewItem('results', newResult);
+                    await loadGallery('results');
+                    showStatusMessage('Tạo đổi mặt thành công!', 'success');
+                } else {
+                    throw new Error('Không nhận được URL kết quả từ server');
+                }
+            } catch (error) {
+                console.error('Lỗi tạo đổi mặt:', error);
+                showStatusMessage(`Tạo đổi mặt thất bại: ${error.message}`, 'error');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.classList.remove('loading');
+                updateGenerateButton();
             }
         }
-
-        // Vertex API functions
-        window.vertexAPI = {
-            /**
-             * Get prompt for a preset image from Vertex API
-             * @param {string} presetImageId - The ID of the preset image
-             * @returns {Promise<{success: boolean, presetImage?: object, error?: string}>}
-             */
-            async getPrompt(presetImageId) {
-                try {
-                    const response = await fetch(`${WORKER_URL}/vertex/get-prompt/${presetImageId}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-
-                    const data = await safeJson(response);
-
-                    if (!response.ok) {
-                        logApiCall({
-                            label: 'Vertex API: Get Prompt',
-                            method: 'GET',
-                            url: `/vertex/get-prompt/${presetImageId}`,
-                            status: 'error',
-                            payload: data
-                        });
-                        return {
-                            success: false,
-                            error: data.message || `HTTP ${response.status}: ${response.statusText}`
-                        };
-                    }
-
-                    logApiCall({
-                        label: 'Vertex API: Get Prompt',
-                        method: 'GET',
-                        url: `/vertex/get-prompt/${presetImageId}`,
-                        status: 'success',
-                        payload: data
-                    });
-
-                    return {
-                        success: true,
-                        presetImage: data.presetImage
-                    };
-                } catch (error) {
-                    console.error('[Vertex API] Get prompt error:', error);
-                    logApiCall({
-                        label: 'Vertex API: Get Prompt',
-                        method: 'GET',
-                        url: `/vertex/get-prompt/${presetImageId}`,
-                        status: 'error',
-                        payload: { message: error?.message || String(error) }
-                    });
-                    return {
-                        success: false,
-                        error: error?.message || String(error)
-                    };
-                }
-            },
-
-            /**
-             * Test Vertex AI API connectivity
-             * @returns {Promise<{success: boolean, message?: string, status?: number, models?: string[], error?: string}>}
-             */
-            async testConnection() {
-                try {
-                    const response = await fetch(`${WORKER_URL}/test-vertex`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-
-                    const data = await safeJson(response);
-
-                    logApiCall({
-                        label: 'Vertex API: Test Connection',
-                        method: 'GET',
-                        url: '/test-vertex',
-                        status: response.ok ? 'success' : 'error',
-                        payload: data
-                    });
-
-                    return {
-                        success: response.ok,
-                        message: data.message,
-                        status: data.status,
-                        ok: data.ok,
-                        models: data.models || [],
-                        error: data.error || null
-                    };
-                } catch (error) {
-                    console.error('[Vertex API] Test connection error:', error);
-                    logApiCall({
-                        label: 'Vertex API: Test Connection',
-                        method: 'GET',
-                        url: '/test-vertex',
-                        status: 'error',
-                        payload: { message: error?.message || String(error) }
-                    });
-                    return {
-                        success: false,
-                        error: error?.message || String(error)
-                    };
-                }
-            },
-
-            /**
-             * Refresh prompt for a preset image (re-generate using Vertex AI)
-             * This will trigger a re-upload which automatically generates a new prompt
-             * @param {string} presetImageId - The ID of the preset image
-             * @param {string} imageUrl - The URL of the preset image
-             * @returns {Promise<{success: boolean, prompt?: object, error?: string}>}
-             */
-            async refreshPrompt(presetImageId, imageUrl) {
-                try {
-                    // Note: This would require a new endpoint or we can use the existing upload flow
-                    // For now, we'll just fetch the current prompt
-                    const result = await this.getPrompt(presetImageId);
-                    if (result.success && result.presetImage) {
-                        showStatusMessage('Prompt đã được tải thành công', 'success');
-                        return result;
-                    } else {
-                        showStatusMessage('Không tìm thấy prompt. Vui lòng tải lại hình mẫu để tạo prompt mới.', 'warning');
-                        return result;
-                    }
-                } catch (error) {
-                    console.error('[Vertex API] Refresh prompt error:', error);
-                    showStatusMessage(`Lỗi làm mới prompt: ${error?.message}`, 'error');
-                    return {
-                        success: false,
-                        error: error?.message || String(error)
-                    };
-                }
-            }
-        };
-
-
-        // Add button to test Vertex API connection (for debugging)
-        // You can call window.vertexAPI.testConnection() from browser console
-        console.log('Vertex API functions available at window.vertexAPI:');
-        console.log('  - getPrompt(presetImageId): Get prompt for a preset');
-        console.log('  - testConnection(): Test Vertex AI API connectivity');
-        console.log('  - refreshPrompt(presetImageId, imageUrl): Refresh prompt for a preset');
     </script>
-
-</body>
-</html>
+</body></html>

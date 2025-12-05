@@ -2,7 +2,7 @@ import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } fr
 import { isUnsafe, getWorstViolation, getAccessToken } from './utils';
 
 const getR2Bucket = (env: Env): R2Bucket => {
-  const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || 'faceswap-images';
+  const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || '';
   const bucket = (env as any)[bindingName] as R2Bucket;
   if (!bucket) {
     throw new Error(`R2 bucket binding '${bindingName}' not found in environment`);

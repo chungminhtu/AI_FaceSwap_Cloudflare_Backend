@@ -25,8 +25,11 @@ export const validateRequest = (body: any): string | null => {
   if (!body?.preset_image_id) {
     return 'Missing required field: preset_image_id';
   }
-  if (!body?.selfie_id) {
-    return 'Missing required field: selfie_id';
+  if (!Array.isArray(body?.selfie_ids) || body.selfie_ids.length === 0) {
+    return 'Missing required field: selfie_ids (must be a non-empty array)';
+  }
+  if (!body?.profile_id) {
+    return 'Missing required field: profile_id';
   }
   return null;
 };

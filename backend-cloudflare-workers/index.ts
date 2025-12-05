@@ -5,7 +5,7 @@ import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
 import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
 
-const DEFAULT_R2_BUCKET_NAME = 'faceswap-images';
+const DEFAULT_R2_BUCKET_NAME = '';
 
 const globalScopeWithAccount = globalThis as typeof globalThis & {
   ACCOUNT_ID?: string;
@@ -51,13 +51,42 @@ const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2
 
 const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
   if (env.CUSTOM_DOMAIN) {
-    const bucketName = resolveBucketName(env);
-    return `${trimTrailingSlash(env.CUSTOM_DOMAIN)}/${bucketName}/${key}`;
+    return `${trimTrailingSlash(env.CUSTOM_DOMAIN)}/${key}`;
   }
   if (fallbackOrigin) {
-    return `${trimTrailingSlash(fallbackOrigin)}/r2/${key}`;
+    const bucketName = resolveBucketName(env);
+    return `${trimTrailingSlash(fallbackOrigin)}/r2/${bucketName}/${key}`;
   }
   throw new Error('Unable to determine R2 public URL. Configure CUSTOM_DOMAIN environment variable.');
+};
+
+const convertLegacyUrl = (url: string, env: Env): string => {
+  if (!url) return url;
+
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(p => p);
+    
+    if (urlObj.pathname.startsWith('/r2/')) {
+      if (pathParts.length >= 3 && pathParts[0] === 'r2') {
+        const bucket = pathParts[1];
+        const key = pathParts.slice(2).join('/');
+        return getR2PublicUrl(env, key, urlObj.origin);
+      }
+    }
+    
+    if (env.CUSTOM_DOMAIN && urlObj.hostname === new URL(env.CUSTOM_DOMAIN).hostname) {
+      const bucketName = resolveBucketName(env);
+      if (pathParts.length >= 2 && pathParts[0] === bucketName) {
+        const key = pathParts.slice(1).join('/');
+        return getR2PublicUrl(env, key, urlObj.origin);
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to parse URL for conversion:', url);
+  }
+
+  return url;
 };
 
 const compact = <T extends Record<string, any>>(input: T): Record<string, any> => {
@@ -223,8 +252,8 @@ export default {
     if (path === '/upload-url' && request.method === 'POST') {
       try {
         const contentType = request.headers.get('Content-Type') || '';
-        if (!contentType.includes('multipart/form-data')) {
-          return errorResponse('Content-Type must be multipart/form-data', 400);
+        if (!contentType.toLowerCase().includes('multipart/form-data')) {
+          return errorResponse(`Content-Type must be multipart/form-data. Received: ${contentType}`, 400);
         }
 
         const formData = await request.formData();
@@ -725,7 +754,7 @@ export default {
         // Flatten to match frontend expectations
         const presets = imagesResult.results.map((row: any) => ({
           id: row.id || '',
-          image_url: row.image_url || '',
+          image_url: convertLegacyUrl(row.image_url || '', env),
           filename: row.filename || row.image_url?.split('/').pop() || `preset_${row.id}.jpg`,
           preset_name: row.preset_name || null,
           hasPrompt: row.prompt_json ? true : false,
@@ -902,7 +931,7 @@ export default {
 
         const selfies = result.results.map((row: any) => ({
           id: row.id || '',
-          image_url: row.image_url || '',
+          image_url: convertLegacyUrl(row.image_url || '', env),
           filename: row.filename || '',
           gender: row.gender || null,
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
@@ -1069,7 +1098,7 @@ export default {
           selfie_id: row.selfie_id || '',
           preset_id: row.preset_id || '',
           preset_name: row.preset_name || 'Unnamed',
-          result_url: row.result_url || '',
+          result_url: convertLegacyUrl(row.result_url || '', env),
           profile_id: row.profile_id || '',
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
@@ -1185,11 +1214,6 @@ export default {
 
         const requestError = validateRequest(body);
         if (requestError) return errorResponse(requestError, 400);
-
-        // Validate profile_id is provided and exists
-        if (!body.profile_id) {
-          return errorResponse('profile_id is required', 400);
-        }
 
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
@@ -1469,10 +1493,10 @@ export default {
           lookupError: null,
         };
 
+        let savedResultId: string | null = null;
         if (body.preset_image_id) {
           databaseDebug.attempted = true;
           try {
-            // Use the first selfie ID for database record
             let selfieId = selfieIds[0];
 
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -1481,6 +1505,7 @@ export default {
             ).bind(resultId, selfieId || null, body.preset_image_id, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
             databaseDebug.success = true;
             databaseDebug.resultId = resultId;
+            savedResultId = resultId;
             databaseDebug.error = null;
           } catch (dbError) {
             console.warn('Database save error (non-fatal):', dbError);
@@ -1504,6 +1529,7 @@ export default {
 
         return jsonResponse({
           data: {
+            id: savedResultId,
             resultImageUrl: resultUrl,
           },
           status: 'success',
