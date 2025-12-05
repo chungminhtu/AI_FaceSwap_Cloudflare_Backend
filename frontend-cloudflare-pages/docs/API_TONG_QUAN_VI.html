@@ -1,0 +1,502 @@
+<!DOCTYPE html><html><head>
+      <title>API_TONG_QUAN_VI</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:////Users/minhtu/.cursor/extensions/shd101wyy.markdown-preview-enhanced-0.8.20-universal/crossnote/dependencies/katex/katex.min.css">
+      
+      
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <!-- The content below will be included at the end of the <head> element. --><script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script></head><body for="html-export">
+    
+    
+      <div class="crossnote markdown-preview  ">
+      
+<h1 id="tổng-quan-api-face-swap-ai">Tổng quan API Face Swap AI </h1>
+<p>Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp. Base URL: <code>https://api.d.shotpix.app</code></p>
+<h2 id="1-post-faceswap">1. POST <code>/faceswap</code> </h2>
+<h3 id="mục-đích">Mục đích </h3>
+<p>Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).</p>
+<h3 id="nội-dung-yêu-cầu">Nội dung yêu cầu </h3>
+<ul>
+<li><code>preset_image_id</code> (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu.</li>
+<li><code>selfie_ids</code> (array of strings, bắt buộc): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung. Thông tin gender (male/female) của mỗi selfie được lưu trong database.</li>
+<li><code>profile_id</code> (string, bắt buộc): ID profile người dùng.</li>
+<li><code>additional_prompt</code> (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường <code>prompt</code> bằng ký tự <code>+</code>.</li>
+<li><code>character_gender</code> (string, tùy chọn): <code>male</code>, <code>female</code> hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối <code>prompt</code>.</li>
+</ul>
+<h3 id="phản-hồi-thành-công">Phản hồi thành công </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"data"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"resultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"success"</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Processing successful"</span><span class="token punctuation">,</span>
+  <span class="token property">"code"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"request"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"targetUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/preset/example.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"sourceUrls"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+        <span class="token string">"https://resources.d.shotpix.app/faceswap-images/selfie/selfie_001.jpg"</span><span class="token punctuation">,</span>
+        <span class="token string">"https://resources.d.shotpix.app/faceswap-images/selfie/selfie_002.jpg"</span>
+      <span class="token punctuation">]</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"provider"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"statusCode"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Processing successful"</span><span class="token punctuation">,</span>
+      <span class="token property">"finalResultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+        <span class="token property">"endpoint"</span><span class="token operator">:</span> <span class="token string">"https://..."</span><span class="token punctuation">,</span>
+        <span class="token property">"status"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+        <span class="token property">"durationMs"</span><span class="token operator">:</span> <span class="token number">843</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"vertex"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"prompt"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+        <span class="token property">"endpoint"</span><span class="token operator">:</span> <span class="token string">"https://.../generateContent"</span><span class="token punctuation">,</span>
+        <span class="token property">"status"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+        <span class="token property">"durationMs"</span><span class="token operator">:</span> <span class="token number">5180</span><span class="token punctuation">,</span>
+        <span class="token property">"requestPayload"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+          <span class="token property">"promptLength"</span><span class="token operator">:</span> <span class="token number">746</span><span class="token punctuation">,</span>
+          <span class="token property">"imageBytes"</span><span class="token operator">:</span> <span class="token number">921344</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"vision"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"checked"</span><span class="token operator">:</span> <span class="token boolean">false</span><span class="token punctuation">,</span>
+      <span class="token property">"isSafe"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"error"</span><span class="token operator">:</span> <span class="token string">"Safety check skipped for Vertex AI mode"</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"storage"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"attemptedDownload"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"downloadStatus"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"savedToR2"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"r2Key"</span><span class="token operator">:</span> <span class="token string">"results/result_123.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"publicUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"database"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"attempted"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"resultId"</span><span class="token operator">:</span> <span class="token string">"result_..."</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="phản-hồi-lỗi">Phản hồi lỗi </h3>
+<ul>
+<li>Lỗi kiểm duyệt (Google Vision) trả về HTTP 422:</li>
+</ul>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"data"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"error"</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Content blocked: Image contains adult content (VERY_LIKELY)"</span><span class="token punctuation">,</span>
+  <span class="token property">"code"</span><span class="token operator">:</span> <span class="token number">422</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"provider"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"vision"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"checked"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"isSafe"</span><span class="token operator">:</span> <span class="token boolean">false</span><span class="token punctuation">,</span>
+      <span class="token property">"violationCategory"</span><span class="token operator">:</span> <span class="token string">"adult"</span><span class="token punctuation">,</span>
+      <span class="token property">"violationLevel"</span><span class="token operator">:</span> <span class="token string">"VERY_LIKELY"</span><span class="token punctuation">,</span>
+      <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+        <span class="token property">"endpoint"</span><span class="token operator">:</span> <span class="token string">"https://vision.googleapis.com/v1/images:annotate"</span><span class="token punctuation">,</span>
+        <span class="token property">"status"</span><span class="token operator">:</span> <span class="token number">200</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><ul>
+<li>Các lỗi khác (RapidAPI, Vertex, lưu trữ...) trả về HTTP tương ứng với thông tin chi tiết trong <code>debug.provider.debug</code> hoặc <code>debug.vertex.debug</code>.</li>
+</ul>
+<h2 id="2-post-enhance">2. POST <code>/enhance</code> </h2>
+<h3 id="mục-đích-1">Mục đích </h3>
+<p>AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.</p>
+<h3 id="nội-dung-yêu-cầu-1">Nội dung yêu cầu </h3>
+<ul>
+<li><code>image_url</code> (string, bắt buộc): URL ảnh cần enhance.</li>
+</ul>
+<h3 id="phản-hồi-thành-công-1">Phản hồi thành công </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"data"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"resultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/enhance_123.jpg"</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"success"</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Image enhancement completed"</span><span class="token punctuation">,</span>
+  <span class="token property">"code"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"provider"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"statusCode"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Enhancement completed"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="3-post-colorize">3. POST <code>/colorize</code> </h2>
+<h3 id="mục-đích-2">Mục đích </h3>
+<p>AI chuyển đổi ảnh đen trắng thành ảnh màu.</p>
+<h3 id="nội-dung-yêu-cầu-2">Nội dung yêu cầu </h3>
+<ul>
+<li><code>image_url</code> (string, bắt buộc): URL ảnh đen trắng cần chuyển thành màu.</li>
+</ul>
+<h3 id="phản-hồi-thành-công-2">Phản hồi thành công </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"data"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"resultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/colorize_123.jpg"</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"success"</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Colorization completed"</span><span class="token punctuation">,</span>
+  <span class="token property">"code"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"provider"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"statusCode"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Colorization completed"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="4-post-aging">4. POST <code>/aging</code> </h2>
+<h3 id="mục-đích-3">Mục đích </h3>
+<p>AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.</p>
+<h3 id="nội-dung-yêu-cầu-3">Nội dung yêu cầu </h3>
+<ul>
+<li><code>image_url</code> (string, bắt buộc): URL ảnh chứa khuôn mặt cần lão hóa.</li>
+<li><code>age_years</code> (number, tùy chọn): Số năm muốn lão hóa (mặc định: 20).</li>
+</ul>
+<h3 id="phản-hồi-thành-công-3">Phản hồi thành công </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"data"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"resultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/aging_123.jpg"</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"success"</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Aging transformation completed"</span><span class="token punctuation">,</span>
+  <span class="token property">"code"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"provider"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"statusCode"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Aging completed"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="5-post-upscaler4k">5. POST <code>/upscaler4k</code> </h2>
+<h3 id="mục-đích-4">Mục đích </h3>
+<p>Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.</p>
+<h3 id="nội-dung-yêu-cầu-4">Nội dung yêu cầu </h3>
+<ul>
+<li><code>image_url</code> (string, bắt buộc): URL ảnh cần upscale.</li>
+</ul>
+<h3 id="phản-hồi-thành-công-4">Phản hồi thành công </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"data"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"resultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"success"</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Upscaling completed"</span><span class="token punctuation">,</span>
+  <span class="token property">"code"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"provider"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"statusCode"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Upscaler4K image upscaling completed"</span><span class="token punctuation">,</span>
+      <span class="token property">"finalResultImageUrl"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"vertex"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+        <span class="token property">"endpoint"</span><span class="token operator">:</span> <span class="token string">"https://api.wavespeed.ai/api/v3/wavespeed-ai/ultimate-image-upscaler"</span><span class="token punctuation">,</span>
+        <span class="token property">"status"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+        <span class="token property">"durationMs"</span><span class="token operator">:</span> <span class="token number">5000</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"inputSafety"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"checked"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"isSafe"</span><span class="token operator">:</span> <span class="token boolean">true</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"outputSafety"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"checked"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"isSafe"</span><span class="token operator">:</span> <span class="token boolean">true</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="phản-hồi-lỗi-1">Phản hồi lỗi </h3>
+<p>Trả về HTTP 400 nếu ảnh input hoặc output không pass safety check, hoặc HTTP 500 nếu có lỗi từ WaveSpeed API.</p>
+<h2 id="6-post-upload-url">6. POST <code>/upload-url</code> </h2>
+<h3 id="mục-đích-5">Mục đích </h3>
+<p>Tải ảnh trực tiếp lên server và lưu vào cơ sở dữ liệu với xử lý tự động (Vision scan, Vertex prompt generation).</p>
+<h3 id="nội-dung-yêu-cầu-multipartform-data">Nội dung yêu cầu (multipart/form-data) </h3>
+<ul>
+<li><code>file</code> (file, bắt buộc): file ảnh cần upload.</li>
+<li><code>type</code> (string, bắt buộc): <code>preset</code> hoặc <code>selfie</code>.</li>
+<li><code>profile_id</code> (string, bắt buộc): ID profile người dùng.</li>
+<li><code>presetName</code> (string, tùy chọn): tên bộ sưu tập preset.</li>
+<li><code>enableVertexPrompt</code> (string, tùy chọn): <code>"true"</code> để bật tạo prompt Vertex khi upload preset.</li>
+<li><code>enableVisionScan</code> (string, tùy chọn): <code>"true"</code> để bật Vision API safety scan.</li>
+<li><code>gender</code> (string, tùy chọn): <code>"male"</code> hoặc <code>"female"</code>.</li>
+</ul>
+<h3 id="phản-hồi-thành-công-preset">Phản hồi thành công (preset) </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"url"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/preset/example.jpg"</span><span class="token punctuation">,</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"image_..."</span><span class="token punctuation">,</span>
+  <span class="token property">"filename"</span><span class="token operator">:</span> <span class="token string">"example.jpg"</span><span class="token punctuation">,</span>
+  <span class="token property">"hasPrompt"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"prompt_json"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"vertex_info"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"promptKeys"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"prompt"</span><span class="token punctuation">,</span> <span class="token string">"style"</span><span class="token punctuation">,</span> <span class="token string">"..."</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"endpoint"</span><span class="token operator">:</span> <span class="token string">"https://.../generateContent"</span><span class="token punctuation">,</span>
+      <span class="token property">"status"</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+      <span class="token property">"responseTimeMs"</span><span class="token operator">:</span> <span class="token number">4200</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"vision_scan"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"isSafe"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"rawResponse"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="phản-hồi-thành-công-selfie">Phản hồi thành công (selfie) </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"url"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg"</span><span class="token punctuation">,</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"selfie_..."</span><span class="token punctuation">,</span>
+  <span class="token property">"filename"</span><span class="token operator">:</span> <span class="token string">"example.jpg"</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="7-get-presets">7. GET <code>/presets</code> </h2>
+<h3 id="mục-đích-6">Mục đích </h3>
+<p>Trả về danh sách preset trong cơ sở dữ liệu.</p>
+<h3 id="query-parameters">Query Parameters </h3>
+<ul>
+<li><code>gender</code> (tùy chọn): <code>male</code> hoặc <code>female</code> để lọc theo giới tính.</li>
+</ul>
+<h3 id="phản-hồi">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"presets"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+    <span class="token punctuation">{</span>
+      <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+      <span class="token property">"image_url"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/preset/example.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"filename"</span><span class="token operator">:</span> <span class="token string">"example.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"preset_name"</span><span class="token operator">:</span> <span class="token string">"Studio Neon"</span><span class="token punctuation">,</span>
+      <span class="token property">"hasPrompt"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+      <span class="token property">"prompt_json"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token property">"gender"</span><span class="token operator">:</span> <span class="token string">"female"</span><span class="token punctuation">,</span>
+      <span class="token property">"created_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">]</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="8-delete-presetsid">8. DELETE <code>/presets/{id}</code> </h2>
+<h3 id="mục-đích-7">Mục đích </h3>
+<p>Xóa preset khỏi D1 và R2, đồng thời xóa tất cả kết quả liên quan.</p>
+<h3 id="phản-hồi-1">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Preset deleted successfully"</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"presetId"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+    <span class="token property">"resultsDeleted"</span><span class="token operator">:</span> <span class="token number">2</span><span class="token punctuation">,</span>
+    <span class="token property">"databaseDeleted"</span><span class="token operator">:</span> <span class="token number">1</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Deleted"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Key"</span><span class="token operator">:</span> <span class="token string">"preset/example.jpg"</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Error"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+    <span class="token property">"imageUrl"</span><span class="token operator">:</span> <span class="token string">"https://..."</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="9-get-selfies">9. GET <code>/selfies</code> </h2>
+<h3 id="mục-đích-8">Mục đích </h3>
+<p>Trả về tối đa 50 selfie gần nhất của một profile.</p>
+<h3 id="query-parameters-1">Query Parameters </h3>
+<ul>
+<li><code>profile_id</code> (bắt buộc): ID profile.</li>
+<li><code>gender</code> (tùy chọn): <code>male</code> hoặc <code>female</code> để lọc theo giới tính.</li>
+</ul>
+<h3 id="phản-hồi-2">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"selfies"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+    <span class="token punctuation">{</span>
+      <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+      <span class="token property">"image_url"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"filename"</span><span class="token operator">:</span> <span class="token string">"example.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"gender"</span><span class="token operator">:</span> <span class="token string">"male"</span><span class="token punctuation">,</span>
+      <span class="token property">"created_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">]</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="10-delete-selfiesid">10. DELETE <code>/selfies/{id}</code> </h2>
+<h3 id="mục-đích-9">Mục đích </h3>
+<p>Xóa selfie và tất cả kết quả liên quan khỏi D1 và R2.</p>
+<h3 id="phản-hồi-3">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Selfie deleted successfully"</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"selfieId"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+    <span class="token property">"resultsDeleted"</span><span class="token operator">:</span> <span class="token number">3</span><span class="token punctuation">,</span>
+    <span class="token property">"databaseDeleted"</span><span class="token operator">:</span> <span class="token number">1</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Deleted"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Key"</span><span class="token operator">:</span> <span class="token string">"selfie/example.jpg"</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Error"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+    <span class="token property">"imageUrl"</span><span class="token operator">:</span> <span class="token string">"https://..."</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="11-get-results">11. GET <code>/results</code> </h2>
+<h3 id="mục-đích-10">Mục đích </h3>
+<p>Trả về tối đa 50 kết quả face swap gần nhất.</p>
+<h3 id="query-parameters-2">Query Parameters </h3>
+<ul>
+<li><code>profile_id</code> (tùy chọn): ID profile để lọc kết quả.</li>
+<li><code>gender</code> (tùy chọn): <code>male</code> hoặc <code>female</code> để lọc theo giới tính.</li>
+</ul>
+<h3 id="phản-hồi-4">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"results"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+    <span class="token punctuation">{</span>
+      <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+      <span class="token property">"selfie_id"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+      <span class="token property">"preset_id"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+      <span class="token property">"preset_name"</span><span class="token operator">:</span> <span class="token string">"Studio Neon"</span><span class="token punctuation">,</span>
+      <span class="token property">"result_url"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"</span><span class="token punctuation">,</span>
+      <span class="token property">"profile_id"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+      <span class="token property">"created_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">]</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="12-delete-resultsid">12. DELETE <code>/results/{id}</code> </h2>
+<h3 id="mục-đích-11">Mục đích </h3>
+<p>Xóa kết quả khỏi D1 và R2.</p>
+<h3 id="phản-hồi-5">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"success"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Result deleted successfully"</span><span class="token punctuation">,</span>
+  <span class="token property">"debug"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"resultId"</span><span class="token operator">:</span> <span class="token string">"..."</span><span class="token punctuation">,</span>
+    <span class="token property">"databaseDeleted"</span><span class="token operator">:</span> <span class="token number">1</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Deleted"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Key"</span><span class="token operator">:</span> <span class="token string">"results/result_123.jpg"</span><span class="token punctuation">,</span>
+    <span class="token property">"r2Error"</span><span class="token operator">:</span> <span class="token null keyword">null</span><span class="token punctuation">,</span>
+    <span class="token property">"resultUrl"</span><span class="token operator">:</span> <span class="token string">"https://..."</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="13-post-profiles">13. POST <code>/profiles</code> </h2>
+<h3 id="mục-đích-12">Mục đích </h3>
+<p>Tạo profile mới.</p>
+<h3 id="nội-dung-yêu-cầu-5">Nội dung yêu cầu </h3>
+<ul>
+<li><code>userID</code> hoặc <code>id</code> (string, tùy chọn): ID profile. Nếu không có, hệ thống tự tạo.</li>
+<li><code>name</code> (string, tùy chọn): tên profile.</li>
+<li><code>email</code> (string, tùy chọn): email.</li>
+<li><code>avatar_url</code> (string, tùy chọn): URL avatar.</li>
+<li><code>preferences</code> (object, tùy chọn): preferences dạng JSON.</li>
+</ul>
+<h3 id="phản-hồi-6">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"profile_..."</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"John Doe"</span><span class="token punctuation">,</span>
+  <span class="token property">"email"</span><span class="token operator">:</span> <span class="token string">"john@example.com"</span><span class="token punctuation">,</span>
+  <span class="token property">"avatar_url"</span><span class="token operator">:</span> <span class="token string">"https://..."</span><span class="token punctuation">,</span>
+  <span class="token property">"preferences"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"created_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updated_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="14-get-profilesid">14. GET <code>/profiles/{id}</code> </h2>
+<h3 id="mục-đích-13">Mục đích </h3>
+<p>Lấy thông tin profile theo ID.</p>
+<h3 id="phản-hồi-7">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"profile_..."</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"John Doe"</span><span class="token punctuation">,</span>
+  <span class="token property">"email"</span><span class="token operator">:</span> <span class="token string">"john@example.com"</span><span class="token punctuation">,</span>
+  <span class="token property">"avatar_url"</span><span class="token operator">:</span> <span class="token string">"https://..."</span><span class="token punctuation">,</span>
+  <span class="token property">"preferences"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"created_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updated_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="15-put-profilesid">15. PUT <code>/profiles/{id}</code> </h2>
+<h3 id="mục-đích-14">Mục đích </h3>
+<p>Cập nhật thông tin profile.</p>
+<h3 id="nội-dung-yêu-cầu-6">Nội dung yêu cầu </h3>
+<ul>
+<li><code>name</code> (string, tùy chọn): tên profile.</li>
+<li><code>email</code> (string, tùy chọn): email.</li>
+<li><code>avatar_url</code> (string, tùy chọn): URL avatar.</li>
+<li><code>preferences</code> (object, tùy chọn): preferences dạng JSON.</li>
+</ul>
+<h3 id="phản-hồi-8">Phản hồi </h3>
+<p>Trả về profile đã được cập nhật (format giống GET <code>/profiles/{id}</code>).</p>
+<h2 id="16-get-profiles">16. GET <code>/profiles</code> </h2>
+<h3 id="mục-đích-15">Mục đích </h3>
+<p>Liệt kê tất cả profiles (dùng cho admin/debugging).</p>
+<h3 id="phản-hồi-9">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"profiles"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+    <span class="token punctuation">{</span>
+      <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"profile_..."</span><span class="token punctuation">,</span>
+      <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"John Doe"</span><span class="token punctuation">,</span>
+      <span class="token property">"email"</span><span class="token operator">:</span> <span class="token string">"john@example.com"</span><span class="token punctuation">,</span>
+      <span class="token property">"avatar_url"</span><span class="token operator">:</span> <span class="token string">"https://..."</span><span class="token punctuation">,</span>
+      <span class="token property">"preferences"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"..."</span><span class="token operator">:</span> <span class="token string">"..."</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token property">"created_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span><span class="token punctuation">,</span>
+      <span class="token property">"updated_at"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00.000Z"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">]</span>
+<span class="token punctuation">}</span>
+</code></pre><h2 id="17-get-config">17. GET <code>/config</code> </h2>
+<h3 id="mục-đích-16">Mục đích </h3>
+<p>Lấy cấu hình public của Worker (custom domains).</p>
+<h3 id="phản-hồi-10">Phản hồi </h3>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"workerCustomDomain"</span><span class="token operator">:</span> <span class="token string">"https://api.d.shotpix.app"</span><span class="token punctuation">,</span>
+  <span class="token property">"customDomain"</span><span class="token operator">:</span> <span class="token string">"https://resources.d.shotpix.app"</span>
+<span class="token punctuation">}</span>
+</code></pre><hr>
+<h2 id="tổng-kết">Tổng kết </h2>
+<p><strong>Tổng số API endpoints: 17</strong></p>
+<ol>
+<li>POST <code>/faceswap</code> - Face swap (luôn dùng Vertex AI, hỗ trợ multiple selfies)</li>
+<li>POST <code>/enhance</code> - AI enhance ảnh</li>
+<li>POST <code>/colorize</code> - AI chuyển ảnh đen trắng thành màu</li>
+<li>POST <code>/aging</code> - AI lão hóa khuôn mặt</li>
+<li>POST <code>/upscaler4k</code> - Upscale ảnh 4K</li>
+<li>POST <code>/upload-url</code> - Upload file trực tiếp</li>
+<li>GET <code>/presets</code> - Liệt kê presets</li>
+<li>DELETE <code>/presets/{id}</code> - Xóa preset</li>
+<li>GET <code>/selfies</code> - Liệt kê selfies</li>
+<li>DELETE <code>/selfies/{id}</code> - Xóa selfie</li>
+<li>GET <code>/results</code> - Liệt kê results</li>
+<li>DELETE <code>/results/{id}</code> - Xóa result</li>
+<li>POST <code>/profiles</code> - Tạo profile</li>
+<li>GET <code>/profiles/{id}</code> - Lấy profile</li>
+<li>PUT <code>/profiles/{id}</code> - Cập nhật profile</li>
+<li>GET <code>/profiles</code> - Liệt kê profiles</li>
+<li>GET <code>/config</code> - Lấy config</li>
+</ol>
+<h2 id="lưu-ý-về-custom-domain">Lưu ý về Custom Domain </h2>
+<ul>
+<li><strong>Worker API Domain</strong>: <code>https://api.d.shotpix.app</code> - Dùng cho tất cả API endpoints</li>
+<li><strong>R2 Public Domain</strong>: <code>https://resources.d.shotpix.app</code> - Dùng cho public URLs của files trong R2 bucket</li>
+<li>Format R2 public URL: <code>https://resources.d.shotpix.app/{bucket-name}/{key}</code></li>
+</ul>
+
+      </div>
+      
+      
+    
+    
+    
+    
+    
+    
+  
+    </body></html>

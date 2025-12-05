@@ -228,7 +228,7 @@ export default {
         }
 
         const formData = await request.formData();
-        const file = formData.get('file') as File;
+        const file = formData.get('file') as unknown as File;
         const type = formData.get('type') as string;
         const profileId = formData.get('profile_id') as string;
         const presetName = formData.get('presetName') as string;
@@ -1208,25 +1208,41 @@ export default {
           return errorResponse('Preset image not found', 404);
         }
 
-        // Look up selfie image URL from database
-        const selfieResult = await DB.prepare(
-          'SELECT id, image_url FROM selfies WHERE id = ?'
-        ).bind(body.selfie_id).first();
+        // Validate selfie_ids array
+        if (!Array.isArray(body.selfie_ids) || body.selfie_ids.length === 0) {
+          return errorResponse('selfie_ids must be a non-empty array', 400);
+        }
 
-        if (!selfieResult) {
-          return errorResponse('Selfie not found', 404);
+        // Look up all selfie image URLs from database
+        const selfieUrls: string[] = [];
+        const selfieIds: string[] = [];
+
+        for (const selfieId of body.selfie_ids) {
+          const selfieResult = await DB.prepare(
+            'SELECT id, image_url FROM selfies WHERE id = ?'
+          ).bind(selfieId).first();
+
+          if (!selfieResult) {
+            return errorResponse(`Selfie with ID ${selfieId} not found`, 404);
+          }
+
+          selfieUrls.push((selfieResult as any).image_url);
+          selfieIds.push(selfieId);
         }
 
         const targetUrl = (presetResult as any).image_url;
-        const sourceUrl = (selfieResult as any).image_url;
         const presetName = (presetResult as any).preset_name || 'Unnamed Preset';
+
+        // For now, use the first selfie as the primary source
+        // In a full implementation, you might want to combine multiple selfies
+        const sourceUrl = selfieUrls[0];
 
         const requestDebug = compact({
           targetUrl: targetUrl,
-          sourceUrl: sourceUrl,
+          sourceUrls: selfieUrls,
           presetImageId: body.preset_image_id,
           presetName: presetName,
-          selfieId: body.selfie_id,
+          selfieIds: selfieIds,
           additionalPrompt: body.additional_prompt,
           characterGender: body.character_gender,
         });
@@ -1250,14 +1266,15 @@ export default {
         );
         const vertexPromptPayload = augmentedPromptPayload;
 
-        console.log('[Vertex] Dispatching prompt to Nano Banana provider');
+        console.log('[Vertex] Dispatching prompt to Nano Banana provider with', selfieUrls.length, 'selfie(s)');
+        // For now, use the first selfie. In a full implementation, you might want to combine multiple selfies
         const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env);
 
-          if (!nanoResult.Success || !nanoResult.ResultImageUrl) {
-            console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(nanoResult, null, 2));
+          if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
+            console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(faceSwapResult, null, 2));
 
             let sanitizedVertexFailure: any = null;
-            const fullResponse = (nanoResult as any).FullResponse;
+            const fullResponse = (faceSwapResult as any).FullResponse;
             if (fullResponse) {
               try {
                 const parsedResponse = typeof fullResponse === 'string' ? JSON.parse(fullResponse) : fullResponse;
@@ -1278,35 +1295,33 @@ export default {
 
             const vertexDebugFailure = compact({
               prompt: vertexPromptPayload,
-              response: sanitizedVertexFailure || (nanoResult as any).VertexResponse,
-              curlCommand: (nanoResult as any).CurlCommand,
+              response: sanitizedVertexFailure || (faceSwapResult as any).VertexResponse,
+              curlCommand: (faceSwapResult as any).CurlCommand,
             });
 
             const debugPayload = compact({
               request: requestDebug,
-              provider: buildProviderDebug(nanoResult),
+              provider: buildProviderDebug(faceSwapResult),
               vertex: vertexDebugFailure,
             });
 
-            const failureCode = nanoResult.StatusCode || 500;
+            const failureCode = faceSwapResult.StatusCode || 500;
 
             return jsonResponse({
               data: null,
               status: 'error',
-              message: nanoResult.Message || 'Nano Banana provider failed to generate image',
+              message: faceSwapResult.Message || 'Nano Banana provider failed to generate image',
               code: failureCode,
               debug: debugPayload,
             }, failureCode);
           }
 
-          if (nanoResult.ResultImageUrl?.startsWith('r2://')) {
-            const r2Key = nanoResult.ResultImageUrl.replace('r2://', '');
+          if (faceSwapResult.ResultImageUrl?.startsWith('r2://')) {
+            const r2Key = faceSwapResult.ResultImageUrl.replace('r2://', '');
             const requestUrl = new URL(request.url);
-            nanoResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            console.log('[Vertex] Converted R2 URL to public URL:', nanoResult.ResultImageUrl);
+            faceSwapResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            console.log('[Vertex] Converted R2 URL to public URL:', faceSwapResult.ResultImageUrl);
           }
-
-          const faceSwapResult = nanoResult;
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           console.error('FaceSwap failed:', faceSwapResult);
@@ -1457,20 +1472,8 @@ export default {
         if (body.preset_image_id) {
           databaseDebug.attempted = true;
           try {
-            let selfieId = body.selfie_id;
-            if (!selfieId) {
-              try {
-                const selfieResult = await DB.prepare(
-                  'SELECT id FROM selfies WHERE image_url = ? ORDER BY created_at DESC LIMIT 1'
-                ).bind(body.source_url).first();
-                if (selfieResult) {
-                  selfieId = (selfieResult as any).id;
-                }
-              } catch (lookupError) {
-                console.warn('Could not find selfie in database:', lookupError);
-                databaseDebug.lookupError = lookupError instanceof Error ? lookupError.message : String(lookupError);
-              }
-            }
+            // Use the first selfie ID for database record
+            let selfieId = selfieIds[0];
 
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
             await DB.prepare(
@@ -1643,6 +1646,205 @@ export default {
         });
       } catch (error) {
         console.error('Upscaler4K unhandled error:', error);
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle enhance endpoint
+    if (path === '/enhance' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { image_url: string };
+
+        if (!body.image_url) {
+          return errorResponse('image_url is required', 400);
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+
+        // For now, implement a simple enhancement using existing Nano Banana API
+        // This is a placeholder - in production, you'd want a dedicated enhancement model
+        const enhancedResult = await callNanoBanana(
+          'Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance.',
+          body.image_url,
+          body.image_url, // Use same image as target and source for enhancement
+          env
+        );
+
+        if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
+          console.error('Enhance failed:', enhancedResult);
+          const failureCode = enhancedResult.StatusCode || 500;
+          const debugPayload = compact({
+            provider: buildProviderDebug(enhancedResult),
+            vertex: mergeVertexDebug(enhancedResult, undefined),
+          });
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: enhancedResult.Message || 'Enhancement failed',
+            code: failureCode,
+            debug: debugPayload,
+          }, failureCode);
+        }
+
+        let resultUrl = enhancedResult.ResultImageUrl;
+        if (enhancedResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = enhancedResult.ResultImageUrl.replace('r2://', '');
+          const requestUrl = new URL(request.url);
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          console.log('[Enhance] Converted R2 URL to public URL:', resultUrl);
+        }
+
+        const providerDebug = buildProviderDebug(enhancedResult, resultUrl);
+        const vertexDebug = mergeVertexDebug(enhancedResult, undefined);
+
+        return jsonResponse({
+          data: {
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: enhancedResult.Message || 'Image enhancement completed',
+          code: 200,
+          debug: compact({
+            provider: providerDebug,
+            vertex: vertexDebug,
+          }),
+        });
+      } catch (error) {
+        console.error('Enhance unhandled error:', error);
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle colorize endpoint
+    if (path === '/colorize' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { image_url: string };
+
+        if (!body.image_url) {
+          return errorResponse('image_url is required', 400);
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+
+        // For now, implement colorization using existing Nano Banana API
+        // This is a placeholder - in production, you'd want a dedicated colorization model
+        const colorizedResult = await callNanoBanana(
+          'Convert this black and white image to full color. Add natural, realistic colors while maintaining the original composition and details. Use appropriate colors for skin tones, clothing, background elements, and any objects in the scene.',
+          body.image_url,
+          body.image_url, // Use same image as target and source for colorization
+          env
+        );
+
+        if (!colorizedResult.Success || !colorizedResult.ResultImageUrl) {
+          console.error('Colorize failed:', colorizedResult);
+          const failureCode = colorizedResult.StatusCode || 500;
+          const debugPayload = compact({
+            provider: buildProviderDebug(colorizedResult),
+            vertex: mergeVertexDebug(colorizedResult, undefined),
+          });
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: colorizedResult.Message || 'Colorization failed',
+            code: failureCode,
+            debug: debugPayload,
+          }, failureCode);
+        }
+
+        let resultUrl = colorizedResult.ResultImageUrl;
+        if (colorizedResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = colorizedResult.ResultImageUrl.replace('r2://', '');
+          const requestUrl = new URL(request.url);
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          console.log('[Colorize] Converted R2 URL to public URL:', resultUrl);
+        }
+
+        const providerDebug = buildProviderDebug(colorizedResult, resultUrl);
+        const vertexDebug = mergeVertexDebug(colorizedResult, undefined);
+
+        return jsonResponse({
+          data: {
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: colorizedResult.Message || 'Colorization completed',
+          code: 200,
+          debug: compact({
+            provider: providerDebug,
+            vertex: vertexDebug,
+          }),
+        });
+      } catch (error) {
+        console.error('Colorize unhandled error:', error);
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+      }
+    }
+
+    // Handle aging endpoint
+    if (path === '/aging' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { image_url: string; age_years?: number };
+
+        if (!body.image_url) {
+          return errorResponse('image_url is required', 400);
+        }
+
+        const ageYears = body.age_years || 20;
+        const envError = validateEnv(env, 'vertex');
+        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+
+        // For now, implement aging using existing Nano Banana API
+        // This is a placeholder - in production, you'd want a dedicated aging model
+        const agingResult = await callNanoBanana(
+          `Age this person by ${ageYears} years. Add realistic aging effects including facial wrinkles, gray hair, maturity in appearance while maintaining the person's identity and natural features. Make the changes subtle and realistic.`,
+          body.image_url,
+          body.image_url, // Use same image as target and source for aging
+          env
+        );
+
+        if (!agingResult.Success || !agingResult.ResultImageUrl) {
+          console.error('Aging failed:', agingResult);
+          const failureCode = agingResult.StatusCode || 500;
+          const debugPayload = compact({
+            provider: buildProviderDebug(agingResult),
+            vertex: mergeVertexDebug(agingResult, undefined),
+          });
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: agingResult.Message || 'Aging transformation failed',
+            code: failureCode,
+            debug: debugPayload,
+          }, failureCode);
+        }
+
+        let resultUrl = agingResult.ResultImageUrl;
+        if (agingResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = agingResult.ResultImageUrl.replace('r2://', '');
+          const requestUrl = new URL(request.url);
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          console.log('[Aging] Converted R2 URL to public URL:', resultUrl);
+        }
+
+        const providerDebug = buildProviderDebug(agingResult, resultUrl);
+        const vertexDebug = mergeVertexDebug(agingResult, undefined);
+
+        return jsonResponse({
+          data: {
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: agingResult.Message || 'Aging transformation completed',
+          code: 200,
+          debug: compact({
+            provider: providerDebug,
+            vertex: vertexDebug,
+          }),
+        });
+      } catch (error) {
+        console.error('Aging unhandled error:', error);
         return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
       }
     }

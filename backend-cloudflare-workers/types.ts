@@ -26,7 +26,7 @@ export interface Env {
 
 export interface FaceSwapRequest {
   preset_image_id: string; // Required: Preset image ID from database
-  selfie_id: string; // Required: Selfie ID from database
+  selfie_ids: string[]; // Required: Array of selfie IDs from database
   profile_id: string; // Required: Profile ID for the operation
   additional_prompt?: string;
   character_gender?: 'male' | 'female';

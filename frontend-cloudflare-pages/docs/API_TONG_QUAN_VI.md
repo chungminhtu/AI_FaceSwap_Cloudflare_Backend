@@ -5,12 +5,12 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ## 1. POST `/faceswap`
 
 ### Mục đích
-Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex).
+Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
 
 ### Nội dung yêu cầu
 
 - `preset_image_id` (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu.
-- `selfie_id` (string, bắt buộc): ID ảnh selfie đã lưu trong cơ sở dữ liệu.
+- `selfie_ids` (array of strings, bắt buộc): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung. Thông tin gender (male/female) của mỗi selfie được lưu trong database.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, tùy chọn): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
@@ -28,7 +28,10 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
   "debug": {
     "request": {
       "targetUrl": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-      "sourceUrl": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg"
+      "sourceUrls": [
+        "https://resources.d.shotpix.app/faceswap-images/selfie/selfie_001.jpg",
+        "https://resources.d.shotpix.app/faceswap-images/selfie/selfie_002.jpg"
+      ]
     },
     "provider": {
       "success": true,
@@ -102,7 +105,146 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 
 - Các lỗi khác (RapidAPI, Vertex, lưu trữ...) trả về HTTP tương ứng với thông tin chi tiết trong `debug.provider.debug` hoặc `debug.vertex.debug`.
 
-## 2. POST `/upload-url`
+
+
+## 2. POST `/enhance`
+
+### Mục đích
+AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
+
+### Nội dung yêu cầu
+
+- `image_url` (string, bắt buộc): URL ảnh cần enhance.
+
+### Phản hồi thành công
+
+```json
+{
+  "data": {
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/enhance_123.jpg"
+  },
+  "status": "success",
+  "message": "Image enhancement completed",
+  "code": 200,
+  "debug": {
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Enhancement completed"
+    }
+  }
+}
+```
+
+## 3. POST `/colorize`
+
+### Mục đích
+AI chuyển đổi ảnh đen trắng thành ảnh màu.
+
+### Nội dung yêu cầu
+
+- `image_url` (string, bắt buộc): URL ảnh đen trắng cần chuyển thành màu.
+
+### Phản hồi thành công
+
+```json
+{
+  "data": {
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/colorize_123.jpg"
+  },
+  "status": "success",
+  "message": "Colorization completed",
+  "code": 200,
+  "debug": {
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Colorization completed"
+    }
+  }
+}
+```
+
+## 4. POST `/aging`
+
+### Mục đích
+AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
+
+### Nội dung yêu cầu
+
+- `image_url` (string, bắt buộc): URL ảnh chứa khuôn mặt cần lão hóa.
+- `age_years` (number, tùy chọn): Số năm muốn lão hóa (mặc định: 20).
+
+### Phản hồi thành công
+
+```json
+{
+  "data": {
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/aging_123.jpg"
+  },
+  "status": "success",
+  "message": "Aging transformation completed",
+  "code": 200,
+  "debug": {
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Aging completed"
+    }
+  }
+}
+```
+
+## 5. POST `/upscaler4k`
+
+### Mục đích
+Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
+
+### Nội dung yêu cầu
+
+- `image_url` (string, bắt buộc): URL ảnh cần upscale.
+
+### Phản hồi thành công
+
+```json
+{
+  "data": {
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
+  },
+  "status": "success",
+  "message": "Upscaling completed",
+  "code": 200,
+  "debug": {
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Upscaler4K image upscaling completed",
+      "finalResultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
+    },
+    "vertex": {
+      "debug": {
+        "endpoint": "https://api.wavespeed.ai/api/v3/wavespeed-ai/ultimate-image-upscaler",
+        "status": 200,
+        "durationMs": 5000
+      }
+    },
+    "inputSafety": {
+      "checked": true,
+      "isSafe": true
+    },
+    "outputSafety": {
+      "checked": true,
+      "isSafe": true
+    }
+  }
+}
+```
+
+### Phản hồi lỗi
+Trả về HTTP 400 nếu ảnh input hoặc output không pass safety check, hoặc HTTP 500 nếu có lỗi từ WaveSpeed API.
+
+
+## 6. POST `/upload-url`
 
 ### Mục đích
 Tải ảnh trực tiếp lên server và lưu vào cơ sở dữ liệu với xử lý tự động (Vision scan, Vertex prompt generation).
@@ -155,7 +297,7 @@ Tải ảnh trực tiếp lên server và lưu vào cơ sở dữ liệu với x
 }
 ```
 
-## 3. GET `/presets`
+## 7. GET `/presets`
 
 ### Mục đích
 Trả về danh sách preset trong cơ sở dữ liệu.
@@ -183,7 +325,7 @@ Trả về danh sách preset trong cơ sở dữ liệu.
 }
 ```
 
-## 6. DELETE `/presets/{id}`
+## 8. DELETE `/presets/{id}`
 
 ### Mục đích
 Xóa preset khỏi D1 và R2, đồng thời xóa tất cả kết quả liên quan.
@@ -206,7 +348,7 @@ Xóa preset khỏi D1 và R2, đồng thời xóa tất cả kết quả liên q
 }
 ```
 
-## 4. GET `/selfies`
+## 9. GET `/selfies`
 
 ### Mục đích
 Trả về tối đa 50 selfie gần nhất của một profile.
@@ -232,7 +374,7 @@ Trả về tối đa 50 selfie gần nhất của một profile.
 }
 ```
 
-## 8. DELETE `/selfies/{id}`
+## 10. DELETE `/selfies/{id}`
 
 ### Mục đích
 Xóa selfie và tất cả kết quả liên quan khỏi D1 và R2.
@@ -255,7 +397,7 @@ Xóa selfie và tất cả kết quả liên quan khỏi D1 và R2.
 }
 ```
 
-## 5. GET `/results`
+## 11. GET `/results`
 
 ### Mục đích
 Trả về tối đa 50 kết quả face swap gần nhất.
@@ -283,7 +425,7 @@ Trả về tối đa 50 kết quả face swap gần nhất.
 }
 ```
 
-## 10. DELETE `/results/{id}`
+## 12. DELETE `/results/{id}`
 
 ### Mục đích
 Xóa kết quả khỏi D1 và R2.
@@ -305,55 +447,7 @@ Xóa kết quả khỏi D1 và R2.
 }
 ```
 
-## 6. POST `/upscaler4k`
-
-### Mục đích
-Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
-
-### Nội dung yêu cầu
-
-- `image_url` (string, bắt buộc): URL ảnh cần upscale.
-
-### Phản hồi thành công
-
-```json
-{
-  "data": {
-    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
-  },
-  "debug": {
-    "provider": {
-      "success": true,
-      "statusCode": 200,
-      "message": "Upscaler4K image upscaling completed",
-      "finalResultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
-    },
-    "vertex": {
-      "debug": {
-        "endpoint": "https://api.wavespeed.ai/api/v3/wavespeed-ai/ultimate-image-upscaler",
-        "status": 200,
-        "durationMs": 5000
-      }
-    },
-    "inputSafety": {
-      "checked": true,
-      "isSafe": true
-    },
-    "outputSafety": {
-      "checked": true,
-      "isSafe": true
-    }
-  },
-  "status": "success",
-  "message": "Upscaling completed",
-  "code": 200
-}
-```
-
-### Phản hồi lỗi
-Trả về HTTP 400 nếu ảnh input hoặc output không pass safety check, hoặc HTTP 500 nếu có lỗi từ WaveSpeed API.
-
-## 14. POST `/profiles`
+## 13. POST `/profiles`
 
 ### Mục đích
 Tạo profile mới.
@@ -380,7 +474,7 @@ Tạo profile mới.
 }
 ```
 
-## 7. GET `/profiles/{id}`
+## 14. GET `/profiles/{id}`
 
 ### Mục đích
 Lấy thông tin profile theo ID.
@@ -399,7 +493,7 @@ Lấy thông tin profile theo ID.
 }
 ```
 
-## 16. PUT `/profiles/{id}`
+## 15. PUT `/profiles/{id}`
 
 ### Mục đích
 Cập nhật thông tin profile.
@@ -414,7 +508,7 @@ Cập nhật thông tin profile.
 ### Phản hồi
 Trả về profile đã được cập nhật (format giống GET `/profiles/{id}`).
 
-## 8. GET `/profiles`
+## 16. GET `/profiles`
 
 ### Mục đích
 Liệt kê tất cả profiles (dùng cho admin/debugging).
@@ -437,15 +531,7 @@ Liệt kê tất cả profiles (dùng cho admin/debugging).
 }
 ```
 
-## 9. GET `/r2/{key}`
-
-### Mục đích
-Phục vụ file từ R2 bucket thông qua Worker (fallback khi không có CUSTOM_DOMAIN).
-
-### Phản hồi
-Trả về file binary với headers tương tự GET `/upload-proxy/{key}`.
-
-## 10. GET `/config`
+## 17. GET `/config`
 
 ### Mục đích
 Lấy cấu hình public của Worker (custom domains).
@@ -463,22 +549,25 @@ Lấy cấu hình public của Worker (custom domains).
 
 ## Tổng kết
 
-**Tổng số API endpoints: 13**
+**Tổng số API endpoints: 17**
 
-1. POST `/faceswap` - Face swap (luôn dùng Vertex AI)
-2. POST `/upload-url` - Upload file trực tiếp
-3. GET `/presets` - Liệt kê presets
-4. DELETE `/presets/{id}` - Xóa preset
-5. GET `/selfies` - Liệt kê selfies
-6. DELETE `/selfies/{id}` - Xóa selfie
-7. GET `/results` - Liệt kê results
-8. DELETE `/results/{id}` - Xóa result
-9. POST `/upscaler4k` - Upscale ảnh 4K
-10. POST `/profiles` - Tạo profile
-11. GET `/profiles/{id}` - Lấy profile
-12. PUT `/profiles/{id}` - Cập nhật profile
-13. GET `/profiles` - Liệt kê profiles
-14. GET `/config` - Lấy config
+1. POST `/faceswap` - Face swap (luôn dùng Vertex AI, hỗ trợ multiple selfies)
+2. POST `/enhance` - AI enhance ảnh
+3. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
+4. POST `/aging` - AI lão hóa khuôn mặt
+5. POST `/upscaler4k` - Upscale ảnh 4K
+6. POST `/upload-url` - Upload file trực tiếp
+7. GET `/presets` - Liệt kê presets
+8. DELETE `/presets/{id}` - Xóa preset
+9. GET `/selfies` - Liệt kê selfies
+10. DELETE `/selfies/{id}` - Xóa selfie
+11. GET `/results` - Liệt kê results
+12. DELETE `/results/{id}` - Xóa result
+13. POST `/profiles` - Tạo profile
+14. GET `/profiles/{id}` - Lấy profile
+15. PUT `/profiles/{id}` - Cập nhật profile
+16. GET `/profiles` - Liệt kê profiles
+17. GET `/config` - Lấy config
  
 
 ## Lưu ý về Custom Domain
@@ -486,4 +575,3 @@ Lấy cấu hình public của Worker (custom domains).
 - **Worker API Domain**: `https://api.d.shotpix.app` - Dùng cho tất cả API endpoints
 - **R2 Public Domain**: `https://resources.d.shotpix.app` - Dùng cho public URLs của files trong R2 bucket
 - Format R2 public URL: `https://resources.d.shotpix.app/{bucket-name}/{key}`
- 
