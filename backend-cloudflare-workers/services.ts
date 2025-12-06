@@ -852,7 +852,7 @@ export const callUpscaler4k = async (
     };
 
     const requestBody = {
-      image_url: imageUrl
+      image: imageUrl
     };
 
     const startTime = Date.now();

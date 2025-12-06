@@ -121,15 +121,21 @@
 
         .gate-button {
             width: 100%;
-            padding: 14px;
-            border-radius: 12px;
+            height: 44px;
+            padding: 0 24px;
+            border-radius: 8px;
             background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
             color: #ffffff;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             border: none;
             cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            font-family: inherit;
         }
 
         .gate-button:hover {
@@ -161,7 +167,7 @@
 
         .app-layout {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 500px;
             gap: 20px;
             align-items: start;
         }
@@ -184,6 +190,470 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        .workflow-container {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+            min-height: calc(100vh - 200px);
+        }
+
+        .workflow-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            background: var(--bg-card-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .sidebar-toggle {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .sidebar-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sidebar-content.collapsed {
+            display: none;
+        }
+
+        .sidebar-gallery {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        #result-sidebar-gallery {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            max-height: 800px;
+        }
+
+        #result-sidebar-gallery .gallery-item {
+            aspect-ratio: 1;
+            min-height: 160px;
+        }
+
+        #result-sidebar-gallery .gallery-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #preset-gallery .gallery-item,
+        #selfie-gallery .gallery-item {
+            aspect-ratio: 1;
+            min-height: 60px;
+        }
+
+        #preset-gallery .gallery-item img,
+        #selfie-gallery .gallery-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .upload-area.compact {
+            padding: 12px;
+            min-height: auto;
+            cursor: pointer;
+        }
+
+        .upload-area.compact .upload-icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .upload-area.compact .upload-text {
+            font-size: 12px;
+        }
+
+        .upload-area.compact .upload-subtext {
+            display: none;
+        }
+
+        .workflow-main {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .step-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 20px;
+            background: var(--bg-card-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            opacity: 0.4;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            opacity: 1;
+        }
+
+        .step.completed .step-number {
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            color: #fff;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+
+        .step.active .step-number {
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            border-color: rgba(248, 35, 135, 0.5);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
+            transform: scale(1.1);
+        }
+
+        .step-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .step.active .step-label {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .step-arrow {
+            font-size: 20px;
+            color: var(--text-muted);
+            opacity: 0.3;
+        }
+
+        .preview-panel {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .preview-card {
+            background: var(--bg-card-gradient);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .preview-card.has-selection {
+            border-color: rgba(248, 35, 135, 0.4);
+            box-shadow: 0 4px 16px rgba(248, 35, 135, 0.15);
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preview-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .preview-status {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+        }
+
+        .preview-card.has-selection .preview-status {
+            background: rgba(248, 35, 135, 0.2);
+            color: var(--accent);
+        }
+
+        .preview-arrow {
+            font-size: 32px;
+            color: var(--text-muted);
+            opacity: 0.3;
+            font-weight: 300;
+        }
+
+        .preview-image {
+            aspect-ratio: 1;
+            border-radius: 8px;
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.03);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .preview-card.has-selection .preview-image {
+            border-color: rgba(248, 35, 135, 0.3);
+            border-style: solid;
+            background: rgba(248, 35, 135, 0.05);
+        }
+
+        .preview-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .preview-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-muted);
+        }
+
+        .preview-empty-icon {
+            font-size: 48px;
+            opacity: 0.5;
+        }
+
+        .preview-empty-text {
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .action-panel {
+            background: var(--bg-card-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .action-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .action-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .action-select {
+            height: 36px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .action-btn {
+            height: 48px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            font-size: 16px;
+        }
+
+        .action-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(248, 35, 135, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .action-btn.primary {
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            border-color: rgba(248, 35, 135, 0.5);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.25);
+        }
+
+        .action-btn.primary:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(248, 35, 135, 0.35);
+            transform: translateY(-2px);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .action-aging {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .action-aging input {
+            width: 60px;
+            height: 44px;
+            padding: 0 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .action-options {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .action-prompt {
+            width: 100%;
+            height: 80px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            font-size: 13px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .action-prompt::placeholder {
+            color: var(--text-muted);
+        }
+
+        .action-gender {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .gender-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .action-gender label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .results-panel {
+            background: var(--bg-card-gradient);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 300px;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+        }
+
+        .results-count {
+            font-size: 12px;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
 
         @media (max-width: 767px) {
             .main-container {
@@ -223,14 +693,221 @@
         .workspace {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(17, 25, 40, 0.95), rgba(30, 40, 60, 0.95));
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(20px);
+            flex-wrap: wrap;
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .toolbar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toolbar-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .toolbar-preview {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toolbar-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .toolbar-actions {
+            flex: 1;
+            justify-content: flex-start;
+        }
+
+        .toolbar-btn {
+            height: 40px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            font-family: inherit;
+        }
+
+        .toolbar-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(248, 35, 135, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .toolbar-btn.primary {
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            border-color: rgba(248, 35, 135, 0.5);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.25);
+        }
+
+        .toolbar-btn.primary:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(248, 35, 135, 0.35);
+            transform: translateY(-2px);
+        }
+
+        .toolbar-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .toolbar-aging {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toolbar-aging input {
+            width: 60px;
+            height: 40px;
+            padding: 0 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            font-size: 13px;
+            text-align: center;
+            font-family: inherit;
+        }
+
+        .toolbar-options {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
             gap: 12px;
-            margin-bottom: 12px;
+        }
+
+        .toolbar-prompt {
+            width: 200px;
+            height: 40px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            font-size: 13px;
+            resize: none;
+            font-family: inherit;
+            line-height: 40px;
+        }
+
+        .toolbar-prompt::placeholder {
+            color: var(--text-muted);
+        }
+
+        .toolbar-gender {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .toolbar-gender label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .toolbar-gender input[type="radio"] {
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .toolbar-select {
+            height: 40px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            font-family: inherit;
         }
 
         @media (max-width: 767px) {
             .workspace {
                 grid-template-columns: 1fr;
                 gap: 8px;
+            }
+
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+                padding: 12px;
+            }
+
+            .toolbar-group {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            .toolbar-options {
+                margin-left: 0;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+            }
+
+            .toolbar-prompt {
+                width: 100%;
+            }
+
+            .toolbar-actions {
+                flex-wrap: wrap;
+            }
+
+            .toolbar-btn {
+                flex: 1;
+                min-width: 100px;
             }
         }
 
@@ -367,6 +1044,24 @@
         .gender-option:hover {
             border-color: var(--accent);
             box-shadow: 0 6px 18px rgba(248, 35, 135, 0.18);
+        }
+
+        .gender-filter-btn {
+            height: 32px;
+            padding: 0 12px;
+            border: 1px solid #dee2e6;
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: #495057;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            font-family: inherit;
         }
 
         .gender-filter-btn.active {
@@ -524,14 +1219,15 @@
             background-color: var(--danger);
             color: #FFFFFF;
             border: none;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 700;
             z-index: 10;
-            transition: all 0.15s;
+            transition: all 0.2s ease;
             font-family: 'Lexend Deca', sans-serif;
             line-height: 1;
         }
@@ -539,6 +1235,7 @@
         .delete-btn:hover {
             background-color: var(--accent);
             color: #FFFFFF;
+            transform: scale(1.1);
         }
 
         .gallery-grid {
@@ -583,30 +1280,37 @@
         }
 
         .pagination-btn {
+            height: 40px;
+            padding: 0 16px;
             background-color: var(--bg-secondary);
             border: 1px solid var(--border);
             color: var(--text-primary);
-            padding: 8px 14px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 500;
             text-transform: none;
             letter-spacing: 0.3px;
             cursor: pointer;
-            transition: all 0.15s;
-            min-width: 44px;
-            line-height: 1.2;
+            transition: all 0.2s ease;
+            min-width: 40px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
         }
 
         .pagination-btn:hover:not(:disabled) {
             background-color: var(--accent);
             color: #FFFFFF;
             border-color: var(--accent);
+            transform: translateY(-1px);
         }
 
         .pagination-btn:disabled {
             opacity: 0.4;
             cursor: not-allowed;
+            transform: none;
         }
 
         .pagination-info {
@@ -723,18 +1427,21 @@
             position: absolute;
             top: 6px;
             right: 6px;
-            width: 22px;
-            height: 22px;
+            width: 24px;
+            height: 24px;
             background: linear-gradient(135deg, #FF5D6C, #FF3CAC);
             color: #FFFFFF;
             border: none;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 700;
             z-index: 10;
+            transition: all 0.2s ease;
+            line-height: 1;
             opacity: 0;
             transition: all 0.15s;
             font-family: 'Lexend Deca', sans-serif;
@@ -749,6 +1456,7 @@
         .gallery-delete-btn:hover {
             background-color: var(--accent);
             color: #FFFFFF;
+            transform: scale(1.1);
         }
 
         .result-section {
@@ -950,11 +1658,24 @@
             margin-top: 0;
         }
 
+        .toolbar #generate-btn {
+            height: 40px;
+            padding: 0 20px;
+            width: auto;
+            margin-top: 0;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
         .generate-btn {
             background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
             color: #FFFFFF;
             padding: 14px 28px;
             border: none;
+            border-radius: 8px;
             font-family: 'Lexend Deca', sans-serif;
             font-size: 15px;
             font-weight: 600;
@@ -964,7 +1685,7 @@
             width: 100%;
             margin-top: 16px;
             display: block;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.2s ease;
             position: relative;
             overflow: hidden;
             line-height: 1.3;
@@ -1382,12 +2103,18 @@
         }
 
         .dialog-btn {
-            padding: 8px 14px;
-            font-size: 12px;
+            height: 40px;
+            padding: 0 20px;
+            font-size: 13px;
             font-family: 'Lexend Deca', sans-serif;
-            font-weight: 600;
+            font-weight: 500;
             text-transform: none;
             letter-spacing: 0.3px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
             cursor: pointer;
             border: 1px solid;
             transition: all 0.15s;
@@ -1590,6 +2317,35 @@
                 font-size: 12px;
             }
 
+            .workflow-container {
+                grid-template-columns: 1fr;
+            }
+
+            .workflow-sidebar {
+                max-height: 400px;
+            }
+
+            .preview-panel {
+                grid-template-columns: 1fr;
+            }
+
+            .preview-arrow {
+                display: none;
+            }
+
+            .step-indicator {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .step-arrow {
+                display: none;
+            }
+
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+
             .app-layout {
                 grid-template-columns: 1fr;
             }
@@ -1617,239 +2373,195 @@
             <a href="/docs/" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(248, 35, 135, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(248, 35, 135, 0.3)'">📖 API Documentation</a>
         </div>
 
-        <div id="profile-section" class="section" style="margin-bottom: 20px; padding: 16px;">
-            <div class="section-title" style="margin-bottom: 12px;">👤 Hồ Sơ Người Dùng</div>
-            <div id="profile-status" style="font-size: 13px; color: var(--text-muted); font-style: italic;">
-                Đang tải thông tin hồ sơ...
-            </div>
-            <div id="profile-info" style="font-size: 13px; color: var(--text-primary); margin-top: 8px; display: none;">
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div><strong>ID:</strong> <span id="profile-id-display" style="font-family: monospace; color: var(--accent);"></span></div>
-                    <div id="profile-name-wrapper" style="display: none;"><strong>Tên:</strong> <span id="profile-name-display"></span></div>
-                </div>
-            </div>
+        <div id="profile-section" style="margin-bottom: 12px; padding: 8px 12px; background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; display: flex; align-items: center; gap: 12px; font-size: 12px;">
+            <span style="color: var(--text-secondary);">👤</span>
+            <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
+            <span id="profile-info" style="display: none; color: var(--text-primary);">
+                <span style="color: var(--text-secondary);">ID:</span>
+                <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 11px;"></span>
+            </span>
         </div>
 
         <div class="app-layout">
-            <!-- Main Content (Left Side) -->
-            <div class="main-content">
-        <!-- Image Galleries Section (Top) -->
-        <div class="galleries-section">
-            <div class="section-title">Thư Viện Hình Ảnh</div>
-            <div class="galleries-grid">
-                <!-- Preset Gallery -->
-                <div class="gallery-section">
-                    <div class="gallery-title">Thư Viện Mẫu</div>
-                    <!-- Gender Filter for Presets -->
-                    <div class="gender-filter" style="margin-bottom: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;">
-                        <div style="font-size: 12px; font-weight: 500; color: #495057; margin-bottom: 4px;">🔍 Lọc theo giới tính:</div>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="gender-filter-btn active" data-gender="" data-type="preset" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Tất cả</button>
-                            <button class="gender-filter-btn" data-gender="male" data-type="preset" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nam</button>
-                            <button class="gender-filter-btn" data-gender="female" data-type="preset" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nữ</button>
-                        </div>
+        <div class="workflow-container">
+            <div class="workflow-sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-header">
+                        <span>🎭 Presets</span>
+                        <button class="sidebar-toggle" onclick="toggleSidebar('preset')">−</button>
                     </div>
-                    <div class="upload-area gallery-upload" id="preset-upload">
-                        <div class="upload-icon">📤</div>
-                        <div class="upload-text">Nhấp để tải lên hình mẫu</div>
-                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                        <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
-                    </div>
-                    <!-- Upload Options for Preset -->
-                    <div class="upload-options" id="preset-upload-options" style="margin-top: 10px; padding: 12px; background: #f0f7ff; border: 1px solid #b3d9ff; border-radius: 6px; display: block;">
-                        <div style="font-weight: 600; font-size: 13px; color: #1976d2; margin-bottom: 10px;">⚙️ Tùy chọn khi tải lên:</div>
-                        <div class="option-row" style="display: flex; align-items: center; margin-bottom: 8px;">
-                            <input type="checkbox" id="preset-enable-vision-scan" checked style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
-                            <label for="preset-enable-vision-scan" style="cursor: pointer; font-size: 13px; color: #333; user-select: none;">
-                                🔍 Quét với Google Vision (Kiểm tra an toàn)
-                            </label>
+                    <div class="sidebar-content" id="preset-sidebar-content">
+                        <div class="gender-filter">
+                            <button class="gender-filter-btn active" data-gender="" data-type="preset">Tất cả</button>
+                            <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
+                            <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
                         </div>
-                        <div class="option-row" style="display: flex; align-items: center; margin-bottom: 8px;">
-                            <input type="checkbox" id="preset-enable-vertex-prompt" checked style="margin-right: 8px; cursor: pointer; width: 18px; height: 18px;">
-                            <label for="preset-enable-vertex-prompt" style="cursor: pointer; font-size: 13px; color: #333; user-select: none;">
-                                🤖 Tạo Prompt với Vertex AI
-                            </label>
+                        <div class="upload-area compact" id="preset-upload">
+                            <div class="upload-icon">📤</div>
+                            <div class="upload-text">Tải lên</div>
+                            <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                         </div>
-                        <div class="option-row" style="margin-bottom: 8px;">
-                            <div style="font-weight: 500; font-size: 12px; color: #555; margin-bottom: 4px;">👤 Giới tính:</div>
-                            <div style="display: flex; gap: 12px;">
-                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="preset-gender" value="" style="margin-right: 4px;">
-                                    Không xác định
-                                </label>
-                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="preset-gender" value="male" style="margin-right: 4px;">
-                                    Nam
-                                </label>
-                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="preset-gender" value="female" checked style="margin-right: 4px;">
-                                    Nữ
-                                </label>
-                            </div>
+                        <div id="preset-gallery" class="sidebar-gallery"></div>
+                        <div class="pagination" id="preset-pagination" style="display: none;">
+                            <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
+                            <span class="pagination-info" id="preset-page-info">1 / 1</span>
+                            <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
                         </div>
-                    </div>
-                    <div id="preset-gallery" class="gallery-grid" style="display: none;"></div>
-                    <div class="pagination" id="preset-pagination" style="display: none;">
-                        <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
-                        <span class="pagination-info" id="preset-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
-                    </div>
-                    <div class="empty-state" id="preset-gallery-empty">
-                        <div class="icon">🎭</div>
-                        Chưa có mẫu nào được tải lên
                     </div>
                 </div>
-
-                <!-- Selfie Gallery -->
-                <div class="gallery-section">
-                    <div class="gallery-title">Thư Viện Selfie</div>
-                    <!-- Gender Filter for Selfies -->
-                    <div class="gender-filter" style="margin-bottom: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;">
-                        <div style="font-size: 12px; font-weight: 500; color: #495057; margin-bottom: 4px;">🔍 Lọc theo giới tính:</div>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="gender-filter-btn active" data-gender="" data-type="selfie" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Tất cả</button>
-                            <button class="gender-filter-btn" data-gender="male" data-type="selfie" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nam</button>
-                            <button class="gender-filter-btn" data-gender="female" data-type="selfie" style="padding: 4px 8px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;">Nữ</button>
+                <div class="sidebar-section">
+                    <div class="sidebar-header">
+                        <span>📷 Selfies</span>
+                        <button class="sidebar-toggle" onclick="toggleSidebar('selfie')">−</button>
+                    </div>
+                    <div class="sidebar-content" id="selfie-sidebar-content">
+                        <div class="upload-area compact" id="selfie-upload">
+                            <div class="upload-icon">📤</div>
+                            <div class="upload-text">Tải lên</div>
+                            <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                        </div>
+                        <div id="selfie-gallery" class="sidebar-gallery"></div>
+                        <div class="pagination" id="selfie-pagination" style="display: none;">
+                            <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
+                            <span class="pagination-info" id="selfie-page-info">1 / 1</span>
+                            <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
                         </div>
                     </div>
-                    <div class="upload-area gallery-upload" id="selfie-upload">
-                        <div class="upload-icon">📷</div>
-                        <div class="upload-text">Nhấp để tải lên hình selfie</div>
-                        <div class="upload-subtext">JPG, PNG, WebP (tối đa 10MB)</div>
-                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-header">
+                        <span>🖼️ Results</span>
+                        <button class="sidebar-toggle" onclick="toggleSidebar('result')">−</button>
                     </div>
-                    <!-- Upload Options for Selfie -->
-                    <div class="upload-options" id="selfie-upload-options" style="margin-top: 10px; padding: 12px; background: #f0f7ff; border: 1px solid #b3d9ff; border-radius: 6px; display: block;">
-                        <div class="option-row">
-                            <div style="font-weight: 500; font-size: 12px; color: #555; margin-bottom: 4px;">👤 Giới tính:</div>
-                            <div style="display: flex; gap: 12px;">
-                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="selfie-gender" value="" style="margin-right: 4px;">
-                                    Không xác định
-                                </label>
-                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="selfie-gender" value="male" style="margin-right: 4px;">
-                                    Nam
-                                </label>
-                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                                    <input type="radio" name="selfie-gender" value="female" checked style="margin-right: 4px;">
-                                    Nữ
-                                </label>
-                            </div>
+                    <div class="sidebar-content" id="result-sidebar-content">
+                        <div id="result-sidebar-gallery" class="sidebar-gallery"></div>
+                        <div class="pagination" id="result-sidebar-pagination" style="display: none;">
+                            <button class="pagination-btn" id="result-sidebar-prev" onclick="changePage('result-sidebar', -1)">‹</button>
+                            <span class="pagination-info" id="result-sidebar-page-info">1 / 1</span>
+                            <button class="pagination-btn" id="result-sidebar-next" onclick="changePage('result-sidebar', 1)">›</button>
                         </div>
-                    </div>
-                    <div id="selfie-gallery" class="gallery-grid" style="display: none;"></div>
-                    <div class="pagination" id="selfie-pagination" style="display: none;">
-                        <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
-                        <span class="pagination-info" id="selfie-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
-                    </div>
-                    <div class="empty-state" id="selfie-gallery-empty">
-                        <div class="icon">📷</div>
-                        Chưa có selfie nào được tải lên
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Face Swap Zone (Bottom) -->
-        <div class="faceswap-zone">
-            <!-- API Provider and Generate Button (Above Đổi Mặt section) -->
-            <div class="action-row" style="margin-bottom: 20px;">
-                <div class="api-selector">
-                    <label class="api-selector-label" for="api-provider">API Provider</label>
-                    <select class="api-select" id="api-provider">
-                        <option value="google-nano-banana" selected>Google Nano Banana</option>
-                        <option value="rapidapi">RapidAPI</option>
-                    </select>
+            <div class="workflow-main">
+                <div class="step-indicator">
+                    <div class="step active" data-step="1">
+                        <div class="step-number">1</div>
+                        <div class="step-label">Chọn Ảnh</div>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step" data-step="2">
+                        <div class="step-number">2</div>
+                        <div class="step-label">Xem Trước</div>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step" data-step="3">
+                        <div class="step-number">3</div>
+                        <div class="step-label">Xử Lý</div>
+                    </div>
+                    <div class="step-arrow">→</div>
+                    <div class="step" data-step="4">
+                        <div class="step-number">4</div>
+                        <div class="step-label">Kết Quả</div>
+                    </div>
                 </div>
-
-                <button class="generate-btn" id="generate-btn" disabled onclick="generateFaceSwap()">
-                    Tạo Đổi Mặt
-                </button>
-            </div>
-
-            <div class="section-title">Đổi Mặt</div>
-            
-            <div class="section prompt-section" id="prompt-section">
-                <div class="section-title">Tùy Chỉnh Prompt</div>
-                <textarea id="additional-prompt" class="prompt-input" placeholder="Nhập prompt bổ sung để kết hợp với prompt hiện có (chỉ áp dụng cho Google Nano Banana)"></textarea>
-                <div class="prompt-hint">Nội dung sẽ được nối vào cuối prompt hiện tại bằng ký tự +</div>
-                <div class="gender-group">
-                    <span class="gender-label">Chọn giới tính nhân vật:</span>
-                    <label class="gender-option">
-                        <input type="radio" name="character-gender" value="none" checked>
-                        Không xác định
-                    </label>
-                    <label class="gender-option">
-                        <input type="radio" name="character-gender" value="male">
-                        Nam
-                    </label>
-                    <label class="gender-option">
-                        <input type="radio" name="character-gender" value="female">
-                        Nữ
-                    </label>
-                </div>
-            </div>
-
-            <div class="workspace">
-                <div class="left-column">
-                    <!-- Preset Section (Top) -->
-                    <div class="section">
-                        <div id="preset-preview" class="selected-preview">
+                <div class="preview-panel">
+                    <div class="preview-card" id="preset-card">
+                        <div class="preview-header">
+                            <div class="preview-label">🎭 Preset</div>
+                            <div class="preview-status" id="preset-status">Chưa chọn</div>
+                        </div>
+                        <div id="preset-preview" class="preview-image">
                             <div class="preview-empty">
-                                <div class="icon">🎭</div>
-                                Chọn một mẫu từ thư viện phía trên
+                                <div class="preview-empty-icon">📷</div>
+                                <div class="preview-empty-text">Chọn từ sidebar bên trái</div>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Selfie Section (Bottom) -->
-                    <div class="section">
-                        <div id="selfie-preview" class="selected-preview">
+                    <div class="preview-arrow">+</div>
+                    <div class="preview-card" id="selfie-card">
+                        <div class="preview-header">
+                            <div class="preview-label">📷 Selfie</div>
+                            <div class="preview-status" id="selfie-status">Chưa chọn</div>
+                        </div>
+                        <div id="selfie-preview" class="preview-image">
                             <div class="preview-empty">
-                                <div class="icon">📷</div>
-                                Chọn một selfie từ thư viện phía trên
+                                <div class="preview-empty-icon">📷</div>
+                                <div class="preview-empty-text">Chọn từ sidebar bên trái</div>
                             </div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Result Display -->
-                <div class="right-column" id="result-display">
-                    <div class="result-empty">
-                        <div class="icon">🖼️</div>
-                        Kết quả sẽ xuất hiện ở đây
+                <div class="action-panel">
+                    <div class="action-header">
+                        <div class="action-title">⚡ Thao Tác</div>
+                        <select class="action-select" id="api-provider">
+                            <option value="google-nano-banana" selected>Google</option>
+                            <option value="rapidapi">RapidAPI</option>
+                        </select>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="action-btn primary" id="generate-btn" disabled onclick="generateFaceSwap()">
+                            <span class="btn-icon">✨</span>
+                            <span>Face Swap</span>
+                        </button>
+                        <button class="action-btn" id="enhance-btn" onclick="runEnhance()">
+                            <span class="btn-icon">🔍</span>
+                            <span>Enhance</span>
+                        </button>
+                        <button class="action-btn" id="upscale-btn" onclick="runUpscale4k()">
+                            <span class="btn-icon">📐</span>
+                            <span>4K Upscale</span>
+                        </button>
+                        <button class="action-btn" id="colorize-btn" onclick="runColorize()">
+                            <span class="btn-icon">🎨</span>
+                            <span>Colorize</span>
+                        </button>
+                        <div class="action-aging">
+                            <input type="number" id="aging-years" value="20" min="5" max="60" step="5" title="Số năm">
+                            <button class="action-btn" onclick="runAging()">
+                                <span class="btn-icon">⏳</span>
+                                <span>Aging</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="action-options">
+                        <textarea id="additional-prompt" class="action-prompt" placeholder="Nhập prompt bổ sung (tùy chọn)..."></textarea>
+                        <div class="action-gender">
+                            <span class="gender-label">Giới tính:</span>
+                            <label><input type="radio" name="character-gender" value="none" checked>N/A</label>
+                            <label><input type="radio" name="character-gender" value="male">Nam</label>
+                            <label><input type="radio" name="character-gender" value="female">Nữ</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="results-panel">
+                    <div class="results-header">
+                        <span>🖼️ Kết Quả</span>
+                        <span class="results-count" id="results-count">0 kết quả</span>
+                    </div>
+                    <div id="results-gallery" class="results-grid"></div>
+                    <div class="pagination" id="results-pagination" style="display: none;">
+                        <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">‹</button>
+                        <span class="pagination-info" id="results-page-info">1 / 1</span>
+                        <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">›</button>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-
-            <!-- API Log Panel (Right Side - Full Height) -->
-    <div class="log-panel">
-        <div class="log-header">
-            <div class="log-title">Nhật Ký API (Realtime)</div>
-                    <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn/Hiện Log">
-                        <span id="log-toggle-icon">◀</span>
-                    </button>
-            <button class="log-clear-btn" onclick="clearApiLogs()">Dọn Log</button>
-        </div>
-        <div id="api-log-list" class="api-log-list"></div>
+            <div class="log-panel">
+                <div class="log-header">
+                    <div class="log-title">📋 Nhật Ký API</div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="log-clear-btn" onclick="clearApiLogs()">Xóa</button>
+                        <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn Log">
+                            <span id="log-toggle-icon">◀</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="api-log-list" id="api-log-list"></div>
             </div>
         </div>
-    </div>
-
-    <!-- Results Section (Bottom) -->
-    <div class="results-section" style="margin-top: 40px; padding: 20px; background: rgba(255, 255, 255, 0.02); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
-        <div class="section-title" style="margin-bottom: 20px;">Kết Quả Đổi Mặt</div>
-        <div id="results-gallery" class="gallery-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px;"></div>
-        <div class="pagination" id="results-pagination" style="display: none; margin-top: 20px; justify-content: center; align-items: center; gap: 12px;">
-            <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">‹</button>
-            <span class="pagination-info" id="results-page-info">1 / 1</span>
-            <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">›</button>
-        </div>
-    </div>
 
     <!-- Lightbox for Results -->
     <div id="lightbox" class="lightbox" style="display: none;">
@@ -1867,6 +2579,14 @@
 
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
+
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-text">Đang tải dữ liệu</div>
+            <div class="loading-subtext">Vui lòng chờ...</div>
+        </div>
+    </div>
 
     <!-- Floating Toggle Button (shown when log is hidden) -->
     <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký API">
@@ -1915,7 +2635,17 @@
         const presetPageInfo = document.getElementById('preset-page-info');
         const presetPrevBtn = document.getElementById('preset-prev');
         const presetNextBtn = document.getElementById('preset-next');
-        const presetGalleryEmpty = document.getElementById('preset-gallery-empty');
+        function toggleSidebar(type) {
+            const content = document.getElementById(`${type}-sidebar-content`);
+            const toggle = event.target;
+            if (content.classList.contains('collapsed')) {
+                content.classList.remove('collapsed');
+                toggle.textContent = '−';
+            } else {
+                content.classList.add('collapsed');
+                toggle.textContent = '+';
+            }
+        }
 
         const selfieUpload = document.getElementById('selfie-upload');
         const selfieInput = document.getElementById('selfie-input');
@@ -2025,19 +2755,11 @@
         function loadGenderStates() {
             try {
                 const presetGender = localStorage.getItem('preset-gender');
-                const selfieGender = localStorage.getItem('selfie-gender');
                 
                 if (presetGender !== null) {
                     const presetRadio = document.querySelector(`input[name="preset-gender"][value="${presetGender}"]`);
                     if (presetRadio) {
                         presetRadio.checked = true;
-                    }
-                }
-                
-                if (selfieGender !== null) {
-                    const selfieRadio = document.querySelector(`input[name="selfie-gender"][value="${selfieGender}"]`);
-                    if (selfieRadio) {
-                        selfieRadio.checked = true;
                     }
                 }
             } catch (error) {
@@ -2074,7 +2796,6 @@
         // Save gender states to localStorage when changed
         function setupGenderListeners() {
             const presetGenderRadios = document.querySelectorAll('input[name="preset-gender"]');
-            const selfieGenderRadios = document.querySelectorAll('input[name="selfie-gender"]');
             
             presetGenderRadios.forEach(radio => {
                 radio.addEventListener('change', (e) => {
@@ -2082,16 +2803,6 @@
                         localStorage.setItem('preset-gender', e.target.value);
                     } catch (error) {
                         console.error('Error saving preset gender state:', error);
-                    }
-                });
-            });
-            
-            selfieGenderRadios.forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    try {
-                        localStorage.setItem('selfie-gender', e.target.value);
-                    } catch (error) {
-                        console.error('Error saving selfie gender state:', error);
                     }
                 });
             });
@@ -2227,31 +2938,24 @@
                 const statusDiv = document.getElementById('profile-status');
                 const infoDiv = document.getElementById('profile-info');
                 const idSpan = document.getElementById('profile-id-display');
-                const nameSpan = document.getElementById('profile-name-display');
-                const nameWrapper = document.getElementById('profile-name-wrapper');
 
                 if (!this.currentProfile) {
-                    statusDiv.textContent = 'Không có hồ sơ';
-                    statusDiv.style.color = 'var(--text-muted)';
-                    infoDiv.style.display = 'none';
+                    if (statusDiv) statusDiv.textContent = 'Không có hồ sơ';
+                    if (statusDiv) statusDiv.style.color = 'var(--text-muted)';
+                    if (infoDiv) infoDiv.style.display = 'none';
                     return;
                 }
 
-                statusDiv.textContent = '✓ Hồ sơ đã sẵn sàng';
-                statusDiv.style.color = 'var(--success)';
+                if (statusDiv) {
+                    statusDiv.textContent = '✓ Sẵn sàng';
+                    statusDiv.style.color = 'var(--success)';
+                }
                 
-                if (this.currentProfile.id) {
+                if (this.currentProfile.id && idSpan) {
                     idSpan.textContent = this.currentProfile.id;
                 }
                 
-                if (this.currentProfile.name) {
-                    nameSpan.textContent = this.currentProfile.name;
-                    nameWrapper.style.display = 'block';
-                } else {
-                    nameWrapper.style.display = 'none';
-                }
-                
-                infoDiv.style.display = 'block';
+                if (infoDiv) infoDiv.style.display = 'inline';
             },
 
             async updateProfile(profileId, name, email) {
@@ -2348,7 +3052,7 @@
                     pageInfo: presetPageInfo,
                     prevBtn: presetPrevBtn,
                     nextBtn: presetNextBtn,
-                    empty: presetGalleryEmpty
+                    empty: null
                 }
             }),
             selfie: createGalleryConfig({
@@ -2375,7 +3079,7 @@
                     pageInfo: selfiePageInfo,
                     prevBtn: selfiePrevBtn,
                     nextBtn: selfieNextBtn,
-                    empty: selfieGalleryEmpty
+                    empty: null
                 }
             }),
             results: createGalleryConfig({
@@ -2541,23 +3245,27 @@
 
         // Initialize the application
         async function init() {
-            // Load worker config first to get custom domain
-            await loadWorkerConfig();
-            console.log('[Config] Using API URL:', WORKER_URL);
-            
-            galleryKeys.forEach(type => {
-                if (type !== 'results') resetPreview(type);
-            });
-            
-            // Load presets immediately (don't need profile)
-            await loadGallery('preset');
-            
-            // Wait for profile to be initialized before loading selfies and results
-            if (window.profileManager && window.profileManager.currentProfile) {
-                await Promise.all(['selfie', 'results'].map(type => loadGallery(type)));
-            } else {
-                // Profile will load selfies and results when ready
-                console.log('Waiting for profile initialization before loading selfies and results...');
+            showLoading('Đang tải dữ liệu');
+            try {
+                await loadWorkerConfig();
+                console.log('[Config] Using API URL:', WORKER_URL);
+                
+                galleryKeys.forEach(type => {
+                    if (type !== 'results') resetPreview(type);
+                });
+                
+                await loadGallery('preset');
+                
+                if (window.profileManager && window.profileManager.currentProfile) {
+                    await Promise.all(['selfie', 'results'].map(type => loadGallery(type)));
+                } else {
+                    console.log('Waiting for profile initialization before loading selfies and results...');
+                }
+                
+                updateStepIndicator();
+                updateResultsCount();
+            } finally {
+                hideLoading();
             }
         }
 
@@ -2575,27 +3283,26 @@
                     }
                 }
 
-                // Clear invalid stored gender filter
-                if (config.state.genderFilter && config.state.genderFilter !== 'male' && config.state.genderFilter !== 'female' && config.state.genderFilter !== '') {
-                    console.warn(`Clearing invalid stored gender filter: ${config.state.genderFilter}`);
-                    config.state.genderFilter = '';
+                if (type === 'preset') {
+                    if (config.state.genderFilter && config.state.genderFilter !== 'male' && config.state.genderFilter !== 'female' && config.state.genderFilter !== '') {
+                        console.warn(`Clearing invalid stored gender filter: ${config.state.genderFilter}`);
+                        config.state.genderFilter = '';
+                    }
                 }
 
                 let url = `${WORKER_URL}${config.endpoints.list}`;
                 const params = new URLSearchParams();
 
-                // Add profile_id for selfies and results
                 if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
                     params.append('profile_id', window.profileManager.currentProfile.id);
                 }
 
-                // Validate gender filter - only allow 'male' or 'female', or empty string
-                if (genderFilter && genderFilter !== '') {
+                if (type === 'preset' && genderFilter && genderFilter !== '') {
                     if (genderFilter === 'male' || genderFilter === 'female') {
-                    params.append('gender', genderFilter);
+                        params.append('gender', genderFilter);
                     } else {
                         console.warn(`Invalid gender filter ignored: ${genderFilter}`);
-                        genderFilter = ''; // Reset to empty if invalid
+                        genderFilter = '';
                     }
                 }
 
@@ -2672,9 +3379,11 @@
                 }).join('');
             } else {
                 gallery.innerHTML = pageItems.map(item => {
-                    const genderIcon = item.gender === 'male' ? '👨' : item.gender === 'female' ? '👩' : '👤';
-                    const genderText = item.gender === 'male' ? 'Nam' : item.gender === 'female' ? 'Nữ' : '';
-                    const genderBadge = item.gender ? `<div class="gender-badge" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 500;">${genderIcon} ${genderText}</div>` : '';
+                    const genderBadge = type === 'preset' && item.gender ? (() => {
+                        const genderIcon = item.gender === 'male' ? '👨' : item.gender === 'female' ? '👩' : '👤';
+                        const genderText = item.gender === 'male' ? 'Nam' : item.gender === 'female' ? 'Nữ' : '';
+                        return `<div class="gender-badge" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 500;">${genderIcon} ${genderText}</div>`;
+                    })() : '';
 
                     return `
                     <div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}"
@@ -2691,6 +3400,36 @@
             pageInfo.textContent = `${config.state.page} / ${totalPages}`;
             prevBtn.disabled = config.state.page === 1;
             nextBtn.disabled = config.state.page === totalPages;
+            
+            if (type === 'results') {
+                updateResultsCount();
+                updateStepIndicator();
+                updateResultSidebar();
+            }
+        }
+
+        function updateResultSidebar() {
+            const resultSidebarGallery = document.getElementById('result-sidebar-gallery');
+            if (!resultSidebarGallery) return;
+            
+            const config = galleries.results;
+            const latestResults = config.state.items.slice(0, 12);
+            
+            if (!latestResults.length) {
+                resultSidebarGallery.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">Chưa có kết quả</div>';
+                return;
+            }
+            
+            resultSidebarGallery.innerHTML = latestResults.map((item, index) => {
+                const allResults = galleries.results.state.items;
+                const globalIndex = allResults.findIndex(r => r.id === item.id);
+                return `
+                    <div class="gallery-item" data-item-id="${item.id}" style="position: relative;">
+                        <img src="${item.result_url}" alt="${item.preset_name || ''}" loading="lazy" decoding="async" onclick="openLightbox(${globalIndex >= 0 ? globalIndex : index})" style="cursor: pointer; border-radius: 8px;">
+                        <button class="gallery-delete-btn" onclick="deleteItem('results', '${item.id}', event)">×</button>
+                    </div>
+                `;
+            }).join('');
         }
 
         function changePage(type, delta) {
@@ -2737,23 +3476,67 @@
             const { selected } = config.state;
             const { preview } = config.elements;
 
+            if (!preview) return;
+
+            const card = document.getElementById(`${type}-card`);
+            const status = document.getElementById(`${type}-status`);
+
             if (!selected) {
-                preview.style.display = 'block';
                 preview.innerHTML = `
                     <div class="preview-empty">
-                        <div class="icon">${config.labels.emptyIcon}</div>
-                        ${config.labels.emptyMessage}
+                        <div class="preview-empty-icon">📷</div>
+                        <div class="preview-empty-text">Chọn từ sidebar bên trái</div>
                     </div>
                 `;
+                if (card) card.classList.remove('has-selection');
+                if (status) status.textContent = 'Chưa chọn';
+                updateStepIndicator();
                 return;
             }
 
-            preview.style.display = 'block';
             preview.innerHTML = `
                 <img src="${selected.image_url}" alt="${selected.filename || ''}">
                 <button class="delete-btn" onclick="clearSelection('${type}', event)">×</button>
             `;
+            if (card) card.classList.add('has-selection');
+            if (status) status.textContent = 'Đã chọn';
+            updateStepIndicator();
         }
+
+        function updateStepIndicator() {
+            const presetSelected = galleries.preset?.state?.selected;
+            const selfieSelected = galleries.selfie?.state?.selected;
+            
+            document.querySelectorAll('.step').forEach((step, index) => {
+                const stepNum = index + 1;
+                step.classList.remove('active', 'completed');
+                
+                if (stepNum === 1) {
+                    step.classList.add('active');
+                } else if (stepNum === 2 && (presetSelected || selfieSelected)) {
+                    step.classList.add('active');
+                    if (presetSelected && selfieSelected) {
+                        step.classList.add('completed');
+                    }
+                } else if (stepNum === 3 && presetSelected && selfieSelected) {
+                    step.classList.add('active');
+                } else if (stepNum === 4) {
+                    const resultsCount = galleries.results?.state?.items?.length || 0;
+                    if (resultsCount > 0) {
+                        step.classList.add('active', 'completed');
+                    }
+                }
+            });
+        }
+
+        function updateResultsCount() {
+            const count = galleries.results?.state?.items?.length || 0;
+            const countEl = document.getElementById('results-count');
+            if (countEl) {
+                countEl.textContent = `${count} kết quả`;
+            }
+        }
+
 
         function resetPreview(type) {
             const config = galleries[type];
@@ -2944,12 +3727,6 @@
                     if (gender) {
                         formData.append('gender', gender);
                     }
-                } else if (type === 'selfie') {
-                    const genderRadio = document.querySelector('input[name="selfie-gender"]:checked');
-                    const gender = genderRadio?.value || '';
-                    if (gender) {
-                        formData.append('gender', gender);
-                    }
                 }
 
                 // Upload file directly
@@ -3007,6 +3784,7 @@
 
                 addNewItem(type, newImage);
                 await syncGallerySelection(type, newImage);
+                await loadGallery(type);
                 showStatusMessage('Tải lên hình ảnh thành công', 'success');
 
             } catch (error) {
@@ -3034,6 +3812,20 @@
                 console.error('Response text:', text);
                 throw new Error('Invalid JSON response from server');
             }
+        }
+
+        function showLoading(text = 'Đang tải dữ liệu') {
+            const overlay = document.getElementById('loading-overlay');
+            if (!overlay) return;
+            overlay.style.display = 'flex';
+            const textEl = overlay.querySelector('.loading-text');
+            if (textEl) textEl.textContent = text;
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            if (!overlay) return;
+            overlay.style.display = 'none';
         }
 
         function showStatusMessage(message, type = 'info') {
@@ -3189,9 +3981,11 @@
                         created_at: new Date().toISOString()
                     };
 
-                    addNewItem('results', newResult);
-                    await loadGallery('results');
-                    showStatusMessage('Tạo đổi mặt thành công!', 'success');
+                addNewItem('results', newResult);
+                await loadGallery('results');
+                updateResultsCount();
+                updateStepIndicator();
+                showStatusMessage('Tạo đổi mặt thành công!', 'success');
                 } else {
                     throw new Error('Không nhận được URL kết quả từ server');
                 }
@@ -3203,6 +3997,92 @@
                 generateBtn.classList.remove('loading');
                 updateGenerateButton();
             }
+        }
+
+        function getSelectedSelfie() {
+            return galleries.selfie.state.selected;
+        }
+
+        async function runImageOperation(label, endpoint, extra = {}) {
+            const selfieSelected = getSelectedSelfie();
+            if (!selfieSelected) {
+                showStatusMessage('Chọn selfie để chạy API.', 'error');
+                return;
+            }
+
+            if (!window.profileManager?.currentProfile) {
+                showStatusMessage('Hồ sơ chưa sẵn sàng.', 'error');
+                return;
+            }
+
+            showLoading(label);
+            try {
+                const payload = Object.assign({ 
+                    image_url: selfieSelected.image_url,
+                    profile_id: window.profileManager.currentProfile.id
+                }, extra);
+                const startTime = Date.now();
+                const response = await fetch(`${WORKER_URL}/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const duration = Date.now() - startTime;
+                const data = await safeJson(response);
+
+                logApiCall({
+                    label,
+                    method: 'POST',
+                    url: `/${endpoint}`,
+                    status: response.ok ? 'success' : 'error',
+                    payload: data,
+                    duration
+                });
+
+                if (!response.ok || !data?.data?.resultImageUrl) {
+                    throw new Error(data.message || data.Message || `HTTP ${response.status}`);
+                }
+
+                if (data.data.id) {
+                    const newResult = {
+                        id: data.data.id,
+                        result_url: data.data.resultImageUrl,
+                        preset_name: label,
+                        created_at: new Date().toISOString()
+                    };
+
+                    addNewItem('results', newResult);
+                    await loadGallery('results');
+                    updateResultSidebar();
+                    updateResultsCount();
+                    updateStepIndicator();
+                    showStatusMessage(`${label} thành công`, 'success');
+                } else {
+                    throw new Error('Result ID not returned from server');
+                }
+            } catch (error) {
+                showStatusMessage(`${label} thất bại: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function runEnhance() {
+            await runImageOperation('Enhance', 'enhance');
+        }
+
+        async function runUpscale4k() {
+            await runImageOperation('4K Upscale', 'upscaler4k');
+        }
+
+        async function runColorize() {
+            await runImageOperation('Colorize', 'colorize');
+        }
+
+        async function runAging() {
+            const ageInput = document.getElementById('aging-years');
+            const ageYears = parseInt(ageInput?.value || '20', 10) || 20;
+            await runImageOperation('Aging', 'aging', { age_years: ageYears });
         }
     </script>
 </body></html>

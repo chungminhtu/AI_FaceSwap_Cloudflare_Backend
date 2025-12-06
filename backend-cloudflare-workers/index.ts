@@ -435,16 +435,11 @@ export default {
         } else if (type === 'selfie') {
           console.log('Processing selfie upload:', key);
 
-          // Extract gender from form data
-          const selfieGender = gender;
-
-          // Save to database - this MUST succeed for the upload to be considered successful
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
 
           console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
-          // First check if selfies table exists
           const tableCheck = await DB.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
           ).first();
@@ -454,29 +449,9 @@ export default {
             return errorResponse('Database schema not initialized. Please run database migration.', 500);
           }
 
-          // Validate gender before insert
-          const validGender = (selfieGender === 'male' || selfieGender === 'female') ? selfieGender : null;
-
-          // Check if gender column exists
-          let hasGenderColumn = false;
-          try {
-            const tableInfo = await DB.prepare("PRAGMA table_info(selfies)").all();
-            hasGenderColumn = (tableInfo.results as any[]).some((col: any) => col.name === 'gender');
-          } catch {
-            hasGenderColumn = false;
-          }
-
-          let result;
-          if (hasGenderColumn) {
-            result = await DB.prepare(
-              'INSERT INTO selfies (id, image_url, filename, gender, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, filename, validGender, profileId, createdAt).run();
-          } else {
-            console.warn('[DB] Gender column not found, inserting without gender');
-            result = await DB.prepare(
-              'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
-          }
+          const result = await DB.prepare(
+            'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+          ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
 
           if (!result.success) {
             console.error('Database insert returned success=false:', result);
@@ -899,29 +874,15 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        // Check for gender filter query parameter
-        const genderFilter = url.searchParams.get('gender') as 'male' | 'female' | null;
+        let query = 'SELECT id, image_url, filename, profile_id, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
 
-        let query = 'SELECT id, image_url, filename, gender, profile_id, created_at FROM selfies WHERE profile_id = ?';
-        const params: any[] = [profileId];
-
-        if (genderFilter && (genderFilter === 'male' || genderFilter === 'female')) {
-          query += ' AND gender = ?';
-          params.push(genderFilter);
-          console.log(`Filtering selfies by gender: ${genderFilter}`);
-        } else if (genderFilter) {
-          console.warn('[Selfies] Invalid gender parameter ignored:', genderFilter);
-        }
-
-        query += ' ORDER BY created_at DESC LIMIT 50';
-
-        const result = await DB.prepare(query).bind(...params).all();
+        const result = await DB.prepare(query).bind(profileId).all();
 
         console.log('Selfies query result:', {
           success: result.success,
           resultsCount: result.results?.length || 0,
           meta: result.meta,
-          genderFilter: genderFilter || 'none'
+          profileId: profileId
         });
 
         if (!result || !result.results) {
@@ -933,11 +894,10 @@ export default {
           id: row.id || '',
           image_url: convertLegacyUrl(row.image_url || '', env),
           filename: row.filename || '',
-          gender: row.gender || null,
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
-        console.log(`Returning ${selfies.length} selfies${genderFilter ? ` (filtered by gender: ${genderFilter})` : ''}`);
+        console.log(`Returning ${selfies.length} selfies`);
         return jsonResponse({ selfies });
       } catch (error) {
         console.error('List selfies error:', error);
@@ -1546,10 +1506,21 @@ export default {
     // Handle upscaler4k endpoint
     if (path === '/upscaler4k' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string };
+        const body = await request.json() as { image_url: string; profile_id?: string };
         
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
+        }
+
+        if (!body.profile_id) {
+          return errorResponse('profile_id is required', 400);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
         }
 
         const envError = validateEnv(env, 'vertex');
@@ -1652,6 +1623,28 @@ export default {
           }
         }
 
+        let savedResultId: string | null = null;
+        try {
+          const selfieResult = await DB.prepare(
+            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
+          ).bind(body.image_url, body.profile_id).first();
+          
+          const selfieId = selfieResult ? (selfieResult as any).id : null;
+          
+          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          await DB.prepare(
+            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(resultId, selfieId, null, '4K Upscale', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          savedResultId = resultId;
+          console.log('[Upscaler4K] Saved result to database:', resultId, 'selfie_id:', selfieId);
+        } catch (dbError) {
+          console.error('[Upscaler4K] Database save error:', dbError);
+          if (dbError instanceof Error) {
+            console.error('[Upscaler4K] Error message:', dbError.message);
+            console.error('[Upscaler4K] Error stack:', dbError.stack);
+          }
+        }
+
         const providerDebug = buildProviderDebug(upscalerResult, resultUrl);
         const vertexDebug = buildVertexDebug(upscalerResult);
         const debugPayload = compact({
@@ -1663,6 +1656,7 @@ export default {
 
         return jsonResponse({
           data: {
+            id: savedResultId,
             resultImageUrl: resultUrl,
           },
           debug: debugPayload,
@@ -1679,21 +1673,31 @@ export default {
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string };
+        const body = await request.json() as { image_url: string; profile_id?: string };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
         }
 
+        if (!body.profile_id) {
+          return errorResponse('profile_id is required', 400);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
+        }
+
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        // For now, implement a simple enhancement using existing Nano Banana API
-        // This is a placeholder - in production, you'd want a dedicated enhancement model
         const enhancedResult = await callNanoBanana(
           'Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance.',
           body.image_url,
-          body.image_url, // Use same image as target and source for enhancement
+          body.image_url,
           env
         );
 
@@ -1721,11 +1725,34 @@ export default {
           console.log('[Enhance] Converted R2 URL to public URL:', resultUrl);
         }
 
+        let savedResultId: string | null = null;
+        try {
+          const selfieResult = await DB.prepare(
+            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
+          ).bind(body.image_url, body.profile_id).first();
+          
+          const selfieId = selfieResult ? (selfieResult as any).id : null;
+          
+          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          await DB.prepare(
+            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(resultId, selfieId, null, 'Enhance', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          savedResultId = resultId;
+          console.log('[Enhance] Saved result to database:', resultId, 'selfie_id:', selfieId);
+        } catch (dbError) {
+          console.error('[Enhance] Database save error:', dbError);
+          if (dbError instanceof Error) {
+            console.error('[Enhance] Error message:', dbError.message);
+            console.error('[Enhance] Error stack:', dbError.stack);
+          }
+        }
+
         const providerDebug = buildProviderDebug(enhancedResult, resultUrl);
         const vertexDebug = mergeVertexDebug(enhancedResult, undefined);
 
         return jsonResponse({
           data: {
+            id: savedResultId,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -1745,10 +1772,21 @@ export default {
     // Handle colorize endpoint
     if (path === '/colorize' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string };
+        const body = await request.json() as { image_url: string; profile_id?: string };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
+        }
+
+        if (!body.profile_id) {
+          return errorResponse('profile_id is required', 400);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
         }
 
         const envError = validateEnv(env, 'vertex');
@@ -1787,11 +1825,34 @@ export default {
           console.log('[Colorize] Converted R2 URL to public URL:', resultUrl);
         }
 
+        let savedResultId: string | null = null;
+        try {
+          const selfieResult = await DB.prepare(
+            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
+          ).bind(body.image_url, body.profile_id).first();
+          
+          const selfieId = selfieResult ? (selfieResult as any).id : null;
+          
+          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          await DB.prepare(
+            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(resultId, selfieId, null, 'Colorize', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          savedResultId = resultId;
+          console.log('[Colorize] Saved result to database:', resultId, 'selfie_id:', selfieId);
+        } catch (dbError) {
+          console.error('[Colorize] Database save error:', dbError);
+          if (dbError instanceof Error) {
+            console.error('[Colorize] Error message:', dbError.message);
+            console.error('[Colorize] Error stack:', dbError.stack);
+          }
+        }
+
         const providerDebug = buildProviderDebug(colorizedResult, resultUrl);
         const vertexDebug = mergeVertexDebug(colorizedResult, undefined);
 
         return jsonResponse({
           data: {
+            id: savedResultId,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -1811,10 +1872,21 @@ export default {
     // Handle aging endpoint
     if (path === '/aging' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; age_years?: number };
+        const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
+        }
+
+        if (!body.profile_id) {
+          return errorResponse('profile_id is required', 400);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
         }
 
         const ageYears = body.age_years || 20;
@@ -1854,11 +1926,34 @@ export default {
           console.log('[Aging] Converted R2 URL to public URL:', resultUrl);
         }
 
+        let savedResultId: string | null = null;
+        try {
+          const selfieResult = await DB.prepare(
+            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
+          ).bind(body.image_url, body.profile_id).first();
+          
+          const selfieId = selfieResult ? (selfieResult as any).id : null;
+          
+          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+          await DB.prepare(
+            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(resultId, selfieId, null, 'Aging', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          savedResultId = resultId;
+          console.log('[Aging] Saved result to database:', resultId, 'selfie_id:', selfieId);
+        } catch (dbError) {
+          console.error('[Aging] Database save error:', dbError);
+          if (dbError instanceof Error) {
+            console.error('[Aging] Error message:', dbError.message);
+            console.error('[Aging] Error stack:', dbError.stack);
+          }
+        }
+
         const providerDebug = buildProviderDebug(agingResult, resultUrl);
         const vertexDebug = mergeVertexDebug(agingResult, undefined);
 
         return jsonResponse({
           data: {
+            id: savedResultId,
             resultImageUrl: resultUrl,
           },
           status: 'success',
