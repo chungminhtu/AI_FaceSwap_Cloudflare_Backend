@@ -31,12 +31,77 @@ const getD1Database = (env: Env): D1Database => {
   const bindingName = env.D1_DATABASE_BINDING || env.D1_DATABASE_NAME || 'DB';
   const database = (env as any)[bindingName] as D1Database;
   if (!database) {
-    const availableBindings = Object.keys(env).filter(key => 
+    const availableBindings = Object.keys(env).filter(key =>
       env[key] && typeof (env[key] as any).prepare === 'function'
     );
     throw new Error(`D1 database binding '${bindingName}' not found. Available bindings: ${availableBindings.join(', ')}`);
   }
   return database;
+};
+
+const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
+  const systemPresetId = 'system_no_preset';
+  const existing = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(systemPresetId).first();
+  if (!existing) {
+    await DB.prepare(
+      'INSERT OR IGNORE INTO presets (id, image_url, filename, preset_name, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(systemPresetId, '', 'system', 'System', Math.floor(Date.now() / 1000)).run();
+  }
+  return systemPresetId;
+};
+
+const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string> => {
+  let selfieResult = await DB.prepare(
+    'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
+  ).bind(imageUrl, profileId).first();
+  
+  if (!selfieResult) {
+    const urlParts = imageUrl.split('/');
+    const filename = urlParts[urlParts.length - 1];
+    selfieResult = await DB.prepare(
+      'SELECT id FROM selfies WHERE filename = ? AND profile_id = ? LIMIT 1'
+    ).bind(filename, profileId).first();
+  }
+  
+  if (selfieResult) {
+    return (selfieResult as any).id;
+  }
+  
+  const urlParts = imageUrl.split('/');
+  const filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.jpg`;
+  const systemSelfieId = `system_selfie_${profileId}_${Date.now()}`;
+  await DB.prepare(
+    'INSERT OR IGNORE INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(systemSelfieId, imageUrl, filename, profileId, Math.floor(Date.now() / 1000)).run();
+  return systemSelfieId;
+};
+
+const saveResultToDatabase = async (
+  DB: D1Database,
+  resultId: string,
+  resultUrl: string,
+  profileId: string,
+  imageUrl: string,
+  presetName: string
+): Promise<boolean> => {
+  try {
+    const systemPresetId = await ensureSystemPreset(DB);
+    const selfieId = await ensureSystemSelfie(DB, profileId, imageUrl);
+    
+    await DB.prepare(
+      'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(resultId, selfieId, systemPresetId, presetName, resultUrl, profileId, Math.floor(Date.now() / 1000)).run();
+    
+    console.log(`[${presetName}] Saved result to database:`, resultId, 'selfie_id:', selfieId, 'profile_id:', profileId);
+    return true;
+  } catch (dbError) {
+    console.error(`[${presetName}] Database save error:`, dbError);
+    if (dbError instanceof Error) {
+      console.error(`[${presetName}] Error message:`, dbError.message);
+      console.error(`[${presetName}] Error stack:`, dbError.stack);
+    }
+    return false;
+  }
 };
 
 const resolveAccountId = (env: Env): string | undefined =>
@@ -1623,27 +1688,10 @@ export default {
           }
         }
 
-        let savedResultId: string | null = null;
-        try {
-          const selfieResult = await DB.prepare(
-            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
-          ).bind(body.image_url, body.profile_id).first();
-          
-          const selfieId = selfieResult ? (selfieResult as any).id : null;
-          
-          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          await DB.prepare(
-            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-          ).bind(resultId, selfieId, null, '4K Upscale', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          savedResultId = resultId;
-          console.log('[Upscaler4K] Saved result to database:', resultId, 'selfie_id:', selfieId);
-        } catch (dbError) {
-          console.error('[Upscaler4K] Database save error:', dbError);
-          if (dbError instanceof Error) {
-            console.error('[Upscaler4K] Error message:', dbError.message);
-            console.error('[Upscaler4K] Error stack:', dbError.stack);
-          }
-        }
+        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const savedResultId: string = resultId;
+        
+        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, '4K Upscale');
 
         const providerDebug = buildProviderDebug(upscalerResult, resultUrl);
         const vertexDebug = buildVertexDebug(upscalerResult);
@@ -1725,27 +1773,10 @@ export default {
           console.log('[Enhance] Converted R2 URL to public URL:', resultUrl);
         }
 
-        let savedResultId: string | null = null;
-        try {
-          const selfieResult = await DB.prepare(
-            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
-          ).bind(body.image_url, body.profile_id).first();
-          
-          const selfieId = selfieResult ? (selfieResult as any).id : null;
-          
-          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          await DB.prepare(
-            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-          ).bind(resultId, selfieId, null, 'Enhance', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          savedResultId = resultId;
-          console.log('[Enhance] Saved result to database:', resultId, 'selfie_id:', selfieId);
-        } catch (dbError) {
-          console.error('[Enhance] Database save error:', dbError);
-          if (dbError instanceof Error) {
-            console.error('[Enhance] Error message:', dbError.message);
-            console.error('[Enhance] Error stack:', dbError.stack);
-          }
-        }
+        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const savedResultId: string = resultId;
+        
+        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Enhance');
 
         const providerDebug = buildProviderDebug(enhancedResult, resultUrl);
         const vertexDebug = mergeVertexDebug(enhancedResult, undefined);
@@ -1792,12 +1823,10 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        // For now, implement colorization using existing Nano Banana API
-        // This is a placeholder - in production, you'd want a dedicated colorization model
         const colorizedResult = await callNanoBanana(
-          'Convert this black and white image to full color. Add natural, realistic colors while maintaining the original composition and details. Use appropriate colors for skin tones, clothing, background elements, and any objects in the scene.',
+          'Restore and enhance this damaged photo to a hyper-realistic, ultra-detailed image, 16K DSLR quality. Fix scratches, tears, noise, and blurriness. Enhance colors to vivid, vibrant tones while keeping natural skin tones. Perfectly sharpen details in face, eyes, hair, and clothing. Add realistic lighting, shadows, and depth of field. Photoshop-level professional retouching. High dynamic range, ultra-HD, lifelike textures, cinematic finish, crisp and clean background, fully restored and enhanced version of the original photo.',
           body.image_url,
-          body.image_url, // Use same image as target and source for colorization
+          body.image_url,
           env
         );
 
@@ -1825,27 +1854,10 @@ export default {
           console.log('[Colorize] Converted R2 URL to public URL:', resultUrl);
         }
 
-        let savedResultId: string | null = null;
-        try {
-          const selfieResult = await DB.prepare(
-            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
-          ).bind(body.image_url, body.profile_id).first();
-          
-          const selfieId = selfieResult ? (selfieResult as any).id : null;
-          
-          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          await DB.prepare(
-            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-          ).bind(resultId, selfieId, null, 'Colorize', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          savedResultId = resultId;
-          console.log('[Colorize] Saved result to database:', resultId, 'selfie_id:', selfieId);
-        } catch (dbError) {
-          console.error('[Colorize] Database save error:', dbError);
-          if (dbError instanceof Error) {
-            console.error('[Colorize] Error message:', dbError.message);
-            console.error('[Colorize] Error stack:', dbError.stack);
-          }
-        }
+        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const savedResultId: string = resultId;
+        
+        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Colorize');
 
         const providerDebug = buildProviderDebug(colorizedResult, resultUrl);
         const vertexDebug = mergeVertexDebug(colorizedResult, undefined);
@@ -1926,27 +1938,10 @@ export default {
           console.log('[Aging] Converted R2 URL to public URL:', resultUrl);
         }
 
-        let savedResultId: string | null = null;
-        try {
-          const selfieResult = await DB.prepare(
-            'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
-          ).bind(body.image_url, body.profile_id).first();
-          
-          const selfieId = selfieResult ? (selfieResult as any).id : null;
-          
-          const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          await DB.prepare(
-            'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-          ).bind(resultId, selfieId, null, 'Aging', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          savedResultId = resultId;
-          console.log('[Aging] Saved result to database:', resultId, 'selfie_id:', selfieId);
-        } catch (dbError) {
-          console.error('[Aging] Database save error:', dbError);
-          if (dbError instanceof Error) {
-            console.error('[Aging] Error message:', dbError.message);
-            console.error('[Aging] Error stack:', dbError.stack);
-          }
-        }
+        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const savedResultId: string = resultId;
+        
+        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Aging');
 
         const providerDebug = buildProviderDebug(agingResult, resultUrl);
         const vertexDebug = mergeVertexDebug(agingResult, undefined);

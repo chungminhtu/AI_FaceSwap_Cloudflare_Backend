@@ -904,45 +904,108 @@ export const callUpscaler4k = async (
         }));
       }
       
+      console.log('[Upscaler4K] Full response structure:', JSON.stringify(data, null, 2).substring(0, 1000));
+      
       let resultImageUrl: string | null = null;
       
       if (data.output_url) {
         resultImageUrl = data.output_url;
+      } else if (data.output) {
+        resultImageUrl = typeof data.output === 'string' ? data.output : data.output.url || data.output.image_url;
       } else if (data.image_url) {
         resultImageUrl = data.image_url;
       } else if (data.url) {
         resultImageUrl = data.url;
       } else if (data.result?.url) {
         resultImageUrl = data.result.url;
+      } else if (data.result?.output_url) {
+        resultImageUrl = data.result.output_url;
+      } else if (data.result?.image_url) {
+        resultImageUrl = data.result.image_url;
       } else if (data.data?.url) {
         resultImageUrl = data.data.url;
+      } else if (data.data?.output_url) {
+        resultImageUrl = data.data.output_url;
+      } else if (data.data?.image_url) {
+        resultImageUrl = data.data.image_url;
+      } else if (data.image) {
+        resultImageUrl = typeof data.image === 'string' ? data.image : data.image.url || data.image.output_url;
+      } else if (data.upscaled_image) {
+        resultImageUrl = typeof data.upscaled_image === 'string' ? data.upscaled_image : data.upscaled_image.url;
+      } else if (data.upscaled) {
+        resultImageUrl = typeof data.upscaled === 'string' ? data.upscaled : data.upscaled.url;
       }
 
-      if (!resultImageUrl) {
-        console.error('[Upscaler4K] No image URL found in response');
-        return {
-          Success: false,
-          Message: 'WaveSpeed API did not return an image URL in the response',
-          StatusCode: 500,
-          Error: 'No image URL found in response',
-          FullResponse: JSON.stringify(data, null, 2),
-          Debug: debugInfo,
-        };
-      }
-
-      const imageResponse = await fetch(resultImageUrl);
-      if (!imageResponse.ok) {
-        throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
-      }
-
-      const imageData = await imageResponse.arrayBuffer();
-      const bytes = new Uint8Array(imageData);
+      let imageBytes: Uint8Array;
+      let contentType = 'image/png';
       
-      const contentType = imageResponse.headers.get('content-type') || 'image/png';
+      if (!resultImageUrl) {
+        if (data.base64 || data.data || data.image_base64) {
+          const base64Data = data.base64 || data.data || data.image_base64;
+          if (typeof base64Data === 'string' && base64Data.startsWith('data:')) {
+            const base64Match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+            if (base64Match) {
+              contentType = base64Match[1] || 'image/png';
+              const base64String = base64Match[2];
+              const binaryString = atob(base64String);
+              imageBytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                imageBytes[i] = binaryString.charCodeAt(i);
+              }
+            } else {
+              console.error('[Upscaler4K] Invalid base64 data URL format');
+              return {
+                Success: false,
+                Message: 'WaveSpeed API returned invalid base64 image data',
+                StatusCode: 500,
+                Error: 'Invalid base64 format',
+                FullResponse: JSON.stringify(data, null, 2),
+                Debug: debugInfo,
+              };
+            }
+          } else if (typeof base64Data === 'string') {
+            const binaryString = atob(base64Data);
+            imageBytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              imageBytes[i] = binaryString.charCodeAt(i);
+            }
+          } else {
+            console.error('[Upscaler4K] No image URL or base64 data found in response. Full response:', JSON.stringify(data, null, 2));
+            return {
+              Success: false,
+              Message: 'WaveSpeed API did not return an image URL or base64 data in the response',
+              StatusCode: 500,
+              Error: 'No image URL or base64 data found in response',
+              FullResponse: JSON.stringify(data, null, 2),
+              Debug: debugInfo,
+            };
+          }
+        } else {
+          console.error('[Upscaler4K] No image URL or base64 data found in response. Full response:', JSON.stringify(data, null, 2));
+          return {
+            Success: false,
+            Message: 'WaveSpeed API did not return an image URL in the response',
+            StatusCode: 500,
+            Error: 'No image URL found in response',
+            FullResponse: JSON.stringify(data, null, 2),
+            Debug: debugInfo,
+          };
+        }
+      } else {
+        const imageResponse = await fetch(resultImageUrl);
+        if (!imageResponse.ok) {
+          throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
+        }
+
+        const imageData = await imageResponse.arrayBuffer();
+        imageBytes = new Uint8Array(imageData);
+        contentType = imageResponse.headers.get('content-type') || 'image/png';
+      }
+      
       const resultKey = `results/upscaler4k_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${contentType.split('/')[1] || 'png'}`;
       
       const R2_BUCKET = getR2Bucket(env);
-      await R2_BUCKET.put(resultKey, bytes, {
+      await R2_BUCKET.put(resultKey, imageBytes, {
         httpMetadata: {
           contentType,
           cacheControl: 'public, max-age=31536000, immutable',

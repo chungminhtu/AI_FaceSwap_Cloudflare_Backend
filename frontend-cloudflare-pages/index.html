@@ -256,23 +256,6 @@
             overflow-y: auto;
         }
 
-        #result-sidebar-gallery {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            max-height: 800px;
-        }
-
-        #result-sidebar-gallery .gallery-item {
-            aspect-ratio: 1;
-            min-height: 160px;
-        }
-
-        #result-sidebar-gallery .gallery-item img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
         #preset-gallery .gallery-item,
         #selfie-gallery .gallery-item {
             aspect-ratio: 1;
@@ -2373,13 +2356,17 @@
             <a href="/docs/" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(248, 35, 135, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(248, 35, 135, 0.3)'">📖 API Documentation</a>
         </div>
 
-        <div id="profile-section" style="margin-bottom: 12px; padding: 8px 12px; background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; display: flex; align-items: center; gap: 12px; font-size: 12px;">
+        <div id="profile-section" style="margin-bottom: 12px; padding: 8px 12px; background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; display: flex; align-items: center; gap: 12px; font-size: 12px; flex-wrap: wrap;">
             <span style="color: var(--text-secondary);">👤</span>
             <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
             <span id="profile-info" style="display: none; color: var(--text-primary);">
                 <span style="color: var(--text-secondary);">ID:</span>
                 <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 11px;"></span>
             </span>
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                <input type="text" id="profile-id-input" placeholder="Nhập Profile ID" style="padding: 4px 8px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: var(--text-primary); font-size: 11px; font-family: monospace; width: 180px; height: 28px;">
+                <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; height: 28px; display: inline-flex; align-items: center;">Chuyển</button>
+            </div>
         </div>
 
         <div class="app-layout">
@@ -2425,20 +2412,6 @@
                             <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
                             <span class="pagination-info" id="selfie-page-info">1 / 1</span>
                             <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="sidebar-section">
-                    <div class="sidebar-header">
-                        <span>🖼️ Results</span>
-                        <button class="sidebar-toggle" onclick="toggleSidebar('result')">−</button>
-                    </div>
-                    <div class="sidebar-content" id="result-sidebar-content">
-                        <div id="result-sidebar-gallery" class="sidebar-gallery"></div>
-                        <div class="pagination" id="result-sidebar-pagination" style="display: none;">
-                            <button class="pagination-btn" id="result-sidebar-prev" onclick="changePage('result-sidebar', -1)">‹</button>
-                            <span class="pagination-info" id="result-sidebar-page-info">1 / 1</span>
-                            <button class="pagination-btn" id="result-sidebar-next" onclick="changePage('result-sidebar', 1)">›</button>
                         </div>
                     </div>
                 </div>
@@ -2878,8 +2851,10 @@
                                 this.currentProfile = profile;
                                 this.updateProfileDisplay();
                                 if (typeof loadGallery === 'function') {
-                                    loadGallery('selfie');
-                                    loadGallery('results');
+                                    await Promise.all([
+                                        loadGallery('selfie'),
+                                        loadGallery('results')
+                                    ]);
                                 }
                                 return profile;
                             } else {
@@ -2900,8 +2875,10 @@
                     this.currentProfile = profile;
                     this.updateProfileDisplay();
                     if (typeof loadGallery === 'function') {
-                        loadGallery('selfie');
-                        loadGallery('results');
+                        await Promise.all([
+                            loadGallery('selfie'),
+                            loadGallery('results')
+                        ]);
                     }
                     return profile;
                 } catch (error) {
@@ -2984,7 +2961,71 @@
                 }
             },
 
+            async switchToProfile(profileId) {
+                const statusDiv = document.getElementById('profile-status');
+                if (!profileId || !profileId.trim()) {
+                    showStatusMessage('Vui lòng nhập Profile ID', 'error');
+                    return;
+                }
+
+                profileId = profileId.trim();
+                statusDiv.textContent = 'Đang chuyển hồ sơ...';
+                statusDiv.style.color = 'var(--text-muted)';
+
+                try {
+                    const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            throw new Error('Profile không tồn tại');
+                        }
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const profile = await response.json();
+                    this.currentProfile = profile;
+                    localStorage.setItem('userProfileId', profile.id);
+                    this.updateProfileDisplay();
+
+                    if (typeof loadGallery === 'function') {
+                        await Promise.all([
+                            loadGallery('selfie'),
+                            loadGallery('results')
+                        ]);
+                    }
+
+                    updateStepIndicator();
+                    updateResultsCount();
+                    showStatusMessage('Đã chuyển sang hồ sơ mới', 'success');
+                    return profile;
+                } catch (error) {
+                    console.error('Failed to switch profile:', error);
+                    statusDiv.textContent = '✗ Lỗi chuyển hồ sơ';
+                    statusDiv.style.color = 'var(--danger)';
+                    showStatusMessage(`Không thể chuyển hồ sơ: ${error.message}`, 'error');
+                    throw error;
+                }
+            },
+
         };
+
+        async function switchProfile() {
+            const input = document.getElementById('profile-id-input');
+            if (!input) return;
+            
+            const profileId = input.value.trim();
+            if (!profileId) {
+                showStatusMessage('Vui lòng nhập Profile ID', 'error');
+                return;
+            }
+
+            try {
+                await window.profileManager.switchToProfile(profileId);
+                input.value = '';
+            } catch (error) {
+                console.error('Switch profile error:', error);
+            }
+        }
+
 
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', async () => {
@@ -2995,6 +3036,17 @@
                 setupGenderListeners();
                 syncPromptControls();
                 setupGenderFilterListeners();
+                
+                const profileInput = document.getElementById('profile-id-input');
+                if (profileInput) {
+                    profileInput.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            switchProfile();
+                        }
+                    });
+                }
+                
                 window.profileManager.initializeProfile();
                 await init();
             });
@@ -3006,6 +3058,17 @@
             setupGenderListeners();
             syncPromptControls();
             setupGenderFilterListeners();
+            
+            const profileInput = document.getElementById('profile-id-input');
+            if (profileInput) {
+                profileInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        switchProfile();
+                    }
+                });
+            }
+            
             window.profileManager.initializeProfile();
             init();
         }
@@ -3404,33 +3467,9 @@
             if (type === 'results') {
                 updateResultsCount();
                 updateStepIndicator();
-                updateResultSidebar();
             }
         }
 
-        function updateResultSidebar() {
-            const resultSidebarGallery = document.getElementById('result-sidebar-gallery');
-            if (!resultSidebarGallery) return;
-            
-            const config = galleries.results;
-            const latestResults = config.state.items.slice(0, 12);
-            
-            if (!latestResults.length) {
-                resultSidebarGallery.innerHTML = '<div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">Chưa có kết quả</div>';
-                return;
-            }
-            
-            resultSidebarGallery.innerHTML = latestResults.map((item, index) => {
-                const allResults = galleries.results.state.items;
-                const globalIndex = allResults.findIndex(r => r.id === item.id);
-                return `
-                    <div class="gallery-item" data-item-id="${item.id}" style="position: relative;">
-                        <img src="${item.result_url}" alt="${item.preset_name || ''}" loading="lazy" decoding="async" onclick="openLightbox(${globalIndex >= 0 ? globalIndex : index})" style="cursor: pointer; border-radius: 8px;">
-                        <button class="gallery-delete-btn" onclick="deleteItem('results', '${item.id}', event)">×</button>
-                    </div>
-                `;
-            }).join('');
-        }
 
         function changePage(type, delta) {
             const config = galleries[type];
@@ -4052,11 +4091,14 @@
                     };
 
                     addNewItem('results', newResult);
-                    await loadGallery('results');
-                    updateResultSidebar();
+                    renderGallery('results');
                     updateResultsCount();
                     updateStepIndicator();
                     showStatusMessage(`${label} thành công`, 'success');
+                    
+                    await loadGallery('results');
+                    updateResultsCount();
+                    updateStepIndicator();
                 } else {
                     throw new Error('Result ID not returned from server');
                 }
