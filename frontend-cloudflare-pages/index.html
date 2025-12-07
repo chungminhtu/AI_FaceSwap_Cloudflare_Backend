@@ -170,7 +170,7 @@
             grid-template-columns: 1fr 500px;
             gap: 20px;
             align-items: start;
-            align-content: start;
+            transition: grid-template-columns 0.3s ease;
         }
 
         .app-layout.log-hidden {
@@ -179,7 +179,11 @@
         }
 
         .app-layout.log-hidden .log-panel {
-            display: none !important;
+            opacity: 0;
+            transform: translateX(20px);
+            pointer-events: none;
+            width: 0;
+            overflow: hidden;
         }
 
         @media (max-width: 1200px) {
@@ -1951,19 +1955,14 @@
             padding: 16px;
             height: calc(100vh - 120px);
             min-height: 600px;
+            max-height: calc(100vh - 120px);
             display: flex;
             flex-direction: column;
             position: sticky;
-            bottom: 20px;
-            align-self: end;
+            top: 20px;
             overflow: hidden;
-            transition: opacity 0.3s ease, transform 0.3s ease;
-        }
-
-        .app-layout.log-hidden .log-panel {
-            opacity: 0;
-            transform: translateX(20px);
-            pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.3s ease, width 0.3s ease;
+            width: 100%;
         }
 
         @media (max-width: 1200px) {
@@ -2472,10 +2471,10 @@
             <div class="header-controls">
                 <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 6px 12px; background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(131, 94, 255, 0.2); border-radius: 4px;">
                     <span style="color: var(--text-secondary);">Hồ Sơ (Profile):</span>
-                    <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
-                    <span id="profile-info" style="display: none; color: var(--text-primary);">
+            <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
+            <span id="profile-info" style="display: none; color: var(--text-primary);">
                         <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 14px;"></span>
-                    </span>
+            </span>
                     <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ (Profile ID)" style="padding: 4px 8px; border: 1px solid rgba(131, 94, 255, 0.3); border-radius: 4px; background: rgba(255, 255, 255, 0.8); color: var(--text-primary); font-size: 14px; font-family: monospace; width: 120px; height: 28px;">
                     <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 5px 14px; background: #f82387; color: white; border: none; cursor: pointer; font-size: 14px; height: 28px; font-weight: 600; transition: all 0.2s ease; border-radius: 14px;" onmouseover="this.style.background='#d91d6f'" onmouseout="this.style.background='#f82387'">Chuyển (Switch)</button>
                 </div>
@@ -2495,18 +2494,18 @@
                     <div class="sidebar-header">
                         <div class="gallery-title-row">
                             <span>MẪU (Presets)</span>
-                            <div class="gender-filter">
+                        <div class="gender-filter">
                                 <button class="gender-filter-btn active" data-gender="" data-type="preset">Tất Cả</button>
-                                <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
-                                <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
-                            </div>
+                            <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
+                            <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
+                        </div>
                         </div>
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
-                        <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
-                    </div>
+                            <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
+                        </div>
                     <div class="sidebar-content" id="preset-sidebar-content">
                         <div class="gallery-drop-zone" id="preset-drop-zone">
-                            <div id="preset-gallery" class="sidebar-gallery"></div>
+                        <div id="preset-gallery" class="sidebar-gallery"></div>
                         </div>
                         <div class="pagination" id="preset-pagination" style="display: none;">
                             <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">◀</button>
@@ -2519,11 +2518,11 @@
                     <div class="sidebar-header">
                         <span>ẢNH TỰ SƯỚNG (Selfies)</span>
                         <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
-                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
-                    </div>
+                            <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                        </div>
                     <div class="sidebar-content" id="selfie-sidebar-content">
                         <div class="gallery-drop-zone" id="selfie-drop-zone">
-                            <div id="selfie-gallery" class="sidebar-gallery"></div>
+                        <div id="selfie-gallery" class="sidebar-gallery"></div>
                         </div>
                         <div class="pagination" id="selfie-pagination" style="display: none;">
                             <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">◀</button>
@@ -2537,34 +2536,34 @@
                 <div class="preview-panel">
                     <div class="preview-left-column">
                         <div class="preview-card preset-card" id="preset-card">
-                            <div class="preview-header">
+                        <div class="preview-header">
                                 <div class="preview-label">MẪU (Preset)</div>
                                 <button class="delete-btn" onclick="clearSelection('preset', event)" style="display: none;" id="preset-clear-btn">×</button>
-                            </div>
-                            <div id="preset-preview" class="preview-image">
-                                <div class="preview-empty">
-                                    <div class="preview-empty-icon">📷</div>
-                                    <div class="preview-empty-text">Chọn từ mẫu (Select from presets)</div>
-                                </div>
-                            </div>
                         </div>
-                        <div class="preview-card selfie-card" id="selfie-card">
-                            <div class="preview-header">
-                                <div class="preview-label">ẢNH TỰ SƯỚNG (Selfie)</div>
-                                <button class="delete-btn" onclick="clearSelection('selfie', event)" style="display: none;" id="selfie-clear-btn">×</button>
-                            </div>
-                            <div id="selfie-preview" class="preview-image">
-                                <div class="preview-empty">
-                                    <div class="preview-empty-icon">📷</div>
-                                    <div class="preview-empty-text">Chọn từ ảnh tự sướng (Select from selfies)</div>
-                                </div>
+                        <div id="preset-preview" class="preview-image">
+                            <div class="preview-empty">
+                                <div class="preview-empty-icon">📷</div>
+                                    <div class="preview-empty-text">Chọn từ mẫu (Select from presets)</div>
                             </div>
                         </div>
                     </div>
+                        <div class="preview-card selfie-card" id="selfie-card">
+                        <div class="preview-header">
+                                <div class="preview-label">ẢNH TỰ SƯỚNG (Selfie)</div>
+                                <button class="delete-btn" onclick="clearSelection('selfie', event)" style="display: none;" id="selfie-clear-btn">×</button>
+                        </div>
+                        <div id="selfie-preview" class="preview-image">
+                            <div class="preview-empty">
+                                <div class="preview-empty-icon">📷</div>
+                                    <div class="preview-empty-text">Chọn từ ảnh tự sướng (Select from selfies)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                     <div class="preview-card result-card" id="result-card" style="grid-column: 2;">
                         <div class="preview-header">
                             <div class="preview-label">KẾT QUẢ (Result)</div>
-                        </div>
+                    </div>
                         <div id="result-preview" class="preview-image">
                             <div class="preview-empty">
                                 <div class="preview-empty-icon">✨</div>
@@ -2607,35 +2606,36 @@
                             <label><input type="radio" name="character-gender" value="female">Nữ</label>
                         </div>
                     </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-        <div class="results-panel">
-            <div class="results-header">
+                <div class="results-panel">
+                    <div class="results-header">
                 <span>LỊCH SỬ (History)</span>
                 <span class="results-count" id="results-count">(0)</span>
-            </div>
-            <div id="results-gallery" class="results-grid"></div>
-            <div class="pagination" id="results-pagination" style="display: none;">
+                    </div>
+                    <div id="results-gallery" class="results-grid"></div>
+                    <div class="pagination" id="results-pagination" style="display: none;">
                 <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">◀</button>
                 <div class="pagination-dots" id="results-dots"></div>
                 <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">▶</button>
-            </div>
-        </div>
-        </div>
-        </div>
-            <div class="log-panel">
-                <div class="log-header">
-                    <div class="log-title">📋 Nhật Ký API</div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <button class="log-clear-btn" onclick="clearApiLogs()">Xóa</button>
-                        <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn Log">
-                            <span id="log-toggle-icon">◀</span>
-                        </button>
                     </div>
                 </div>
-                <div class="api-log-list" id="api-log-list"></div>
             </div>
+        </div>
+        </div>
+        <div class="log-panel">
+            <div class="log-header">
+                <div class="log-title">📋 Nhật Ký API</div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button class="log-clear-btn" onclick="clearApiLogs()">Xóa</button>
+                    <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn Log">
+                        <span id="log-toggle-icon">◀</span>
+                    </button>
+                </div>
+            </div>
+            <div class="api-log-list" id="api-log-list"></div>
+        </div>
         </div>
 
     <!-- Lightbox for Results -->
@@ -3342,15 +3342,15 @@
             const isHidden = appLayout.classList.contains('log-hidden');
             
             if (isHidden) {
-                // Show the log panel - restore grid columns first
+                // Expand the log panel sidebar
                 appLayout.classList.remove('log-hidden');
                 
-                // Force reflow to ensure grid updates
-                void appLayout.offsetWidth;
-                
-                // Show the panel
                 if (logPanel) {
                     logPanel.style.display = 'flex';
+                    setTimeout(() => {
+                        logPanel.style.opacity = '1';
+                        logPanel.style.transform = 'translateX(0)';
+                    }, 10);
                 }
                 
                 if (toggleIcon) {
@@ -3364,12 +3364,18 @@
                     toggleFloat.style.display = 'none';
                 }
             } else {
-                // Hide the log panel
-                appLayout.classList.add('log-hidden');
+                // Collapse the log panel sidebar
+                if (logPanel) {
+                    logPanel.style.opacity = '0';
+                    logPanel.style.transform = 'translateX(20px)';
+                }
                 
+                setTimeout(() => {
+                appLayout.classList.add('log-hidden');
                 if (logPanel) {
                     logPanel.style.display = 'none';
                 }
+                }, 300);
                 
                 if (toggleIcon) {
                     toggleIcon.textContent = '▶';

@@ -908,7 +908,24 @@ export const callUpscaler4k = async (
       
       let resultImageUrl: string | null = null;
       
-      if (data.output_url) {
+      // WaveSpeed API returns image in data.outputs array
+      if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
+        const output = data.data.outputs[0];
+        if (typeof output === 'string') {
+          resultImageUrl = output;
+        } else if (output?.url) {
+          resultImageUrl = output.url;
+        }
+      } else if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
+        const output = data.outputs[0];
+        if (typeof output === 'string') {
+          resultImageUrl = output;
+        } else if (output?.url) {
+          resultImageUrl = output.url;
+        }
+      } else if (data.data?.output_url) {
+        resultImageUrl = data.data.output_url;
+      } else if (data.output_url) {
         resultImageUrl = data.output_url;
       } else if (data.output) {
         resultImageUrl = typeof data.output === 'string' ? data.output : data.output.url || data.output.image_url;
@@ -924,8 +941,6 @@ export const callUpscaler4k = async (
         resultImageUrl = data.result.image_url;
       } else if (data.data?.url) {
         resultImageUrl = data.data.url;
-      } else if (data.data?.output_url) {
-        resultImageUrl = data.data.output_url;
       } else if (data.data?.image_url) {
         resultImageUrl = data.data.image_url;
       } else if (data.image) {
@@ -935,13 +950,67 @@ export const callUpscaler4k = async (
       } else if (data.upscaled) {
         resultImageUrl = typeof data.upscaled === 'string' ? data.upscaled : data.upscaled.url;
       }
+      
+      // Check if status is "processing" and we need to poll the result URL
+      if (!resultImageUrl && data.data?.status === 'processing' && data.data?.urls?.get) {
+        const getUrl = data.data.urls.get;
+        console.log('[Upscaler4K] Task is processing, polling result URL:', getUrl);
+        
+        // Poll the result URL (max 10 attempts, 2 seconds apart)
+        for (let attempt = 0; attempt < 10; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          const resultResponse = await fetch(getUrl, {
+            headers: {
+              'Authorization': `Bearer ${apiKey}`
+            }
+          });
+          
+          if (resultResponse.ok) {
+            const resultData = await resultResponse.json();
+            console.log('[Upscaler4K] Poll result:', JSON.stringify(resultData, null, 2).substring(0, 500));
+            
+            if (resultData.data?.outputs && Array.isArray(resultData.data.outputs) && resultData.data.outputs.length > 0) {
+              const output = resultData.data.outputs[0];
+              if (typeof output === 'string') {
+                resultImageUrl = output;
+                break;
+              } else if (output?.url) {
+                resultImageUrl = output.url;
+                break;
+              }
+            } else if (resultData.data?.status === 'completed' && resultData.data?.output_url) {
+              resultImageUrl = resultData.data.output_url;
+              break;
+            } else if (resultData.data?.status === 'failed') {
+              throw new Error(`Upscaling failed: ${resultData.data.error || 'Unknown error'}`);
+            }
+          }
+        }
+      }
 
       let imageBytes: Uint8Array;
       let contentType = 'image/png';
       
       if (!resultImageUrl) {
-        if (data.base64 || data.data || data.image_base64) {
-          const base64Data = data.base64 || data.data || data.image_base64;
+        // Check for base64 in outputs array
+        let base64Data: string | null = null;
+        
+        if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
+          const output = data.data.outputs[0];
+          if (typeof output === 'string' && (output.startsWith('data:') || output.length > 100)) {
+            base64Data = output;
+          }
+        } else if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
+          const output = data.outputs[0];
+          if (typeof output === 'string' && (output.startsWith('data:') || output.length > 100)) {
+            base64Data = output;
+          }
+        } else if (data.base64 || data.data?.base64 || data.image_base64) {
+          base64Data = data.base64 || data.data?.base64 || data.image_base64;
+        }
+        
+        if (base64Data) {
           if (typeof base64Data === 'string' && base64Data.startsWith('data:')) {
             const base64Match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
             if (base64Match) {
@@ -984,22 +1053,38 @@ export const callUpscaler4k = async (
           console.error('[Upscaler4K] No image URL or base64 data found in response. Full response:', JSON.stringify(data, null, 2));
           return {
             Success: false,
-            Message: 'WaveSpeed API did not return an image URL in the response',
+            Message: 'WaveSpeed API did not return an image URL or base64 data in the response',
             StatusCode: 500,
-            Error: 'No image URL found in response',
+            Error: 'No image URL or base64 data found in response',
             FullResponse: JSON.stringify(data, null, 2),
             Debug: debugInfo,
           };
         }
       } else {
-        const imageResponse = await fetch(resultImageUrl);
-        if (!imageResponse.ok) {
-          throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
-        }
+        // Check if resultImageUrl is a base64 data URL
+        if (resultImageUrl.startsWith('data:')) {
+          const base64Match = resultImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (base64Match) {
+            contentType = base64Match[1] || 'image/png';
+            const base64String = base64Match[2];
+            const binaryString = atob(base64String);
+            imageBytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              imageBytes[i] = binaryString.charCodeAt(i);
+            }
+          } else {
+            throw new Error('Invalid base64 data URL format');
+          }
+        } else {
+          const imageResponse = await fetch(resultImageUrl);
+          if (!imageResponse.ok) {
+            throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
+          }
 
-        const imageData = await imageResponse.arrayBuffer();
-        imageBytes = new Uint8Array(imageData);
-        contentType = imageResponse.headers.get('content-type') || 'image/png';
+          const imageData = await imageResponse.arrayBuffer();
+          imageBytes = new Uint8Array(imageData);
+          contentType = imageResponse.headers.get('content-type') || 'image/png';
+        }
       }
       
       const resultKey = `results/upscaler4k_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${contentType.split('/')[1] || 'png'}`;
