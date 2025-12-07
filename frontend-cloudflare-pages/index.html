@@ -89,7 +89,7 @@
         }
 
         .gate-title {
-            font-size: 24px;
+            font-size: 14px;
             font-weight: 700;
             letter-spacing: 1.2px;
             color: #ffffff;
@@ -107,7 +107,7 @@
             border: 1px solid rgba(255, 255, 255, 0.35);
             background: rgba(8, 3, 24, 0.35);
             color: #ffffff;
-            font-size: 15px;
+            font-size: 14px;
             letter-spacing: 4px;
             text-align: center;
             outline: none;
@@ -123,7 +123,7 @@
             width: 100%;
             height: 44px;
             padding: 0 24px;
-            border-radius: 8px;
+            border-radius: 22px;
             background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
             color: #ffffff;
             font-size: 14px;
@@ -145,7 +145,7 @@
 
         .gate-error {
             min-height: 18px;
-            font-size: 13px;
+            font-size: 14px;
             color: var(--danger);
         }
 
@@ -170,6 +170,7 @@
             grid-template-columns: 1fr 500px;
             gap: 20px;
             align-items: start;
+            align-content: start;
         }
 
         .app-layout.log-hidden {
@@ -193,36 +194,78 @@
 
         .workflow-container {
             display: grid;
-            grid-template-columns: 280px 1fr;
-            gap: 20px;
+            grid-template-columns: 400px 1fr;
+            gap: 24px;
             min-height: calc(100vh - 200px);
+        }
+
+        .workflow-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            grid-column: 1;
+        }
+
+        @media (max-width: 1199px) {
+            .workflow-container {
+                grid-template-columns: 1fr;
+            }
         }
 
         .workflow-sidebar {
             display: flex;
             flex-direction: column;
             gap: 12px;
-            max-height: calc(100vh - 200px);
-            overflow-y: auto;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .workflow-sidebar::-webkit-scrollbar {
+            display: none;
         }
 
         .sidebar-section {
-            background: var(--bg-card-gradient);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            overflow: hidden;
+            border: 1px solid #e0e0e0;
         }
 
         .sidebar-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 10px 14px;
+            border-bottom: 1px solid #e0e0e0;
             font-weight: 600;
-            font-size: 13px;
+            font-size: 14px;
             color: var(--text-primary);
+            background: #f5f5f5;
+        }
+
+        .gallery-title-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .gallery-upload-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f82387;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: auto;
+            transition: all 0.2s ease;
+            border-radius: 16px;
+        }
+
+        .gallery-upload-btn:hover {
+            background: #d91d6f;
+            transform: scale(1.1);
         }
 
         .sidebar-toggle {
@@ -232,7 +275,7 @@
             background: transparent;
             color: var(--text-secondary);
             cursor: pointer;
-            font-size: 18px;
+            font-size: 14px;
             line-height: 1;
             padding: 0;
         }
@@ -242,6 +285,13 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            overflow: visible;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .sidebar-content::-webkit-scrollbar {
+            display: none;
         }
 
         .sidebar-content.collapsed {
@@ -250,10 +300,40 @@
 
         .sidebar-gallery {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            max-height: 400px;
-            overflow-y: auto;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            padding: 12px;
+            overflow: visible;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .sidebar-gallery::-webkit-scrollbar {
+            display: none;
+        }
+
+        .gallery-drop-zone {
+            position: relative;
+            border: 1px dashed #ccc;
+            background: #fafafa;
+            overflow: visible;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .gallery-drop-zone::-webkit-scrollbar {
+            display: none;
+        }
+
+        .gallery-drop-zone.dragover {
+            border-color: #999;
+            border-style: solid;
+            background: #f0f0f0;
+        }
+
+        .gallery-drop-zone .sidebar-gallery {
+            border: none;
+            background: transparent;
         }
 
         #preset-gallery .gallery-item,
@@ -276,12 +356,12 @@
         }
 
         .upload-area.compact .upload-icon {
-            font-size: 20px;
+            font-size: 14px;
             margin-bottom: 4px;
         }
 
         .upload-area.compact .upload-text {
-            font-size: 12px;
+            font-size: 14px;
         }
 
         .upload-area.compact .upload-subtext {
@@ -294,103 +374,55 @@
             gap: 20px;
         }
 
-        .step-indicator {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            padding: 20px;
-            background: var(--bg-card-gradient);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-        }
-
-        .step {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            opacity: 0.4;
-            transition: all 0.3s ease;
-        }
-
-        .step.active {
-            opacity: 1;
-        }
-
-        .step.completed .step-number {
-            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
-            color: #fff;
-        }
-
-        .step-number {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: 16px;
-            color: var(--text-primary);
-            transition: all 0.3s ease;
-        }
-
-        .step.active .step-number {
-            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
-            border-color: rgba(248, 35, 135, 0.5);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
-            transform: scale(1.1);
-        }
-
-        .step-label {
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            text-align: center;
-        }
-
-        .step.active .step-label {
-            color: var(--text-primary);
-            font-weight: 600;
-        }
-
-        .step-arrow {
-            font-size: 20px;
-            color: var(--text-muted);
-            opacity: 0.3;
-        }
 
         .preview-panel {
             display: grid;
-            grid-template-columns: 1fr auto 1fr;
+            grid-template-columns: 1fr 1.5fr;
             gap: 16px;
-            align-items: center;
+            align-items: start;
+        }
+
+        .preview-left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .preview-connector {
+            display: none;
         }
 
         .preview-card {
-            background: var(--bg-card-gradient);
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 16px;
-            transition: all 0.3s ease;
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
         }
 
-        .preview-card.has-selection {
-            border-color: rgba(248, 35, 135, 0.4);
-            box-shadow: 0 4px 16px rgba(248, 35, 135, 0.15);
+        .preview-card.preset-card {
+            height: 350px;
+            min-height: 350px;
+        }
+
+        .preview-card.selfie-card {
+            height: 350px;
+            min-height: 350px;
+        }
+
+        .preview-card.result-card {
+            height: 100%;
+            min-height: 724px;
+            grid-row: 1 / -1;
         }
 
         .preview-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 4px 0;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 8px;
         }
 
         .preview-label {
@@ -400,7 +432,7 @@
         }
 
         .preview-status {
-            font-size: 12px;
+            font-size: 14px;
             padding: 4px 10px;
             border-radius: 12px;
             background: rgba(255, 255, 255, 0.1);
@@ -413,34 +445,42 @@
         }
 
         .preview-arrow {
-            font-size: 32px;
-            color: var(--text-muted);
-            opacity: 0.3;
-            font-weight: 300;
+            display: none;
         }
 
         .preview-image {
-            aspect-ratio: 1;
-            border-radius: 8px;
-            border: 2px dashed rgba(255, 255, 255, 0.2);
-            background: rgba(255, 255, 255, 0.03);
+            width: 100%;
+            flex: 1;
+            border: 1px solid #e0e0e0;
+            background: #fafafa;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
             position: relative;
-            transition: all 0.3s ease;
+            min-height: 0;
+            max-height: 100%;
+        }
+
+        .preview-card.preset-card .preview-image,
+        .preview-card.selfie-card .preview-image {
+            max-height: calc(100% - 40px);
+        }
+
+        .preview-card.result-card .preview-image {
+            aspect-ratio: auto;
+            min-height: 660px;
         }
 
         .preview-card.has-selection .preview-image {
-            border-color: rgba(248, 35, 135, 0.3);
-            border-style: solid;
-            background: rgba(248, 35, 135, 0.05);
+            border-color: #999;
         }
 
         .preview-image img {
-            width: 100%;
-            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
             object-fit: contain;
         }
 
@@ -453,91 +493,85 @@
         }
 
         .preview-empty-icon {
-            font-size: 48px;
+            font-size: 14px;
             opacity: 0.5;
         }
 
         .preview-empty-text {
-            font-size: 13px;
+            font-size: 14px;
             text-align: center;
         }
 
         .action-panel {
-            background: var(--bg-card-gradient);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 20px;
+            border: 1px solid #e0e0e0;
+            padding: 12px 16px;
             display: flex;
-            flex-direction: column;
-            gap: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            background: #fafafa;
         }
 
         .action-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: none;
         }
 
         .action-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-primary);
+            display: none;
         }
 
         .action-select {
-            height: 36px;
-            padding: 0 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
+            height: 40px;
+            padding: 0 14px;
+            border: 1px solid #ccc;
+            background: #fff;
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: 14px;
             cursor: pointer;
+            margin-left: auto;
         }
 
         .action-buttons {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
         }
 
         .action-btn {
-            height: 48px;
-            padding: 0 20px;
-            font-size: 13px;
-            font-weight: 500;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-primary);
+            height: 40px;
+            padding: 0 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            background: #4a90e2;
+            color: #fff;
             cursor: pointer;
-            transition: all 0.2s ease;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 6px;
+            transition: all 0.2s ease;
+            border-radius: 20px;
         }
 
         .btn-icon {
-            font-size: 16px;
+            font-size: 14px;
         }
 
         .action-btn:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.12);
-            border-color: rgba(248, 35, 135, 0.4);
+            background: #357abd;
             transform: translateY(-1px);
         }
 
         .action-btn.primary {
-            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
-            border-color: rgba(248, 35, 135, 0.5);
+            background: #f82387;
             color: #fff;
-            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.25);
         }
 
         .action-btn.primary:hover:not(:disabled) {
-            box-shadow: 0 6px 16px rgba(248, 35, 135, 0.35);
-            transform: translateY(-2px);
+            background: #d91d6f;
+            transform: translateY(-1px);
         }
 
         .action-btn:disabled {
@@ -553,32 +587,33 @@
 
         .action-aging input {
             width: 60px;
-            height: 44px;
+            height: 40px;
             padding: 0 8px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid #ccc;
+            background: #fff;
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: 14px;
             text-align: center;
         }
 
         .action-options {
             display: flex;
-            flex-direction: column;
+            flex-wrap: wrap;
             gap: 12px;
+            align-items: center;
+            width: 100%;
         }
 
         .action-prompt {
-            width: 100%;
-            height: 80px;
-            padding: 10px 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
+            flex: 1;
+            min-width: 200px;
+            height: 40px;
+            padding: 0 14px;
+            border: 1px solid #ccc;
+            background: #fff;
             color: var(--text-primary);
-            font-size: 13px;
-            resize: vertical;
+            font-size: 14px;
+            resize: none;
             font-family: inherit;
         }
 
@@ -588,18 +623,18 @@
 
         .action-gender {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             align-items: center;
         }
 
         .gender-label {
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-secondary);
             font-weight: 500;
         }
 
         .action-gender label {
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-secondary);
             cursor: pointer;
             display: flex;
@@ -608,25 +643,25 @@
         }
 
         .results-panel {
-            background: var(--bg-card-gradient);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 20px;
+            border: 1px solid #e0e0e0;
+            padding: 16px;
             min-height: 300px;
+            width: 100%;
+            margin-top: 20px;
         }
 
         .results-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 16px;
         }
 
         .results-count {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 400;
             color: var(--text-muted);
         }
@@ -638,9 +673,126 @@
         }
 
 
+        @media (max-width: 1199px) and (min-width: 768px) {
+            .workflow-container {
+                grid-template-columns: 1fr;
+            }
+
+            .workflow-sidebar {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+                max-height: none;
+            }
+
+            .preview-panel {
+                display: grid;
+                grid-template-columns: 1fr 1.5fr;
+                gap: 16px;
+            }
+
+            .preview-card.result-card {
+                grid-row: 1 / -1;
+            }
+
+            .action-panel {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .action-select {
+                margin-left: 0;
+                width: 100%;
+            }
+
+            .sidebar-gallery {
+                grid-template-columns: repeat(6, 1fr);
+            }
+        }
+
         @media (max-width: 767px) {
             .main-container {
-                padding: 8px;
+                padding: 12px;
+            }
+
+            .app-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+                padding: 6px 0;
+                margin-bottom: 10px;
+            }
+
+            .header-controls {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            .workflow-container {
+                grid-template-columns: 1fr;
+            }
+
+            .workflow-sidebar {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                max-height: none;
+            }
+
+            .sidebar-gallery {
+                grid-template-columns: repeat(4, 1fr);
+            }
+
+            .preview-panel {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .preview-left-column {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .preview-card.preset-card,
+            .preview-card.selfie-card {
+                height: 250px;
+            }
+
+            .preview-card.result-card {
+                min-height: 500px;
+                grid-row: auto;
+            }
+
+            .preview-card.result-card .preview-image {
+                min-height: 450px;
+            }
+
+            .action-panel {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            .action-btn {
+                width: 100%;
+            }
+
+            .action-options {
+                flex-direction: column;
+            }
+
+            .action-prompt {
+                width: 100%;
+            }
+
+            .action-select {
+                margin-left: 0;
+                width: 100%;
             }
         }
 
@@ -650,23 +802,28 @@
             gap: 20px;
         }
 
-        h1 {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 34px;
-            font-weight: 700;
-            line-height: 1.2;
-            text-align: left;
-            margin-bottom: 20px;
-            color: var(--text-primary);
-            letter-spacing: 2px;
-            display: inline-flex;
+        .app-header {
+            display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            padding: 10px 18px;
-            background: linear-gradient(120deg, rgba(248,35,135,0.12), rgba(18,176,255,0.08));
-            border: 2px solid rgba(248,35,135,0.25);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
-            text-transform: none;
+            padding: 6px 0;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(131, 94, 255, 0.2);
+        }
+
+        .app-header h1 {
+            font-family: 'Lexend Deca', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 0;
+            color: var(--text-primary);
+            letter-spacing: 0.3px;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .faceswap-zone {
@@ -705,10 +862,9 @@
         }
 
         .toolbar-label {
-            font-size: 11px;
+            font-size: 14px;
             font-weight: 600;
             color: var(--text-secondary);
-            text-transform: uppercase;
             letter-spacing: 0.5px;
             white-space: nowrap;
         }
@@ -739,9 +895,9 @@
         .toolbar-btn {
             height: 40px;
             padding: 0 20px;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 500;
-            border-radius: 8px;
+            border-radius: 20px;
             border: 1px solid rgba(255, 255, 255, 0.15);
             background: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
@@ -793,7 +949,7 @@
             border: 1px solid rgba(255, 255, 255, 0.15);
             background: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: 14px;
             text-align: center;
             font-family: inherit;
         }
@@ -813,7 +969,7 @@
             border: 1px solid rgba(255, 255, 255, 0.15);
             background: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: 14px;
             resize: none;
             font-family: inherit;
             line-height: 40px;
@@ -830,7 +986,7 @@
         }
 
         .toolbar-gender label {
-            font-size: 11px;
+            font-size: 14px;
             color: var(--text-secondary);
             cursor: pointer;
             display: flex;
@@ -850,7 +1006,7 @@
             border: 1px solid rgba(255, 255, 255, 0.15);
             background: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: 14px;
             cursor: pointer;
             font-family: inherit;
         }
@@ -912,7 +1068,7 @@
         }
 
         .preview-empty .icon {
-            font-size: 24px;
+            font-size: 14px;
             margin-bottom: 8px;
             opacity: 0.3;
             display: block;
@@ -973,7 +1129,7 @@
             background: rgba(255, 255, 255, 0.85);
             padding: 12px 14px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 13px;
+            font-size: 14px;
             color: var(--text-primary);
             resize: vertical;
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -986,7 +1142,7 @@
         }
 
         .prompt-hint {
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
             letter-spacing: 0.2px;
         }
@@ -999,7 +1155,7 @@
         }
 
         .gender-label {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 600;
             color: var(--text-secondary);
             letter-spacing: 0.3px;
@@ -1009,7 +1165,7 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-secondary);
             padding: 6px 10px;
             border-radius: 8px;
@@ -1031,31 +1187,29 @@
 
         .gender-filter-btn {
             height: 32px;
-            padding: 0 12px;
-            border: 1px solid #dee2e6;
-            background: #fff;
-            border-radius: 6px;
+            padding: 0 16px;
+            border: none;
+            background: #e8e8e8;
             cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            color: #495057;
-            transition: all 0.2s ease;
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             line-height: 1;
             font-family: inherit;
+            transition: all 0.2s ease;
+            border-radius: 16px;
         }
 
         .gender-filter-btn.active {
-            background: var(--accent) !important;
+            background: #4a90e2 !important;
             color: white !important;
-            border-color: var(--accent) !important;
         }
 
         .gender-filter-btn:hover {
-            background: rgba(255, 255, 255, 0.9) !important;
-            border-color: rgba(248, 35, 135, 0.3) !important;
+            background: #d0d0d0 !important;
         }
 
         .upload-area {
@@ -1103,14 +1257,14 @@
         }
 
         .upload-area.gallery-upload .upload-text {
-            font-size: 15px;
+            font-size: 14px;
             margin-bottom: 4px;
             line-height: 1.4;
             font-weight: 600;
         }
 
         .upload-area.gallery-upload .upload-subtext {
-            font-size: 13px;
+            font-size: 14px;
             line-height: 1.4;
         }
 
@@ -1147,7 +1301,7 @@
 
         .upload-subtext {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
             text-transform: none;
             line-height: 1.3;
@@ -1186,7 +1340,7 @@
             color: #FFFFFF;
             padding: 6px 10px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 600;
             letter-spacing: 0.4px;
             line-height: 1.2;
@@ -1199,26 +1353,23 @@
             right: 4px;
             width: 28px;
             height: 28px;
-            background-color: var(--danger);
+            background-color: #d32f2f;
             color: #FFFFFF;
-            border: none;
-            border-radius: 6px;
+            border: 1px solid #b71c1c;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 700;
             z-index: 10;
-            transition: all 0.2s ease;
             font-family: 'Lexend Deca', sans-serif;
             line-height: 1;
+            border-radius: 14px;
         }
 
         .delete-btn:hover {
-            background-color: var(--accent);
-            color: #FFFFFF;
-            transform: scale(1.1);
+            background-color: #b71c1c;
         }
 
         .gallery-grid {
@@ -1258,52 +1409,62 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            margin-top: 12px;
-            padding: 8px;
+            margin-top: 16px;
+            padding: 12px;
         }
 
         .pagination-btn {
-            height: 40px;
-            padding: 0 16px;
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
+            height: 36px;
+            width: 36px;
+            padding: 0;
+            background: #4a90e2;
+            border: none;
+            color: #fff;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 13px;
-            font-weight: 500;
-            text-transform: none;
-            letter-spacing: 0.3px;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
-            min-width: 40px;
-            border-radius: 8px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             line-height: 1;
+            transition: all 0.2s ease;
+            border-radius: 18px;
         }
 
         .pagination-btn:hover:not(:disabled) {
-            background-color: var(--accent);
-            color: #FFFFFF;
-            border-color: var(--accent);
-            transform: translateY(-1px);
+            background: #357abd;
+            transform: scale(1.1);
         }
 
         .pagination-btn:disabled {
-            opacity: 0.4;
+            opacity: 0.3;
             cursor: not-allowed;
-            transform: none;
+        }
+
+        .pagination-dots {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0 8px;
+        }
+
+        .pagination-dot {
+            width: 8px;
+            height: 8px;
+            background: #ccc;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pagination-dot.active {
+            background: #4a90e2;
+            width: 10px;
+            height: 10px;
         }
 
         .pagination-info {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
-            color: var(--text-secondary);
-            text-transform: none;
-            letter-spacing: 0.2px;
-            padding: 0 8px;
-            line-height: 1.2;
+            display: none;
         }
 
         .action-row {
@@ -1319,7 +1480,7 @@
 
         .api-selector-label {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 600;
             color: var(--accent-strong);
             letter-spacing: 0.4px;
@@ -1399,7 +1560,7 @@
             color: #ffffff;
             padding: 4px 10px;
             border-radius: 999px;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 600;
             letter-spacing: 0.5px;
             box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
@@ -1412,10 +1573,9 @@
             right: 6px;
             width: 24px;
             height: 24px;
-            background: linear-gradient(135deg, #FF5D6C, #FF3CAC);
+            background: #d32f2f;
             color: #FFFFFF;
-            border: none;
-            border-radius: 6px;
+            border: 1px solid #b71c1c;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1423,13 +1583,10 @@
             font-size: 14px;
             font-weight: 700;
             z-index: 10;
-            transition: all 0.2s ease;
             line-height: 1;
             opacity: 0;
-            transition: all 0.15s;
             font-family: 'Lexend Deca', sans-serif;
-            line-height: 1;
-            box-shadow: 0 4px 12px rgba(255, 61, 108, 0.3);
+            border-radius: 12px;
         }
 
         .gallery-item:hover .gallery-delete-btn {
@@ -1437,9 +1594,7 @@
         }
 
         .gallery-delete-btn:hover {
-            background-color: var(--accent);
-            color: #FFFFFF;
-            transform: scale(1.1);
+            background: #b71c1c;
         }
 
         .result-section {
@@ -1646,7 +1801,7 @@
             padding: 0 20px;
             width: auto;
             margin-top: 0;
-            font-size: 13px;
+            font-size: 14px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -1658,9 +1813,9 @@
             color: #FFFFFF;
             padding: 14px 28px;
             border: none;
-            border-radius: 8px;
+            border-radius: 20px;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             text-transform: none;
             letter-spacing: 0.5px;
@@ -1738,7 +1893,7 @@
         }
 
         .empty-state .icon {
-            font-size: 20px;
+            font-size: 14px;
             margin-bottom: 6px;
             opacity: 0.2;
             display: block;
@@ -1747,7 +1902,7 @@
         .status-message {
             padding: 8px 12px;
             margin: 6px 0;
-            font-size: 13px;
+            font-size: 14px;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -1799,7 +1954,8 @@
             display: flex;
             flex-direction: column;
             position: sticky;
-            top: 20px;
+            bottom: 20px;
+            align-self: end;
             overflow: hidden;
             transition: opacity 0.3s ease, transform 0.3s ease;
         }
@@ -1830,7 +1986,7 @@
 
         .log-title {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
             color: var(--accent-strong);
             letter-spacing: 0.4px;
@@ -1838,37 +1994,35 @@
         }
 
         .log-toggle-btn {
-            background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
+            background: #4a90e2;
             border: none;
-            color: #FFFFFF;
+            color: #fff;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
-            padding: 6px 12px;
+            font-size: 14px;
+            padding: 6px 14px;
             cursor: pointer;
             text-transform: none;
             letter-spacing: 0.3px;
             transition: all 0.2s;
-            font-weight: 500;
-            border-radius: 4px;
-            box-shadow: 0 2px 8px rgba(248, 35, 135, 0.2);
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 4px;
+            border-radius: 20px;
         }
 
         .log-toggle-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
+            background: #357abd;
         }
 
         .log-toggle-btn.hidden {
-            background: rgba(248, 35, 135, 0.1);
-            color: var(--accent);
-            border: 1px solid rgba(248, 35, 135, 0.3);
+            background: #4a90e2;
+            color: #fff;
+            border: none;
         }
 
         .log-toggle-btn.hidden:hover {
-            background: rgba(248, 35, 135, 0.15);
+            background: #357abd;
         }
 
         .log-toggle-float {
@@ -1880,7 +2034,7 @@
             background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
             border: none;
             color: #FFFFFF;
-            font-size: 20px;
+            font-size: 14px;
             cursor: pointer;
             border-radius: 50%;
             box-shadow: 0 4px 16px rgba(248, 35, 135, 0.4);
@@ -1907,23 +2061,22 @@
         }
 
         .log-clear-btn {
-            background: transparent;
-            border: 1px solid rgba(248, 35, 135, 0.3);
-            color: var(--accent);
+            background: #ff6b6b;
+            border: none;
+            color: #fff;
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
-            padding: 6px 12px;
+            font-size: 14px;
+            padding: 8px 16px;
             cursor: pointer;
             text-transform: none;
             letter-spacing: 0.3px;
             transition: all 0.2s;
-            font-weight: 500;
-            border-radius: 4px;
+            font-weight: 600;
+            border-radius: 20px;
         }
 
         .log-clear-btn:hover {
-            background: rgba(248, 35, 135, 0.08);
-            border-color: var(--accent);
+            background: #ee5a5a;
         }
 
         .api-log-list {
@@ -1958,25 +2111,25 @@
         .api-log-entry-header {
             display: flex;
             justify-content: space-between;
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
             margin-bottom: 4px;
         }
 
         .api-log-action {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 600;
             color: var(--text-primary);
         }
 
         .api-log-detail {
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-secondary);
         }
 
         .api-log-payload {
             margin-top: 6px;
-            font-size: 11px;
+            font-size: 14px;
             background: rgba(0, 0, 0, 0.03);
             padding: 8px;
             overflow-x: auto;
@@ -2030,7 +2183,7 @@
 
         .loading-subtext {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
             text-transform: none;
             letter-spacing: 0.3px;
@@ -2062,7 +2215,7 @@
 
         .dialog-title {
             font-family: 'Lexend Deca', sans-serif;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
             line-height: 1.3;
             color: var(--accent);
@@ -2088,7 +2241,7 @@
         .dialog-btn {
             height: 40px;
             padding: 0 20px;
-            font-size: 13px;
+            font-size: 14px;
             font-family: 'Lexend Deca', sans-serif;
             font-weight: 500;
             text-transform: none;
@@ -2197,7 +2350,7 @@
         }
 
         .toast-icon {
-            font-size: 20px;
+            font-size: 14px;
             flex-shrink: 0;
             margin-top: 2px;
         }
@@ -2215,7 +2368,7 @@
         }
 
         .toast-message {
-            font-size: 13px;
+            font-size: 14px;
             opacity: 0.95;
         }
 
@@ -2223,7 +2376,7 @@
             background: none;
             border: none;
             color: white;
-            font-size: 20px;
+            font-size: 14px;
             cursor: pointer;
             padding: 0;
             width: 24px;
@@ -2265,12 +2418,12 @@
             }
 
             h1 {
-                font-size: 24px;
+                font-size: 14px;
                 letter-spacing: 1px;
             }
 
             .section-title {
-                font-size: 12px;
+                font-size: 14px;
             }
 
             .upload-area {
@@ -2289,7 +2442,7 @@
             }
 
             .status-message {
-                font-size: 12px;
+                font-size: 14px;
             }
 
             .dialog-title {
@@ -2297,46 +2450,9 @@
             }
 
             .dialog-message {
-                font-size: 12px;
+                font-size: 14px;
             }
 
-            .workflow-container {
-                grid-template-columns: 1fr;
-            }
-
-            .workflow-sidebar {
-                max-height: 400px;
-            }
-
-            .preview-panel {
-                grid-template-columns: 1fr;
-            }
-
-            .preview-arrow {
-                display: none;
-            }
-
-            .step-indicator {
-                flex-wrap: wrap;
-                gap: 8px;
-            }
-
-            .step-arrow {
-                display: none;
-            }
-
-            .action-buttons {
-                grid-template-columns: 1fr;
-            }
-
-            .app-layout {
-                grid-template-columns: 1fr;
-            }
-
-            .toast {
-                min-width: 280px;
-                max-width: 90%;
-            }
         }
     </style>
 </head>
@@ -2351,176 +2467,162 @@
         </div>
     </div>
     <div class="main-container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h1 style="margin: 0;">Đổi Mặt AI</h1>
-            <a href="/docs/" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background: linear-gradient(120deg, var(--accent), var(--accent-secondary)); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(248, 35, 135, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(248, 35, 135, 0.3)'">📖 API Documentation</a>
-        </div>
-
-        <div id="profile-section" style="margin-bottom: 12px; padding: 8px 12px; background: var(--bg-card-gradient); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; display: flex; align-items: center; gap: 12px; font-size: 12px; flex-wrap: wrap;">
-            <span style="color: var(--text-secondary);">👤</span>
-            <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
-            <span id="profile-info" style="display: none; color: var(--text-primary);">
-                <span style="color: var(--text-secondary);">ID:</span>
-                <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 11px;"></span>
-            </span>
-            <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-                <input type="text" id="profile-id-input" placeholder="Nhập Profile ID" style="padding: 4px 8px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: var(--text-primary); font-size: 11px; font-family: monospace; width: 180px; height: 28px;">
-                <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; height: 28px; display: inline-flex; align-items: center;">Chuyển</button>
+        <div class="app-header">
+            <h1>Đổi Mặt AI (Face Swap AI)</h1>
+            <div class="header-controls">
+                <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 6px 12px; background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(131, 94, 255, 0.2); border-radius: 4px;">
+                    <span style="color: var(--text-secondary);">Hồ Sơ (Profile):</span>
+                    <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
+                    <span id="profile-info" style="display: none; color: var(--text-primary);">
+                        <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 14px;"></span>
+                    </span>
+                    <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ (Profile ID)" style="padding: 4px 8px; border: 1px solid rgba(131, 94, 255, 0.3); border-radius: 4px; background: rgba(255, 255, 255, 0.8); color: var(--text-primary); font-size: 14px; font-family: monospace; width: 120px; height: 28px;">
+                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 5px 14px; background: #f82387; color: white; border: none; cursor: pointer; font-size: 14px; height: 28px; font-weight: 600; transition: all 0.2s ease; border-radius: 14px;" onmouseover="this.style.background='#d91d6f'" onmouseout="this.style.background='#f82387'">Chuyển (Switch)</button>
+                </div>
+                <select class="action-select" id="api-provider" style="height: 28px; padding: 0 10px; border-radius: 4px; border: 1px solid rgba(131, 94, 255, 0.3); background: rgba(255, 255, 255, 0.8); color: var(--text-primary); font-size: 14px; cursor: pointer;">
+                    <option value="google-nano-banana" selected>Google</option>
+                    <option value="rapidapi">RapidAPI</option>
+                </select>
+                <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" style="padding: 5px 14px; background: #4a90e2; border: none; cursor: pointer; font-size: 14px; color: #fff; height: 28px; font-weight: 600; border-radius: 14px;">Nhật Ký (Log)</button>
             </div>
         </div>
 
         <div class="app-layout">
+        <div class="workflow-wrapper">
         <div class="workflow-container">
             <div class="workflow-sidebar">
                 <div class="sidebar-section">
                     <div class="sidebar-header">
-                        <span>🎭 Presets</span>
-                        <button class="sidebar-toggle" onclick="toggleSidebar('preset')">−</button>
+                        <div class="gallery-title-row">
+                            <span>MẪU (Presets)</span>
+                            <div class="gender-filter">
+                                <button class="gender-filter-btn active" data-gender="" data-type="preset">Tất Cả</button>
+                                <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
+                                <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
+                            </div>
+                        </div>
+                        <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
+                        <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                     </div>
                     <div class="sidebar-content" id="preset-sidebar-content">
-                        <div class="gender-filter">
-                            <button class="gender-filter-btn active" data-gender="" data-type="preset">Tất cả</button>
-                            <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
-                            <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
+                        <div class="gallery-drop-zone" id="preset-drop-zone">
+                            <div id="preset-gallery" class="sidebar-gallery"></div>
                         </div>
-                        <div class="upload-area compact" id="preset-upload">
-                            <div class="upload-icon">📤</div>
-                            <div class="upload-text">Tải lên</div>
-                            <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
-                        </div>
-                        <div id="preset-gallery" class="sidebar-gallery"></div>
                         <div class="pagination" id="preset-pagination" style="display: none;">
-                            <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">‹</button>
-                            <span class="pagination-info" id="preset-page-info">1 / 1</span>
-                            <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">›</button>
+                            <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">◀</button>
+                            <div class="pagination-dots" id="preset-dots"></div>
+                            <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">▶</button>
                         </div>
                     </div>
                 </div>
                 <div class="sidebar-section">
                     <div class="sidebar-header">
-                        <span>📷 Selfies</span>
-                        <button class="sidebar-toggle" onclick="toggleSidebar('selfie')">−</button>
+                        <span>ẢNH TỰ SƯỚNG (Selfies)</span>
+                        <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
+                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
                     </div>
                     <div class="sidebar-content" id="selfie-sidebar-content">
-                        <div class="upload-area compact" id="selfie-upload">
-                            <div class="upload-icon">📤</div>
-                            <div class="upload-text">Tải lên</div>
-                            <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                        <div class="gallery-drop-zone" id="selfie-drop-zone">
+                            <div id="selfie-gallery" class="sidebar-gallery"></div>
                         </div>
-                        <div id="selfie-gallery" class="sidebar-gallery"></div>
                         <div class="pagination" id="selfie-pagination" style="display: none;">
-                            <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">‹</button>
-                            <span class="pagination-info" id="selfie-page-info">1 / 1</span>
-                            <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">›</button>
+                            <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">◀</button>
+                            <div class="pagination-dots" id="selfie-dots"></div>
+                            <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">▶</button>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="workflow-main">
-                <div class="step-indicator">
-                    <div class="step active" data-step="1">
-                        <div class="step-number">1</div>
-                        <div class="step-label">Chọn Ảnh</div>
-                    </div>
-                    <div class="step-arrow">→</div>
-                    <div class="step" data-step="2">
-                        <div class="step-number">2</div>
-                        <div class="step-label">Xem Trước</div>
-                    </div>
-                    <div class="step-arrow">→</div>
-                    <div class="step" data-step="3">
-                        <div class="step-number">3</div>
-                        <div class="step-label">Xử Lý</div>
-                    </div>
-                    <div class="step-arrow">→</div>
-                    <div class="step" data-step="4">
-                        <div class="step-number">4</div>
-                        <div class="step-label">Kết Quả</div>
-                    </div>
-                </div>
                 <div class="preview-panel">
-                    <div class="preview-card" id="preset-card">
-                        <div class="preview-header">
-                            <div class="preview-label">🎭 Preset</div>
-                            <div class="preview-status" id="preset-status">Chưa chọn</div>
+                    <div class="preview-left-column">
+                        <div class="preview-card preset-card" id="preset-card">
+                            <div class="preview-header">
+                                <div class="preview-label">MẪU (Preset)</div>
+                                <button class="delete-btn" onclick="clearSelection('preset', event)" style="display: none;" id="preset-clear-btn">×</button>
+                            </div>
+                            <div id="preset-preview" class="preview-image">
+                                <div class="preview-empty">
+                                    <div class="preview-empty-icon">📷</div>
+                                    <div class="preview-empty-text">Chọn từ mẫu (Select from presets)</div>
+                                </div>
+                            </div>
                         </div>
-                        <div id="preset-preview" class="preview-image">
-                            <div class="preview-empty">
-                                <div class="preview-empty-icon">📷</div>
-                                <div class="preview-empty-text">Chọn từ sidebar bên trái</div>
+                        <div class="preview-card selfie-card" id="selfie-card">
+                            <div class="preview-header">
+                                <div class="preview-label">ẢNH TỰ SƯỚNG (Selfie)</div>
+                                <button class="delete-btn" onclick="clearSelection('selfie', event)" style="display: none;" id="selfie-clear-btn">×</button>
+                            </div>
+                            <div id="selfie-preview" class="preview-image">
+                                <div class="preview-empty">
+                                    <div class="preview-empty-icon">📷</div>
+                                    <div class="preview-empty-text">Chọn từ ảnh tự sướng (Select from selfies)</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="preview-arrow">+</div>
-                    <div class="preview-card" id="selfie-card">
+                    <div class="preview-card result-card" id="result-card" style="grid-column: 2;">
                         <div class="preview-header">
-                            <div class="preview-label">📷 Selfie</div>
-                            <div class="preview-status" id="selfie-status">Chưa chọn</div>
+                            <div class="preview-label">KẾT QUẢ (Result)</div>
                         </div>
-                        <div id="selfie-preview" class="preview-image">
+                        <div id="result-preview" class="preview-image">
                             <div class="preview-empty">
-                                <div class="preview-empty-icon">📷</div>
-                                <div class="preview-empty-text">Chọn từ sidebar bên trái</div>
+                                <div class="preview-empty-icon">✨</div>
+                                <div class="preview-empty-text">Kết quả sẽ hiển thị ở đây (Result will appear here)</div>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="action-panel">
-                    <div class="action-header">
-                        <div class="action-title">⚡ Thao Tác</div>
-                        <select class="action-select" id="api-provider">
-                            <option value="google-nano-banana" selected>Google</option>
-                            <option value="rapidapi">RapidAPI</option>
-                        </select>
-                    </div>
                     <div class="action-buttons">
                         <button class="action-btn primary" id="generate-btn" disabled onclick="generateFaceSwap()">
                             <span class="btn-icon">✨</span>
-                            <span>Face Swap</span>
+                            <span>Đổi Mặt (Face Swap)</span>
                         </button>
                         <button class="action-btn" id="enhance-btn" onclick="runEnhance()">
                             <span class="btn-icon">🔍</span>
-                            <span>Enhance</span>
+                            <span>Nâng Cấp (Enhance)</span>
                         </button>
                         <button class="action-btn" id="upscale-btn" onclick="runUpscale4k()">
                             <span class="btn-icon">📐</span>
-                            <span>4K Upscale</span>
+                            <span>Nâng Cấp 4K (4K Upscale)</span>
                         </button>
                         <button class="action-btn" id="colorize-btn" onclick="runColorize()">
                             <span class="btn-icon">🎨</span>
-                            <span>Colorize</span>
+                            <span>Tô Màu (Colorize)</span>
                         </button>
                         <div class="action-aging">
-                            <input type="number" id="aging-years" value="20" min="5" max="60" step="5" title="Số năm">
+                            <input type="number" id="aging-years" value="20" min="5" max="60" step="5" style="width: 50px; height: 36px; padding: 0 8px; border: 1px solid #ccc; background: #fff; color: var(--text-primary); font-size: 14px; text-align: center;">
                             <button class="action-btn" onclick="runAging()">
                                 <span class="btn-icon">⏳</span>
-                                <span>Aging</span>
+                                <span>Lão Hóa (Age)</span>
                             </button>
                         </div>
                     </div>
                     <div class="action-options">
-                        <textarea id="additional-prompt" class="action-prompt" placeholder="Nhập prompt bổ sung (tùy chọn)..."></textarea>
+                        <input type="text" id="additional-prompt" class="action-prompt" placeholder="Gợi ý (tùy chọn) (Prompt optional)">
                         <div class="action-gender">
-                            <span class="gender-label">Giới tính:</span>
-                            <label><input type="radio" name="character-gender" value="none" checked>N/A</label>
+                            <label><input type="radio" name="character-gender" value="none" checked>Không</label>
                             <label><input type="radio" name="character-gender" value="male">Nam</label>
                             <label><input type="radio" name="character-gender" value="female">Nữ</label>
                         </div>
                     </div>
                 </div>
-                <div class="results-panel">
-                    <div class="results-header">
-                        <span>🖼️ Kết Quả</span>
-                        <span class="results-count" id="results-count">0 kết quả</span>
-                    </div>
-                    <div id="results-gallery" class="results-grid"></div>
-                    <div class="pagination" id="results-pagination" style="display: none;">
-                        <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">‹</button>
-                        <span class="pagination-info" id="results-page-info">1 / 1</span>
-                        <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">›</button>
-                    </div>
-                </div>
             </div>
+        </div>
+        <div class="results-panel">
+            <div class="results-header">
+                <span>LỊCH SỬ (History)</span>
+                <span class="results-count" id="results-count">(0)</span>
+            </div>
+            <div id="results-gallery" class="results-grid"></div>
+            <div class="pagination" id="results-pagination" style="display: none;">
+                <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">◀</button>
+                <div class="pagination-dots" id="results-dots"></div>
+                <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">▶</button>
+            </div>
+        </div>
+        </div>
         </div>
             <div class="log-panel">
                 <div class="log-header">
@@ -2600,7 +2702,6 @@
         }
         const ITEMS_PER_PAGE = 12;
 
-        const presetUpload = document.getElementById('preset-upload');
         const presetInput = document.getElementById('preset-input');
         const presetPreview = document.getElementById('preset-preview');
         const presetGallery = document.getElementById('preset-gallery');
@@ -2620,7 +2721,6 @@
             }
         }
 
-        const selfieUpload = document.getElementById('selfie-upload');
         const selfieInput = document.getElementById('selfie-input');
         const selfiePreview = document.getElementById('selfie-preview');
         const selfieGallery = document.getElementById('selfie-gallery');
@@ -2993,7 +3093,6 @@
                         ]);
                     }
 
-                    updateStepIndicator();
                     updateResultsCount();
                     showStatusMessage('Đã chuyển sang hồ sơ mới', 'success');
                     return profile;
@@ -3107,7 +3206,6 @@
                     emptyIcon: '🎭'
                 },
                 elements: {
-                    upload: presetUpload,
                     input: presetInput,
                     preview: presetPreview,
                     gallery: presetGallery,
@@ -3134,7 +3232,6 @@
                     emptyIcon: '📷'
                 },
                 elements: {
-                    upload: selfieUpload,
                     input: selfieInput,
                     preview: selfiePreview,
                     gallery: selfieGallery,
@@ -3142,7 +3239,7 @@
                     pageInfo: selfiePageInfo,
                     prevBtn: selfiePrevBtn,
                     nextBtn: selfieNextBtn,
-                    empty: null
+                    empty: selfieGalleryEmpty
                 }
             }),
             results: createGalleryConfig({
@@ -3192,7 +3289,7 @@
             const statusLabel = status === 'success' ? 'Thành công' : status === 'error' ? 'Lỗi' : 'Thông tin';
             
             // Build duration display if provided
-            const durationHtml = duration ? `<span style="color: #666; font-size: 12px; margin-left: 8px;">⏱️ ${duration}</span>` : '';
+            const durationHtml = duration ? `<span style="color: #666; font-size: 14px; margin-left: 8px;">⏱️ ${duration}</span>` : '';
             
             // Build raw response JSON display
             let responseJsonHtml = '';
@@ -3201,8 +3298,8 @@
                 
                 responseJsonHtml = `
                     <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
-                        <div style="font-weight: 600; font-size: 12px; color: #666; margin-bottom: 8px;">📋 Response JSON:</div>
-                        <pre style="font-size: 11px; max-height: 500px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin: 0;">${escapeHtml(responseJson)}</pre>
+                        <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">📋 Response JSON:</div>
+                        <pre style="font-size: 14px; max-height: 500px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin: 0;">${escapeHtml(responseJson)}</pre>
                     </div>
                 `;
             }
@@ -3325,7 +3422,6 @@
                     console.log('Waiting for profile initialization before loading selfies and results...');
                 }
                 
-                updateStepIndicator();
                 updateResultsCount();
             } finally {
                 hideLoading();
@@ -3445,7 +3541,7 @@
                     const genderBadge = type === 'preset' && item.gender ? (() => {
                         const genderIcon = item.gender === 'male' ? '👨' : item.gender === 'female' ? '👩' : '👤';
                         const genderText = item.gender === 'male' ? 'Nam' : item.gender === 'female' ? 'Nữ' : '';
-                        return `<div class="gender-badge" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 500;">${genderIcon} ${genderText}</div>`;
+                        return `<div class="gender-badge" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 16px; font-weight: 500;">${genderIcon} ${genderText}</div>`;
                     })() : '';
 
                     return `
@@ -3460,13 +3556,25 @@
                 }).join('');
             }
 
-            pageInfo.textContent = `${config.state.page} / ${totalPages}`;
             prevBtn.disabled = config.state.page === 1;
             nextBtn.disabled = config.state.page === totalPages;
             
+            const dotsContainer = document.getElementById(type + '-dots');
+            if (dotsContainer && totalPages > 1) {
+                dotsContainer.innerHTML = '';
+                for (let i = 1; i <= totalPages; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = 'pagination-dot' + (i === config.state.page ? ' active' : '');
+                    dot.onclick = () => {
+                        config.state.page = i;
+                        renderGallery(type);
+                    };
+                    dotsContainer.appendChild(dot);
+                }
+            }
+            
             if (type === 'results') {
                 updateResultsCount();
-                updateStepIndicator();
             }
         }
 
@@ -3521,58 +3629,30 @@
             const status = document.getElementById(`${type}-status`);
 
             if (!selected) {
+                const emptyText = type === 'preset' ? 'Chọn từ mẫu (Select from presets)' : type === 'selfie' ? 'Chọn từ ảnh tự sướng (Select from selfies)' : 'Kết quả sẽ hiển thị ở đây (Result will appear here)';
                 preview.innerHTML = `
                     <div class="preview-empty">
-                        <div class="preview-empty-icon">📷</div>
-                        <div class="preview-empty-text">Chọn từ sidebar bên trái</div>
+                        <div class="preview-empty-icon">${type === 'result' ? '✨' : '📷'}</div>
+                        <div class="preview-empty-text">${emptyText}</div>
                     </div>
                 `;
                 if (card) card.classList.remove('has-selection');
-                if (status) status.textContent = 'Chưa chọn';
-                updateStepIndicator();
+                const clearBtn = document.getElementById(type + '-clear-btn');
+                if (clearBtn) clearBtn.style.display = 'none';
                 return;
             }
 
-            preview.innerHTML = `
-                <img src="${selected.image_url}" alt="${selected.filename || ''}">
-                <button class="delete-btn" onclick="clearSelection('${type}', event)">×</button>
-            `;
+            preview.innerHTML = `<img src="${selected.image_url}" alt="${selected.filename || ''}">`;
             if (card) card.classList.add('has-selection');
-            if (status) status.textContent = 'Đã chọn';
-            updateStepIndicator();
-        }
-
-        function updateStepIndicator() {
-            const presetSelected = galleries.preset?.state?.selected;
-            const selfieSelected = galleries.selfie?.state?.selected;
-            
-            document.querySelectorAll('.step').forEach((step, index) => {
-                const stepNum = index + 1;
-                step.classList.remove('active', 'completed');
-                
-                if (stepNum === 1) {
-                    step.classList.add('active');
-                } else if (stepNum === 2 && (presetSelected || selfieSelected)) {
-                    step.classList.add('active');
-                    if (presetSelected && selfieSelected) {
-                        step.classList.add('completed');
-                    }
-                } else if (stepNum === 3 && presetSelected && selfieSelected) {
-                    step.classList.add('active');
-                } else if (stepNum === 4) {
-                    const resultsCount = galleries.results?.state?.items?.length || 0;
-                    if (resultsCount > 0) {
-                        step.classList.add('active', 'completed');
-                    }
-                }
-            });
+            const clearBtn = document.getElementById(type + '-clear-btn');
+            if (clearBtn) clearBtn.style.display = 'block';
         }
 
         function updateResultsCount() {
             const count = galleries.results?.state?.items?.length || 0;
             const countEl = document.getElementById('results-count');
             if (countEl) {
-                countEl.textContent = `${count} kết quả`;
+                countEl.textContent = `(${count})`;
             }
         }
 
@@ -3582,6 +3662,8 @@
             config.state.selected = null;
             updatePreview(type);
             updateGenerateButton();
+            const clearBtn = document.getElementById(type + '-clear-btn');
+            if (clearBtn) clearBtn.style.display = 'none';
         }
 
         function clearSelection(type, event) {
@@ -3670,13 +3752,6 @@
             }
         }
 
-        presetUpload.addEventListener('click', () => {
-            presetInput.click();
-        });
-
-        selfieUpload.addEventListener('click', () => {
-            selfieInput.click();
-        });
 
         presetInput.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files || []);
@@ -3696,6 +3771,51 @@
             await handleImageUpload(file, 'selfie');
         });
 
+        function setupDragDrop(type) {
+            const dropZone = document.getElementById(type + '-drop-zone');
+            const input = document.getElementById(type + '-input');
+            
+            if (!dropZone || !input) return;
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.add('dragover');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.remove('dragover');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', async (e) => {
+                const files = type === 'preset' ? Array.from(e.dataTransfer.files) : [e.dataTransfer.files[0]];
+                const imageFiles = files.filter(file => file.type.match('image/(jpeg|jpg|png|webp)'));
+                
+                if (imageFiles.length === 0) {
+                    showStatusMessage('Please drop image files only', 'error');
+                    return;
+                }
+
+                for (const file of imageFiles) {
+                    await handleImageUpload(file, type);
+                }
+            }, false);
+        }
+
+        setupDragDrop('preset');
+        setupDragDrop('selfie');
+
         function addNewItem(type, item) {
             const config = galleries[type];
             config.state.items = [item, ...config.state.items.filter(existing => existing.id !== item.id)];
@@ -3710,12 +3830,12 @@
         }
 
         function setUploadLoading(type, isLoading) {
-            const uploadArea = type === 'preset' ? presetUpload : selfieUpload;
-            if (uploadArea) {
+            const dropZone = document.getElementById(type + '-drop-zone');
+            if (dropZone) {
                 if (isLoading) {
-                    uploadArea.classList.add('loading');
+                    dropZone.classList.add('loading');
                 } else {
-                    uploadArea.classList.remove('loading');
+                    dropZone.classList.remove('loading');
                 }
             }
         }
@@ -4023,7 +4143,6 @@
                 addNewItem('results', newResult);
                 await loadGallery('results');
                 updateResultsCount();
-                updateStepIndicator();
                 showStatusMessage('Tạo đổi mặt thành công!', 'success');
                 } else {
                     throw new Error('Không nhận được URL kết quả từ server');
@@ -4093,12 +4212,10 @@
                     addNewItem('results', newResult);
                     renderGallery('results');
                     updateResultsCount();
-                    updateStepIndicator();
                     showStatusMessage(`${label} thành công`, 'success');
                     
                     await loadGallery('results');
                     updateResultsCount();
-                    updateStepIndicator();
                 } else {
                     throw new Error('Result ID not returned from server');
                 }

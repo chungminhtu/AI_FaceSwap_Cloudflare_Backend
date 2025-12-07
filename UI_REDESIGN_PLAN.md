@@ -14,34 +14,29 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ Face Swap AI         Profile: [abc123] [____________][Switch]   [API▼][Log]│
+│ Face Swap AI    Profile: [abc123] [____][Switch]  [API▼][Log]              │
 ├───────────────────────────────────────────┬─────────────────────────────────┤
 │                                           │                                 │
-│  PRESETS [All][M][F]                 [+]  │        ┌─────────────────────┐  │
-│  ┌────────────────────────────────────┐   │        │                     │  │
-│  │ (entire area = drop zone)          │   │        │       PRESET        │  │
-│  │  ┌────┬────┬────┬────┐             │   │        │      (selected)     │  │
-│  │  │    │    │    │    │             │   │        │                     │  │
-│  │  ├────┼────┼────┼────┤             │   │        │        [×]          │  │
-│  │  │    │    │    │    │             │   │        └─────────────────────┘  │
-│  │  └────┴────┴────┴────┘             │   │                  +              │
-│  └────────────────────────────────────┘   │        ┌─────────────────────┐  │
-│                 ◀ 1 · 2 · 3 · 4 · 5 ▶     │        │                     │  │
-│  ─────────────────────────────────────    │        │       SELFIE        │  │
-│  SELFIES                             [+]  │        │      (selected)     │  │
-│  ┌────────────────────────────────────┐   │        │                     │  │
-│  │ (entire area = drop zone)          │   │        │        [×]          │  │
-│  │  ┌────┬────┬────┬────┐             │   │        └─────────────────────┘  │
-│  │  │    │    │    │    │             │   │                  ↓              │
-│  │  └────┴────┴────┴────┘             │   │        ┌─────────────────────┐  │
-│  └────────────────────────────────────┘   │        │                     │  │
-│                 ◀ 1 · 2 · 3 ▶             │        │                     │  │
-│                                           │        │       RESULT        │  │
-│                                           │        │                     │  │
-│                                           │        │    (same height     │  │
-│                                           │        │   as preset+selfie) │  │
-│                                           │        │                     │  │
-│                                           │        └─────────────────────┘  │
+│  PRESETS [All][M][F]                 [+]  │  ┌──────────────┐  ┌──────────┐│
+│  ┌────────────────────────────────────┐   │  │   PRESET     │  │          ││
+│  │ (entire area = drop zone)          │   │  │              │  │          ││
+│  │  ┌────┬────┬────┬────┐             │   │  │   [×]        │  │  RESULT  ││
+│  │  │    │    │    │    │             │   │  └──────────────┘  │          ││
+│  │  ├────┼────┼────┼────┤             │   │  ┌──────────────┐  │          ││
+│  │  │    │    │    │    │             │   │  │   SELFIE     │  │          ││
+│  │  └────┴────┴────┴────┘             │   │  │              │  │          ││
+│  └────────────────────────────────────┘   │  │   [×]        │  │          ││
+│                 ◀ 1 · 2 · 3 · 4 · 5 ▶     │  └──────────────┘  │          ││
+│  ─────────────────────────────────────    │                   │          ││
+│  SELFIES                             [+]  │                   │          ││
+│  ┌────────────────────────────────────┐   │                   │          ││
+│  │ (entire area = drop zone)          │   │                   │          ││
+│  │  ┌────┬────┬────┬────┐             │   │                   │          ││
+│  │  │    │    │    │    │             │   │                   │          ││
+│  │  └────┴────┴────┴────┘             │   │                   │          ││
+│  └────────────────────────────────────┘   │                   │          ││
+│                 ◀ 1 · 2 · 3 ▶             │                   └──────────┘│
+│                                           │                                 │
 ├───────────────────────────────────────────┴─────────────────────────────────┤
 │ [Face Swap*] [Enhance] [4K Upscale] [Colorize] [Age:__]  [__prompt__] ○M ○F │
 ├─────────────────────────────────────────────────────────────────────────────┤
@@ -57,7 +52,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Face Swap AI      Profile: [abc123] [____][Switch]  [API▼][Log]│
+│ Face Swap AI    Profile: [abc123] [____][Switch]  [API▼][Log] │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  PRESETS [All][M][F]                                       [+]  │
@@ -75,14 +70,16 @@
 │  └───────────────────────────────────────────────────────────┘  │
 │                       ◀ 1 · 2 ▶                                 │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │    PRESET    │  │    SELFIE    │  │       RESULT         │   │
-│  │              │  │              │  │                      │   │
-│  │              │+ │              │→ │                      │   │
-│  │     [×]      │  │     [×]      │  │                      │   │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
+│  ┌──────────────┐  ┌──────────────────────────────────────────┐ │
+│  │   PRESET     │  │                                          │ │
+│  │   [×]        │  │                                          │ │
+│  └──────────────┘  │            RESULT                        │ │
+│  ┌──────────────┐  │                                          │ │
+│  │   SELFIE     │  │                                          │ │
+│  │   [×]        │  │                                          │ │
+│  └──────────────┘  └──────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────────┤
-│ [Face Swap*] [Enhance] [4K] [Colorize] [Age:__] [prompt] ○M ○F  │
+│ [Face Swap*] [Enhance] [4K] [Colorize] [Age:__] [prompt] ○M ○F │
 ├─────────────────────────────────────────────────────────────────┤
 │ HISTORY (24)                                                    │
 │ [img][img][img][img][img][img][img][img]                        │
@@ -209,13 +206,21 @@
 
 ### 3. Comparison Panel (Right Side)
 
+**Layout:** Two-column grid layout
+- **Left Column (narrower):** PRESET and SELFIE stacked vertically
+- **Right Column (wider):** RESULT taking full height
+
 | Element | Height | Description |
 |---------|--------|-------------|
-| Preset Preview | ~30% | Selected preset with [×] clear button |
-| + Symbol | auto | Visual connector |
-| Selfie Preview | ~30% | Selected selfie with [×] clear button |
-| ↓ Arrow | auto | Visual connector |
-| Result Preview | ~40% | Generated result (height = preset + selfie) |
+| Preset Preview | 200px | Selected preset with [×] clear button (left column, top) |
+| Selfie Preview | 200px | Selected selfie with [×] clear button (left column, bottom) |
+| Result Preview | Full height | Generated result (right column, spans combined height of preset + selfie) |
+
+**Layout Details:**
+- Grid: `grid-template-columns: 1fr 1.5fr` (left column narrower, right column wider)
+- PRESET and SELFIE: Fixed height 200px each, stacked in left column
+- RESULT: Full height on right, matches combined height of PRESET + SELFIE
+- No visual connectors (removed + and ↓ symbols)
 
 **Empty States:**
 - Preset: "Select from presets"
@@ -265,73 +270,75 @@
 
 ---
 
-## CSS Variables (Enterprise Dark Theme)
+## CSS Variables (Light Theme)
 
 ```css
-/* Enterprise Dark Theme - Professional AI App */
---bg-primary: #0F1419;
---bg-secondary: #1A1F26;
---bg-tertiary: #242B33;
---accent: #3B82F6;          /* Blue - Trust, Technology */
---accent-hover: #60A5FA;
---accent-strong: #2563EB;
---accent-secondary: #10B981; /* Green - Success, AI */
---text-primary: #F1F5F9;
---text-secondary: #94A3B8;
---text-muted: #64748B;
---border: rgba(148, 163, 184, 0.15);
---success: #10B981;
---danger: #EF4444;
+/* Light Theme - Professional AI App */
+--bg-primary: #FDFBFF;
+--bg-secondary: #F7F2FF;
+--bg-tertiary: #EFE7FF;
+--bg-card-gradient: linear-gradient(135deg, #FFFFFF 0%, #F4E9FF 100%);
+--accent: #F82387;          /* Pink - Modern, Creative */
+--accent-hover: #FF5D9A;
+--accent-strong: #B215FF;
+--accent-secondary: #12B0FF; /* Blue - Technology */
+--text-primary: #0B0B2E;
+--text-secondary: #3A345C;
+--text-muted: #7B7695;
+--border: rgba(131, 94, 255, 0.3);
+--success: #2BC990;
+--danger: #FF4D6D;
 ```
 
 ### Color Palette Rationale
-- **Dark Background**: Professional, reduces eye strain, modern AI aesthetic
-- **Blue Accent**: Conveys trust, technology, reliability - ideal for AI/enterprise apps
-- **Green Secondary**: Used for success states, AI processing indicators
-- **High Contrast Text**: Ensures readability on dark backgrounds
+- **Light Background**: Clean, professional, reduces eye strain for extended use
+- **Pink Accent**: Modern, creative, engaging - ideal for AI/creative apps
+- **Blue Secondary**: Used for technology indicators and secondary actions
+- **High Contrast Text**: Ensures readability on light backgrounds
 
 ---
 
 ## Implementation Checklist
 
 ### Phase 1: Structure
-- [ ] Remove step indicator
-- [ ] Simplify header (smaller logo, inline profile)
-- [ ] Create two-column layout (galleries | comparison)
-- [ ] Add action bar below comparison
+- [x] Remove step indicator
+- [x] Simplify header (smaller logo, inline profile, compact height)
+- [x] Create two-column layout (galleries | comparison)
+- [x] Add action bar below comparison
 
 ### Phase 2: Galleries
-- [ ] Refactor preset gallery with drop zone
-- [ ] Refactor selfie gallery with drop zone
-- [ ] Modern dot pagination component
-- [ ] Small [+] upload buttons
+- [x] Refactor preset gallery with drop zone
+- [x] Refactor selfie gallery with drop zone
+- [x] Modern dot pagination component (◀ 1 · 2 · 3 ▶)
+- [x] Small [+] upload buttons in header
 
 ### Phase 3: Comparison Panel
-- [ ] Preset preview box
-- [ ] Selfie preview box
-- [ ] Result preview box (full height)
-- [ ] Visual connectors (+, ↓)
+- [x] Two-column grid layout (left: preset+selfie, right: result)
+- [x] Preset preview box (200px height, left column top)
+- [x] Selfie preview box (200px height, left column bottom)
+- [x] Result preview box (full height, right column)
+- [x] Removed visual connectors (no + or ↓ symbols)
 
 ### Phase 4: Action Bar
-- [ ] Horizontal button layout
-- [ ] Inline prompt input
-- [ ] Inline gender radios
-- [ ] Button state management
+- [x] Horizontal button layout
+- [x] Inline prompt input
+- [x] Inline gender radios (○M ○F)
+- [x] Button state management
 
 ### Phase 5: History
-- [ ] Full-width grid
-- [ ] Modern pagination
-- [ ] Lightbox integration
+- [x] Full-width grid
+- [x] Modern dot pagination (◀ 1 · 2 · 3 · 4 ▶)
+- [x] Lightbox integration
 
 ### Phase 6: Log Panel
-- [ ] Slide-out animation
-- [ ] Full JSON display
-- [ ] Mobile responsive
+- [x] Slide-out animation
+- [x] Full JSON display
+- [x] Mobile responsive
 
 ### Phase 7: Responsive
-- [ ] Tablet breakpoint (768-1199px)
-- [ ] Mobile breakpoint (<768px)
-- [ ] Touch-friendly targets
+- [x] Tablet breakpoint (768-1199px) - maintains two-column comparison layout
+- [x] Mobile breakpoint (<768px) - stacks comparison vertically
+- [x] Touch-friendly targets
 
 ---
 
