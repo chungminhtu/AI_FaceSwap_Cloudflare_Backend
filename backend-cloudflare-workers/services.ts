@@ -99,7 +99,8 @@ export const callNanoBanana = async (
   prompt: unknown,
   targetUrl: string,
   sourceUrl: string,
-  env: Env
+  env: Env,
+  aspectRatio: string = "1:1"
 ): Promise<FaceSwapResponse> => {
   // Use Vertex AI Gemini API with image generation support
   // Based on official documentation: responseModalities: ["TEXT", "IMAGE"] is supported
@@ -195,7 +196,7 @@ export const callNanoBanana = async (
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],  // Request both text and image output
         imageConfig: {
-          aspectRatio: "1:1",  // Square aspect ratio for face swap
+          aspectRatio: aspectRatio,  // Aspect ratio from user selection
         },
         temperature: 0.7,
         maxOutputTokens: 2048,
@@ -230,7 +231,10 @@ export const callNanoBanana = async (
       promptLength: faceSwapPrompt.length,
       targetUrl,
       sourceUrl,
+      aspectRatio: aspectRatio, // Log the aspect ratio being sent
     };
+    
+    console.log('[Vertex-NanoBanana] Requesting image generation with aspect ratio:', aspectRatio);
 
     // Call Vertex AI Gemini API
     const startTime = Date.now();

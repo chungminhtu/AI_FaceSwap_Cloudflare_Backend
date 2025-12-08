@@ -8,13 +8,13 @@
         @import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700&display=swap');
 
         :root {
-            --bg-primary: #f8fafc;
-            --bg-secondary: #f1f5f9;
-            --bg-tertiary: #e2e8f0;
-            --accent: #6366f1;
-            --accent-hover: #4f46e5;
-            --accent-secondary: #0ea5e9;
-            --accent-strong: #7c3aed;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-tertiary: #f1f5f9;
+            --accent: #8b5cf6;
+            --accent-hover: #7c3aed;
+            --accent-secondary: #a78bfa;
+            --accent-strong: #6d28d9;
             --text-primary: #0f172a;
             --text-secondary: #475569;
             --text-muted: #94a3b8;
@@ -30,13 +30,12 @@
 
         body {
             font-family: 'Lexend Deca', -apple-system, sans-serif;
-            background: radial-gradient(circle at top, #FFE0F0 0%, #F4E5FF 35%, #FDFBFF 70%);
+            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 50%, #f1f5f9 100%);
             color: var(--text-primary);
             line-height: 1.5;
             font-size: 14px;
             -webkit-font-smoothing: antialiased;
             overflow-x: hidden;
-            border-top: 6px solid var(--accent);
         }
 
         body.locked { overflow: hidden; }
@@ -53,7 +52,7 @@
         .access-gate.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 
         .gate-card {
-            width: min(420px, 90vw); padding: 32px; border-radius: 20px;
+            width: min(420px, 90vw); padding: 32px; border-radius: 12px;
             background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
             border: 1px solid rgba(255,255,255,0.18);
             box-shadow: 0 25px 60px rgba(18, 0, 56, 0.45);
@@ -71,7 +70,7 @@
         }
         .gate-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(248, 35, 135, 0.25); }
         .gate-button {
-            width: 100%; height: 44px; padding: 0 24px; border-radius: 22px;
+            width: 100%; height: 44px; padding: 0 24px; border-radius: 12px;
             background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
             color: #fff; font-size: 14px; font-weight: 600; border: none; cursor: pointer;
             transition: all 0.2s; display: flex; align-items: center; justify-content: center;
@@ -81,16 +80,16 @@
 
         /* Main Layout */
         .main-container {
-            width: 100%; padding: 16px 20px 40px;
-            background: linear-gradient(135deg, #FFF7FB 0%, #EEF4FF 100%);
+            width: 100%; padding: 8px 20px 40px;
+            background: var(--bg-primary);
             box-shadow: var(--shadow-soft);
-            border: 1px solid rgba(255,255,255,0.4);
+            border: 1px solid var(--border);
         }
 
         .app-header {
             display: flex; justify-content: space-between; align-items: center;
             padding: 6px 0; margin-bottom: 12px;
-            border-bottom: 1px solid rgba(131, 94, 255, 0.2);
+            border-bottom: 1px solid var(--border);
         }
         .app-header h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); letter-spacing: 0.3px; }
         .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -98,7 +97,7 @@
         /* Three Column Layout: Left Sidebar | Main Content | Log Panel */
         .app-layout {
             display: grid;
-            grid-template-columns: 320px 1fr 400px;
+            grid-template-columns: 320px 1fr 600px;
             gap: 20px;
             min-height: calc(100vh - 120px);
             transition: all 0.3s;
@@ -114,11 +113,11 @@
         .sidebar-column::-webkit-scrollbar { width: 4px; }
         .sidebar-column::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
 
-        .sidebar-section { border: 1px solid #e0e0e0; background: #fff; }
+        .sidebar-section { border: 1px solid var(--border); background: var(--bg-secondary); }
         .sidebar-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 10px 14px; border-bottom: 1px solid #e0e0e0;
-            font-weight: 600; font-size: 14px; background: #f5f5f5;
+            padding: 10px 14px; border-bottom: 1px solid var(--border);
+            font-weight: 600; font-size: 14px; background: var(--bg-tertiary);
         }
         .gallery-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .sidebar-content { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -128,53 +127,74 @@
             display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
         }
         .gallery-drop-zone {
-            position: relative; border: 1px dashed #ccc; background: #fafafa; padding: 8px;
+            position: relative; border: 1px dashed var(--border); background: var(--bg-primary); padding: 8px;
         }
-        .gallery-drop-zone.dragover { border-color: #999; border-style: solid; background: #f0f0f0; }
+        .gallery-drop-zone.dragover { border-color: var(--accent); border-style: solid; background: var(--bg-tertiary); }
 
         /* Main Content Area */
         .main-content-area { display: flex; flex-direction: column; gap: 16px; }
 
         .preview-panel {
-            display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;
+            display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px;
         }
-        .preview-left-column { display: flex; flex-direction: column; gap: 12px; }
+        .preview-left-column { display: contents; }
         .preview-card {
             display: flex; flex-direction: column; gap: 8px;
-            background: #fff; border: 1px solid #e0e0e0;
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            width: 100%; overflow: hidden;
         }
-        .preview-card.preset-card, .preview-card.selfie-card { min-height: 320px; }
-        .preview-card.result-card { min-height: 660px; grid-row: 1 / -1; }
+        .preview-card.preset-card { grid-column: 1; grid-row: 1; min-height: 320px; }
+        .preview-card.selfie-card { grid-column: 1; grid-row: 2; min-height: 320px; }
+        .preview-card.result-card { grid-column: 2; grid-row: 1 / -1; min-height: 660px; }
         .preview-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 8px 12px; border-bottom: 1px solid #e0e0e0; background: #f9f9f9;
+            padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-tertiary);
         }
         .preview-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
         .preview-image {
             flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center;
-            background: #fafafa; overflow: hidden; padding: 8px;
+            background: var(--bg-primary); overflow: hidden; padding: 8px;
+            width: 100%; max-width: 100%; box-sizing: border-box;
+            position: relative;
         }
-        .preview-card.result-card .preview-image { min-height: 600px; }
-        .preview-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .preview-card.preset-card .preview-image {
+            max-height: calc(320px - 50px);
+        }
+        .preview-card.selfie-card .preview-image {
+            max-height: calc(320px - 50px);
+        }
+        .preview-card.result-card .preview-image { 
+            min-height: 600px;
+            max-height: calc(660px - 50px);
+        }
+        .preview-image img { 
+            max-width: 100% !important; 
+            max-height: 100% !important; 
+            width: auto !important; 
+            height: auto !important; 
+            object-fit: contain !important; 
+            display: block;
+            margin: 0 auto;
+        }
         .preview-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-muted); text-align: center; }
         .preview-empty-icon { font-size: 32px; opacity: 0.5; }
         .preview-empty-text { font-size: 14px; }
 
         /* Action Panel */
         .action-panel {
-            border: 1px solid #e0e0e0; padding: 12px 16px;
-            display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: #fafafa;
+            border: 1px solid var(--border); padding: 12px 16px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: var(--bg-secondary);
         }
         .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .action-btn {
             height: 36px; padding: 0 16px; font-size: 13px; font-weight: 600;
-            border: none; background: #4a90e2; color: #fff; cursor: pointer;
+            border: none; background: var(--accent); color: #fff; cursor: pointer;
             display: inline-flex; align-items: center; gap: 6px;
-            transition: all 0.2s; border-radius: 18px;
+            transition: all 0.2s; border-radius: 12px;
         }
-        .action-btn:hover:not(:disabled) { background: #357abd; transform: translateY(-1px); }
-        .action-btn.primary { background: var(--accent); }
-        .action-btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+        .action-btn:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+        .action-btn.primary { background: var(--accent-strong); }
+        .action-btn.primary:hover:not(:disabled) { background: var(--accent); }
         .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .action-btn.loading::after {
             content: ''; width: 12px; height: 12px; margin-left: 6px;
@@ -185,16 +205,18 @@
         .action-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; width: 100%; }
         .action-prompt {
             flex: 1; min-width: 180px; height: 36px; padding: 0 12px;
-            border: 1px solid #ccc; background: #fff; font-size: 14px;
+            border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 14px;
+            border-radius: 12px;
         }
+        .action-ratio { display: flex; gap: 6px; align-items: center; }
         .action-gender { display: flex; gap: 8px; align-items: center; }
         .action-gender label { font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
         .action-aging { display: flex; gap: 6px; align-items: center; }
-        .action-aging input { width: 50px; height: 36px; padding: 0 8px; border: 1px solid #ccc; text-align: center; font-size: 14px; }
+        .action-aging input { width: 50px; height: 36px; padding: 0 8px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); text-align: center; font-size: 14px; border-radius: 12px; }
 
         /* History/Results Panel */
         .results-panel {
-            border: 1px solid #e0e0e0; padding: 12px; background: #fff;
+            border: 1px solid var(--border); padding: 12px; background: var(--bg-secondary);
         }
         .results-header {
             display: flex; justify-content: space-between; align-items: center;
@@ -208,7 +230,7 @@
 
         /* Log Panel - Right Sidebar */
         .log-panel {
-            background: rgba(255,255,255,0.9); border: 1px solid #e0e0e0;
+            background: var(--bg-secondary); border: 1px solid var(--border);
             padding: 16px; display: flex; flex-direction: column;
             position: sticky; top: 20px; max-height: calc(100vh - 120px);
             overflow: hidden; transition: opacity 0.3s, transform 0.3s;
@@ -217,16 +239,16 @@
         .log-title { font-size: 14px; font-weight: 600; color: var(--accent-strong); flex: 1; }
         .log-toggle-btn, .log-clear-btn {
             padding: 5px 12px; border: none; cursor: pointer;
-            font-size: 13px; font-weight: 600; border-radius: 16px; transition: all 0.2s;
+            font-size: 13px; font-weight: 600; border-radius: 12px; transition: all 0.2s;
         }
-        .log-toggle-btn { background: #4a90e2; color: #fff; }
-        .log-toggle-btn:hover { background: #357abd; }
-        .log-clear-btn { background: #ff6b6b; color: #fff; }
-        .log-clear-btn:hover { background: #ee5a5a; }
+        .log-toggle-btn { background: var(--accent); color: #fff; }
+        .log-toggle-btn:hover { background: var(--accent-hover); }
+        .log-clear-btn { background: var(--danger); color: #fff; }
+        .log-clear-btn:hover { background: #dc2626; }
 
         .api-log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
         .api-log-entry {
-            border: 1px solid #eee; padding: 10px; background: #fff; font-size: 13px;
+            border: 1px solid var(--border); padding: 10px; background: var(--bg-primary); font-size: 13px;
         }
         .api-log-entry.log-error { border-left: 3px solid var(--danger); }
         .api-log-entry.log-success { border-left: 3px solid var(--success); }
@@ -238,58 +260,58 @@
 
         /* Gallery Items */
         .gallery-item {
-            aspect-ratio: 1; overflow: hidden; background: #fff;
-            border: 1px solid #e0e0e0; cursor: pointer; position: relative;
+            aspect-ratio: 1; overflow: hidden; background: var(--bg-primary);
+            border: 1px solid var(--border); cursor: pointer; position: relative;
             transition: transform 0.2s, box-shadow 0.2s;
         }
-        .gallery-item.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.2); }
+        .gallery-item.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
         .gallery-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); }
         .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
         .gallery-delete-btn {
             position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
-            background: #d32f2f; color: #fff; border: none; border-radius: 11px;
+            background: var(--danger); color: #fff; border: none; border-radius: 12px;
             font-size: 14px; font-weight: 700; cursor: pointer; opacity: 0;
             display: flex; align-items: center; justify-content: center; z-index: 10;
         }
         .gallery-item:hover .gallery-delete-btn { opacity: 1; }
-        .gallery-delete-btn:hover { background: #b71c1c; }
+        .gallery-delete-btn:hover { background: #dc2626; }
 
         .gallery-upload-btn {
             width: 28px; height: 28px; border: none; background: var(--accent);
             color: #fff; cursor: pointer; font-size: 16px; font-weight: bold;
             display: flex; align-items: center; justify-content: center;
-            border-radius: 14px; transition: all 0.2s;
+            border-radius: 12px; transition: all 0.2s;
         }
         .gallery-upload-btn:hover { background: var(--accent-hover); transform: scale(1.1); }
 
         .gender-filter-btn {
-            height: 26px; padding: 0 10px; border: none; background: #e8e8e8;
-            cursor: pointer; font-size: 12px; font-weight: 600; color: #555;
-            border-radius: 13px; transition: all 0.2s;
+            height: 26px; padding: 0 10px; border: none; background: var(--bg-primary);
+            cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-secondary);
+            border-radius: 12px; transition: all 0.2s;
         }
-        .gender-filter-btn.active { background: #4a90e2; color: #fff; }
-        .gender-filter-btn:hover { background: #d0d0d0; }
+        .gender-filter-btn.active { background: var(--accent); color: #fff; }
+        .gender-filter-btn:hover { background: var(--bg-tertiary); }
 
         /* Pagination */
         .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; }
         .pagination-btn {
-            width: 30px; height: 30px; padding: 0; background: #4a90e2; border: none;
+            width: 32px; height: 32px; padding: 0; background: var(--accent); border: none;
             color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
-            border-radius: 15px; transition: all 0.2s;
+            transition: all 0.2s; border-radius: 12px;
         }
-        .pagination-btn:hover:not(:disabled) { background: #357abd; }
+        .pagination-btn:hover:not(:disabled) { background: var(--accent-hover); }
         .pagination-btn:disabled { opacity: 0.3; cursor: not-allowed; }
         .pagination-dots { display: flex; gap: 4px; }
-        .pagination-dot { width: 8px; height: 8px; background: #ccc; cursor: pointer; border-radius: 4px; }
-        .pagination-dot.active { background: #4a90e2; }
+        .pagination-dot { width: 8px; height: 8px; background: var(--border); cursor: pointer; border-radius: 12px; }
+        .pagination-dot.active { background: var(--accent); }
 
         /* Delete button in preview */
         .delete-btn {
-            width: 24px; height: 24px; background: #d32f2f; color: #fff;
+            width: 24px; height: 24px; background: var(--danger); color: #fff;
             border: none; border-radius: 12px; cursor: pointer;
             font-size: 16px; font-weight: 700;
         }
-        .delete-btn:hover { background: #b71c1c; }
+        .delete-btn:hover { background: #dc2626; }
 
         /* Lightbox */
         .lightbox {
@@ -302,7 +324,7 @@
         .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
         .lightbox-close, .lightbox-nav {
             position: absolute; width: 40px; height: 40px;
-            background: rgba(255,255,255,0.2); border: none; border-radius: 50%;
+            background: rgba(255,255,255,0.2); border: none; border-radius: 12px;
             color: #fff; font-size: 28px; cursor: pointer; z-index: 10002;
             display: flex; align-items: center; justify-content: center; transition: all 0.2s;
         }
@@ -319,8 +341,8 @@
             backdrop-filter: blur(10px); display: flex; align-items: center;
             justify-content: center; z-index: 9999;
         }
-        .loading-content { background: #fff; border: 1px solid #e0e0e0; padding: 24px; text-align: center; min-width: 200px; border-radius: 8px; }
-        .spinner { width: 36px; height: 36px; border: 3px solid rgba(248, 35, 135, 0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto 12px; }
+        .loading-content { background: var(--bg-secondary); border: 1px solid var(--border); padding: 24px; text-align: center; min-width: 200px; border-radius: 12px; }
+        .spinner { width: 36px; height: 36px; border: 3px solid rgba(139, 92, 246, 0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto 12px; }
         .loading-text { font-size: 14px; color: var(--accent); font-weight: 600; }
         .loading-subtext { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
@@ -328,7 +350,7 @@
         .toast-container { position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
         .toast {
             pointer-events: auto; min-width: 280px; max-width: 400px;
-            padding: 12px 16px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            padding: 12px 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             display: flex; align-items: flex-start; gap: 12px; animation: toastSlideIn 0.3s ease-out;
         }
         .toast.toast-success { background: linear-gradient(135deg, #10b981, #059669); color: #fff; border-left: 4px solid #34d399; }
@@ -341,7 +363,7 @@
         /* Status Message */
         .status-message {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-            padding: 10px 20px; font-size: 14px; border-radius: 8px; z-index: 9999;
+            padding: 10px 20px; font-size: 14px; border-radius: 12px; z-index: 9999;
             display: flex; align-items: center; gap: 8px; animation: slideIn 0.2s ease;
         }
         .status-success { background: rgba(43, 201, 144, 0.95); color: #fff; }
@@ -353,8 +375,8 @@
         .log-toggle-float {
             position: fixed; right: 20px; bottom: 20px; width: 50px; height: 50px;
             background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
-            border: none; color: #fff; font-size: 20px; cursor: pointer; border-radius: 50%;
-            box-shadow: 0 4px 16px rgba(248, 35, 135, 0.4);
+            border: none; color: #fff; font-size: 20px; cursor: pointer; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
             display: none; align-items: center; justify-content: center; z-index: 9999;
         }
         .log-toggle-float:hover { transform: scale(1.1); }
@@ -368,13 +390,15 @@
 
         /* Responsive */
         @media (max-width: 1400px) {
-            .app-layout { grid-template-columns: 280px 1fr 350px; }
+            .app-layout { grid-template-columns: 280px 1fr 500px; }
         }
         @media (max-width: 1200px) {
             .app-layout { grid-template-columns: 1fr; }
             .sidebar-column { max-height: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-            .preview-panel { grid-template-columns: 1fr 1.5fr; }
-            .preview-card.result-card { grid-row: 1 / -1; }
+            .preview-panel { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+            .preview-card.preset-card { grid-column: 1; grid-row: 1; }
+            .preview-card.selfie-card { grid-column: 1; grid-row: 2; }
+            .preview-card.result-card { grid-column: 2; grid-row: 1 / -1; }
             .log-panel { position: relative; top: 0; max-height: 400px; margin-top: 16px; }
             .log-toggle-float { display: none !important; }
         }
@@ -382,9 +406,10 @@
             .main-container { padding: 12px; }
             .app-header { flex-direction: column; align-items: flex-start; gap: 8px; }
             .sidebar-column { grid-template-columns: 1fr; }
-            .preview-panel { grid-template-columns: 1fr; }
-            .preview-card.preset-card, .preview-card.selfie-card { min-height: 250px; }
-            .preview-card.result-card { min-height: 400px; grid-row: auto; }
+            .preview-panel { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
+            .preview-card.preset-card { grid-column: 1; grid-row: 1; min-height: 250px; }
+            .preview-card.selfie-card { grid-column: 1; grid-row: 2; min-height: 250px; }
+            .preview-card.result-card { grid-column: 1; grid-row: 3; min-height: 400px; }
             .preview-card.result-card .preview-image { min-height: 350px; }
             .action-panel { flex-direction: column; align-items: stretch; }
             .action-buttons { flex-direction: column; }
@@ -408,16 +433,16 @@
         <div class="app-header">
             <h1>Đổi Mặt AI (Face Swap AI)</h1>
             <div class="header-controls">
-                <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; background: rgba(255,255,255,0.6); border: 1px solid rgba(131, 94, 255, 0.2); border-radius: 4px;">
+                <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;">
                     <span style="color: var(--text-secondary);">Hồ Sơ (Profile):</span>
                     <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
                     <span id="profile-info" style="display: none;">
                         <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 12px;"></span>
                     </span>
-                    <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ" style="padding: 4px 8px; border: 1px solid rgba(131, 94, 255, 0.3); border-radius: 4px; background: rgba(255,255,255,0.8); font-size: 12px; font-family: monospace; width: 100px; height: 26px;">
-                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 13px;">Chuyển (Switch)</button>
+                    <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: monospace; width: 100px; height: 26px;">
+                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px;">Chuyển (Switch)</button>
                 </div>
-                <select class="action-select" id="api-provider" style="height: 26px; padding: 0 8px; border-radius: 4px; border: 1px solid rgba(131, 94, 255, 0.3); background: #fff; font-size: 12px;">
+                <select class="action-select" id="api-provider" style="height: 26px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 12px;">
                     <option value="google-nano-banana" selected>Google</option>
                     <option value="rapidapi">RapidAPI</option>
                 </select>
@@ -474,7 +499,6 @@
             <!-- Main Content Area -->
             <div class="main-content-area">
                 <div class="preview-panel">
-                    <div class="preview-left-column">
                         <div class="preview-card preset-card" id="preset-card">
                             <div class="preview-header">
                                 <div class="preview-label">Mẫu (Preset)</div>
@@ -499,7 +523,6 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
                     <div class="preview-card result-card" id="result-card">
                         <div class="preview-header">
                             <div class="preview-label">Kết Quả (Result)</div>
@@ -528,6 +551,21 @@
                     </div>
                     <div class="action-options">
                         <input type="text" id="additional-prompt" class="action-prompt" placeholder="Gợi ý (tùy chọn) (Prompt optional)">
+                        <div class="action-ratio">
+                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Tỷ Lệ (Ratio):</label>
+                            <select id="aspect-ratio" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
+                                <option value="1:1">1:1 (Square)</option>
+                                <option value="3:2">3:2 (Landscape)</option>
+                                <option value="2:3">2:3 (Portrait)</option>
+                                <option value="3:4">3:4 (Portrait)</option>
+                                <option value="4:3">4:3 (Landscape)</option>
+                                <option value="4:5">4:5 (Portrait)</option>
+                                <option value="5:4">5:4 (Landscape)</option>
+                                <option value="9:16">9:16 (Vertical)</option>
+                                <option value="16:9" selected>16:9 (Widescreen)</option>
+                                <option value="21:9">21:9 (Ultrawide)</option>
+                            </select>
+                        </div>
                         <div class="action-gender">
                             <label><input type="radio" name="character-gender" value="none" checked> Không</label>
                             <label><input type="radio" name="character-gender" value="male"> Nam</label>
@@ -636,6 +674,7 @@
                         if (response.ok) {
                             this.currentProfile = await response.json();
                             this.updateProfileDisplay();
+                            console.log('[ProfileManager] Profile loaded, loading selfies and results for profile:', this.currentProfile.id);
                             await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                             return this.currentProfile;
                         }
@@ -645,6 +684,7 @@
                     localStorage.setItem('userProfileId', profile.id);
                     this.currentProfile = profile;
                     this.updateProfileDisplay();
+                    console.log('[ProfileManager] New profile created, loading selfies and results for profile:', profile.id);
                     await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                     return profile;
                 } catch (error) {
@@ -765,26 +805,31 @@
             const config = galleries[type];
             try {
                 if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
+                    console.warn(`[LoadGallery] Cannot load ${type}: profile not initialized`);
                     config.state.items = []; config.state.page = 1; renderGallery(type); return;
                 }
                 let url = `${WORKER_URL}${config.endpoints.list}`;
                 const params = new URLSearchParams();
                 if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
-                    params.append('profile_id', window.profileManager.currentProfile.id);
+                    const profileId = window.profileManager.currentProfile.id;
+                    params.append('profile_id', profileId);
+                    console.log(`[LoadGallery] Loading ${type} for profile_id:`, profileId);
                 }
                 if (type === 'preset' && ['male', 'female'].includes(genderFilter)) {
                     params.append('gender', genderFilter);
                 }
                 if (params.toString()) url += `?${params.toString()}`;
+                console.log(`[LoadGallery] Fetching ${type} from:`, url);
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 config.state.items = data[config.responseKey] || [];
+                console.log(`[LoadGallery] Loaded ${config.state.items.length} ${type} items`);
                 config.state.page = 1;
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);
             } catch (error) {
-                console.error(`Load ${type} error:`, error);
+                console.error(`[LoadGallery] Load ${type} error:`, error);
                 config.state.items = []; config.state.page = 1; renderGallery(type);
             }
         }
@@ -1003,13 +1048,18 @@
 
             try {
                 const genderRadio = document.querySelector('input[name="character-gender"]:checked');
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || '16:9';
+                console.log('[Frontend] Selected aspect ratio:', selectedAspectRatio);
                 const requestBody = {
                     preset_image_id: presetSelected.id,
                     selfie_ids: [selfieSelected.id],
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
-                    character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || '')
+                    character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || ''),
+                    aspect_ratio: selectedAspectRatio
                 };
+                console.log('[Frontend] Sending request with aspect_ratio:', requestBody.aspect_ratio);
 
                 const startTime = Date.now();
                 const response = await fetch(`${WORKER_URL}/faceswap`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
@@ -1019,10 +1069,17 @@
                 logApiCall({ label: 'Tạo Đổi Mặt', method: 'POST', url: '/faceswap', status: response.ok ? 'success' : 'error', payload: data, duration });
                 if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Đổi mặt thất bại');
 
-                const newResult = { id: data.data.id || `result-${Date.now()}`, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
-                galleries.results.state.items = [newResult, ...galleries.results.state.items];
+                // Reload results from server to ensure we have the saved result with correct profile_id
+                console.log('[FaceSwap] Face swap successful, reloading results gallery');
                 await loadGallery('results');
+                
+                // Find the newly created result in the loaded items
+                const loadedResults = galleries.results.state.items;
+                const newResult = loadedResults.find(r => r.result_url === data.data.resultImageUrl) || 
+                                 { id: data.data.id || `result-${Date.now()}`, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
+                
                 displayResultInPreview(newResult.image_url);
+                updateResultsCount();
                 showStatusMessage('Tạo đổi mặt thành công!', 'success');
             } catch (error) {
                 showStatusMessage(`Tạo đổi mặt thất bại: ${error.message}`, 'error');
@@ -1153,8 +1210,11 @@
             showLoading('Đang tải dữ liệu');
             try {
                 await loadGallery('preset');
+                // Profile should already be initialized at this point, but double-check
                 if (window.profileManager?.currentProfile) {
                     await Promise.all([loadGallery('selfie'), loadGallery('results')]);
+                } else {
+                    console.warn('[Init] Profile not initialized yet, skipping selfie and results load');
                 }
                 updateResultsCount();
             } finally {
@@ -1171,7 +1231,8 @@
 
             $('profile-id-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); switchProfile(); } });
 
-            window.profileManager.initializeProfile();
+            // Initialize profile FIRST, then load galleries
+            await window.profileManager.initializeProfile();
             await init();
         });
     </script>

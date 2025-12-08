@@ -1316,8 +1316,18 @@ export default {
         const vertexPromptPayload = augmentedPromptPayload;
 
         console.log('[Vertex] Dispatching prompt to Nano Banana provider with', selfieUrls.length, 'selfie(s)');
+        // Extract aspect ratio from request body, default to "1:1" if not provided
+        const aspectRatio = (body.aspect_ratio as string) || "1:1";
+        console.log('[Vertex] Received aspect_ratio from request:', aspectRatio);
+        // Validate aspect ratio is one of the supported values
+        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        console.log('[Vertex] Using validated aspect ratio:', validAspectRatio);
+        // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
+        // may not work correctly and may always return 1:1 images regardless of the specified ratio.
+        // This is a limitation of the current API version.
         // For now, use the first selfie. In a full implementation, you might want to combine multiple selfies
-        const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env);
+        const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env, validAspectRatio);
 
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(faceSwapResult, null, 2));

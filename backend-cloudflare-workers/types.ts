@@ -30,6 +30,7 @@ export interface FaceSwapRequest {
   profile_id: string; // Required: Profile ID for the operation
   additional_prompt?: string;
   character_gender?: 'male' | 'female';
+  aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)
 }
 
 export interface FaceSwapResponse {
