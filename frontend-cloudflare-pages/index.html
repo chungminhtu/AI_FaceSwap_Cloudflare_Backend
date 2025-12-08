@@ -5,40 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Face Swap AI</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700;800;900&display=swap');
-        
+        @import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700&display=swap');
+
         :root {
-            --bg-primary: #FDFBFF;
-            --bg-secondary: #F7F2FF;
-            --bg-tertiary: #EFE7FF;
-            --bg-card-gradient: linear-gradient(135deg, #FFFFFF 0%, #F4E9FF 100%);
-            --bg-panel-gradient: linear-gradient(135deg, #FFF7FB 0%, #EEF4FF 100%);
-            --accent: #F82387;
-            --accent-hover: #FF5D9A;
-            --accent-strong: #B215FF;
-            --accent-secondary: #12B0FF;
-            --text-primary: #0B0B2E;
-            --text-secondary: #3A345C;
-            --text-muted: #7B7695;
-            --border: rgba(131, 94, 255, 0.3);
-            --border-accent: #F82387;
-            --danger: #FF4D6D;
-            --success: #2BC990;
-            --shadow-soft: 0 10px 30px rgba(126, 78, 255, 0.15);
-            --shadow-strong: 0 15px 35px rgba(248, 35, 135, 0.25);
+            --bg-primary: #f8fafc;
+            --bg-secondary: #f1f5f9;
+            --bg-tertiary: #e2e8f0;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-secondary: #0ea5e9;
+            --accent-strong: #7c3aed;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --danger: #ef4444;
+            --success: #10b981;
+            --shadow-soft: 0 4px 20px rgba(15, 23, 42, 0.08);
+            --shadow-md: 0 8px 30px rgba(15, 23, 42, 0.12);
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html, body {
-            width: 100%;
-            margin: 0;
-            padding: 0;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; margin: 0; padding: 0; }
 
         body {
             font-family: 'Lexend Deca', -apple-system, sans-serif;
@@ -46,2412 +34,362 @@
             color: var(--text-primary);
             line-height: 1.5;
             font-size: 14px;
-            font-weight: 400;
             -webkit-font-smoothing: antialiased;
             overflow-x: hidden;
             border-top: 6px solid var(--accent);
         }
 
-        body.locked {
-            overflow: hidden;
-        }
+        body.locked { overflow: hidden; }
+        body.locked .main-container { filter: blur(14px); pointer-events: none; user-select: none; }
 
+        /* Access Gate */
         .access-gate {
-            position: fixed;
-            inset: 0;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            position: fixed; inset: 0; z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
             background: radial-gradient(circle at top, rgba(15, 11, 46, 0.85), rgba(10, 7, 30, 0.92));
             backdrop-filter: blur(18px);
-            transition: opacity 0.3s ease, visibility 0.3s ease;
+            transition: opacity 0.3s, visibility 0.3s;
         }
-
-        .access-gate.hidden {
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-        }
+        .access-gate.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 
         .gate-card {
-            width: min(420px, 90vw);
-            padding: 32px;
-            border-radius: 20px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            width: min(420px, 90vw); padding: 32px; border-radius: 20px;
+            background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+            border: 1px solid rgba(255,255,255,0.18);
             box-shadow: 0 25px 60px rgba(18, 0, 56, 0.45);
             backdrop-filter: blur(26px);
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-            text-align: center;
+            display: flex; flex-direction: column; gap: 18px; text-align: center;
         }
-
-        .gate-title {
-            font-size: 14px;
-            font-weight: 700;
-            letter-spacing: 1.2px;
-            color: #ffffff;
-        }
-
-        .gate-subtitle {
-            font-size: 14px;
-            color: rgba(255, 255, 255, 0.65);
-        }
-
+        .gate-title { font-size: 14px; font-weight: 700; letter-spacing: 1.2px; color: #fff; }
+        .gate-subtitle { font-size: 14px; color: rgba(255,255,255,0.65); }
         .gate-input {
-            width: 100%;
-            padding: 14px 16px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.35);
-            background: rgba(8, 3, 24, 0.35);
-            color: #ffffff;
-            font-size: 14px;
-            letter-spacing: 4px;
-            text-align: center;
-            outline: none;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            width: 100%; padding: 14px 16px; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.35);
+            background: rgba(8, 3, 24, 0.35); color: #fff;
+            font-size: 14px; letter-spacing: 4px; text-align: center; outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-
-        .gate-input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(248, 35, 135, 0.25);
-        }
-
+        .gate-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(248, 35, 135, 0.25); }
         .gate-button {
-            width: 100%;
-            height: 44px;
-            padding: 0 24px;
-            border-radius: 22px;
+            width: 100%; height: 44px; padding: 0 24px; border-radius: 22px;
             background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
-            color: #ffffff;
-            font-size: 14px;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            font-family: inherit;
+            color: #fff; font-size: 14px; font-weight: 600; border: none; cursor: pointer;
+            transition: all 0.2s; display: flex; align-items: center; justify-content: center;
         }
+        .gate-button:hover { transform: translateY(-1px); box-shadow: 0 12px 25px rgba(248, 35, 135, 0.35); }
+        .gate-error { min-height: 18px; font-size: 14px; color: var(--danger); }
 
-        .gate-button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 12px 25px rgba(248, 35, 135, 0.35);
-        }
-
-        .gate-error {
-            min-height: 18px;
-            font-size: 14px;
-            color: var(--danger);
-        }
-
-        body.locked .main-container {
-            filter: blur(14px);
-            pointer-events: none;
-            user-select: none;
-        }
-
+        /* Main Layout */
         .main-container {
-            width: 100%;
-            max-width: 100%;
-            margin: 0;
-            padding: 16px 20px 40px;
-            background: var(--bg-panel-gradient);
+            width: 100%; padding: 16px 20px 40px;
+            background: linear-gradient(135deg, #FFF7FB 0%, #EEF4FF 100%);
             box-shadow: var(--shadow-soft);
-            border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-
-        .app-layout {
-            display: grid;
-            grid-template-columns: 1fr 500px;
-            gap: 20px;
-            align-items: start;
-            transition: grid-template-columns 0.3s ease;
-        }
-
-        .app-layout.log-hidden {
-            grid-template-columns: 1fr 0;
-            gap: 0;
-        }
-
-        .app-layout.log-hidden .log-panel {
-            opacity: 0;
-            transform: translateX(20px);
-            pointer-events: none;
-            width: 0;
-            overflow: hidden;
-        }
-
-        @media (max-width: 1200px) {
-            .app-layout {
-                grid-template-columns: 1fr;
-            }
-
-            .app-layout.log-hidden {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .workflow-container {
-            display: grid;
-            grid-template-columns: 400px 1fr;
-            gap: 24px;
-            min-height: calc(100vh - 200px);
-        }
-
-        .workflow-wrapper {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            grid-column: 1;
-        }
-
-        @media (max-width: 1199px) {
-            .workflow-container {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .workflow-sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-
-        .workflow-sidebar::-webkit-scrollbar {
-            display: none;
-        }
-
-        .sidebar-section {
-            border: 1px solid #e0e0e0;
-        }
-
-        .sidebar-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 14px;
-            border-bottom: 1px solid #e0e0e0;
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--text-primary);
-            background: #f5f5f5;
-        }
-
-        .gallery-title-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .gallery-upload-btn {
-            width: 32px;
-            height: 32px;
-            border: none;
-            background: #f82387;
-            color: #fff;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-left: auto;
-            transition: all 0.2s ease;
-            border-radius: 16px;
-        }
-
-        .gallery-upload-btn:hover {
-            background: #d91d6f;
-            transform: scale(1.1);
-        }
-
-        .sidebar-toggle {
-            width: 24px;
-            height: 24px;
-            border: none;
-            background: transparent;
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 14px;
-            line-height: 1;
-            padding: 0;
-        }
-
-        .sidebar-content {
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            overflow: visible;
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-
-        .sidebar-content::-webkit-scrollbar {
-            display: none;
-        }
-
-        .sidebar-content.collapsed {
-            display: none;
-        }
-
-        .sidebar-gallery {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            padding: 12px;
-            overflow: visible;
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-
-        .sidebar-gallery::-webkit-scrollbar {
-            display: none;
-        }
-
-        .gallery-drop-zone {
-            position: relative;
-            border: 1px dashed #ccc;
-            background: #fafafa;
-            overflow: visible;
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-
-        .gallery-drop-zone::-webkit-scrollbar {
-            display: none;
-        }
-
-        .gallery-drop-zone.dragover {
-            border-color: #999;
-            border-style: solid;
-            background: #f0f0f0;
-        }
-
-        .gallery-drop-zone .sidebar-gallery {
-            border: none;
-            background: transparent;
-        }
-
-        #preset-gallery .gallery-item,
-        #selfie-gallery .gallery-item {
-            aspect-ratio: 1;
-            min-height: 60px;
-        }
-
-        #preset-gallery .gallery-item img,
-        #selfie-gallery .gallery-item img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .upload-area.compact {
-            padding: 12px;
-            min-height: auto;
-            cursor: pointer;
-        }
-
-        .upload-area.compact .upload-icon {
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .upload-area.compact .upload-text {
-            font-size: 14px;
-        }
-
-        .upload-area.compact .upload-subtext {
-            display: none;
-        }
-
-        .workflow-main {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-
-        .preview-panel {
-            display: grid;
-            grid-template-columns: 1fr 1.5fr;
-            gap: 16px;
-            align-items: start;
-        }
-
-        .preview-left-column {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .preview-connector {
-            display: none;
-        }
-
-        .preview-card {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .preview-card.preset-card {
-            height: 350px;
-            min-height: 350px;
-        }
-
-        .preview-card.selfie-card {
-            height: 350px;
-            min-height: 350px;
-        }
-
-        .preview-card.result-card {
-            height: 100%;
-            min-height: 724px;
-            grid-row: 1 / -1;
-        }
-
-        .preview-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 4px 0;
-            border-bottom: 1px solid #e0e0e0;
-            margin-bottom: 8px;
-        }
-
-        .preview-label {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .preview-status {
-            font-size: 14px;
-            padding: 4px 10px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-muted);
-        }
-
-        .preview-card.has-selection .preview-status {
-            background: rgba(248, 35, 135, 0.2);
-            color: var(--accent);
-        }
-
-        .preview-arrow {
-            display: none;
-        }
-
-        .preview-image {
-            width: 100%;
-            flex: 1;
-            border: 1px solid #e0e0e0;
-            background: #fafafa;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            position: relative;
-            min-height: 0;
-            max-height: 100%;
-        }
-
-        .preview-card.preset-card .preview-image,
-        .preview-card.selfie-card .preview-image {
-            max-height: calc(100% - 40px);
-        }
-
-        .preview-card.result-card .preview-image {
-            aspect-ratio: auto;
-            min-height: 660px;
-        }
-
-        .preview-card.has-selection .preview-image {
-            border-color: #999;
-        }
-
-        .preview-image img {
-            max-width: 100%;
-            max-height: 100%;
-            width: auto;
-            height: auto;
-            object-fit: contain;
-        }
-
-        .preview-empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-            color: var(--text-muted);
-        }
-
-        .preview-empty-icon {
-            font-size: 14px;
-            opacity: 0.5;
-        }
-
-        .preview-empty-text {
-            font-size: 14px;
-            text-align: center;
-        }
-
-        .action-panel {
-            border: 1px solid #e0e0e0;
-            padding: 12px 16px;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 12px;
-            background: #fafafa;
-        }
-
-        .action-header {
-            display: none;
-        }
-
-        .action-title {
-            display: none;
-        }
-
-        .action-select {
-            height: 40px;
-            padding: 0 14px;
-            border: 1px solid #ccc;
-            background: #fff;
-            color: var(--text-primary);
-            font-size: 14px;
-            cursor: pointer;
-            margin-left: auto;
-        }
-
-        .action-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .action-btn {
-            height: 40px;
-            padding: 0 24px;
-            font-size: 14px;
-            font-weight: 600;
-            border: none;
-            background: #4a90e2;
-            color: #fff;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            transition: all 0.2s ease;
-            border-radius: 20px;
-        }
-
-        .btn-icon {
-            font-size: 14px;
-        }
-
-        .action-btn:hover:not(:disabled) {
-            background: #357abd;
-            transform: translateY(-1px);
-        }
-
-        .action-btn.primary {
-            background: #f82387;
-            color: #fff;
-        }
-
-        .action-btn.primary:hover:not(:disabled) {
-            background: #d91d6f;
-            transform: translateY(-1px);
-        }
-
-        .action-btn:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .action-aging {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .action-aging input {
-            width: 60px;
-            height: 40px;
-            padding: 0 8px;
-            border: 1px solid #ccc;
-            background: #fff;
-            color: var(--text-primary);
-            font-size: 14px;
-            text-align: center;
-        }
-
-        .action-options {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            align-items: center;
-            width: 100%;
-        }
-
-        .action-prompt {
-            flex: 1;
-            min-width: 200px;
-            height: 40px;
-            padding: 0 14px;
-            border: 1px solid #ccc;
-            background: #fff;
-            color: var(--text-primary);
-            font-size: 14px;
-            resize: none;
-            font-family: inherit;
-        }
-
-        .action-prompt::placeholder {
-            color: var(--text-muted);
-        }
-
-        .action-gender {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .gender-label {
-            font-size: 14px;
-            color: var(--text-secondary);
-            font-weight: 500;
-        }
-
-        .action-gender label {
-            font-size: 14px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .results-panel {
-            border: 1px solid #e0e0e0;
-            padding: 16px;
-            min-height: 300px;
-            width: 100%;
-            margin-top: 20px;
-        }
-
-        .results-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 16px;
-        }
-
-        .results-count {
-            font-size: 14px;
-            font-weight: 400;
-            color: var(--text-muted);
-        }
-
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 12px;
-        }
-
-
-        @media (max-width: 1199px) and (min-width: 768px) {
-            .workflow-container {
-                grid-template-columns: 1fr;
-            }
-
-            .workflow-sidebar {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 16px;
-                max-height: none;
-            }
-
-            .preview-panel {
-                display: grid;
-                grid-template-columns: 1fr 1.5fr;
-                gap: 16px;
-            }
-
-            .preview-card.result-card {
-                grid-row: 1 / -1;
-            }
-
-            .action-panel {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .action-select {
-                margin-left: 0;
-                width: 100%;
-            }
-
-            .sidebar-gallery {
-                grid-template-columns: repeat(6, 1fr);
-            }
-        }
-
-        @media (max-width: 767px) {
-            .main-container {
-                padding: 12px;
-            }
-
-            .app-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-                padding: 6px 0;
-                margin-bottom: 10px;
-            }
-
-            .header-controls {
-                width: 100%;
-                flex-wrap: wrap;
-            }
-
-            .workflow-container {
-                grid-template-columns: 1fr;
-            }
-
-            .workflow-sidebar {
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-                max-height: none;
-            }
-
-            .sidebar-gallery {
-                grid-template-columns: repeat(4, 1fr);
-            }
-
-            .preview-panel {
-                display: grid;
-                grid-template-columns: 1fr;
-                gap: 12px;
-            }
-
-            .preview-left-column {
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-            }
-
-            .preview-card.preset-card,
-            .preview-card.selfie-card {
-                height: 250px;
-            }
-
-            .preview-card.result-card {
-                min-height: 500px;
-                grid-row: auto;
-            }
-
-            .preview-card.result-card .preview-image {
-                min-height: 450px;
-            }
-
-            .action-panel {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .action-buttons {
-                flex-direction: column;
-            }
-
-            .action-btn {
-                width: 100%;
-            }
-
-            .action-options {
-                flex-direction: column;
-            }
-
-            .action-prompt {
-                width: 100%;
-            }
-
-            .action-select {
-                margin-left: 0;
-                width: 100%;
-            }
-        }
-
-        .main-content {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+            border: 1px solid rgba(255,255,255,0.4);
         }
 
         .app-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 0;
-            margin-bottom: 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 0; margin-bottom: 12px;
             border-bottom: 1px solid rgba(131, 94, 255, 0.2);
         }
+        .app-header h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); letter-spacing: 0.3px; }
+        .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-        .app-header h1 {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            margin: 0;
-            color: var(--text-primary);
-            letter-spacing: 0.3px;
-        }
-
-        .header-controls {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .faceswap-zone {
-            margin-top: 0;
-        }
-
-        .workspace {
+        /* Three Column Layout: Left Sidebar | Main Content | Log Panel */
+        .app-layout {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-
-        .toolbar {
-            display: flex;
-            align-items: center;
+            grid-template-columns: 320px 1fr 400px;
             gap: 20px;
-            padding: 16px 20px;
-            background: linear-gradient(135deg, rgba(17, 25, 40, 0.95), rgba(30, 40, 60, 0.95));
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            backdrop-filter: blur(20px);
-            flex-wrap: wrap;
+            min-height: calc(100vh - 120px);
+            transition: all 0.3s;
+        }
+        .app-layout.log-hidden { grid-template-columns: 320px 1fr 0; gap: 20px 0; }
+        .app-layout.log-hidden .log-panel { opacity: 0; transform: translateX(20px); pointer-events: none; overflow: hidden; padding: 0; width: 0; }
+
+        /* Left Sidebar - Galleries */
+        .sidebar-column {
+            display: flex; flex-direction: column; gap: 12px;
+            max-height: calc(100vh - 120px); overflow-y: auto;
+        }
+        .sidebar-column::-webkit-scrollbar { width: 4px; }
+        .sidebar-column::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
+
+        .sidebar-section { border: 1px solid #e0e0e0; background: #fff; }
+        .sidebar-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 14px; border-bottom: 1px solid #e0e0e0;
+            font-weight: 600; font-size: 14px; background: #f5f5f5;
+        }
+        .gallery-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .sidebar-content { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .sidebar-content.collapsed { display: none; }
+
+        .sidebar-gallery {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+        }
+        .gallery-drop-zone {
+            position: relative; border: 1px dashed #ccc; background: #fafafa; padding: 8px;
+        }
+        .gallery-drop-zone.dragover { border-color: #999; border-style: solid; background: #f0f0f0; }
+
+        /* Main Content Area */
+        .main-content-area { display: flex; flex-direction: column; gap: 16px; }
+
+        .preview-panel {
+            display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;
+        }
+        .preview-left-column { display: flex; flex-direction: column; gap: 12px; }
+        .preview-card {
+            display: flex; flex-direction: column; gap: 8px;
+            background: #fff; border: 1px solid #e0e0e0;
+        }
+        .preview-card.preset-card, .preview-card.selfie-card { min-height: 320px; }
+        .preview-card.result-card { min-height: 660px; grid-row: 1 / -1; }
+        .preview-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; border-bottom: 1px solid #e0e0e0; background: #f9f9f9;
+        }
+        .preview-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .preview-image {
+            flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center;
+            background: #fafafa; overflow: hidden; padding: 8px;
+        }
+        .preview-card.result-card .preview-image { min-height: 600px; }
+        .preview-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .preview-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-muted); text-align: center; }
+        .preview-empty-icon { font-size: 32px; opacity: 0.5; }
+        .preview-empty-text { font-size: 14px; }
+
+        /* Action Panel */
+        .action-panel {
+            border: 1px solid #e0e0e0; padding: 12px 16px;
+            display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: #fafafa;
+        }
+        .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .action-btn {
+            height: 36px; padding: 0 16px; font-size: 13px; font-weight: 600;
+            border: none; background: #4a90e2; color: #fff; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 6px;
+            transition: all 0.2s; border-radius: 18px;
+        }
+        .action-btn:hover:not(:disabled) { background: #357abd; transform: translateY(-1px); }
+        .action-btn.primary { background: var(--accent); }
+        .action-btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+        .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .action-btn.loading::after {
+            content: ''; width: 12px; height: 12px; margin-left: 6px;
+            border: 2px solid transparent; border-top-color: #fff;
+            border-radius: 50%; animation: spin 0.6s linear infinite;
         }
 
-        .toolbar-group {
-            display: flex;
-            align-items: center;
-            gap: 16px;
+        .action-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; width: 100%; }
+        .action-prompt {
+            flex: 1; min-width: 180px; height: 36px; padding: 0 12px;
+            border: 1px solid #ccc; background: #fff; font-size: 14px;
+        }
+        .action-gender { display: flex; gap: 8px; align-items: center; }
+        .action-gender label { font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .action-aging { display: flex; gap: 6px; align-items: center; }
+        .action-aging input { width: 50px; height: 36px; padding: 0 8px; border: 1px solid #ccc; text-align: center; font-size: 14px; }
+
+        /* History/Results Panel */
+        .results-panel {
+            border: 1px solid #e0e0e0; padding: 12px; background: #fff;
+        }
+        .results-header {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 14px; font-weight: 600; margin-bottom: 12px;
+        }
+        .results-count { font-weight: 400; color: var(--text-muted); }
+        .results-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;
+            max-height: 300px; overflow-y: auto;
         }
 
-        .toolbar-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        /* Log Panel - Right Sidebar */
+        .log-panel {
+            background: rgba(255,255,255,0.9); border: 1px solid #e0e0e0;
+            padding: 16px; display: flex; flex-direction: column;
+            position: sticky; top: 20px; max-height: calc(100vh - 120px);
+            overflow: hidden; transition: opacity 0.3s, transform 0.3s;
         }
-
-        .toolbar-label {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            letter-spacing: 0.5px;
-            white-space: nowrap;
+        .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+        .log-title { font-size: 14px; font-weight: 600; color: var(--accent-strong); flex: 1; }
+        .log-toggle-btn, .log-clear-btn {
+            padding: 5px 12px; border: none; cursor: pointer;
+            font-size: 13px; font-weight: 600; border-radius: 16px; transition: all 0.2s;
         }
+        .log-toggle-btn { background: #4a90e2; color: #fff; }
+        .log-toggle-btn:hover { background: #357abd; }
+        .log-clear-btn { background: #ff6b6b; color: #fff; }
+        .log-clear-btn:hover { background: #ee5a5a; }
 
-        .toolbar-preview {
-            width: 48px;
-            height: 48px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.05);
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .api-log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .api-log-entry {
+            border: 1px solid #eee; padding: 10px; background: #fff; font-size: 13px;
         }
+        .api-log-entry.log-error { border-left: 3px solid var(--danger); }
+        .api-log-entry.log-success { border-left: 3px solid var(--success); }
+        .api-log-entry.log-info { border-left: 3px solid var(--accent); }
+        .api-log-entry-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .api-log-action { font-weight: 600; color: var(--text-primary); }
+        .api-log-detail { font-size: 12px; color: var(--text-secondary); }
+        .api-log-payload { margin-top: 6px; font-size: 11px; background: rgba(0,0,0,0.03); padding: 8px; overflow-x: auto; white-space: pre-wrap; }
 
-        .toolbar-preview img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+        /* Gallery Items */
+        .gallery-item {
+            aspect-ratio: 1; overflow: hidden; background: #fff;
+            border: 1px solid #e0e0e0; cursor: pointer; position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-
-        .toolbar-actions {
-            flex: 1;
-            justify-content: flex-start;
+        .gallery-item.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 4px 12px rgba(248, 35, 135, 0.2); }
+        .gallery-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); }
+        .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-delete-btn {
+            position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
+            background: #d32f2f; color: #fff; border: none; border-radius: 11px;
+            font-size: 14px; font-weight: 700; cursor: pointer; opacity: 0;
+            display: flex; align-items: center; justify-content: center; z-index: 10;
         }
+        .gallery-item:hover .gallery-delete-btn { opacity: 1; }
+        .gallery-delete-btn:hover { background: #b71c1c; }
 
-        .toolbar-btn {
-            height: 40px;
-            padding: 0 20px;
-            font-size: 14px;
-            font-weight: 500;
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: all 0.2s ease;
-            white-space: nowrap;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            font-family: inherit;
+        .gallery-upload-btn {
+            width: 28px; height: 28px; border: none; background: var(--accent);
+            color: #fff; cursor: pointer; font-size: 16px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 14px; transition: all 0.2s;
         }
-
-        .toolbar-btn:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.12);
-            border-color: rgba(248, 35, 135, 0.4);
-            transform: translateY(-1px);
-        }
-
-        .toolbar-btn.primary {
-            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
-            border-color: rgba(248, 35, 135, 0.5);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.25);
-        }
-
-        .toolbar-btn.primary:hover:not(:disabled) {
-            box-shadow: 0 6px 16px rgba(248, 35, 135, 0.35);
-            transform: translateY(-2px);
-        }
-
-        .toolbar-btn:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .toolbar-aging {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .toolbar-aging input {
-            width: 60px;
-            height: 40px;
-            padding: 0 8px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-primary);
-            font-size: 14px;
-            text-align: center;
-            font-family: inherit;
-        }
-
-        .toolbar-options {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .toolbar-prompt {
-            width: 200px;
-            height: 40px;
-            padding: 0 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-primary);
-            font-size: 14px;
-            resize: none;
-            font-family: inherit;
-            line-height: 40px;
-        }
-
-        .toolbar-prompt::placeholder {
-            color: var(--text-muted);
-        }
-
-        .toolbar-gender {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .toolbar-gender label {
-            font-size: 14px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .toolbar-gender input[type="radio"] {
-            margin: 0;
-            cursor: pointer;
-        }
-
-        .toolbar-select {
-            height: 40px;
-            padding: 0 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-primary);
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-        }
-
-        @media (max-width: 767px) {
-            .workspace {
-                grid-template-columns: 1fr;
-                gap: 8px;
-            }
-
-            .toolbar {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 12px;
-                padding: 12px;
-            }
-
-            .toolbar-group {
-                flex-wrap: wrap;
-                gap: 10px;
-            }
-
-            .toolbar-options {
-                margin-left: 0;
-                flex-direction: column;
-                align-items: stretch;
-                gap: 8px;
-            }
-
-            .toolbar-prompt {
-                width: 100%;
-            }
-
-            .toolbar-actions {
-                flex-wrap: wrap;
-            }
-
-            .toolbar-btn {
-                flex: 1;
-                min-width: 100px;
-            }
-        }
-
-        .left-column {
-            display: grid;
-            grid-template-rows: auto auto;
-            gap: 12px;
-        }
-
-        .preview-empty {
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 14px;
-            padding: 40px 16px;
-            font-family: 'Lexend Deca', sans-serif;
-            letter-spacing: 0.3px;
-            line-height: 1.4;
-            text-transform: none;
-        }
-
-        .preview-empty .icon {
-            font-size: 14px;
-            margin-bottom: 8px;
-            opacity: 0.3;
-            display: block;
-        }
-
-        .section {
-            background: var(--bg-card-gradient);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            padding: 12px;
-            position: relative;
-            box-shadow: var(--shadow-soft);
-            backdrop-filter: blur(8px);
-        }
-
-        .section::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 3px;
-            background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .section:hover::before {
-            opacity: 1;
-        }
-
-        .section-title {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            line-height: 1.3;
-            margin-bottom: 8px;
-            color: var(--accent-strong);
-            letter-spacing: 0.4px;
-            text-transform: none;
-        }
-
-        .prompt-section {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .prompt-section.disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        .prompt-input {
-            width: 100%;
-            min-height: 70px;
-            border-radius: 10px;
-            border: 1px solid rgba(248, 35, 135, 0.25);
-            background: rgba(255, 255, 255, 0.85);
-            padding: 12px 14px;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            color: var(--text-primary);
-            resize: vertical;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .prompt-input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(248, 35, 135, 0.18);
-            outline: none;
-        }
-
-        .prompt-hint {
-            font-size: 14px;
-            color: var(--text-muted);
-            letter-spacing: 0.2px;
-        }
-
-        .gender-group {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .gender-label {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            letter-spacing: 0.3px;
-        }
-
-        .gender-option {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-            color: var(--text-secondary);
-            padding: 6px 10px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.7);
-            border: 1px solid rgba(248, 35, 135, 0.15);
-            cursor: pointer;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .gender-option input[type="radio"] {
-            accent-color: var(--accent);
-            cursor: pointer;
-        }
-
-        .gender-option:hover {
-            border-color: var(--accent);
-            box-shadow: 0 6px 18px rgba(248, 35, 135, 0.18);
-        }
+        .gallery-upload-btn:hover { background: var(--accent-hover); transform: scale(1.1); }
 
         .gender-filter-btn {
-            height: 32px;
-            padding: 0 16px;
-            border: none;
-            background: #e8e8e8;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            color: #555;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            font-family: inherit;
-            transition: all 0.2s ease;
-            border-radius: 16px;
+            height: 26px; padding: 0 10px; border: none; background: #e8e8e8;
+            cursor: pointer; font-size: 12px; font-weight: 600; color: #555;
+            border-radius: 13px; transition: all 0.2s;
         }
+        .gender-filter-btn.active { background: #4a90e2; color: #fff; }
+        .gender-filter-btn:hover { background: #d0d0d0; }
 
-        .gender-filter-btn.active {
-            background: #4a90e2 !important;
-            color: white !important;
-        }
-
-        .gender-filter-btn:hover {
-            background: #d0d0d0 !important;
-        }
-
-        .upload-area {
-            background: rgba(255, 255, 255, 0.8);
-            border: 1px dashed rgba(248, 35, 135, 0.4);
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 60px;
-            cursor: pointer;
-            transition: all 0.15s;
-            position: relative;
-            box-shadow: inset 0 0 30px rgba(248, 35, 135, 0.03);
-        }
-
-        .upload-area.loading {
-            pointer-events: none;
-            opacity: 0.7;
-        }
-
-        .upload-area.loading::after {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgba(248, 35, 135, 0.3);
-            border-top: 2px solid var(--accent);
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-            top: 10px;
-            right: 10px;
-        }
-
-        .upload-area.gallery-upload {
-            padding: 8px;
-            min-height: 70px;
-            margin-bottom: 10px;
-        }
-
-        .upload-area.gallery-upload .upload-icon {
-            font-size: 28px;
-            margin-bottom: 6px;
-        }
-
-        .upload-area.gallery-upload .upload-text {
-            font-size: 14px;
-            margin-bottom: 4px;
-            line-height: 1.4;
-            font-weight: 600;
-        }
-
-        .upload-area.gallery-upload .upload-subtext {
-            font-size: 14px;
-            line-height: 1.4;
-        }
-
-        .upload-area:hover {
-            border-color: var(--accent);
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 12px 30px rgba(248, 35, 135, 0.12);
-        }
-
-        .upload-area.dragover {
-            border-color: var(--accent);
-            background-color: var(--bg-secondary);
-            border-style: solid;
-            box-shadow: 0 0 0 1px var(--accent);
-        }
-
-        .upload-icon {
-            font-size: 32px;
-            color: var(--accent-strong);
-            margin-bottom: 4px;
-            opacity: 0.8;
-        }
-
-        .upload-text {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
-            letter-spacing: 0.3px;
-            line-height: 1.35;
-            text-transform: none;
-            font-weight: 500;
-        }
-
-        .upload-subtext {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            color: var(--text-muted);
-            text-transform: none;
-            line-height: 1.3;
-        }
-
-        .file-input {
-            display: none;
-        }
-
-        .selected-preview {
-            position: relative;
-            overflow: hidden;
-            background-color: var(--bg-tertiary);
-            min-height: 350px;
-            max-height: 450px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid var(--border);
-            margin-top: 8px;
-        }
-
-        .selected-preview img {
-            width: 100%;
-            height: 100%;
-            max-height: 450px;
-            object-fit: contain;
-            display: block;
-        }
-
-        .selected-label {
-            position: absolute;
-            top: 0;
-            left: 0;
-            background-color: var(--accent);
-            color: #FFFFFF;
-            padding: 6px 10px;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            letter-spacing: 0.4px;
-            line-height: 1.2;
-            text-transform: none;
-        }
-
-        .delete-btn {
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            width: 28px;
-            height: 28px;
-            background-color: #d32f2f;
-            color: #FFFFFF;
-            border: 1px solid #b71c1c;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 700;
-            z-index: 10;
-            font-family: 'Lexend Deca', sans-serif;
-            line-height: 1;
-            border-radius: 14px;
-        }
-
-        .delete-btn:hover {
-            background-color: #b71c1c;
-        }
-
-        .gallery-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            min-height: 220px;
-            box-shadow: inset 0 0 40px rgba(18, 176, 255, 0.08);
-        }
-
-        @media (max-width: 767px) {
-            .gallery-grid {
-                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-                gap: 6px;
-            }
-        }
-
-        .gallery-grid::-webkit-scrollbar {
-            width: 4px;
-            height: 4px;
-        }
-
-        .gallery-grid::-webkit-scrollbar-track {
-            background: var(--bg-secondary);
-        }
-
-        .gallery-grid::-webkit-scrollbar-thumb {
-            background: var(--accent);
-        }
-
-        .pagination {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 16px;
-            padding: 12px;
-        }
-
+        /* Pagination */
+        .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; }
         .pagination-btn {
-            height: 36px;
-            width: 36px;
-            padding: 0;
-            background: #4a90e2;
-            border: none;
-            color: #fff;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            transition: all 0.2s ease;
-            border-radius: 18px;
+            width: 30px; height: 30px; padding: 0; background: #4a90e2; border: none;
+            color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+            border-radius: 15px; transition: all 0.2s;
         }
+        .pagination-btn:hover:not(:disabled) { background: #357abd; }
+        .pagination-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .pagination-dots { display: flex; gap: 4px; }
+        .pagination-dot { width: 8px; height: 8px; background: #ccc; cursor: pointer; border-radius: 4px; }
+        .pagination-dot.active { background: #4a90e2; }
 
-        .pagination-btn:hover:not(:disabled) {
-            background: #357abd;
-            transform: scale(1.1);
+        /* Delete button in preview */
+        .delete-btn {
+            width: 24px; height: 24px; background: #d32f2f; color: #fff;
+            border: none; border-radius: 12px; cursor: pointer;
+            font-size: 16px; font-weight: 700;
         }
+        .delete-btn:hover { background: #b71c1c; }
 
-        .pagination-btn:disabled {
-            opacity: 0.3;
-            cursor: not-allowed;
-        }
-
-        .pagination-dots {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin: 0 8px;
-        }
-
-        .pagination-dot {
-            width: 8px;
-            height: 8px;
-            background: #ccc;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .pagination-dot.active {
-            background: #4a90e2;
-            width: 10px;
-            height: 10px;
-        }
-
-        .pagination-info {
-            display: none;
-        }
-
-        .action-row {
-            display: flex;
-            align-items: stretch;
-            gap: 16px;
-            margin-top: 16px;
-        }
-
-        .api-selector {
-            flex: 1;
-        }
-
-        .api-selector-label {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--accent-strong);
-            letter-spacing: 0.4px;
-            margin-bottom: 6px;
-            display: block;
-            line-height: 1.2;
-            text-transform: none;
-        }
-
-        .api-select {
-            width: 100%;
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            padding: 10px 12px;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 500;
-            text-transform: none;
-            letter-spacing: 0.3px;
-            cursor: pointer;
-            transition: all 0.15s;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23FF006E' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 10px center;
-            padding-right: 32px;
-            line-height: 1.3;
-        }
-
-        .api-select:hover {
-            border-color: var(--accent);
-            background-color: var(--bg-tertiary);
-        }
-
-        .api-select:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 1px var(--accent);
-        }
-
-        .gallery-item {
-            aspect-ratio: 1;
-            overflow: hidden;
-            background-color: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.8);
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-            position: relative;
-            box-shadow: 0 8px 18px rgba(10, 5, 35, 0.05);
-        }
-
-        .gallery-item.selected {
-            border-color: var(--accent);
-            border-width: 2px;
-            box-shadow: 0 10px 30px rgba(248, 35, 135, 0.2);
-        }
-
-        .gallery-item:hover {
-            border-color: var(--accent-secondary);
-            transform: translateY(-4px) scale(1.03);
-            box-shadow: var(--shadow-soft);
-        }
-
-        .gallery-item img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
-        .gemini-badge {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: linear-gradient(135deg, rgba(248, 35, 135, 0.9), rgba(123, 93, 255, 0.9));
-            color: #ffffff;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 14px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            box-shadow: 0 4px 12px rgba(248, 35, 135, 0.3);
-            pointer-events: none;
-        }
-
-        .gallery-delete-btn {
-            position: absolute;
-            top: 6px;
-            right: 6px;
-            width: 24px;
-            height: 24px;
-            background: #d32f2f;
-            color: #FFFFFF;
-            border: 1px solid #b71c1c;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 700;
-            z-index: 10;
-            line-height: 1;
-            opacity: 0;
-            font-family: 'Lexend Deca', sans-serif;
-            border-radius: 12px;
-        }
-
-        .gallery-item:hover .gallery-delete-btn {
-            opacity: 1;
-        }
-
-        .gallery-delete-btn:hover {
-            background: #b71c1c;
-        }
-
-        .result-section {
-            margin-bottom: 12px;
-        }
-
-        .right-column {
-            background: var(--bg-card-gradient);
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            min-height: 320px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            padding: 12px;
-            box-shadow: var(--shadow-soft);
-        }
-
-        .result-display {
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
-            min-height: 300px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            padding: 8px;
-        }
-
-        .galleries-section {
-            margin-bottom: 12px;
-        }
-
-        .galleries-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        @media (max-width: 767px) {
-            .galleries-grid {
-                grid-template-columns: 1fr;
-                gap: 8px;
-            }
-        }
-
-        .gallery-section {
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border);
-            padding: 8px;
-        }
-
-        .gallery-title {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--accent-strong);
-            margin-bottom: 8px;
-            letter-spacing: 0.4px;
-            line-height: 1.3;
-            text-transform: none;
-        }
-
-        .result-empty {
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 14px;
-            font-family: 'Lexend Deca', sans-serif;
-            letter-spacing: 0.3px;
-            line-height: 1.4;
-            text-transform: none;
-        }
-
-        .result-empty .icon {
-            font-size: 32px;
-            margin-bottom: 8px;
-            opacity: 0.2;
-            display: block;
-        }
-
-        .result-image {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-            display: block;
-        }
-
-        /* Lightbox Styles */
+        /* Lightbox */
         .lightbox {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            position: fixed; inset: 0; z-index: 10000;
+            display: flex; align-items: center; justify-content: center;
         }
-
-        .lightbox-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.9);
-            cursor: pointer;
+        .lightbox-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); cursor: pointer; }
+        .lightbox-content { position: relative; max-width: 90%; max-height: 90%; z-index: 10001; display: flex; flex-direction: column; align-items: center; }
+        .lightbox-content img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px; }
+        .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
+        .lightbox-close, .lightbox-nav {
+            position: absolute; width: 40px; height: 40px;
+            background: rgba(255,255,255,0.2); border: none; border-radius: 50%;
+            color: #fff; font-size: 28px; cursor: pointer; z-index: 10002;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
         }
+        .lightbox-close { top: 20px; right: 20px; }
+        .lightbox-close:hover, .lightbox-nav:hover { background: rgba(255,255,255,0.3); }
+        .lightbox-nav { top: 50%; transform: translateY(-50%); }
+        .lightbox-prev { left: 20px; }
+        .lightbox-next { right: 20px; }
+        .lightbox-nav:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        .lightbox-content {
-            position: relative;
-            max-width: 90%;
-            max-height: 90%;
-            z-index: 10001;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .lightbox-content img {
-            max-width: 100%;
-            max-height: 85vh;
-            object-fit: contain;
-            border-radius: 8px;
-        }
-
-        .lightbox-info {
-            margin-top: 16px;
-            color: #fff;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .lightbox-close {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 40px;
-            height: 40px;
-            background-color: rgba(255, 255, 255, 0.2);
-            border: none;
-            border-radius: 50%;
-            color: #fff;
-            font-size: 28px;
-            cursor: pointer;
-            z-index: 10002;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .lightbox-close:hover {
-            background-color: rgba(255, 255, 255, 0.3);
-            transform: scale(1.1);
-        }
-
-        .lightbox-nav {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 50px;
-            height: 50px;
-            background-color: rgba(255, 255, 255, 0.2);
-            border: none;
-            border-radius: 50%;
-            color: #fff;
-            font-size: 32px;
-            cursor: pointer;
-            z-index: 10002;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .lightbox-nav:hover {
-            background-color: rgba(255, 255, 255, 0.3);
-            transform: translateY(-50%) scale(1.1);
-        }
-
-        .lightbox-prev {
-            left: 20px;
-        }
-
-        .lightbox-next {
-            right: 20px;
-        }
-
-        .lightbox-nav:disabled {
-            opacity: 0.3;
-            cursor: not-allowed;
-        }
-
-        .action-row .generate-btn {
-            flex: 1;
-            width: auto;
-            margin-top: 0;
-        }
-
-        .toolbar #generate-btn {
-            height: 40px;
-            padding: 0 20px;
-            width: auto;
-            margin-top: 0;
-            font-size: 14px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-        }
-
-        .generate-btn {
-            background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            color: #FFFFFF;
-            padding: 14px 28px;
-            border: none;
-            border-radius: 20px;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            text-transform: none;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 16px;
-            display: block;
-            transition: all 0.2s ease;
-            position: relative;
-            overflow: hidden;
-            line-height: 1.3;
-            box-shadow: var(--shadow-strong);
-        }
-
-        .generate-btn::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-            transition: left 0.5s;
-        }
-
-        .generate-btn:hover:not(:disabled)::before {
-            left: 100%;
-        }
-
-        .generate-btn:hover:not(:disabled) {
-            transform: translateY(-2px) scale(1.01);
-            box-shadow: 0 18px 40px rgba(248, 35, 135, 0.35);
-        }
-
-        .generate-btn:active:not(:disabled) {
-            transform: translateY(0);
-        }
-
-        .generate-btn:disabled {
-            background: rgba(255, 255, 255, 0.6);
-            color: var(--text-muted);
-            cursor: not-allowed;
-            opacity: 0.6;
-            box-shadow: none;
-        }
-
-        .generate-btn.loading {
-            position: relative;
-        }
-
-        .generate-btn.loading::after {
-            content: '';
-            position: absolute;
-            width: 12px;
-            height: 12px;
-            right: 20px;
-            top: 50%;
-            transform: translateY(-50%);
-            border: 2px solid transparent;
-            border-top-color: #FFFFFF;
-            animation: spin 0.6s linear infinite;
-        }
-
-
-        .empty-state {
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 14px;
-            padding: 20px 12px;
-            display: none;
-            font-family: 'Lexend Deca', sans-serif;
-            letter-spacing: 0.3px;
-            line-height: 1.4;
-            text-transform: none;
-        }
-
-        .empty-state .icon {
-            font-size: 14px;
-            margin-bottom: 6px;
-            opacity: 0.2;
-            display: block;
-        }
-
-        .status-message {
-            padding: 8px 12px;
-            margin: 6px 0;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-family: 'Lexend Deca', sans-serif;
-            text-transform: none;
-            letter-spacing: 0.3px;
-            border-left: 2px solid;
-            animation: slideIn 0.2s ease;
-            line-height: 1.4;
-            font-weight: 500;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateX(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
-        .status-success {
-            background: rgba(43, 201, 144, 0.1);
-            color: var(--success);
-            border-color: var(--success);
-        }
-
-        .status-error {
-            background: rgba(255, 77, 109, 0.1);
-            color: var(--danger);
-            border-color: var(--danger);
-        }
-
-        .status-info {
-            background: rgba(248, 35, 135, 0.1);
-            color: var(--accent);
-            border-color: var(--accent);
-        }
-
-        .log-panel {
-            background: rgba(255, 255, 255, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            box-shadow: inset 0 0 30px rgba(18, 176, 255, 0.08), var(--shadow-soft);
-            padding: 16px;
-            height: calc(100vh - 120px);
-            min-height: 600px;
-            max-height: calc(100vh - 120px);
-            display: flex;
-            flex-direction: column;
-            position: sticky;
-            top: 20px;
-            overflow: hidden;
-            transition: opacity 0.3s ease, transform 0.3s ease, width 0.3s ease;
-            width: 100%;
-        }
-
-        @media (max-width: 1200px) {
-            .log-panel {
-                position: relative;
-                top: 0;
-                height: auto;
-                min-height: 400px;
-                max-height: 600px;
-            }
-        }
-
-        .log-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-            gap: 8px;
-        }
-
-        .log-title {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--accent-strong);
-            letter-spacing: 0.4px;
-            flex: 1;
-        }
-
-        .log-toggle-btn {
-            background: #4a90e2;
-            border: none;
-            color: #fff;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            padding: 6px 14px;
-            cursor: pointer;
-            text-transform: none;
-            letter-spacing: 0.3px;
-            transition: all 0.2s;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            border-radius: 20px;
-        }
-
-        .log-toggle-btn:hover {
-            background: #357abd;
-        }
-
-        .log-toggle-btn.hidden {
-            background: #4a90e2;
-            color: #fff;
-            border: none;
-        }
-
-        .log-toggle-btn.hidden:hover {
-            background: #357abd;
-        }
-
-        .log-toggle-float {
-            position: fixed;
-            right: 20px;
-            bottom: 20px;
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(120deg, var(--accent) 0%, var(--accent-secondary) 100%);
-            border: none;
-            color: #FFFFFF;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 50%;
-            box-shadow: 0 4px 16px rgba(248, 35, 135, 0.4);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            transition: all 0.3s ease;
-        }
-
-        .log-toggle-float:hover {
-            transform: scale(1.1);
-            box-shadow: 0 6px 20px rgba(248, 35, 135, 0.5);
-        }
-
-        .app-layout.log-hidden .log-toggle-float {
-            display: flex !important;
-        }
-
-        @media (max-width: 1200px) {
-            .log-toggle-float {
-                display: none !important;
-            }
-        }
-
-        .log-clear-btn {
-            background: #ff6b6b;
-            border: none;
-            color: #fff;
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            padding: 8px 16px;
-            cursor: pointer;
-            text-transform: none;
-            letter-spacing: 0.3px;
-            transition: all 0.2s;
-            font-weight: 600;
-            border-radius: 20px;
-        }
-
-        .log-clear-btn:hover {
-            background: #ee5a5a;
-        }
-
-        .api-log-list {
-            flex: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            min-height: 0;
-        }
-
-        .api-log-entry {
-            border: 1px solid rgba(255, 255, 255, 0.7);
-            padding: 10px 12px;
-            background: rgba(255, 255, 255, 0.9);
-            box-shadow: inset 0 0 20px rgba(248, 35, 135, 0.05);
-            font-family: 'Lexend Deca', sans-serif;
-        }
-
-        .api-log-entry.log-error {
-            border-left: 3px solid var(--danger);
-        }
-
-        .api-log-entry.log-success {
-            border-left: 3px solid var(--success);
-        }
-
-        .api-log-entry.log-info {
-            border-left: 3px solid var(--accent);
-        }
-
-        .api-log-entry-header {
-            display: flex;
-            justify-content: space-between;
-            font-size: 14px;
-            color: var(--text-muted);
-            margin-bottom: 4px;
-        }
-
-        .api-log-action {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .api-log-detail {
-            font-size: 14px;
-            color: var(--text-secondary);
-        }
-
-        .api-log-payload {
-            margin-top: 6px;
-            font-size: 14px;
-            background: rgba(0, 0, 0, 0.03);
-            padding: 8px;
-            overflow-x: auto;
-            color: var(--text-secondary);
-            white-space: pre-wrap;
-        }
-
+        /* Loading Overlay */
         .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(253, 251, 255, 0.92);
-            backdrop-filter: blur(10px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
+            position: fixed; inset: 0; background: rgba(253, 251, 255, 0.92);
+            backdrop-filter: blur(10px); display: flex; align-items: center;
+            justify-content: center; z-index: 9999;
         }
+        .loading-content { background: #fff; border: 1px solid #e0e0e0; padding: 24px; text-align: center; min-width: 200px; border-radius: 8px; }
+        .spinner { width: 36px; height: 36px; border: 3px solid rgba(248, 35, 135, 0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto 12px; }
+        .loading-text { font-size: 14px; color: var(--accent); font-weight: 600; }
+        .loading-subtext { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
-        .loading-content {
-            background: var(--bg-card-gradient);
-            border: 2px solid rgba(255, 255, 255, 0.8);
-            padding: 24px;
-            text-align: center;
-            min-width: 240px;
-            box-shadow: var(--shadow-strong);
-        }
-
-        .spinner {
-            width: 36px;
-            height: 36px;
-            border: 3px solid rgba(248, 35, 135, 0.2);
-            border-top: 3px solid var(--accent);
-            animation: spin 0.6s linear infinite;
-            margin: 0 auto 12px;
-            border-radius: 50%;
-        }
-
-        .loading-text {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            color: var(--accent);
-            margin-bottom: 8px;
-            text-transform: none;
-            letter-spacing: 0.3px;
-            font-weight: 600;
-            line-height: 1.3;
-        }
-
-        .loading-subtext {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            color: var(--text-muted);
-            text-transform: none;
-            letter-spacing: 0.3px;
-            line-height: 1.3;
-        }
-
-        .confirmation-dialog {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(8, 9, 43, 0.35);
-            backdrop-filter: blur(12px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        }
-
-        .dialog-content {
-            background: var(--bg-card-gradient);
-            border: 2px solid rgba(248, 35, 135, 0.4);
-            padding: 20px;
-            min-width: 320px;
-            max-width: 420px;
-            box-shadow: var(--shadow-strong);
-        }
-
-        .dialog-title {
-            font-family: 'Lexend Deca', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            line-height: 1.3;
-            color: var(--accent);
-            margin-bottom: 8px;
-            text-transform: none;
-            letter-spacing: 0.4px;
-        }
-
-        .dialog-message {
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-bottom: 16px;
-            line-height: 1.4;
-            font-family: 'Lexend Deca', sans-serif;
-        }
-
-        .dialog-buttons {
-            display: flex;
-            gap: 8px;
-            justify-content: flex-end;
-        }
-
-        .dialog-btn {
-            height: 40px;
-            padding: 0 20px;
-            font-size: 14px;
-            font-family: 'Lexend Deca', sans-serif;
-            font-weight: 500;
-            text-transform: none;
-            letter-spacing: 0.3px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            cursor: pointer;
-            border: 1px solid;
-            transition: all 0.15s;
-            line-height: 1.2;
-        }
-
-        .dialog-btn-cancel {
-            background-color: transparent;
-            color: var(--text-secondary);
-            border-color: rgba(255, 255, 255, 0.5);
-        }
-
-        .dialog-btn-cancel:hover {
-            background-color: var(--bg-tertiary);
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        .dialog-btn-confirm {
-            background: linear-gradient(120deg, var(--danger), var(--accent));
-            color: #FFFFFF;
-            border-color: transparent;
-            box-shadow: 0 8px 20px rgba(255, 77, 109, 0.3);
-        }
-
-        .dialog-btn-confirm:hover {
-            background-color: var(--accent);
-            border-color: var(--accent);
-            color: #FFFFFF;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Toast Notifications */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 10000;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            pointer-events: none;
-        }
-
+        /* Toast */
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
         .toast {
-            pointer-events: auto;
-            min-width: 300px;
-            max-width: 500px;
-            padding: 12px 16px;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            animation: toastSlideIn 0.3s ease-out;
-            position: relative;
-            backdrop-filter: blur(10px);
+            pointer-events: auto; min-width: 280px; max-width: 400px;
+            padding: 12px 16px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: flex; align-items: flex-start; gap: 12px; animation: toastSlideIn 0.3s ease-out;
         }
+        .toast.toast-success { background: linear-gradient(135deg, #10b981, #059669); color: #fff; border-left: 4px solid #34d399; }
+        .toast.toast-error { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border-left: 4px solid #f87171; }
+        .toast.toast-info { background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; border-left: 4px solid #60a5fa; }
+        .toast-content { flex: 1; font-size: 14px; }
+        .toast-close { background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0; opacity: 0.8; }
+        .toast-close:hover { opacity: 1; }
 
-        @keyframes toastSlideIn {
-            from {
-                opacity: 0;
-                transform: translateX(100%);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
+        /* Status Message */
+        .status-message {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            padding: 10px 20px; font-size: 14px; border-radius: 8px; z-index: 9999;
+            display: flex; align-items: center; gap: 8px; animation: slideIn 0.2s ease;
         }
+        .status-success { background: rgba(43, 201, 144, 0.95); color: #fff; }
+        .status-error { background: rgba(255, 77, 109, 0.95); color: #fff; }
+        .status-info { background: rgba(248, 35, 135, 0.95); color: #fff; }
+        .status-close { background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; margin-left: 8px; }
 
-        .toast.toast-success {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-            border-left: 4px solid #34d399;
+        /* Float Toggle */
+        .log-toggle-float {
+            position: fixed; right: 20px; bottom: 20px; width: 50px; height: 50px;
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            border: none; color: #fff; font-size: 20px; cursor: pointer; border-radius: 50%;
+            box-shadow: 0 4px 16px rgba(248, 35, 135, 0.4);
+            display: none; align-items: center; justify-content: center; z-index: 9999;
         }
+        .log-toggle-float:hover { transform: scale(1.1); }
+        .app-layout.log-hidden .log-toggle-float { display: flex !important; }
 
-        .toast.toast-error {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-            color: white;
-            border-left: 4px solid #f87171;
+        .file-input { display: none; }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+        @keyframes toastSlideIn { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+
+        /* Responsive */
+        @media (max-width: 1400px) {
+            .app-layout { grid-template-columns: 280px 1fr 350px; }
         }
-
-        .toast.toast-warning {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-            color: white;
-            border-left: 4px solid #fbbf24;
+        @media (max-width: 1200px) {
+            .app-layout { grid-template-columns: 1fr; }
+            .sidebar-column { max-height: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            .preview-panel { grid-template-columns: 1fr 1.5fr; }
+            .preview-card.result-card { grid-row: 1 / -1; }
+            .log-panel { position: relative; top: 0; max-height: 400px; margin-top: 16px; }
+            .log-toggle-float { display: none !important; }
         }
-
-        .toast.toast-info {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-            color: white;
-            border-left: 4px solid #60a5fa;
-        }
-
-        .toast-icon {
-            font-size: 14px;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-
-        .toast-content {
-            flex: 1;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-
-        .toast-title {
-            font-weight: 600;
-            margin-bottom: 4px;
-            font-size: 14px;
-        }
-
-        .toast-message {
-            font-size: 14px;
-            opacity: 0.95;
-        }
-
-        .toast-close {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 14px;
-            cursor: pointer;
-            padding: 0;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0.8;
-            transition: opacity 0.2s;
-            flex-shrink: 0;
-        }
-
-        .toast-close:hover {
-            opacity: 1;
-        }
-
-        .toast-exiting {
-            animation: toastSlideOut 0.3s ease-in forwards;
-        }
-
-        @keyframes toastSlideOut {
-            from {
-                opacity: 1;
-                transform: translateX(0);
-            }
-            to {
-                opacity: 0;
-                transform: translateX(100%);
-            }
-        }
-
-        @media (max-width: 767px) {
-            .action-row {
-                flex-direction: column;
-            }
-
-            .action-row .generate-btn {
-                width: 100%;
-            }
-
-            h1 {
-                font-size: 14px;
-                letter-spacing: 1px;
-            }
-
-            .section-title {
-                font-size: 14px;
-            }
-
-            .upload-area {
-                padding: 8px;
-                min-height: 64px;
-            }
-
-            .generate-btn {
-                padding: 12px 20px;
-                font-size: 14px;
-            }
-
-            .gallery-grid {
-                grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-                gap: 6px;
-            }
-
-            .status-message {
-                font-size: 14px;
-            }
-
-            .dialog-title {
-                font-size: 14px;
-            }
-
-            .dialog-message {
-                font-size: 14px;
-            }
-
+        @media (max-width: 768px) {
+            .main-container { padding: 12px; }
+            .app-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .sidebar-column { grid-template-columns: 1fr; }
+            .preview-panel { grid-template-columns: 1fr; }
+            .preview-card.preset-card, .preview-card.selfie-card { min-height: 250px; }
+            .preview-card.result-card { min-height: 400px; grid-row: auto; }
+            .preview-card.result-card .preview-image { min-height: 350px; }
+            .action-panel { flex-direction: column; align-items: stretch; }
+            .action-buttons { flex-direction: column; }
+            .action-btn { width: 100%; justify-content: center; }
+            .results-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
         }
     </style>
 </head>
@@ -2465,47 +403,47 @@
             <div id="access-error" class="gate-error"></div>
         </div>
     </div>
+
     <div class="main-container">
         <div class="app-header">
             <h1>Đổi Mặt AI (Face Swap AI)</h1>
             <div class="header-controls">
-                <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 6px 12px; background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(131, 94, 255, 0.2); border-radius: 4px;">
+                <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; background: rgba(255,255,255,0.6); border: 1px solid rgba(131, 94, 255, 0.2); border-radius: 4px;">
                     <span style="color: var(--text-secondary);">Hồ Sơ (Profile):</span>
-            <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
-            <span id="profile-info" style="display: none; color: var(--text-primary);">
-                        <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 14px;"></span>
-            </span>
-                    <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ (Profile ID)" style="padding: 4px 8px; border: 1px solid rgba(131, 94, 255, 0.3); border-radius: 4px; background: rgba(255, 255, 255, 0.8); color: var(--text-primary); font-size: 14px; font-family: monospace; width: 120px; height: 28px;">
-                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 5px 14px; background: #f82387; color: white; border: none; cursor: pointer; font-size: 14px; height: 28px; font-weight: 600; transition: all 0.2s ease; border-radius: 14px;" onmouseover="this.style.background='#d91d6f'" onmouseout="this.style.background='#f82387'">Chuyển (Switch)</button>
+                    <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
+                    <span id="profile-info" style="display: none;">
+                        <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 12px;"></span>
+                    </span>
+                    <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ" style="padding: 4px 8px; border: 1px solid rgba(131, 94, 255, 0.3); border-radius: 4px; background: rgba(255,255,255,0.8); font-size: 12px; font-family: monospace; width: 100px; height: 26px;">
+                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 13px;">Chuyển (Switch)</button>
                 </div>
-                <select class="action-select" id="api-provider" style="height: 28px; padding: 0 10px; border-radius: 4px; border: 1px solid rgba(131, 94, 255, 0.3); background: rgba(255, 255, 255, 0.8); color: var(--text-primary); font-size: 14px; cursor: pointer;">
+                <select class="action-select" id="api-provider" style="height: 26px; padding: 0 8px; border-radius: 4px; border: 1px solid rgba(131, 94, 255, 0.3); background: #fff; font-size: 12px;">
                     <option value="google-nano-banana" selected>Google</option>
                     <option value="rapidapi">RapidAPI</option>
                 </select>
-                <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" style="padding: 5px 14px; background: #4a90e2; border: none; cursor: pointer; font-size: 14px; color: #fff; height: 28px; font-weight: 600; border-radius: 14px;">Nhật Ký (Log)</button>
+                <button class="log-toggle-btn" onclick="toggleLogPanel()">Nhật Ký (Log)</button>
             </div>
         </div>
 
         <div class="app-layout">
-        <div class="workflow-wrapper">
-        <div class="workflow-container">
-            <div class="workflow-sidebar">
+            <!-- Left Sidebar - Galleries -->
+            <div class="sidebar-column">
                 <div class="sidebar-section">
                     <div class="sidebar-header">
                         <div class="gallery-title-row">
-                            <span>MẪU (Presets)</span>
-                        <div class="gender-filter">
+                            <span>Mẫu (Presets)</span>
+                            <div class="gender-filter">
                                 <button class="gender-filter-btn active" data-gender="" data-type="preset">Tất Cả</button>
-                            <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
-                            <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
-                        </div>
+                                <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
+                                <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
+                            </div>
                         </div>
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
-                            <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
-                        </div>
+                        <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
+                    </div>
                     <div class="sidebar-content" id="preset-sidebar-content">
                         <div class="gallery-drop-zone" id="preset-drop-zone">
-                        <div id="preset-gallery" class="sidebar-gallery"></div>
+                            <div id="preset-gallery" class="sidebar-gallery"></div>
                         </div>
                         <div class="pagination" id="preset-pagination" style="display: none;">
                             <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">◀</button>
@@ -2516,13 +454,13 @@
                 </div>
                 <div class="sidebar-section">
                     <div class="sidebar-header">
-                        <span>ẢNH TỰ SƯỚNG (Selfies)</span>
+                        <span>Ảnh Tự Sướng (Selfies)</span>
                         <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
-                            <input type="file" class="file-input" id="selfie-input" accept="image/*">
-                        </div>
+                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                    </div>
                     <div class="sidebar-content" id="selfie-sidebar-content">
                         <div class="gallery-drop-zone" id="selfie-drop-zone">
-                        <div id="selfie-gallery" class="sidebar-gallery"></div>
+                            <div id="selfie-gallery" class="sidebar-gallery"></div>
                         </div>
                         <div class="pagination" id="selfie-pagination" style="display: none;">
                             <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">◀</button>
@@ -2532,38 +470,40 @@
                     </div>
                 </div>
             </div>
-            <div class="workflow-main">
+
+            <!-- Main Content Area -->
+            <div class="main-content-area">
                 <div class="preview-panel">
                     <div class="preview-left-column">
                         <div class="preview-card preset-card" id="preset-card">
-                        <div class="preview-header">
-                                <div class="preview-label">MẪU (Preset)</div>
+                            <div class="preview-header">
+                                <div class="preview-label">Mẫu (Preset)</div>
                                 <button class="delete-btn" onclick="clearSelection('preset', event)" style="display: none;" id="preset-clear-btn">×</button>
-                        </div>
-                        <div id="preset-preview" class="preview-image">
-                            <div class="preview-empty">
-                                <div class="preview-empty-icon">📷</div>
+                            </div>
+                            <div id="preset-preview" class="preview-image">
+                                <div class="preview-empty">
+                                    <div class="preview-empty-icon">📷</div>
                                     <div class="preview-empty-text">Chọn từ mẫu (Select from presets)</div>
+                                </div>
                             </div>
                         </div>
-                    </div>
                         <div class="preview-card selfie-card" id="selfie-card">
-                        <div class="preview-header">
-                                <div class="preview-label">ẢNH TỰ SƯỚNG (Selfie)</div>
+                            <div class="preview-header">
+                                <div class="preview-label">Ảnh Tự Sướng (Selfie)</div>
                                 <button class="delete-btn" onclick="clearSelection('selfie', event)" style="display: none;" id="selfie-clear-btn">×</button>
-                        </div>
-                        <div id="selfie-preview" class="preview-image">
-                            <div class="preview-empty">
-                                <div class="preview-empty-icon">📷</div>
+                            </div>
+                            <div id="selfie-preview" class="preview-image">
+                                <div class="preview-empty">
+                                    <div class="preview-empty-icon">📷</div>
                                     <div class="preview-empty-text">Chọn từ ảnh tự sướng (Select from selfies)</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-                    <div class="preview-card result-card" id="result-card" style="grid-column: 2;">
+                    <div class="preview-card result-card" id="result-card">
                         <div class="preview-header">
-                            <div class="preview-label">KẾT QUẢ (Result)</div>
-                    </div>
+                            <div class="preview-label">Kết Quả (Result)</div>
+                        </div>
                         <div id="result-preview" class="preview-image">
                             <div class="preview-empty">
                                 <div class="preview-empty-icon">✨</div>
@@ -2572,73 +512,57 @@
                         </div>
                     </div>
                 </div>
+
                 <div class="action-panel">
                     <div class="action-buttons">
                         <button class="action-btn primary" id="generate-btn" disabled onclick="generateFaceSwap()">
-                            <span class="btn-icon">✨</span>
-                            <span>Đổi Mặt (Face Swap)</span>
+                            <span>✨</span><span>Đổi Mặt (Face Swap)</span>
                         </button>
-                        <button class="action-btn" id="enhance-btn" onclick="runEnhance()">
-                            <span class="btn-icon">🔍</span>
-                            <span>Nâng Cấp (Enhance)</span>
-                        </button>
-                        <button class="action-btn" id="upscale-btn" onclick="runUpscale4k()">
-                            <span class="btn-icon">📐</span>
-                            <span>Nâng Cấp 4K (4K Upscale)</span>
-                        </button>
-                        <button class="action-btn" id="colorize-btn" onclick="runColorize()">
-                            <span class="btn-icon">🎨</span>
-                            <span>Tô Màu (Colorize)</span>
-                        </button>
+                        <button class="action-btn" onclick="runEnhance()">🔍 Nâng Cấp (Enhance)</button>
+                        <button class="action-btn" onclick="runUpscale4k()">📐 Nâng Cấp 4K (4K Upscale)</button>
+                        <button class="action-btn" onclick="runColorize()">🎨 Tô Màu (Colorize)</button>
                         <div class="action-aging">
-                            <input type="number" id="aging-years" value="20" min="5" max="60" step="5" style="width: 50px; height: 36px; padding: 0 8px; border: 1px solid #ccc; background: #fff; color: var(--text-primary); font-size: 14px; text-align: center;">
-                            <button class="action-btn" onclick="runAging()">
-                                <span class="btn-icon">⏳</span>
-                                <span>Lão Hóa (Age)</span>
-                            </button>
+                            <input type="number" id="aging-years" value="20" min="5" max="60" step="5">
+                            <button class="action-btn" onclick="runAging()">⏳ Lão Hóa (Age)</button>
                         </div>
                     </div>
                     <div class="action-options">
                         <input type="text" id="additional-prompt" class="action-prompt" placeholder="Gợi ý (tùy chọn) (Prompt optional)">
                         <div class="action-gender">
-                            <label><input type="radio" name="character-gender" value="none" checked>Không</label>
-                            <label><input type="radio" name="character-gender" value="male">Nam</label>
-                            <label><input type="radio" name="character-gender" value="female">Nữ</label>
-                        </div>
-                    </div>
+                            <label><input type="radio" name="character-gender" value="none" checked> Không</label>
+                            <label><input type="radio" name="character-gender" value="male"> Nam</label>
+                            <label><input type="radio" name="character-gender" value="female"> Nữ</label>
                         </div>
                     </div>
                 </div>
+
                 <div class="results-panel">
                     <div class="results-header">
-                <span>LỊCH SỬ (History)</span>
-                <span class="results-count" id="results-count">(0)</span>
+                        <span>Lịch Sử (History)</span>
+                        <span class="results-count" id="results-count">(0)</span>
                     </div>
                     <div id="results-gallery" class="results-grid"></div>
                     <div class="pagination" id="results-pagination" style="display: none;">
-                <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">◀</button>
-                <div class="pagination-dots" id="results-dots"></div>
-                <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">▶</button>
+                        <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">◀</button>
+                        <div class="pagination-dots" id="results-dots"></div>
+                        <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">▶</button>
                     </div>
                 </div>
             </div>
-        </div>
-        </div>
-        <div class="log-panel">
-            <div class="log-header">
-                <div class="log-title">📋 Nhật Ký API</div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <button class="log-clear-btn" onclick="clearApiLogs()">Xóa</button>
-                    <button class="log-toggle-btn" id="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn Log">
-                        <span id="log-toggle-icon">◀</span>
-                    </button>
-                </div>
-            </div>
-            <div class="api-log-list" id="api-log-list"></div>
-        </div>
-        </div>
 
-    <!-- Lightbox for Results -->
+            <!-- Log Panel - Right Sidebar -->
+            <div class="log-panel">
+                <div class="log-header">
+                    <div class="log-title">📋 Nhật Ký API</div>
+                    <button class="log-clear-btn" onclick="clearApiLogs()">Xóa</button>
+                    <button class="log-toggle-btn" onclick="toggleLogPanel()" title="Ẩn">◀</button>
+                </div>
+                <div class="api-log-list" id="api-log-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightbox -->
     <div id="lightbox" class="lightbox" style="display: none;">
         <div class="lightbox-overlay" onclick="closeLightbox()"></div>
         <button class="lightbox-close" onclick="closeLightbox()">×</button>
@@ -2646,13 +570,10 @@
         <button class="lightbox-nav lightbox-next" onclick="lightboxNavigate(1)">›</button>
         <div class="lightbox-content">
             <img id="lightbox-image" src="" alt="">
-            <div class="lightbox-info">
-                <span id="lightbox-counter"></span>
-            </div>
+            <div class="lightbox-info"><span id="lightbox-counter"></span></div>
         </div>
     </div>
 
-    <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
 
     <div id="loading-overlay" class="loading-overlay" style="display: none;">
@@ -2663,953 +584,287 @@
         </div>
     </div>
 
-    <!-- Floating Toggle Button (shown when log is hidden) -->
-    <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký API">
-        📋
-    </button>
+    <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký">📋</button>
 
     <script>
-        // Worker URL - injected during deployment from deployments-secrets.json
-        // This will be replaced by the deploy script with the custom domain if available
-        let WORKER_URL = 'https://api.d.shotpix.app'; // Custom domain from deployments-secrets.json
-        const fallbackUrl = 'https://api.d.shotpix.app';
-        
-        // Function to fetch and update worker URL from backend config (optional, for runtime updates)
-        async function loadWorkerConfig() {
-          try {
-            // Try to fetch config from current WORKER_URL
-            const response = await fetch(`${WORKER_URL}/config`, {
-              method: 'GET',
-              headers: { 'Content-Type': 'application/json' }
-            });
-            if (response.ok) {
-              const config = await response.json();
-              if (config.workerCustomDomain) {
-                const newUrl = config.workerCustomDomain.startsWith('http')
-                  ? config.workerCustomDomain
-                  : `https://${config.workerCustomDomain}`;
-                if (newUrl !== WORKER_URL) {
-                  WORKER_URL = newUrl;
-                  console.log('[Config] Updated to custom domain from backend:', WORKER_URL);
-                  return true;
-                }
-              }
-            }
-          } catch (error) {
-            // Silently fail - use injected URL
-          }
-          return false;
-        }
+        // Config
+        let WORKER_URL = 'https://api.d.shotpix.app';
         const ITEMS_PER_PAGE = 12;
-
-        const presetInput = document.getElementById('preset-input');
-        const presetPreview = document.getElementById('preset-preview');
-        const presetGallery = document.getElementById('preset-gallery');
-        const presetPagination = document.getElementById('preset-pagination');
-        const presetPageInfo = document.getElementById('preset-page-info');
-        const presetPrevBtn = document.getElementById('preset-prev');
-        const presetNextBtn = document.getElementById('preset-next');
-        function toggleSidebar(type) {
-            const content = document.getElementById(`${type}-sidebar-content`);
-            const toggle = event.target;
-            if (content.classList.contains('collapsed')) {
-                content.classList.remove('collapsed');
-                toggle.textContent = '−';
-            } else {
-                content.classList.add('collapsed');
-                toggle.textContent = '+';
-            }
-        }
-
-        const selfieInput = document.getElementById('selfie-input');
-        const selfiePreview = document.getElementById('selfie-preview');
-        const selfieGallery = document.getElementById('selfie-gallery');
-        const selfiePagination = document.getElementById('selfie-pagination');
-        const selfiePageInfo = document.getElementById('selfie-page-info');
-        
-        const resultsGallery = document.getElementById('results-gallery');
-        const resultsPagination = document.getElementById('results-pagination');
-        const resultsPageInfo = document.getElementById('results-page-info');
-        const selfiePrevBtn = document.getElementById('selfie-prev');
-        const selfieNextBtn = document.getElementById('selfie-next');
-        const selfieGalleryEmpty = document.getElementById('selfie-gallery-empty');
-
         const ACCESS_CODE = '123456';
-        const accessGate = document.getElementById('access-gate');
-        const accessInput = document.getElementById('access-input');
-        const accessSubmit = document.getElementById('access-submit');
-        const accessError = document.getElementById('access-error');
+        const MAX_LOG_ENTRIES = 30;
 
-        const resultDisplay = document.getElementById('result-display');
-        const generateBtn = document.getElementById('generate-btn');
-        const apiProviderSelect = document.getElementById('api-provider');
-        const apiLogList = document.getElementById('api-log-list');
-        const additionalPromptInput = document.getElementById('additional-prompt');
-        const genderRadios = document.querySelectorAll('input[name="character-gender"]');
-        const promptSection = document.getElementById('prompt-section');
+        // DOM Elements
+        const $ = id => document.getElementById(id);
+        const presetInput = $('preset-input'), presetPreview = $('preset-preview'), presetGallery = $('preset-gallery');
+        const selfieInput = $('selfie-input'), selfiePreview = $('selfie-preview'), selfieGallery = $('selfie-gallery');
+        const resultsGallery = $('results-gallery'), generateBtn = $('generate-btn');
+        const apiLogList = $('api-log-list'), additionalPromptInput = $('additional-prompt');
+        const accessGate = $('access-gate'), accessInput = $('access-input'), accessSubmit = $('access-submit'), accessError = $('access-error');
 
-        function unlockInterface() {
-            document.body.classList.remove('locked');
-            if (accessGate) {
-                accessGate.classList.add('hidden');
+        // Gallery Configuration
+        const galleries = {
+            preset: {
+                key: 'preset', responseKey: 'presets', endpoints: { list: '/presets', delete: '/presets' },
+                logName: 'Thư Viện Mẫu', labels: { selectSuccess: 'Đã chọn mẫu thành công', deleteSuccess: 'Đã xóa mẫu thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?' },
+                elements: { input: presetInput, preview: presetPreview, gallery: presetGallery, pagination: $('preset-pagination'), prevBtn: $('preset-prev'), nextBtn: $('preset-next') },
+                state: { items: [], selected: null, page: 1, genderFilter: '' }
+            },
+            selfie: {
+                key: 'selfie', responseKey: 'selfies', endpoints: { list: '/selfies', delete: '/selfies' },
+                logName: 'Thư Viện Selfie', labels: { selectSuccess: 'Đã chọn selfie thành công', deleteSuccess: 'Đã xóa selfie thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa selfie này không?' },
+                elements: { input: selfieInput, preview: selfiePreview, gallery: selfieGallery, pagination: $('selfie-pagination'), prevBtn: $('selfie-prev'), nextBtn: $('selfie-next') },
+                state: { items: [], selected: null, page: 1, genderFilter: '' }
+            },
+            results: {
+                key: 'results', responseKey: 'results', endpoints: { list: '/results', delete: '/results' },
+                logName: 'Kết Quả Đổi Mặt', labels: { deleteSuccess: 'Đã xóa kết quả thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa kết quả này không?' },
+                elements: { gallery: resultsGallery, pagination: $('results-pagination'), prevBtn: $('results-prev'), nextBtn: $('results-next') },
+                state: { items: [], selected: null, page: 1 }
             }
-        }
+        };
 
-        function handleAccessSuccess() {
-            sessionStorage.setItem('faceswap:authorized', 'true');
-            if (accessError) {
-                accessError.textContent = '';
-            }
-            unlockInterface();
-        }
-
-        function handleAccessAttempt() {
-            if (!accessInput) {
-                return;
-            }
-            const enteredCode = accessInput.value.trim();
-            if (enteredCode === ACCESS_CODE) {
-                handleAccessSuccess();
-            } else {
-                if (accessError) {
-                    accessError.textContent = 'Sai mã truy cập. Vui lòng thử lại.';
-                }
-                accessInput.value = '';
-                accessInput.focus();
-            }
-        }
-
-        function initAccessGate() {
-            if (!accessGate || !accessInput || !accessSubmit) {
-                return;
-            }
-            const authorized = sessionStorage.getItem('faceswap:authorized') === 'true';
-            if (authorized) {
-                unlockInterface();
-                return;
-            }
-            document.body.classList.add('locked');
-            accessGate.classList.remove('hidden');
-            accessSubmit.addEventListener('click', handleAccessAttempt);
-            accessInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    handleAccessAttempt();
-                }
-            });
-            if (accessError) {
-                accessError.textContent = '';
-            }
-            setTimeout(() => accessInput.focus(), 50);
-        }
-
-        // Load checkbox states from localStorage on page load
-        function loadCheckboxStates() {
-            try {
-                const visionScanEnabled = localStorage.getItem('preset-enable-vision-scan');
-                const vertexPromptEnabled = localStorage.getItem('preset-enable-vertex-prompt');
-                
-                const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
-                const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
-                
-                if (visionScanCheckbox && visionScanEnabled !== null) {
-                    visionScanCheckbox.checked = visionScanEnabled === 'true';
-                }
-                
-                if (vertexPromptCheckbox && vertexPromptEnabled !== null) {
-                    vertexPromptCheckbox.checked = vertexPromptEnabled === 'true';
-                }
-            } catch (error) {
-                console.error('Error loading checkbox states:', error);
-            }
-        }
-
-        // Load gender states from localStorage on page load
-        function loadGenderStates() {
-            try {
-                const presetGender = localStorage.getItem('preset-gender');
-                
-                if (presetGender !== null) {
-                    const presetRadio = document.querySelector(`input[name="preset-gender"][value="${presetGender}"]`);
-                    if (presetRadio) {
-                        presetRadio.checked = true;
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading gender states:', error);
-            }
-        }
-
-        // Save checkbox states to localStorage when changed
-        function setupCheckboxListeners() {
-            const visionScanCheckbox = document.getElementById('preset-enable-vision-scan');
-            const vertexPromptCheckbox = document.getElementById('preset-enable-vertex-prompt');
-            
-            if (visionScanCheckbox) {
-                visionScanCheckbox.addEventListener('change', (e) => {
-                    try {
-                        localStorage.setItem('preset-enable-vision-scan', e.target.checked ? 'true' : 'false');
-                    } catch (error) {
-                        console.error('Error saving vision scan checkbox state:', error);
-                    }
-                });
-            }
-            
-            if (vertexPromptCheckbox) {
-                vertexPromptCheckbox.addEventListener('change', (e) => {
-                    try {
-                        localStorage.setItem('preset-enable-vertex-prompt', e.target.checked ? 'true' : 'false');
-                    } catch (error) {
-                        console.error('Error saving vertex prompt checkbox state:', error);
-                    }
-                });
-            }
-        }
-
-        // Save gender states to localStorage when changed
-        function setupGenderListeners() {
-            const presetGenderRadios = document.querySelectorAll('input[name="preset-gender"]');
-            
-            presetGenderRadios.forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    try {
-                        localStorage.setItem('preset-gender', e.target.value);
-                    } catch (error) {
-                        console.error('Error saving preset gender state:', error);
-                    }
-                });
-            });
-        }
-
-        function getSelectedGender() {
-            let selected = null;
-            genderRadios.forEach((radio) => {
-                if (radio.checked) {
-                    selected = radio.value;
-                }
-            });
-            return selected;
-        }
-
-        function syncPromptControls() {
-            const isVertex = apiProviderSelect?.value === 'google-nano-banana';
-            if (promptSection) {
-                promptSection.classList.toggle('disabled', !isVertex);
-            }
-            if (additionalPromptInput) {
-                additionalPromptInput.disabled = !isVertex;
-            }
-            genderRadios.forEach((radio) => {
-                radio.disabled = !isVertex;
-                if (!isVertex && radio.value === 'none') {
-                    radio.checked = true;
-                }
-            });
-        }
-
-        function setupGenderFilterListeners() {
-            // Add event listeners to gender filter buttons
-            document.querySelectorAll('.gender-filter-btn').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const btn = e.target;
-                    const gender = btn.dataset.gender || '';
-                    const type = btn.dataset.type;
-
-                    if (!type) return;
-
-                    // Update active state
-                    const container = btn.closest('.gender-filter');
-                    if (container) {
-                        container.querySelectorAll('.gender-filter-btn').forEach(b => b.classList.remove('active'));
-                        btn.classList.add('active');
-                    }
-
-                    // Load gallery with gender filter
-                    loadGallery(type, gender);
-                });
-            });
-        }
-
-        // Profile Management - Single User System
+        // Profile Manager
         window.profileManager = {
             currentProfile: null,
-
             async initializeProfile() {
-                const statusDiv = document.getElementById('profile-status');
-                statusDiv.textContent = 'Đang kiểm tra hồ sơ...';
-                statusDiv.style.color = 'var(--text-muted)';
-                
+                const statusDiv = $('profile-status');
+                statusDiv.textContent = 'Đang tải...';
                 try {
                     let profileId = localStorage.getItem('userProfileId');
-                    
                     if (profileId) {
-                        statusDiv.textContent = 'Đang tải hồ sơ từ máy chủ...';
-                try {
-                            const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
-                            if (response.ok) {
-                                const profile = await response.json();
-                                this.currentProfile = profile;
-                                this.updateProfileDisplay();
-                                if (typeof loadGallery === 'function') {
-                                    await Promise.all([
-                                        loadGallery('selfie'),
-                                        loadGallery('results')
-                                    ]);
-                                }
-                                return profile;
-                            } else {
-                                localStorage.removeItem('userProfileId');
-                                statusDiv.textContent = 'Hồ sơ không tồn tại, đang tạo mới...';
-                            }
-                } catch (error) {
-                            console.warn('Profile not found, creating new one:', error);
-                            localStorage.removeItem('userProfileId');
-                            statusDiv.textContent = 'Hồ sơ không tồn tại, đang tạo mới...';
-                }
-                    } else {
-                        statusDiv.textContent = 'Đang tạo hồ sơ mới...';
+                        const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
+                        if (response.ok) {
+                            this.currentProfile = await response.json();
+                            this.updateProfileDisplay();
+                            await Promise.all([loadGallery('selfie'), loadGallery('results')]);
+                            return this.currentProfile;
+                        }
+                        localStorage.removeItem('userProfileId');
                     }
-
                     const profile = await this.createProfile();
                     localStorage.setItem('userProfileId', profile.id);
                     this.currentProfile = profile;
                     this.updateProfileDisplay();
-                    if (typeof loadGallery === 'function') {
-                        await Promise.all([
-                            loadGallery('selfie'),
-                            loadGallery('results')
-                        ]);
-                    }
+                    await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                     return profile;
                 } catch (error) {
-                    console.error('Failed to initialize profile:', error);
-                    statusDiv.textContent = '✗ Không thể khởi tạo hồ sơ';
+                    console.error('Profile init failed:', error);
+                    statusDiv.textContent = '✗ Lỗi';
                     statusDiv.style.color = 'var(--danger)';
-                    showStatusMessage('Không thể khởi tạo hồ sơ người dùng', 'error');
-                    throw error;
                 }
             },
-
-            async createProfile(name, userID) {
-                try {
-                    const response = await fetch(`${WORKER_URL}/profiles`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, userID: userID || undefined })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error('Failed to create profile');
-                    }
-
-                    const profile = await response.json();
-                    return profile;
-                } catch (error) {
-                    console.error('Failed to create profile:', error);
-                    showStatusMessage('Không thể tạo hồ sơ mới', 'error');
-                    throw error;
-                }
+            async createProfile() {
+                const response = await fetch(`${WORKER_URL}/profiles`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                if (!response.ok) throw new Error('Không thể tạo hồ sơ');
+                return response.json();
             },
-
             updateProfileDisplay() {
-                const statusDiv = document.getElementById('profile-status');
-                const infoDiv = document.getElementById('profile-info');
-                const idSpan = document.getElementById('profile-id-display');
-
-                if (!this.currentProfile) {
-                    if (statusDiv) statusDiv.textContent = 'Không có hồ sơ';
-                    if (statusDiv) statusDiv.style.color = 'var(--text-muted)';
-                    if (infoDiv) infoDiv.style.display = 'none';
-                    return;
-                }
-
-                if (statusDiv) {
-                    statusDiv.textContent = '✓ Sẵn sàng';
-                    statusDiv.style.color = 'var(--success)';
-                }
-                
-                if (this.currentProfile.id && idSpan) {
-                    idSpan.textContent = this.currentProfile.id;
-                }
-                
+                const statusDiv = $('profile-status'), infoDiv = $('profile-info'), idSpan = $('profile-id-display');
+                if (!this.currentProfile) { statusDiv.textContent = 'Chưa có hồ sơ'; return; }
+                statusDiv.textContent = '✓ Sẵn sàng';
+                statusDiv.style.color = 'var(--success)';
+                if (idSpan) idSpan.textContent = this.currentProfile.id;
                 if (infoDiv) infoDiv.style.display = 'inline';
             },
-
-            async updateProfile(profileId, name, email) {
-                try {
-                    const response = await fetch(`${WORKER_URL}/profiles/${profileId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, email: email || undefined })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error('Failed to update profile');
-                    }
-
-                    const updatedProfile = await response.json();
-
-                    this.currentProfile = updatedProfile;
-                    this.updateProfileDisplay();
-
-                    showStatusMessage('Đã cập nhật hồ sơ thành công!', 'success');
-                    return updatedProfile;
-                } catch (error) {
-                    console.error('Failed to update profile:', error);
-                    showStatusMessage('Không thể cập nhật hồ sơ', 'error');
-                    throw error;
-                }
-            },
-
             async switchToProfile(profileId) {
-                const statusDiv = document.getElementById('profile-status');
-                if (!profileId || !profileId.trim()) {
-                    showStatusMessage('Vui lòng nhập Profile ID', 'error');
-                    return;
-                }
-
-                profileId = profileId.trim();
-                statusDiv.textContent = 'Đang chuyển hồ sơ...';
-                statusDiv.style.color = 'var(--text-muted)';
-
+                if (!profileId?.trim()) { showStatusMessage('Vui lòng nhập ID hồ sơ', 'error'); return; }
+                const statusDiv = $('profile-status');
+                statusDiv.textContent = 'Đang chuyển...';
                 try {
-                    const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
-                    if (!response.ok) {
-                        if (response.status === 404) {
-                            throw new Error('Profile không tồn tại');
-                        }
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const profile = await response.json();
-                    this.currentProfile = profile;
-                    localStorage.setItem('userProfileId', profile.id);
+                    const response = await fetch(`${WORKER_URL}/profiles/${profileId.trim()}`);
+                    if (!response.ok) throw new Error(response.status === 404 ? 'Không tìm thấy hồ sơ' : `HTTP ${response.status}`);
+                    this.currentProfile = await response.json();
+                    localStorage.setItem('userProfileId', this.currentProfile.id);
                     this.updateProfileDisplay();
-
-                    if (typeof loadGallery === 'function') {
-                        await Promise.all([
-                            loadGallery('selfie'),
-                            loadGallery('results')
-                        ]);
-                    }
-
+                    await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                     updateResultsCount();
-                    showStatusMessage('Đã chuyển sang hồ sơ mới', 'success');
-                    return profile;
+                    showStatusMessage('Đã chuyển hồ sơ thành công', 'success');
                 } catch (error) {
-                    console.error('Failed to switch profile:', error);
-                    statusDiv.textContent = '✗ Lỗi chuyển hồ sơ';
+                    statusDiv.textContent = '✗ Lỗi';
                     statusDiv.style.color = 'var(--danger)';
-                    showStatusMessage(`Không thể chuyển hồ sơ: ${error.message}`, 'error');
-                    throw error;
+                    showStatusMessage(`Chuyển hồ sơ thất bại: ${error.message}`, 'error');
                 }
-            },
-
+            }
         };
 
-        async function switchProfile() {
-            const input = document.getElementById('profile-id-input');
-            if (!input) return;
-            
-            const profileId = input.value.trim();
-            if (!profileId) {
-                showStatusMessage('Vui lòng nhập Profile ID', 'error');
-                return;
-            }
-
-            try {
-                await window.profileManager.switchToProfile(profileId);
+        function switchProfile() {
+            const input = $('profile-id-input');
+            if (input?.value.trim()) {
+                window.profileManager.switchToProfile(input.value.trim());
                 input.value = '';
-            } catch (error) {
-                console.error('Switch profile error:', error);
             }
         }
 
+        // Access Gate
+        function unlockInterface() {
+            document.body.classList.remove('locked');
+            accessGate?.classList.add('hidden');
+        }
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', async () => {
-                initAccessGate();
-                loadCheckboxStates();
-                setupCheckboxListeners();
-                loadGenderStates();
-                setupGenderListeners();
-                syncPromptControls();
-                setupGenderFilterListeners();
-                
-                const profileInput = document.getElementById('profile-id-input');
-                if (profileInput) {
-                    profileInput.addEventListener('keydown', (event) => {
-                        if (event.key === 'Enter') {
-                            event.preventDefault();
-                            switchProfile();
-                        }
-                    });
-                }
-                
-                window.profileManager.initializeProfile();
-                await init();
-            });
-        } else {
-            initAccessGate();
-            loadCheckboxStates();
-            setupCheckboxListeners();
-            loadGenderStates();
-            setupGenderListeners();
-            syncPromptControls();
-            setupGenderFilterListeners();
-            
-            const profileInput = document.getElementById('profile-id-input');
-            if (profileInput) {
-                profileInput.addEventListener('keydown', (event) => {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        switchProfile();
-                    }
-                });
+        function handleAccessAttempt() {
+            if (accessInput?.value.trim() === ACCESS_CODE) {
+                sessionStorage.setItem('faceswap:authorized', 'true');
+                if (accessError) accessError.textContent = '';
+                unlockInterface();
+            } else {
+                if (accessError) accessError.textContent = 'Mã sai, vui lòng thử lại';
+                if (accessInput) { accessInput.value = ''; accessInput.focus(); }
             }
-            
-            window.profileManager.initializeProfile();
-            init();
         }
 
-        function createGalleryConfig({ key, responseKey, listEndpoint, deleteEndpoint, logName, labels, elements }) {
-            return {
-                key,
-                responseKey,
-                endpoints: { list: listEndpoint, delete: deleteEndpoint },
-                logName,
-                labels,
-                elements,
-                state: {
-                    items: [],
-                    selected: null,
-                    page: 1,
-                    genderFilter: ''
-                }
-            };
+        function initAccessGate() {
+            if (sessionStorage.getItem('faceswap:authorized') === 'true') { unlockInterface(); return; }
+            document.body.classList.add('locked');
+            accessGate?.classList.remove('hidden');
+            accessSubmit?.addEventListener('click', handleAccessAttempt);
+            accessInput?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); handleAccessAttempt(); } });
+            setTimeout(() => accessInput?.focus(), 50);
         }
 
-        const galleries = {
-            preset: createGalleryConfig({
-                key: 'preset',
-                responseKey: 'presets',
-                listEndpoint: '/presets',
-                deleteEndpoint: '/presets',
-                logName: 'Thư Viện Mẫu',
-                labels: {
-                    selectedTitle: 'Mẫu Đã Chọn',
-                    selectSuccess: 'Đã chọn mẫu thành công',
-                    deleteSuccess: 'Đã xóa mẫu thành công',
-                    deleteError: 'Không thể xóa mẫu',
-                    confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?',
-                    emptyMessage: 'Chọn một mẫu từ thư viện phía trên',
-                    emptyIcon: '🎭'
-                },
-                elements: {
-                    input: presetInput,
-                    preview: presetPreview,
-                    gallery: presetGallery,
-                    pagination: presetPagination,
-                    pageInfo: presetPageInfo,
-                    prevBtn: presetPrevBtn,
-                    nextBtn: presetNextBtn,
-                    empty: null
-                }
-            }),
-            selfie: createGalleryConfig({
-                key: 'selfie',
-                responseKey: 'selfies',
-                listEndpoint: '/selfies',
-                deleteEndpoint: '/selfies',
-                logName: 'Thư Viện Selfie',
-                labels: {
-                    selectedTitle: 'Selfie Đã Chọn',
-                    selectSuccess: 'Đã chọn selfie thành công',
-                    deleteSuccess: 'Đã xóa selfie thành công',
-                    deleteError: 'Không thể xóa selfie',
-                    confirmDelete: 'Bạn có chắc chắn muốn xóa selfie này không?',
-                    emptyMessage: 'Chọn một selfie từ thư viện phía trên',
-                    emptyIcon: '📷'
-                },
-                elements: {
-                    input: selfieInput,
-                    preview: selfiePreview,
-                    gallery: selfieGallery,
-                    pagination: selfiePagination,
-                    pageInfo: selfiePageInfo,
-                    prevBtn: selfiePrevBtn,
-                    nextBtn: selfieNextBtn,
-                    empty: selfieGalleryEmpty
-                }
-            }),
-            results: createGalleryConfig({
-                key: 'results',
-                responseKey: 'results',
-                listEndpoint: '/results',
-                deleteEndpoint: '/results',
-                logName: 'Kết Quả Đổi Mặt',
-                labels: {
-                    selectedTitle: '',
-                    selectSuccess: '',
-                    deleteSuccess: 'Đã xóa kết quả thành công',
-                    deleteError: 'Không thể xóa kết quả',
-                    confirmDelete: 'Bạn có chắc chắn muốn xóa kết quả này không?',
-                    emptyMessage: 'Chưa có kết quả nào',
-                    emptyIcon: '🖼️'
-                },
-                elements: {
-                    upload: null,
-                    input: null,
-                    preview: null,
-                    gallery: resultsGallery,
-                    pagination: resultsPagination,
-                    pageInfo: resultsPageInfo,
-                    prevBtn: document.getElementById('results-prev'),
-                    nextBtn: document.getElementById('results-next'),
-                    empty: null
-                }
-            })
-        };
-
-        const galleryKeys = Object.keys(galleries);
-        const MAX_LOG_ENTRIES = 30;
-
+        // Logging
         function logApiCall({ label, method, url, status = 'info', payload, duration }) {
-            if (!apiLogList) return;
-            // Log POST, PUT, and DELETE requests (exclude GET, etc.)
-            const normalizedMethod = (method || '').toUpperCase();
-            if (normalizedMethod !== 'POST' && normalizedMethod !== 'PUT' && normalizedMethod !== 'DELETE') {
-                return;
-            }
-            
-            const timestamp = new Date().toLocaleTimeString('vi-VN');
+            if (!apiLogList || !['POST', 'PUT', 'DELETE'].includes((method || '').toUpperCase())) return;
             const entry = document.createElement('div');
             entry.className = `api-log-entry log-${status}`;
-
-            const statusLabel = status === 'success' ? 'Thành công' : status === 'error' ? 'Lỗi' : 'Thông tin';
-            
-            // Build duration display if provided
-            const durationHtml = duration ? `<span style="color: #666; font-size: 14px; margin-left: 8px;">⏱️ ${duration}</span>` : '';
-            
-            // Build raw response JSON display
-            let responseJsonHtml = '';
-            if (payload !== undefined && payload !== null) {
-                const responseJson = JSON.stringify(payload, null, 2);
-                
-                responseJsonHtml = `
-                    <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
-                        <div style="font-weight: 600; font-size: 14px; color: #666; margin-bottom: 8px;">📋 Response JSON:</div>
-                        <pre style="font-size: 14px; max-height: 500px; overflow: auto; background: rgba(0,0,0,0.05); padding: 12px; margin-top: 8px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; margin: 0;">${escapeHtml(responseJson)}</pre>
-                    </div>
-                `;
+            const durationHtml = duration ? ` <span style="color:#666;font-size:11px;">⏱️${duration}ms</span>` : '';
+            let payloadHtml = '';
+            if (payload) {
+                payloadHtml = `<div class="api-log-payload">${escapeHtml(JSON.stringify(payload, null, 2))}</div>`;
             }
-
             entry.innerHTML = `
-                <div class="api-log-entry-header">
-                    <span>${timestamp}</span>
-                    <span>${statusLabel}</span>
-                </div>
+                <div class="api-log-entry-header"><span>${new Date().toLocaleTimeString()}</span><span>${status}</span></div>
                 <div class="api-log-action">${label}${durationHtml}</div>
                 <div class="api-log-detail">${method} ${url}</div>
-                ${responseJsonHtml}
+                ${payloadHtml}
             `;
-
             apiLogList.prepend(entry);
-
-            while (apiLogList.childElementCount > MAX_LOG_ENTRIES) {
-                apiLogList.removeChild(apiLogList.lastElementChild);
-            }
+            while (apiLogList.childElementCount > MAX_LOG_ENTRIES) apiLogList.removeChild(apiLogList.lastElementChild);
         }
 
-        function clearApiLogs() {
-            if (apiLogList) {
-                apiLogList.innerHTML = '';
-            }
-        }
+        function clearApiLogs() { if (apiLogList) apiLogList.innerHTML = ''; }
 
         function toggleLogPanel() {
             const appLayout = document.querySelector('.app-layout');
-            const toggleBtn = document.getElementById('log-toggle-btn');
-            const toggleIcon = document.getElementById('log-toggle-icon');
-            const toggleFloat = document.getElementById('log-toggle-float');
             const logPanel = document.querySelector('.log-panel');
-            
-            if (!appLayout) {
-                console.error('app-layout not found');
-                return;
-            }
-            
-            const isHidden = appLayout.classList.contains('log-hidden');
-            
+            const isHidden = appLayout?.classList.contains('log-hidden');
             if (isHidden) {
-                // Expand the log panel sidebar
                 appLayout.classList.remove('log-hidden');
-                
-                if (logPanel) {
-                    logPanel.style.display = 'flex';
-                    setTimeout(() => {
-                        logPanel.style.opacity = '1';
-                        logPanel.style.transform = 'translateX(0)';
-                    }, 10);
-                }
-                
-                if (toggleIcon) {
-                    toggleIcon.textContent = '◀';
-                }
-                if (toggleBtn) {
-                    toggleBtn.classList.remove('hidden');
-                    toggleBtn.title = 'Ẩn Log';
-                }
-                if (toggleFloat) {
-                    toggleFloat.style.display = 'none';
-                }
+                if (logPanel) { logPanel.style.display = 'flex'; setTimeout(() => { logPanel.style.opacity = '1'; logPanel.style.transform = 'translateX(0)'; }, 10); }
             } else {
-                // Collapse the log panel sidebar
-                if (logPanel) {
-                    logPanel.style.opacity = '0';
-                    logPanel.style.transform = 'translateX(20px)';
-                }
-                
-                setTimeout(() => {
-                appLayout.classList.add('log-hidden');
-                if (logPanel) {
-                    logPanel.style.display = 'none';
-                }
-                }, 300);
-                
-                if (toggleIcon) {
-                    toggleIcon.textContent = '▶';
-                }
-                if (toggleBtn) {
-                    toggleBtn.classList.add('hidden');
-                    toggleBtn.title = 'Hiện Log';
-                }
-                if (toggleFloat) {
-                    toggleFloat.style.display = 'flex';
-                }
-            }
-        }
-
-        function formatPayload(payload) {
-            if (payload === undefined || payload === null) return '';
-            if (typeof payload === 'string') return payload;
-            try {
-                return JSON.stringify(payload, null, 2);
-            } catch {
-                return String(payload);
+                if (logPanel) { logPanel.style.opacity = '0'; logPanel.style.transform = 'translateX(20px)'; }
+                setTimeout(() => appLayout?.classList.add('log-hidden'), 300);
             }
         }
 
         function escapeHtml(str) {
-            return String(str ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+            return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        // Initialize the application
-        async function init() {
-            showLoading('Đang tải dữ liệu');
-            try {
-                await loadWorkerConfig();
-                console.log('[Config] Using API URL:', WORKER_URL);
-                
-                galleryKeys.forEach(type => {
-                    if (type !== 'results') resetPreview(type);
-                });
-                
-                await loadGallery('preset');
-                
-                if (window.profileManager && window.profileManager.currentProfile) {
-                    await Promise.all(['selfie', 'results'].map(type => loadGallery(type)));
-                } else {
-                    console.log('Waiting for profile initialization before loading selfies and results...');
-                }
-                
-                updateResultsCount();
-            } finally {
-                hideLoading();
-            }
-        }
-
+        // Gallery Functions
         async function loadGallery(type, genderFilter = '') {
             const config = galleries[type];
             try {
-                // Skip loading selfies and results if profile is not ready
-                if ((type === 'selfie' || type === 'results')) {
-                    if (!window.profileManager || !window.profileManager.currentProfile) {
-                        console.log(`Skipping ${type} gallery load - profile not ready`);
-                        config.state.items = [];
-                        config.state.page = 1;
-                        renderGallery(type);
-                        return;
-                    }
+                if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
+                    config.state.items = []; config.state.page = 1; renderGallery(type); return;
                 }
-
-                if (type === 'preset') {
-                    if (config.state.genderFilter && config.state.genderFilter !== 'male' && config.state.genderFilter !== 'female' && config.state.genderFilter !== '') {
-                        console.warn(`Clearing invalid stored gender filter: ${config.state.genderFilter}`);
-                        config.state.genderFilter = '';
-                    }
-                }
-
                 let url = `${WORKER_URL}${config.endpoints.list}`;
                 const params = new URLSearchParams();
-
                 if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
                     params.append('profile_id', window.profileManager.currentProfile.id);
                 }
-
-                if (type === 'preset' && genderFilter && genderFilter !== '') {
-                    if (genderFilter === 'male' || genderFilter === 'female') {
-                        params.append('gender', genderFilter);
-                    } else {
-                        console.warn(`Invalid gender filter ignored: ${genderFilter}`);
-                        genderFilter = '';
-                    }
+                if (type === 'preset' && ['male', 'female'].includes(genderFilter)) {
+                    params.append('gender', genderFilter);
                 }
-
-                if (params.toString()) {
-                    url += `?${params.toString()}`;
-                }
+                if (params.toString()) url += `?${params.toString()}`;
                 const response = await fetch(url);
-                
-                if (!response.ok) {
-                    const errorData = await safeJson(response);
-                    throw new Error(errorData.Message || `HTTP ${response.status}`);
-                }
-                
-                const data = await safeJson(response);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
-                // Store current gender filter
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);
-                // GET requests are not logged (only POST and PUT)
             } catch (error) {
-                console.error(`Lỗi tải ${type}:`, error);
-                const typeName = type === 'preset' ? 'mẫu' : type === 'selfie' ? 'selfie' : 'kết quả';
-                
-                // Don't show error for results/selfies if profile is not ready
-                if ((type === 'selfie' || type === 'results') && (!window.profileManager || !window.profileManager.currentProfile)) {
-                    console.log(`Skipping error message for ${type} - profile not ready`);
-                } else {
-                showStatusMessage(`Lỗi tải ${typeName}`, 'error');
-                }
-                
-                config.state.items = [];
-                config.state.page = 1;
-                renderGallery(type);
-                // GET requests are not logged (only POST and PUT)
+                console.error(`Load ${type} error:`, error);
+                config.state.items = []; config.state.page = 1; renderGallery(type);
             }
         }
 
         function renderGallery(type) {
             const config = galleries[type];
             const { items, page, selected } = config.state;
-            const { gallery, pagination, empty, pageInfo, prevBtn, nextBtn } = config.elements;
+            const { gallery, pagination, prevBtn, nextBtn } = config.elements;
+            if (!gallery) return;
 
             if (!items.length) {
                 gallery.style.display = 'none';
-                pagination.style.display = 'none';
-                if (empty) empty.style.display = 'block';
+                if (pagination) pagination.style.display = 'none';
                 if (type === 'results') {
-                    gallery.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">Chưa có kết quả nào</div>';
+                    gallery.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">Chưa có kết quả nào</div>';
                     gallery.style.display = 'block';
                 }
                 return;
             }
 
-            if (empty) empty.style.display = 'none';
             gallery.style.display = 'grid';
-            pagination.style.display = 'flex';
+            if (pagination) pagination.style.display = 'flex';
 
             const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
             config.state.page = Math.min(page, Math.max(1, totalPages));
             const startIndex = (config.state.page - 1) * ITEMS_PER_PAGE;
             const pageItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
-            // Results don't have selection, just display and delete
             if (type === 'results') {
                 gallery.innerHTML = pageItems.map((item, index) => {
                     const globalIndex = startIndex + index;
-                    return `
-                    <div class="gallery-item" data-item-id="${item.id}">
-                        <img src="${item.result_url}" alt="${item.preset_name || ''}" loading="lazy" decoding="async" onclick="openLightbox(${globalIndex})" style="cursor: pointer;">
+                    return `<div class="gallery-item" data-item-id="${item.id}">
+                        <img src="${item.result_url}" alt="" loading="lazy" onclick="openLightbox(${globalIndex}); displayResultInPreview('${item.result_url.replace(/'/g, "\\'")}');">
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
-                    </div>
-                `;
+                    </div>`;
                 }).join('');
             } else {
                 gallery.innerHTML = pageItems.map(item => {
-                    const genderBadge = type === 'preset' && item.gender ? (() => {
-                        const genderIcon = item.gender === 'male' ? '👨' : item.gender === 'female' ? '👩' : '👤';
-                        const genderText = item.gender === 'male' ? 'Nam' : item.gender === 'female' ? 'Nữ' : '';
-                        return `<div class="gender-badge" style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: white; padding: 2px 6px; border-radius: 10px; font-size: 16px; font-weight: 500;">${genderIcon} ${genderText}</div>`;
-                    })() : '';
-
-                    return `
-                    <div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}"
-                         onclick="handleSelect('${type}', '${item.id}', event)"
-                         data-item-id="${item.id}" style="position: relative;">
-                        <img src="${item.image_url}" alt="${item.filename || ''}" loading="lazy" decoding="async">
+                    const genderBadge = type === 'preset' && item.gender ?
+                        `<div style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 6px;border-radius:10px;font-size:12px;">${item.gender === 'male' ? '👨' : '👩'}</div>` : '';
+                    return `<div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
+                        <img src="${item.image_url}" alt="" loading="lazy">
                         ${genderBadge}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
-                    </div>
-                    `;
+                    </div>`;
                 }).join('');
             }
 
-            prevBtn.disabled = config.state.page === 1;
-            nextBtn.disabled = config.state.page === totalPages;
-            
-            const dotsContainer = document.getElementById(type + '-dots');
+            if (prevBtn) prevBtn.disabled = config.state.page === 1;
+            if (nextBtn) nextBtn.disabled = config.state.page === totalPages;
+
+            const dotsContainer = $(type + '-dots');
             if (dotsContainer && totalPages > 1) {
                 dotsContainer.innerHTML = '';
                 for (let i = 1; i <= totalPages; i++) {
                     const dot = document.createElement('div');
                     dot.className = 'pagination-dot' + (i === config.state.page ? ' active' : '');
-                    dot.onclick = () => {
-                        config.state.page = i;
-                        renderGallery(type);
-                    };
+                    dot.onclick = () => { config.state.page = i; renderGallery(type); };
                     dotsContainer.appendChild(dot);
                 }
             }
-            
-            if (type === 'results') {
-                updateResultsCount();
-            }
-        }
 
+            if (type === 'results') updateResultsCount();
+        }
 
         function changePage(type, delta) {
             const config = galleries[type];
             const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
             const newPage = config.state.page + delta;
-            if (newPage < 1 || newPage > totalPages) {
-                return;
+            if (newPage >= 1 && newPage <= totalPages) {
+                config.state.page = newPage;
+                renderGallery(type);
             }
-            config.state.page = newPage;
-            renderGallery(type);
         }
 
         function handleSelect(type, itemId, event) {
             event?.stopPropagation();
             const config = galleries[type];
-            const item = config.state.items.find(entry => entry.id === itemId);
-            if (!item) return;
-            setSelectedItem(type, item, { showMessage: true });
-        }
-
-        function updateGenerateButton() {
-            if (!generateBtn) return;
-            const presetSelected = galleries.preset.state.selected;
-            const selfieSelected = galleries.selfie.state.selected;
-            const canGenerate = presetSelected && selfieSelected;
-            generateBtn.disabled = !canGenerate;
+            const item = config.state.items.find(e => e.id === itemId);
+            if (item) setSelectedItem(type, item, { showMessage: true });
         }
 
         function setSelectedItem(type, item, options = {}) {
@@ -3618,58 +873,33 @@
             updatePreview(type);
             renderGallery(type);
             updateGenerateButton();
-
-            if (options.showMessage && item) {
-                showStatusMessage(config.labels.selectSuccess, 'success');
-            }
+            if (options.showMessage && item) showStatusMessage(config.labels.selectSuccess, 'success');
         }
 
         function updatePreview(type) {
             const config = galleries[type];
             const { selected } = config.state;
-            const { preview } = config.elements;
-
+            const preview = config.elements.preview;
             if (!preview) return;
 
-            const card = document.getElementById(`${type}-card`);
-            const status = document.getElementById(`${type}-status`);
-
+            const clearBtn = $(type + '-clear-btn');
             if (!selected) {
                 const emptyText = type === 'preset' ? 'Chọn từ mẫu (Select from presets)' : type === 'selfie' ? 'Chọn từ ảnh tự sướng (Select from selfies)' : 'Kết quả sẽ hiển thị ở đây (Result will appear here)';
-                preview.innerHTML = `
-                    <div class="preview-empty">
-                        <div class="preview-empty-icon">${type === 'result' ? '✨' : '📷'}</div>
-                        <div class="preview-empty-text">${emptyText}</div>
-                    </div>
-                `;
-                if (card) card.classList.remove('has-selection');
-                const clearBtn = document.getElementById(type + '-clear-btn');
+                preview.innerHTML = `<div class="preview-empty"><div class="preview-empty-icon">${type === 'result' ? '✨' : '📷'}</div><div class="preview-empty-text">${emptyText}</div></div>`;
                 if (clearBtn) clearBtn.style.display = 'none';
                 return;
             }
-
-            preview.innerHTML = `<img src="${selected.image_url}" alt="${selected.filename || ''}">`;
-            if (card) card.classList.add('has-selection');
-            const clearBtn = document.getElementById(type + '-clear-btn');
+            preview.innerHTML = `<img src="${selected.image_url}" alt="">`;
             if (clearBtn) clearBtn.style.display = 'block';
         }
 
-        function updateResultsCount() {
-            const count = galleries.results?.state?.items?.length || 0;
-            const countEl = document.getElementById('results-count');
-            if (countEl) {
-                countEl.textContent = `(${count})`;
-            }
+        function updateGenerateButton() {
+            if (generateBtn) generateBtn.disabled = !(galleries.preset.state.selected && galleries.selfie.state.selected);
         }
 
-
-        function resetPreview(type) {
-            const config = galleries[type];
-            config.state.selected = null;
-            updatePreview(type);
-            updateGenerateButton();
-            const clearBtn = document.getElementById(type + '-clear-btn');
-            if (clearBtn) clearBtn.style.display = 'none';
+        function updateResultsCount() {
+            const countEl = $('results-count');
+            if (countEl) countEl.textContent = `(${galleries.results?.state?.items?.length || 0})`;
         }
 
         function clearSelection(type, event) {
@@ -3684,477 +914,117 @@
         async function deleteItem(type, itemId, event) {
             event?.stopPropagation();
             const config = galleries[type];
-
-            if (!confirm(config.labels.confirmDelete)) {
-                return;
-            }
+            if (!confirm(config.labels.confirmDelete)) return;
 
             try {
-                const response = await fetch(`${WORKER_URL}${config.endpoints.delete}/${itemId}`, {
-                    method: 'DELETE'
-                });
-                const deleteData = await safeJson(response);
-
-                if (!response.ok) {
-                    // Log error with detailed info
-                    logApiCall({
-                        label: `Xóa ${config.logName}`,
-                        method: 'DELETE',
-                        url: `${WORKER_URL}${config.endpoints.delete}/${itemId}`,
-                        status: 'error',
-                        payload: deleteData,
-                        deleteInfo: {
-                            success: false,
-                            error: deleteData.message || config.labels.deleteError,
-                            statusCode: response.status,
-                            statusText: response.statusText
-                        }
-                    });
-                    throw new Error(deleteData.message || config.labels.deleteError);
-                }
-
-                logApiCall({
-                    label: `Xóa ${config.logName}`,
-                    method: 'DELETE',
-                    url: `${WORKER_URL}${config.endpoints.delete}/${itemId}`,
-                    status: 'success',
-                    payload: deleteData,
-                    deleteInfo: {
-                        success: true,
-                        debug: deleteData.debug || null
-                    }
-                });
+                const response = await fetch(`${WORKER_URL}${config.endpoints.delete}/${itemId}`, { method: 'DELETE' });
+                const data = await response.json();
+                logApiCall({ label: `Xóa ${config.logName}`, method: 'DELETE', url: `${config.endpoints.delete}/${itemId}`, status: response.ok ? 'success' : 'error', payload: data });
+                if (!response.ok) throw new Error(data.message || 'Xóa thất bại');
 
                 config.state.items = config.state.items.filter(item => item.id !== itemId);
                 const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
                 config.state.page = Math.min(config.state.page, totalPages);
-
-                if (config.state.items.length === 0) {
-                    config.state.page = 1;
-                }
-
-                if (config.state.selected?.id === itemId) {
-                    config.state.selected = null;
-                    updatePreview(type);
-                }
-
+                if (config.state.selected?.id === itemId) { config.state.selected = null; updatePreview(type); }
                 renderGallery(type);
                 updateGenerateButton();
                 showStatusMessage(config.labels.deleteSuccess, 'success');
             } catch (error) {
-                console.error(`Lỗi xóa ${type}:`, error);
-                showStatusMessage(config.labels.deleteError, 'error');
-                logApiCall({
-                    label: `Xóa ${config.logName}`,
-                    method: 'DELETE',
-                    url: `${WORKER_URL}${config.endpoints.delete}/${itemId}`,
-                    status: 'error',
-                    payload: { message: error?.message || String(error) },
-                    deleteInfo: {
-                        success: false,
-                        error: error?.message || String(error)
-                    }
-                });
+                showStatusMessage('Xóa thất bại', 'error');
             }
         }
 
-
-        presetInput.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files || []);
-            if (files.length === 0) return;
-
-            for (const file of files) {
-                await handleImageUpload(file, 'preset');
-            }
-            
+        // Upload
+        presetInput?.addEventListener('change', async e => {
+            for (const file of Array.from(e.target.files || [])) await handleImageUpload(file, 'preset');
             e.target.value = '';
         });
 
-        selfieInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            await handleImageUpload(file, 'selfie');
+        selfieInput?.addEventListener('change', async e => {
+            if (e.target.files[0]) await handleImageUpload(e.target.files[0], 'selfie');
+            e.target.value = '';
         });
 
         function setupDragDrop(type) {
-            const dropZone = document.getElementById(type + '-drop-zone');
-            const input = document.getElementById(type + '-input');
-            
-            if (!dropZone || !input) return;
-
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, preventDefaults, false);
-            });
-
-            function preventDefaults(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-
-            ['dragenter', 'dragover'].forEach(eventName => {
-                dropZone.addEventListener(eventName, () => {
-                    dropZone.classList.add('dragover');
-                }, false);
-            });
-
-            ['dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, () => {
-                    dropZone.classList.remove('dragover');
-                }, false);
-            });
-
-            dropZone.addEventListener('drop', async (e) => {
+            const dropZone = $(type + '-drop-zone');
+            if (!dropZone) return;
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); }, false));
+            ['dragenter', 'dragover'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.add('dragover'), false));
+            ['dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.remove('dragover'), false));
+            dropZone.addEventListener('drop', async e => {
                 const files = type === 'preset' ? Array.from(e.dataTransfer.files) : [e.dataTransfer.files[0]];
-                const imageFiles = files.filter(file => file.type.match('image/(jpeg|jpg|png|webp)'));
-                
-                if (imageFiles.length === 0) {
-                    showStatusMessage('Please drop image files only', 'error');
-                    return;
-                }
-
-                for (const file of imageFiles) {
-                    await handleImageUpload(file, type);
-                }
+                for (const file of files.filter(f => f?.type.match('image/(jpeg|jpg|png|webp)'))) await handleImageUpload(file, type);
             }, false);
-        }
-
-        setupDragDrop('preset');
-        setupDragDrop('selfie');
-
-        function addNewItem(type, item) {
-            const config = galleries[type];
-            config.state.items = [item, ...config.state.items.filter(existing => existing.id !== item.id)];
-            config.state.page = 1;
-        }
-
-        async function syncGallerySelection(type, candidate) {
-            await loadGallery(type);
-            const config = galleries[type];
-            const refreshed = config.state.items.find(item => item.id === candidate.id) || candidate;
-            setSelectedItem(type, refreshed);
-        }
-
-        function setUploadLoading(type, isLoading) {
-            const dropZone = document.getElementById(type + '-drop-zone');
-            if (dropZone) {
-                if (isLoading) {
-                    dropZone.classList.add('loading');
-                } else {
-                    dropZone.classList.remove('loading');
-                }
-            }
         }
 
         async function handleImageUpload(file, type) {
             const config = galleries[type];
+            if (!window.profileManager.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi tải lên hình ảnh.', 'error'); return; }
+            if (!file.type.match('image/(jpeg|jpg|png|webp)')) { showStatusMessage('Loại tệp không hợp lệ. Vui lòng tải lên JPG, PNG hoặc WebP.', 'error'); return; }
+            if (file.size > 10 * 1024 * 1024) { showStatusMessage('Tệp vượt quá giới hạn 10MB. Vui lòng chọn tệp nhỏ hơn.', 'error'); return; }
 
-            // Check if profile is selected
-            if (!window.profileManager.currentProfile) {
-                showStatusMessage('Vui lòng chọn hồ sơ trước khi tải lên hình ảnh.', 'error');
-                return;
-            }
+            const dropZone = $(type + '-drop-zone');
+            dropZone?.classList.add('loading');
 
-            // Validate file
-            if (!file.type.match('image/(jpeg|jpg|png|webp)')) {
-                showStatusMessage('Loại tệp không hợp lệ. Vui lòng tải lên JPG, PNG hoặc WebP.', 'error');
-                return;
-            }
-
-            if (file.size > 10 * 1024 * 1024) {
-                showStatusMessage('Tệp vượt quá giới hạn 10MB. Vui lòng chọn tệp nhỏ hơn.', 'error');
-                return;
-            }
-
-            setUploadLoading(type, true);
             try {
-                // Sanitize filename
-                const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-                const timestamp = Date.now();
-                const randomStr = Math.random().toString(36).substring(2, 15).slice(2, 8);
-                const extension = sanitizedName.split('.').pop().toLowerCase();
-                const filename = `${type}-${timestamp}-${randomStr}.${extension}`;
-
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('type', type);
                 formData.append('profile_id', window.profileManager.currentProfile.id);
 
-                if (type === 'preset') {
-                    const enableVisionScan = document.getElementById('preset-enable-vision-scan')?.checked || false;
-                    const enableVertexPrompt = document.getElementById('preset-enable-vertex-prompt')?.checked || false;
-                    const genderRadio = document.querySelector('input[name="preset-gender"]:checked');
-                    const gender = genderRadio?.value || '';
+                const response = await fetch(`${WORKER_URL}/upload-url`, { method: 'POST', body: formData });
+                const data = await response.json();
 
-                    formData.append('enableVisionScan', enableVisionScan ? 'true' : 'false');
-                    formData.append('enableVertexPrompt', enableVertexPrompt ? 'true' : 'false');
-                    formData.append('presetName', 'User Upload');
-                    if (gender) {
-                        formData.append('gender', gender);
-                    }
-                }
+                logApiCall({ label: `Tải Lên ${config.logName}`, method: 'POST', url: '/upload-url', status: response.ok ? 'success' : 'error', payload: data });
+                if (!response.ok) throw new Error(data.message || 'Tải lên thất bại');
 
-                // Upload file directly
-                const uploadResponse = await fetch(`${WORKER_URL}/upload-url`, {
-                    method: 'POST',
-                    body: formData
-                    // Note: Don't set Content-Type header - browser will set it automatically with boundary
-                });
-
-                let uploadData = {};
-                let uploadResponseText = '';
-                try {
-                    uploadResponseText = await uploadResponse.text();
-                    if (uploadResponseText) {
-                        uploadData = JSON.parse(uploadResponseText);
-                    }
-                } catch (parseError) {
-                    console.error('Failed to parse upload response:', parseError);
-                    console.error('Response text:', uploadResponseText);
-                    uploadData = {
-                        error: 'Failed to parse response',
-                        message: uploadResponseText || 'Unknown error'
-                    };
-                }
-
-                if (!uploadResponse.ok) {
-                    const errorMsg = uploadData.Message || uploadData.message || uploadData.error || uploadResponseText || `HTTP ${uploadResponse.status} ${uploadResponse.statusText}`;
-                    logApiCall({
-                        label: `Tải Lên Trực Tiếp (${config.logName})`,
-                        method: 'POST',
-                        url: '/upload-url',
-                        status: 'error',
-                        payload: { ...uploadData, status: uploadResponse.status, statusText: uploadResponse.statusText }
-                    });
-                    throw new Error(errorMsg);
-                }
-
-                logApiCall({
-                    label: `Tải Lên Trực Tiếp (${config.logName})`,
-                    method: 'POST',
-                    url: '/upload-url',
-                    status: 'success',
-                    payload: uploadData
-                });
-
-                // Add to local state
-                const newImage = {
-                    id: uploadData.id || filename,
-                    filename: uploadData.filename || filename,
-                    image_url: uploadData.url,
-                    created_at: new Date().toISOString(),
-                    hasPrompt: uploadData.hasPrompt || false,
-                    prompt_json: uploadData.prompt_json || null
-                };
-
-                addNewItem(type, newImage);
-                await syncGallerySelection(type, newImage);
-                await loadGallery(type);
+                const newImage = { id: data.id, filename: data.filename, image_url: data.url, created_at: new Date().toISOString() };
+                config.state.items = [newImage, ...config.state.items.filter(e => e.id !== newImage.id)];
+                config.state.page = 1;
+                await loadGallery(type, config.state.genderFilter);
+                setSelectedItem(type, newImage);
                 showStatusMessage('Tải lên hình ảnh thành công', 'success');
-
             } catch (error) {
-                console.error('Lỗi tải lên:', error);
                 showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
-                logApiCall({
-                    label: `Upload (${config.logName})`,
-                    method: 'POST',
-                    url: '/upload-url',
-                    status: 'error',
-                    payload: { error: error.message }
-                });
             } finally {
-                setUploadLoading(type, false);
+                dropZone?.classList.remove('loading');
             }
         }
 
-        // Utility functions
-        async function safeJson(response) {
-            const text = await response.text();
-            try {
-                return JSON.parse(text);
-            } catch (error) {
-                console.error('JSON parse error:', error);
-                console.error('Response text:', text);
-                throw new Error('Invalid JSON response from server');
-            }
-        }
-
-        function showLoading(text = 'Đang tải dữ liệu') {
-            const overlay = document.getElementById('loading-overlay');
-            if (!overlay) return;
-            overlay.style.display = 'flex';
-            const textEl = overlay.querySelector('.loading-text');
-            if (textEl) textEl.textContent = text;
-        }
-
-        function hideLoading() {
-            const overlay = document.getElementById('loading-overlay');
-            if (!overlay) return;
-            overlay.style.display = 'none';
-        }
-
-        function showStatusMessage(message, type = 'info') {
-            const existingMessages = document.querySelectorAll('.status-message');
-            existingMessages.forEach(msg => msg.remove());
-
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `status-message status-${type}`;
-            messageDiv.textContent = message;
-
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'status-close';
-            closeBtn.innerHTML = '×';
-            closeBtn.onclick = () => messageDiv.remove();
-            messageDiv.appendChild(closeBtn);
-
-            document.body.appendChild(messageDiv);
-
-            setTimeout(() => {
-                if (messageDiv.parentNode) {
-                    messageDiv.remove();
-                }
-            }, 5000);
-        }
-
-        let lightboxCurrentIndex = -1;
-        let lightboxItems = [];
-
-        function openLightbox(index) {
-            const resultsConfig = galleries.results;
-            const allItems = resultsConfig.state.items;
-            if (index < 0 || index >= allItems.length) return;
-
-            lightboxItems = allItems;
-            lightboxCurrentIndex = index;
-            updateLightbox();
-        }
-
-        function closeLightbox() {
-            const lightbox = document.getElementById('lightbox');
-            if (lightbox) {
-                lightbox.style.display = 'none';
-            }
-            lightboxCurrentIndex = -1;
-            lightboxItems = [];
-        }
-
-        function lightboxNavigate(delta) {
-            if (lightboxItems.length === 0) return;
-            lightboxCurrentIndex = (lightboxCurrentIndex + delta + lightboxItems.length) % lightboxItems.length;
-            updateLightbox();
-        }
-
-        function updateLightbox() {
-            const lightbox = document.getElementById('lightbox');
-            const lightboxImage = document.getElementById('lightbox-image');
-            const lightboxCounter = document.getElementById('lightbox-counter');
-            const prevBtn = document.querySelector('.lightbox-prev');
-            const nextBtn = document.querySelector('.lightbox-next');
-
-            if (!lightbox || !lightboxImage || lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) {
-                return;
-            }
-
-            const item = lightboxItems[lightboxCurrentIndex];
-            lightboxImage.src = item.result_url || item.image_url || '';
-            lightboxImage.alt = item.preset_name || item.filename || '';
-
-            if (lightboxCounter) {
-                lightboxCounter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
-            }
-
-            if (prevBtn) {
-                prevBtn.disabled = lightboxItems.length <= 1;
-            }
-            if (nextBtn) {
-                nextBtn.disabled = lightboxItems.length <= 1;
-            }
-
-            lightbox.style.display = 'flex';
-        }
-
+        // Face Swap & Operations
         async function generateFaceSwap() {
-            if (!generateBtn) return;
-
             const presetSelected = galleries.preset.state.selected;
             const selfieSelected = galleries.selfie.state.selected;
-
-            if (!presetSelected || !selfieSelected) {
-                showStatusMessage('Vui lòng chọn cả mẫu và selfie trước khi tạo đổi mặt.', 'error');
-                return;
-            }
-
-            if (!window.profileManager?.currentProfile) {
-                showStatusMessage('Vui lòng chọn hồ sơ trước khi tạo đổi mặt.', 'error');
-                return;
-            }
+            if (!presetSelected || !selfieSelected) { showStatusMessage('Vui lòng chọn cả mẫu và selfie trước khi tạo đổi mặt.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi tạo đổi mặt.', 'error'); return; }
 
             generateBtn.disabled = true;
             generateBtn.classList.add('loading');
 
-            const additionalPrompt = additionalPromptInput?.value.trim() || '';
-            const characterGenderRadio = document.querySelector('input[name="character-gender"]:checked');
-            const characterGender = characterGenderRadio?.value === 'none' ? '' : (characterGenderRadio?.value || '');
-
             try {
+                const genderRadio = document.querySelector('input[name="character-gender"]:checked');
                 const requestBody = {
                     preset_image_id: presetSelected.id,
                     selfie_ids: [selfieSelected.id],
                     profile_id: window.profileManager.currentProfile.id,
-                    additional_prompt: additionalPrompt,
-                    character_gender: characterGender || undefined
+                    additional_prompt: additionalPromptInput?.value.trim() || '',
+                    character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || '')
                 };
 
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}/faceswap`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestBody)
-                });
-
+                const response = await fetch(`${WORKER_URL}/faceswap`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const data = await response.json();
                 const duration = Date.now() - startTime;
-                const data = await safeJson(response);
 
-                if (!response.ok) {
-                    logApiCall({
-                        label: 'Tạo Đổi Mặt',
-                        method: 'POST',
-                        url: '/faceswap',
-                        status: 'error',
-                        payload: data,
-                        duration
-                    });
-                    throw new Error(data.message || data.Message || `HTTP ${response.status}`);
-                }
+                logApiCall({ label: 'Tạo Đổi Mặt', method: 'POST', url: '/faceswap', status: response.ok ? 'success' : 'error', payload: data, duration });
+                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Đổi mặt thất bại');
 
-                logApiCall({
-                    label: 'Tạo Đổi Mặt',
-                    method: 'POST',
-                    url: '/faceswap',
-                    status: 'success',
-                    payload: data,
-                    duration
-                });
-
-                if (data.data?.resultImageUrl) {
-                    const newResult = {
-                        id: data.data.id || `result-${Date.now()}`,
-                        result_url: data.data.resultImageUrl,
-                        preset_name: presetSelected.preset_name || presetSelected.filename,
-                        created_at: new Date().toISOString()
-                    };
-
-                addNewItem('results', newResult);
+                const newResult = { id: data.data.id || `result-${Date.now()}`, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
+                galleries.results.state.items = [newResult, ...galleries.results.state.items];
                 await loadGallery('results');
-                updateResultsCount();
+                displayResultInPreview(newResult.image_url);
                 showStatusMessage('Tạo đổi mặt thành công!', 'success');
-                } else {
-                    throw new Error('Không nhận được URL kết quả từ server');
-                }
             } catch (error) {
-                console.error('Lỗi tạo đổi mặt:', error);
                 showStatusMessage(`Tạo đổi mặt thất bại: ${error.message}`, 'error');
             } finally {
                 generateBtn.disabled = false;
@@ -4163,68 +1033,28 @@
             }
         }
 
-        function getSelectedSelfie() {
-            return galleries.selfie.state.selected;
-        }
-
         async function runImageOperation(label, endpoint, extra = {}) {
-            const selfieSelected = getSelectedSelfie();
-            if (!selfieSelected) {
-                showStatusMessage('Chọn selfie để chạy API.', 'error');
-                return;
-            }
-
-            if (!window.profileManager?.currentProfile) {
-                showStatusMessage('Hồ sơ chưa sẵn sàng.', 'error');
-                return;
-            }
+            const selfieSelected = galleries.selfie.state.selected;
+            if (!selfieSelected) { showStatusMessage('Chọn selfie để chạy API.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Hồ sơ chưa sẵn sàng.', 'error'); return; }
 
             showLoading(label);
             try {
-                const payload = Object.assign({ 
-                    image_url: selfieSelected.image_url,
-                    profile_id: window.profileManager.currentProfile.id
-                }, extra);
+                const payload = { image_url: selfieSelected.image_url, profile_id: window.profileManager.currentProfile.id, ...extra };
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}/${endpoint}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                const response = await fetch(`${WORKER_URL}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await response.json();
                 const duration = Date.now() - startTime;
-                const data = await safeJson(response);
 
-                logApiCall({
-                    label,
-                    method: 'POST',
-                    url: `/${endpoint}`,
-                    status: response.ok ? 'success' : 'error',
-                    payload: data,
-                    duration
-                });
+                logApiCall({ label, method: 'POST', url: `/${endpoint}`, status: response.ok ? 'success' : 'error', payload: data, duration });
+                if (!response.ok || !data?.data?.resultImageUrl) throw new Error(data.message || `${label} thất bại`);
 
-                if (!response.ok || !data?.data?.resultImageUrl) {
-                    throw new Error(data.message || data.Message || `HTTP ${response.status}`);
-                }
-
-                if (data.data.id) {
-                    const newResult = {
-                        id: data.data.id,
-                        result_url: data.data.resultImageUrl,
-                        preset_name: label,
-                        created_at: new Date().toISOString()
-                    };
-
-                    addNewItem('results', newResult);
-                    renderGallery('results');
-                    updateResultsCount();
-                    showStatusMessage(`${label} thành công`, 'success');
-                    
-                    await loadGallery('results');
-                    updateResultsCount();
-                } else {
-                    throw new Error('Result ID not returned from server');
-                }
+                const newResult = { id: data.data.id, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
+                galleries.results.state.items = [newResult, ...galleries.results.state.items];
+                renderGallery('results');
+                displayResultInPreview(newResult.image_url);
+                showStatusMessage(`${label} thành công`, 'success');
+                await loadGallery('results');
             } catch (error) {
                 showStatusMessage(`${label} thất bại: ${error.message}`, 'error');
             } finally {
@@ -4232,22 +1062,118 @@
             }
         }
 
-        async function runEnhance() {
-            await runImageOperation('Enhance', 'enhance');
+        function runEnhance() { runImageOperation('Nâng Cấp (Enhance)', 'enhance'); }
+        function runUpscale4k() { runImageOperation('Nâng Cấp 4K (4K Upscale)', 'upscaler4k'); }
+        function runColorize() { runImageOperation('Tô Màu (Colorize)', 'colorize'); }
+        function runAging() { runImageOperation('Lão Hóa (Aging)', 'aging', { age_years: parseInt($('aging-years')?.value || '20', 10) }); }
+
+        function displayResultInPreview(imageUrl) {
+            const resultPreview = $('result-preview');
+            if (resultPreview && imageUrl) {
+                resultPreview.innerHTML = `<img src="${imageUrl}" alt="Result">`;
+            }
         }
 
-        async function runUpscale4k() {
-            await runImageOperation('4K Upscale', 'upscaler4k');
+        // Lightbox
+        let lightboxCurrentIndex = -1, lightboxItems = [];
+
+        function openLightbox(index) {
+            lightboxItems = galleries.results.state.items;
+            if (index >= 0 && index < lightboxItems.length) {
+                lightboxCurrentIndex = index;
+                updateLightbox();
+            }
         }
 
-        async function runColorize() {
-            await runImageOperation('Colorize', 'colorize');
+        function closeLightbox() {
+            $('lightbox').style.display = 'none';
+            lightboxCurrentIndex = -1;
+            lightboxItems = [];
         }
 
-        async function runAging() {
-            const ageInput = document.getElementById('aging-years');
-            const ageYears = parseInt(ageInput?.value || '20', 10) || 20;
-            await runImageOperation('Aging', 'aging', { age_years: ageYears });
+        function lightboxNavigate(delta) {
+            if (lightboxItems.length) {
+                lightboxCurrentIndex = (lightboxCurrentIndex + delta + lightboxItems.length) % lightboxItems.length;
+                updateLightbox();
+            }
         }
+
+        function updateLightbox() {
+            const lightbox = $('lightbox'), img = $('lightbox-image'), counter = $('lightbox-counter');
+            if (!lightbox || lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
+            const item = lightboxItems[lightboxCurrentIndex];
+            img.src = item.result_url || item.image_url || '';
+            if (counter) counter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
+            document.querySelector('.lightbox-prev').disabled = lightboxItems.length <= 1;
+            document.querySelector('.lightbox-next').disabled = lightboxItems.length <= 1;
+            lightbox.style.display = 'flex';
+        }
+
+        // UI Helpers
+        function showLoading(text = 'Đang tải dữ liệu') {
+            const overlay = $('loading-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                const textEl = overlay.querySelector('.loading-text');
+                if (textEl) textEl.textContent = text;
+            }
+        }
+
+        function hideLoading() {
+            const overlay = $('loading-overlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        function showStatusMessage(message, type = 'info') {
+            document.querySelectorAll('.status-message').forEach(m => m.remove());
+            const div = document.createElement('div');
+            div.className = `status-message status-${type}`;
+            div.innerHTML = `${message}<button class="status-close" onclick="this.parentElement.remove()">×</button>`;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 4000);
+        }
+
+        // Gender Filter
+        function setupGenderFilterListeners() {
+            document.querySelectorAll('.gender-filter-btn').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    const gender = e.target.dataset.gender || '';
+                    const type = e.target.dataset.type;
+                    if (!type) return;
+                    const container = e.target.closest('.gender-filter');
+                    container?.querySelectorAll('.gender-filter-btn').forEach(b => b.classList.remove('active'));
+                    e.target.classList.add('active');
+                    loadGallery(type, gender);
+                });
+            });
+        }
+
+        // Initialize
+        async function init() {
+            showLoading('Đang tải dữ liệu');
+            try {
+                await loadGallery('preset');
+                if (window.profileManager?.currentProfile) {
+                    await Promise.all([loadGallery('selfie'), loadGallery('results')]);
+                }
+                updateResultsCount();
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Startup
+        document.addEventListener('DOMContentLoaded', async () => {
+            initAccessGate();
+            setupGenderFilterListeners();
+            setupDragDrop('preset');
+            setupDragDrop('selfie');
+
+            $('profile-id-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); switchProfile(); } });
+
+            window.profileManager.initializeProfile();
+            await init();
+        });
     </script>
-</body></html>
+</body>
+</html>
