@@ -556,15 +556,10 @@
                             <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Tỷ Lệ (Ratio):</label>
                             <select id="aspect-ratio" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
                                 <option value="1:1">1:1 (Square)</option>
-                                <option value="3:2">3:2 (Landscape)</option>
-                                <option value="2:3">2:3 (Portrait)</option>
                                 <option value="3:4">3:4 (Portrait)</option>
                                 <option value="4:3">4:3 (Landscape)</option>
-                                <option value="4:5">4:5 (Portrait)</option>
-                                <option value="5:4">5:4 (Landscape)</option>
-                                <option value="9:16">9:16 (Vertical)</option>
                                 <option value="16:9" selected>16:9 (Widescreen)</option>
-                                <option value="21:9">21:9 (Ultrawide)</option>
+                                <option value="9:16">9:16 (Vertical)</option>
                             </select>
                         </div>
                         <div class="action-gender">
@@ -855,8 +850,9 @@
             if (type === 'results') {
                 gallery.innerHTML = pageItems.map((item, index) => {
                     const globalIndex = startIndex + index;
-                    return `<div class="gallery-item" data-item-id="${item.id}">
-                        <img src="${item.result_url}" alt="" loading="lazy" onclick="openLightbox(${globalIndex}); displayResultInPreview('${item.result_url.replace(/'/g, "\\'")}');">
+                    const imageUrl = item.result_url || item.image_url || '';
+                    return `<div class="gallery-item" data-item-id="${item.id}" draggable="true" ondragstart="handleResultDrag(event, '${item.id.replace(/'/g, "\\'")}', '${imageUrl.replace(/'/g, "\\'")}')">
+                        <img src="${imageUrl}" alt="" loading="lazy" onclick="openLightbox(${globalIndex}); displayResultInPreview('${imageUrl.replace(/'/g, "\\'")}');" draggable="false">
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>`;
                 }).join('');
@@ -984,6 +980,11 @@
             e.target.value = '';
         });
 
+        window.handleResultDrag = function(event, itemId, imageUrl) {
+            event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'result', itemId, imageUrl }));
+            event.dataTransfer.effectAllowed = 'copy';
+        };
+
         function setupDragDrop(type) {
             const dropZone = $(type + '-drop-zone');
             if (!dropZone) return;
@@ -991,6 +992,30 @@
             ['dragenter', 'dragover'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.add('dragover'), false));
             ['dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.remove('dragover'), false));
             dropZone.addEventListener('drop', async e => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('dragover');
+                
+                const dragData = e.dataTransfer.getData('text/plain');
+                if (dragData) {
+                    try {
+                        const data = JSON.parse(dragData);
+                        if (data.type === 'result' && type === 'selfie') {
+                            const resultItem = {
+                                id: `result-selfie-${data.itemId}`,
+                                image_url: data.imageUrl,
+                                filename: `Result-${data.itemId}`,
+                                created_at: new Date().toISOString()
+                            };
+                            setSelectedItem('selfie', resultItem, { showMessage: true });
+                            showStatusMessage('Đã sử dụng kết quả làm nguồn selfie', 'success');
+                            return;
+                        }
+                    } catch (err) {
+                        console.error('Error parsing drag data:', err);
+                    }
+                }
+                
                 const files = type === 'preset' ? Array.from(e.dataTransfer.files) : [e.dataTransfer.files[0]];
                 for (const file of files.filter(f => f?.type.match('image/(jpeg|jpg|png|webp)'))) await handleImageUpload(file, type);
             }, false);
@@ -1010,6 +1035,11 @@
                 formData.append('file', file);
                 formData.append('type', type);
                 formData.append('profile_id', window.profileManager.currentProfile.id);
+                
+                if (type === 'preset') {
+                    formData.append('enableVertexPrompt', 'true');
+                    formData.append('enableVisionScan', 'true');
+                }
 
                 const response = await fetch(`${WORKER_URL}/upload-url`, { method: 'POST', body: formData });
                 const data = await response.json();
@@ -1045,9 +1075,13 @@
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
                 const selectedAspectRatio = aspectRatioSelect?.value || '16:9';
                 console.log('[Frontend] Selected aspect ratio:', selectedAspectRatio);
+                const isResultSelfie = selfieSelected.id?.startsWith('result-selfie-');
                 const requestBody = {
                     preset_image_id: presetSelected.id,
-                    selfie_ids: [selfieSelected.id],
+                    ...(isResultSelfie 
+                        ? { selfie_image_urls: [selfieSelected.image_url] }
+                        : { selfie_ids: [selfieSelected.id] }
+                    ),
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
                     character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || ''),

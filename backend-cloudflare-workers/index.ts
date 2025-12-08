@@ -1196,26 +1196,33 @@ export default {
           return errorResponse('Preset image not found', 404);
         }
 
-        // Validate selfie_ids array
-        if (!Array.isArray(body.selfie_ids) || body.selfie_ids.length === 0) {
-          return errorResponse('selfie_ids must be a non-empty array', 400);
+        // Validate selfie_ids or selfie_image_urls
+        const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
+        const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
+        
+        if (!hasSelfieIds && !hasSelfieUrls) {
+          return errorResponse('Either selfie_ids or selfie_image_urls must be provided as a non-empty array', 400);
         }
 
-        // Look up all selfie image URLs from database
+        // Look up all selfie image URLs from database or use provided URLs
         const selfieUrls: string[] = [];
         const selfieIds: string[] = [];
 
-        for (const selfieId of body.selfie_ids) {
-          const selfieResult = await DB.prepare(
-            'SELECT id, image_url FROM selfies WHERE id = ?'
-          ).bind(selfieId).first();
+        if (hasSelfieIds) {
+          for (const selfieId of body.selfie_ids!) {
+            const selfieResult = await DB.prepare(
+              'SELECT id, image_url FROM selfies WHERE id = ?'
+            ).bind(selfieId).first();
 
-          if (!selfieResult) {
-            return errorResponse(`Selfie with ID ${selfieId} not found`, 404);
+            if (!selfieResult) {
+              return errorResponse(`Selfie with ID ${selfieId} not found`, 404);
+            }
+
+            selfieUrls.push((selfieResult as any).image_url);
+            selfieIds.push(selfieId);
           }
-
-          selfieUrls.push((selfieResult as any).image_url);
-          selfieIds.push(selfieId);
+        } else if (hasSelfieUrls) {
+          selfieUrls.push(...body.selfie_image_urls!);
         }
 
         const targetUrl = (presetResult as any).image_url;
@@ -1283,8 +1290,9 @@ export default {
         // Extract aspect ratio from request body, default to "1:1" if not provided
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
         console.log('[Vertex] Received aspect_ratio from request:', aspectRatio);
-        // Validate aspect ratio is one of the supported values
-        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        // Validate aspect ratio is one of the supported values for Vertex AI
+        // Supported: "1:1", "3:4", "4:3", "16:9", "9:16"
+        const supportedRatios = ["1:1", "3:4", "4:3", "16:9", "9:16"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
         console.log('[Vertex] Using validated aspect ratio:', validAspectRatio);
         // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
