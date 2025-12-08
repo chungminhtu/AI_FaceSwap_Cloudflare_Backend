@@ -439,13 +439,14 @@
                     <span id="profile-info" style="display: none;">
                         <span id="profile-id-display" style="font-family: monospace; color: var(--accent); font-size: 12px;"></span>
                     </span>
-                    <input type="text" id="profile-id-input" placeholder="ID Hồ Sơ" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: monospace; width: 100px; height: 26px;">
-                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px;">Chuyển (Switch)</button>
+                    <input type="text" id="profile-id-input" placeholder="ID Profile" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: monospace; width: 100px; height: 26px;">
+                    <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px;">Chuyển Profile</button>
                 </div>
                 <select class="action-select" id="api-provider" style="height: 26px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 12px;">
                     <option value="google-nano-banana" selected>Google</option>
                     <option value="rapidapi">RapidAPI</option>
                 </select>
+                <button class="log-toggle-btn" onclick="window.open('docs/index.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--accent); color: #fff; transition: all 0.2s;">📖 API Docs</button>
                 <button class="log-toggle-btn" onclick="toggleLogPanel()">Nhật Ký (Log)</button>
             </div>
         </div>
@@ -674,7 +675,6 @@
                         if (response.ok) {
                             this.currentProfile = await response.json();
                             this.updateProfileDisplay();
-                            console.log('[ProfileManager] Profile loaded, loading selfies and results for profile:', this.currentProfile.id);
                             await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                             return this.currentProfile;
                         }
@@ -684,7 +684,6 @@
                     localStorage.setItem('userProfileId', profile.id);
                     this.currentProfile = profile;
                     this.updateProfileDisplay();
-                    console.log('[ProfileManager] New profile created, loading selfies and results for profile:', profile.id);
                     await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                     return profile;
                 } catch (error) {
@@ -805,7 +804,6 @@
             const config = galleries[type];
             try {
                 if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
-                    console.warn(`[LoadGallery] Cannot load ${type}: profile not initialized`);
                     config.state.items = []; config.state.page = 1; renderGallery(type); return;
                 }
                 let url = `${WORKER_URL}${config.endpoints.list}`;
@@ -813,23 +811,19 @@
                 if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
                     const profileId = window.profileManager.currentProfile.id;
                     params.append('profile_id', profileId);
-                    console.log(`[LoadGallery] Loading ${type} for profile_id:`, profileId);
                 }
                 if (type === 'preset' && ['male', 'female'].includes(genderFilter)) {
                     params.append('gender', genderFilter);
                 }
                 if (params.toString()) url += `?${params.toString()}`;
-                console.log(`[LoadGallery] Fetching ${type} from:`, url);
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 config.state.items = data[config.responseKey] || [];
-                console.log(`[LoadGallery] Loaded ${config.state.items.length} ${type} items`);
                 config.state.page = 1;
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);
             } catch (error) {
-                console.error(`[LoadGallery] Load ${type} error:`, error);
                 config.state.items = []; config.state.page = 1; renderGallery(type);
             }
         }
@@ -1106,12 +1100,10 @@
                 logApiCall({ label, method: 'POST', url: `/${endpoint}`, status: response.ok ? 'success' : 'error', payload: data, duration });
                 if (!response.ok || !data?.data?.resultImageUrl) throw new Error(data.message || `${label} thất bại`);
 
-                const newResult = { id: data.data.id, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
-                galleries.results.state.items = [newResult, ...galleries.results.state.items];
-                renderGallery('results');
-                displayResultInPreview(newResult.image_url);
+                displayResultInPreview(data.data.resultImageUrl);
                 showStatusMessage(`${label} thành công`, 'success');
                 await loadGallery('results');
+                updateResultsCount();
             } catch (error) {
                 showStatusMessage(`${label} thất bại: ${error.message}`, 'error');
             } finally {

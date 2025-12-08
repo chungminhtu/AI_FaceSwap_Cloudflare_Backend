@@ -154,8 +154,6 @@ export interface ProfileListResponse {
 
 export interface Result {
   id: string;
-  selfie_id: string;
-  preset_id: string;
   preset_name: string;
   result_url: string;
   profile_id: string;

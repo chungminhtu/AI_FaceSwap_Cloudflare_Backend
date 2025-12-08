@@ -1435,7 +1435,84 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  const migrateOnly = args.includes('--migrate-only') || args.includes('--db-migrate');
+  
   logger = new DeploymentLogger();
+  
+  if (migrateOnly) {
+    logger.addStep('Checking prerequisites', 'Validating required tools');
+    logger.addStep('Loading configuration', 'Reading deployment configuration');
+    logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+    logger.addStep(`[Cloudflare] D1 Database Migration`, 'Applying database migration');
+    logger.render();
+
+    try {
+      logger.startStep('Checking prerequisites');
+      if (!utils.checkWrangler()) {
+        logger.failStep('Checking prerequisites', 'Wrangler CLI not found');
+        process.exit(1);
+      }
+      logger.completeStep('Checking prerequisites', 'Tools validated');
+
+      logger.startStep('Loading configuration');
+      const config = await loadConfig();
+      logger.completeStep('Loading configuration', 'Configuration loaded');
+
+      logger.startStep('Setting up Cloudflare credentials');
+      let cfToken = config.cloudflare.apiToken;
+      let cfAccountId = config.cloudflare.accountId;
+
+      if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
+        const creds = await setupCloudflare(config._environment, cfAccountId);
+        cfToken = creds.apiToken;
+        cfAccountId = creds.accountId;
+        config.cloudflare.apiToken = cfToken;
+        config.cloudflare.accountId = cfAccountId;
+      }
+      
+      process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+      logger.completeStep('Setting up Cloudflare credentials', 'Cloudflare ready');
+
+      const origToken = process.env.CLOUDFLARE_API_TOKEN;
+      const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+      process.env.CLOUDFLARE_API_TOKEN = cfToken;
+      process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
+
+      try {
+        logger.startStep(`[Cloudflare] D1 Database Migration`);
+        const migrationPath = path.join(process.cwd(), 'backend-cloudflare-workers', 'migrate_remove_columns.sql');
+        
+        if (!fs.existsSync(migrationPath)) {
+          throw new Error(`Migration file not found: ${migrationPath}`);
+        }
+
+        const execResult = await runCommandWithRetry(
+          `wrangler d1 execute ${config.databaseName} --remote --file=${migrationPath}`,
+          process.cwd(),
+          2,
+          2000
+        );
+
+        if (execResult.success) {
+          logger.completeStep(`[Cloudflare] D1 Database Migration`, 'Migration completed successfully');
+        } else {
+          throw new Error(`Migration failed: ${execResult.error || 'Unknown error'}`);
+        }
+
+        logger.renderSummary({ workerUrl: '', pagesUrl: '' });
+      } finally {
+        restoreEnv(origToken, origAccountId);
+      }
+    } catch (error) {
+      if (logger && logger.currentStepIndex >= 0) {
+        logger.failStep(logger.currentStepIndex, error.message);
+      }
+      if (logger) logger.renderSummary();
+      process.exit(1);
+    }
+    return;
+  }
   
   logger.addStep('Loading configuration', 'Reading deployment configuration');
   logger.render();

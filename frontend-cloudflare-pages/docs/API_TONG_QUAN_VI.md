@@ -9,17 +9,31 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "preset_image_id": "image_1234567890_abc123",
+  "selfie_ids": ["selfie_1234567890_xyz789"],
+  "profile_id": "profile_1234567890",
+  "additional_prompt": "Add dramatic lighting and cinematic atmosphere",
+  "character_gender": "male",
+  "aspect_ratio": "16:9"
+}
+```
+
+**Các trường:**
 - `preset_image_id` (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu.
 - `selfie_ids` (array of strings, bắt buộc): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung. Thông tin gender (male/female) của mỗi selfie được lưu trong database.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, tùy chọn): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
+- `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
 
 ### Phản hồi thành công
 
 ```json
 {
   "data": {
+    "id": "result_1234567890_abc123",
     "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
   },
   "status": "success",
@@ -114,13 +128,23 @@ AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương ph�
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+  "profile_id": "profile_1234567890"
+}
+```
+
+**Các trường:**
 - `image_url` (string, bắt buộc): URL ảnh cần enhance.
+- `profile_id` (string, bắt buộc): ID profile người dùng.
 
 ### Phản hồi thành công
 
 ```json
 {
   "data": {
+    "id": "result_1234567890_abc123",
     "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/enhance_123.jpg"
   },
   "status": "success",
@@ -143,13 +167,23 @@ AI chuyển đổi ảnh đen trắng thành ảnh màu.
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+  "profile_id": "profile_1234567890"
+}
+```
+
+**Các trường:**
 - `image_url` (string, bắt buộc): URL ảnh đen trắng cần chuyển thành màu.
+- `profile_id` (string, bắt buộc): ID profile người dùng.
 
 ### Phản hồi thành công
 
 ```json
 {
   "data": {
+    "id": "result_1234567890_abc123",
     "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/colorize_123.jpg"
   },
   "status": "success",
@@ -172,14 +206,25 @@ AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt tron
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+  "age_years": 20,
+  "profile_id": "profile_1234567890"
+}
+```
+
+**Các trường:**
 - `image_url` (string, bắt buộc): URL ảnh chứa khuôn mặt cần lão hóa.
 - `age_years` (number, tùy chọn): Số năm muốn lão hóa (mặc định: 20).
+- `profile_id` (string, bắt buộc): ID profile người dùng.
 
 ### Phản hồi thành công
 
 ```json
 {
   "data": {
+    "id": "result_1234567890_abc123",
     "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/aging_123.jpg"
   },
   "status": "success",
@@ -202,13 +247,23 @@ Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+  "profile_id": "profile_1234567890"
+}
+```
+
+**Các trường:**
 - `image_url` (string, bắt buộc): URL ảnh cần upscale.
+- `profile_id` (string, bắt buộc): ID profile người dùng.
 
 ### Phản hồi thành công
 
 ```json
 {
   "data": {
+    "id": "result_1234567890_abc123",
     "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/upscaler4k_123.jpg"
   },
   "status": "success",
@@ -251,6 +306,31 @@ Tải ảnh trực tiếp lên server và lưu vào cơ sở dữ liệu với x
 
 ### Nội dung yêu cầu (multipart/form-data)
 
+**Ví dụ với cURL:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -F "file=@/path/to/image.jpg" \
+  -F "type=preset" \
+  -F "profile_id=profile_1234567890" \
+  -F "presetName=Studio Neon Collection" \
+  -F "enableVertexPrompt=true" \
+  -F "enableVisionScan=true" \
+  -F "gender=female"
+```
+
+**Ví dụ với JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+formData.append('file', fileInput.files[0]);
+formData.append('type', 'preset');
+formData.append('profile_id', 'profile_1234567890');
+formData.append('presetName', 'Studio Neon Collection');
+formData.append('enableVertexPrompt', 'true');
+formData.append('enableVisionScan', 'true');
+formData.append('gender', 'female');
+```
+
+**Các trường:**
 - `file` (file, bắt buộc): file ảnh cần upload.
 - `type` (string, bắt buộc): `preset` hoặc `selfie`.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
@@ -304,6 +384,13 @@ Trả về danh sách preset trong cơ sở dữ liệu.
 
 ### Query Parameters
 
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/presets
+GET https://api.d.shotpix.app/presets?gender=male
+GET https://api.d.shotpix.app/presets?gender=female
+```
+
 - `gender` (tùy chọn): `male` hoặc `female` để lọc theo giới tính.
 
 ### Phản hồi
@@ -328,7 +415,12 @@ Trả về danh sách preset trong cơ sở dữ liệu.
 ## 8. DELETE `/presets/{id}`
 
 ### Mục đích
-Xóa preset khỏi D1 và R2, đồng thời xóa tất cả kết quả liên quan.
+Xóa preset khỏi D1 và R2.
+
+**Ví dụ:**
+```
+DELETE https://api.d.shotpix.app/presets/image_1234567890_abc123
+```
 
 ### Phản hồi
 
@@ -355,8 +447,12 @@ Trả về tối đa 50 selfie gần nhất của một profile.
 
 ### Query Parameters
 
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
+```
+
 - `profile_id` (bắt buộc): ID profile.
-- `gender` (tùy chọn): `male` hoặc `female` để lọc theo giới tính.
 
 ### Phản hồi
 
@@ -377,7 +473,12 @@ Trả về tối đa 50 selfie gần nhất của một profile.
 ## 10. DELETE `/selfies/{id}`
 
 ### Mục đích
-Xóa selfie và tất cả kết quả liên quan khỏi D1 và R2.
+Xóa selfie khỏi D1 và R2.
+
+**Ví dụ:**
+```
+DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
+```
 
 ### Phản hồi
 
@@ -404,8 +505,13 @@ Trả về tối đa 50 kết quả face swap gần nhất.
 
 ### Query Parameters
 
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/results
+GET https://api.d.shotpix.app/results?profile_id=profile_1234567890
+```
+
 - `profile_id` (tùy chọn): ID profile để lọc kết quả.
-- `gender` (tùy chọn): `male` hoặc `female` để lọc theo giới tính.
 
 ### Phản hồi
 
@@ -429,6 +535,11 @@ Trả về tối đa 50 kết quả face swap gần nhất.
 
 ### Mục đích
 Xóa kết quả khỏi D1 và R2.
+
+**Ví dụ:**
+```
+DELETE https://api.d.shotpix.app/results/result_1234567890_abc123
+```
 
 ### Phản hồi
 
@@ -454,6 +565,20 @@ Tạo profile mới.
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "id": "profile_1234567890",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "avatar_url": "https://example.com/avatar.jpg",
+  "preferences": {
+    "theme": "dark",
+    "language": "vi"
+  }
+}
+```
+
+**Các trường:**
 - `userID` hoặc `id` (string, tùy chọn): ID profile. Nếu không có, hệ thống tự tạo.
 - `name` (string, tùy chọn): tên profile.
 - `email` (string, tùy chọn): email.
@@ -479,6 +604,11 @@ Tạo profile mới.
 ### Mục đích
 Lấy thông tin profile theo ID.
 
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/profiles/profile_1234567890
+```
+
 ### Phản hồi
 
 ```json
@@ -500,6 +630,24 @@ Cập nhật thông tin profile.
 
 ### Nội dung yêu cầu
 
+```json
+{
+  "name": "John Doe Updated",
+  "email": "john.updated@example.com",
+  "avatar_url": "https://example.com/new-avatar.jpg",
+  "preferences": {
+    "theme": "light",
+    "language": "en"
+  }
+}
+```
+
+**Ví dụ:**
+```
+PUT https://api.d.shotpix.app/profiles/profile_1234567890
+```
+
+**Các trường:**
 - `name` (string, tùy chọn): tên profile.
 - `email` (string, tùy chọn): email.
 - `avatar_url` (string, tùy chọn): URL avatar.
@@ -512,6 +660,11 @@ Trả về profile đã được cập nhật (format giống GET `/profiles/{id
 
 ### Mục đích
 Liệt kê tất cả profiles (dùng cho admin/debugging).
+
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/profiles
+```
 
 ### Phản hồi
 
@@ -535,6 +688,11 @@ Liệt kê tất cả profiles (dùng cho admin/debugging).
 
 ### Mục đích
 Lấy cấu hình public của Worker (custom domains).
+
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/config
+```
 
 ### Phản hồi
 

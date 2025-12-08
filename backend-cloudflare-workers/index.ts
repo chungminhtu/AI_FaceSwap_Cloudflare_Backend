@@ -50,30 +50,38 @@ const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
   return systemPresetId;
 };
 
-const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string> => {
-  let selfieResult = await DB.prepare(
-    'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
-  ).bind(imageUrl, profileId).first();
-  
-  if (!selfieResult) {
+const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string | null> => {
+  try {
+    let selfieResult = await DB.prepare(
+      'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
+    ).bind(imageUrl, profileId).first();
+    
+    if (!selfieResult) {
+      const urlParts = imageUrl.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      selfieResult = await DB.prepare(
+        'SELECT id FROM selfies WHERE filename = ? AND profile_id = ? LIMIT 1'
+      ).bind(filename, profileId).first();
+    }
+    
+    if (selfieResult) {
+      return (selfieResult as any).id;
+    }
+    
     const urlParts = imageUrl.split('/');
-    const filename = urlParts[urlParts.length - 1];
-    selfieResult = await DB.prepare(
-      'SELECT id FROM selfies WHERE filename = ? AND profile_id = ? LIMIT 1'
-    ).bind(filename, profileId).first();
+    const filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.jpg`;
+    const systemSelfieId = `system_selfie_${profileId}_${Date.now()}`;
+    const insertResult = await DB.prepare(
+      'INSERT OR IGNORE INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(systemSelfieId, imageUrl, filename, profileId, Math.floor(Date.now() / 1000)).run();
+    
+    if (insertResult.success) {
+      return systemSelfieId;
+    }
+    return null;
+  } catch (error) {
+    return null;
   }
-  
-  if (selfieResult) {
-    return (selfieResult as any).id;
-  }
-  
-  const urlParts = imageUrl.split('/');
-  const filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.jpg`;
-  const systemSelfieId = `system_selfie_${profileId}_${Date.now()}`;
-  await DB.prepare(
-    'INSERT OR IGNORE INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(systemSelfieId, imageUrl, filename, profileId, Math.floor(Date.now() / 1000)).run();
-  return systemSelfieId;
 };
 
 const saveResultToDatabase = async (
@@ -85,21 +93,20 @@ const saveResultToDatabase = async (
   presetName: string
 ): Promise<boolean> => {
   try {
-    const systemPresetId = await ensureSystemPreset(DB);
-    const selfieId = await ensureSystemSelfie(DB, profileId, imageUrl);
+    const insertResult = await DB.prepare(
+      'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(resultId, presetName, resultUrl, profileId, Math.floor(Date.now() / 1000)).run();
     
-    await DB.prepare(
-      'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(resultId, selfieId, systemPresetId, presetName, resultUrl, profileId, Math.floor(Date.now() / 1000)).run();
-    
-    console.log(`[${presetName}] Saved result to database:`, resultId, 'selfie_id:', selfieId, 'profile_id:', profileId);
-    return true;
-  } catch (dbError) {
-    console.error(`[${presetName}] Database save error:`, dbError);
-    if (dbError instanceof Error) {
-      console.error(`[${presetName}] Error message:`, dbError.message);
-      console.error(`[${presetName}] Error stack:`, dbError.stack);
+    if (insertResult.success) {
+      if ((insertResult.meta?.changes || 0) > 0) {
+        return true;
+      }
+      const checkExisting = await DB.prepare('SELECT id FROM results WHERE id = ?').bind(resultId).first();
+      return !!checkExisting;
     }
+    
+    return false;
+  } catch (dbError) {
     return false;
   }
 };
@@ -824,7 +831,6 @@ export default {
           return errorResponse('Preset ID is required', 400);
         }
 
-        console.log(`[DELETE] Deleting preset: ${presetId}`);
 
         // First, check if preset exists
         const checkResult = await DB.prepare(
@@ -838,39 +844,15 @@ export default {
 
         const imageUrl = (checkResult as any).image_url;
 
-        // First, delete all related results (to avoid foreign key constraint error)
-        const deleteResultsResult = await DB.prepare(
-          'DELETE FROM results WHERE preset_id = ?'
-        ).bind(presetId).run();
-        
-        const resultsDeleted = deleteResultsResult.meta?.changes || 0;
-        console.log(`[DELETE] Deleted ${resultsDeleted} related result(s) for preset: ${presetId}`);
-
-        // Then delete from database
+        // Delete preset from database
+        // NOTE: Results are NOT deleted when preset is deleted - they belong to profiles and should be preserved
         const deleteResult = await DB.prepare(
           'DELETE FROM presets WHERE id = ?'
         ).bind(presetId).run();
 
-        console.log(`[DELETE] Database delete result:`, {
-          presetId,
-          success: deleteResult.success,
-          meta: deleteResult.meta,
-          changes: deleteResult.meta?.changes
-        });
-
-        // Verify deletion succeeded
-        if (!deleteResult.success) {
-          console.error(`[DELETE] Database delete failed for preset: ${presetId}`);
-          return errorResponse('Failed to delete preset from database', 500);
-        }
-
-        // Check if any rows were actually deleted
-        if (deleteResult.meta?.changes === 0) {
-          console.warn(`[DELETE] No rows deleted for preset: ${presetId}`);
+        if (!deleteResult.success || deleteResult.meta?.changes === 0) {
           return errorResponse('Preset not found or already deleted', 404);
         }
-
-        console.log(`[DELETE] Successfully deleted preset from database: ${presetId}`);
 
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
@@ -893,16 +875,7 @@ export default {
 
         return jsonResponse({ 
           success: true, 
-          message: 'Preset deleted successfully',
-          debug: {
-            presetId,
-            resultsDeleted,
-            databaseDeleted: deleteResult.meta?.changes || 0,
-            r2Deleted,
-            r2Key,
-            r2Error: r2Error || null,
-            imageUrl
-          }
+          message: 'Preset deleted successfully'
         });
       } catch (error) {
         console.error('[DELETE] Delete preset exception:', error);
@@ -983,53 +956,26 @@ export default {
           return errorResponse('Selfie ID is required', 400);
         }
 
-        console.log(`[DELETE] Deleting selfie: ${selfieId}`);
-
         // First, check if selfie exists
         const checkResult = await DB.prepare(
           'SELECT id, image_url FROM selfies WHERE id = ?'
         ).bind(selfieId).first();
 
         if (!checkResult) {
-          console.warn(`[DELETE] Selfie not found: ${selfieId}`);
           return errorResponse('Selfie not found', 404);
         }
 
         const imageUrl = (checkResult as any).image_url;
 
-        // First, delete all related results (to avoid foreign key constraint error)
-        const deleteResultsResult = await DB.prepare(
-          'DELETE FROM results WHERE selfie_id = ?'
-        ).bind(selfieId).run();
-        
-        const resultsDeleted = deleteResultsResult.meta?.changes || 0;
-        console.log(`[DELETE] Deleted ${resultsDeleted} related result(s) for selfie: ${selfieId}`);
-
-        // Then delete from database
+        // Delete selfie from database
+        // NOTE: Results are NOT deleted when selfie is deleted - they belong to profiles and should be preserved
         const deleteResult = await DB.prepare(
           'DELETE FROM selfies WHERE id = ?'
         ).bind(selfieId).run();
 
-        console.log(`[DELETE] Database delete result:`, {
-          selfieId,
-          success: deleteResult.success,
-          meta: deleteResult.meta,
-          changes: deleteResult.meta?.changes
-        });
-
-        // Verify deletion succeeded
-        if (!deleteResult.success) {
-          console.error(`[DELETE] Database delete failed for selfie: ${selfieId}`);
-          return errorResponse('Failed to delete selfie from database', 500);
-        }
-
-        // Check if any rows were actually deleted
-        if (deleteResult.meta?.changes === 0) {
-          console.warn(`[DELETE] No rows deleted for selfie: ${selfieId}`);
+        if (!deleteResult.success || deleteResult.meta?.changes === 0) {
           return errorResponse('Selfie not found or already deleted', 404);
         }
-
-        console.log(`[DELETE] Successfully deleted selfie from database: ${selfieId}`);
 
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
@@ -1052,16 +998,7 @@ export default {
 
         return jsonResponse({ 
           success: true, 
-          message: 'Selfie deleted successfully',
-          debug: {
-            selfieId,
-            resultsDeleted,
-            databaseDeleted: deleteResult.meta?.changes || 0,
-            r2Deleted,
-            r2Key,
-            r2Error: r2Error || null,
-            imageUrl
-          }
+          message: 'Selfie deleted successfully'
         });
       } catch (error) {
         console.error('[DELETE] Delete selfie exception:', error);
@@ -1096,7 +1033,7 @@ export default {
         }
         }
 
-        let query = 'SELECT id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at FROM results';
+        let query = 'SELECT id, preset_name, result_url, profile_id, created_at FROM results';
         const params: any[] = [];
 
         if (profileId) {
@@ -1118,15 +1055,17 @@ export default {
           return jsonResponse({ results: [] });
         }
 
-        const results = result.results.map((row: any) => ({
-          id: row.id || '',
-          selfie_id: row.selfie_id || '',
-          preset_id: row.preset_id || '',
-          preset_name: row.preset_name || 'Unnamed',
-          result_url: convertLegacyUrl(row.result_url || '', env),
-          profile_id: row.profile_id || '',
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
+        const results = result.results.map((row: any) => {
+          const resultUrl = convertLegacyUrl(row.result_url || '', env);
+          return {
+            id: row.id || '',
+            preset_name: row.preset_name || 'Unnamed',
+            result_url: resultUrl,
+            image_url: resultUrl,
+            profile_id: row.profile_id || '',
+            created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+          };
+        });
 
         return jsonResponse({ results });
       } catch (error) {
@@ -1298,16 +1237,41 @@ export default {
 
         console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
-        const promptResult = await DB.prepare(
-          'SELECT prompt_json FROM presets WHERE id = ?'
+        let promptResult = await DB.prepare(
+          'SELECT prompt_json, image_url FROM presets WHERE id = ?'
         ).bind(body.preset_image_id).first();
 
-        if (!promptResult || !(promptResult as any).prompt_json) {
-          console.error('[Vertex] No prompt_json found in database for preset:', body.preset_image_id);
-          return errorResponse('No Vertex AI-generated prompt found for this preset image. Please re-upload the preset image to automatically generate the prompt using Vertex AI API. If you continue to see this error, check that your Google Vertex AI credentials are configured correctly.', 400);
+        let storedPromptPayload: any = null;
+
+        if (promptResult && (promptResult as any).prompt_json) {
+          const promptJson = (promptResult as any).prompt_json;
+          if (promptJson && promptJson.trim() !== '') {
+            try {
+              storedPromptPayload = JSON.parse(promptJson);
+            } catch (parseError) {
+              console.error('[Vertex] Failed to parse stored prompt_json:', parseError);
+            }
+          }
         }
 
-        const storedPromptPayload = JSON.parse((promptResult as any).prompt_json);
+        if (!storedPromptPayload) {
+          console.log('[Vertex] No valid prompt_json found in database, generating on-the-fly for preset:', body.preset_image_id);
+          const presetImageUrl = (promptResult as any)?.image_url || targetUrl;
+          
+          const generateResult = await generateVertexPrompt(presetImageUrl, env);
+          if (generateResult.success && generateResult.prompt) {
+            storedPromptPayload = generateResult.prompt;
+            const promptJsonString = JSON.stringify(storedPromptPayload);
+            
+            await DB.prepare(
+              'UPDATE presets SET prompt_json = ? WHERE id = ?'
+            ).bind(promptJsonString, body.preset_image_id).run();
+            
+            console.log('[Vertex] Generated and saved prompt_json to database for preset:', body.preset_image_id);
+          } else {
+            return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400);
+          }
+        }
         const augmentedPromptPayload = augmentVertexPrompt(
           storedPromptPayload,
           body.additional_prompt,
@@ -1532,18 +1496,20 @@ export default {
         if (body.preset_image_id) {
           databaseDebug.attempted = true;
           try {
-            let selfieId = selfieIds[0];
-
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-            await DB.prepare(
-              'INSERT INTO results (id, selfie_id, preset_id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-            ).bind(resultId, selfieId || null, body.preset_image_id, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-            databaseDebug.success = true;
-            databaseDebug.resultId = resultId;
-            savedResultId = resultId;
-            databaseDebug.error = null;
+            const insertResult = await DB.prepare(
+              'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(resultId, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+            
+            if (insertResult.success && (insertResult.meta?.changes || 0) > 0) {
+              databaseDebug.success = true;
+              databaseDebug.resultId = resultId;
+              savedResultId = resultId;
+              databaseDebug.error = null;
+            } else {
+              databaseDebug.error = 'Database insert failed';
+            }
           } catch (dbError) {
-            console.warn('Database save error (non-fatal):', dbError);
             databaseDebug.error = dbError instanceof Error ? dbError.message : String(dbError);
           }
         }
@@ -1701,7 +1667,13 @@ export default {
         const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
         const savedResultId: string = resultId;
         
-        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, '4K Upscale');
+        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, '4K Upscale');
+        if (!saved) {
+          const directInsert = await DB.prepare(
+            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+          ).bind(resultId, '4K Upscale', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          saved = directInsert.success === true;
+        }
 
         const providerDebug = buildProviderDebug(upscalerResult, resultUrl);
         const vertexDebug = buildVertexDebug(upscalerResult);
@@ -1786,7 +1758,13 @@ export default {
         const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
         const savedResultId: string = resultId;
         
-        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Enhance');
+        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Enhance');
+        if (!saved) {
+          const directInsert = await DB.prepare(
+            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+          ).bind(resultId, 'Enhance', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          saved = directInsert.success === true;
+        }
 
         const providerDebug = buildProviderDebug(enhancedResult, resultUrl);
         const vertexDebug = mergeVertexDebug(enhancedResult, undefined);
@@ -1861,13 +1839,18 @@ export default {
           const r2Key = colorizedResult.ResultImageUrl.replace('r2://', '');
           const requestUrl = new URL(request.url);
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-          console.log('[Colorize] Converted R2 URL to public URL:', resultUrl);
         }
 
         const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
         const savedResultId: string = resultId;
         
-        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Colorize');
+        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Colorize');
+        if (!saved) {
+          const directInsert = await DB.prepare(
+            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+          ).bind(resultId, 'Colorize', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          saved = directInsert.success === true;
+        }
 
         const providerDebug = buildProviderDebug(colorizedResult, resultUrl);
         const vertexDebug = mergeVertexDebug(colorizedResult, undefined);
@@ -1951,7 +1934,13 @@ export default {
         const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
         const savedResultId: string = resultId;
         
-        await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Aging');
+        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Aging');
+        if (!saved) {
+          const directInsert = await DB.prepare(
+            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+          ).bind(resultId, 'Aging', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+          saved = directInsert.success === true;
+        }
 
         const providerDebug = buildProviderDebug(agingResult, resultUrl);
         const vertexDebug = mergeVertexDebug(agingResult, undefined);
