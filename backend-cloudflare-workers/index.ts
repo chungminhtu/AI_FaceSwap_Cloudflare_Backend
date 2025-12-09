@@ -444,28 +444,8 @@ export default {
 
         // Save upload metadata to database based on type
         if (type === 'preset') {
-          // Perform Vision API safety scan if enabled
+          // Vision API safety scan disabled for all Vertex API operations
           let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
-          if (enableVisionScan) {
-            try {
-              const visionResult = await checkSafeSearch(publicUrl, env);
-              visionScanResult = {
-                success: visionResult.isSafe !== undefined,
-                isSafe: visionResult.isSafe,
-                error: visionResult.error,
-                rawResponse: visionResult.rawResponse
-              };
-              if (!visionResult.isSafe) {
-                console.warn('[Vision] Image failed safety check:', visionResult.error);
-              }
-            } catch (visionError) {
-              console.error('[Vision] Error during Vision API scan:', visionError instanceof Error ? visionError.message : String(visionError));
-              visionScanResult = {
-                success: false,
-                error: visionError instanceof Error ? visionError.message.substring(0, 200) : String(visionError).substring(0, 200)
-              };
-            }
-          }
 
           // Generate Vertex AI prompt only if enabled
           let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };

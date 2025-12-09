@@ -1246,7 +1246,6 @@
                 
                 if (type === 'preset') {
                     formData.append('enableVertexPrompt', 'true');
-                    formData.append('enableVisionScan', 'true');
                 }
 
                 const uploadUrl = `${WORKER_URL}/upload-url`;
@@ -1613,7 +1612,6 @@
                     profile_id: window.profileManager.currentProfile.id,
                     presetName: type === 'preset' ? `Preset ${Date.now()}` : undefined,
                     enableVertexPrompt: type === 'preset',
-                    enableVisionScan: type === 'preset'
                 };
 
                 const uploadUrl = `${WORKER_URL}/upload-url`;
