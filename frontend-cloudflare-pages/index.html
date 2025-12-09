@@ -1295,7 +1295,20 @@
 
             showLoading(label);
             try {
-                const payload = { image_url: selfieSelected.image_url, profile_id: window.profileManager.currentProfile.id, ...extra };
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '1:1';
+                console.log(`[${label}] Aspect ratio select value:`, aspectRatioSelect?.value);
+                console.log(`[${label}] Selected aspect ratio:`, selectedAspectRatio);
+                
+                const payload = { 
+                    image_url: selfieSelected.image_url, 
+                    profile_id: window.profileManager.currentProfile.id, 
+                    aspect_ratio: selectedAspectRatio,
+                    ...extra 
+                };
+                console.log(`[${label}] Full request body:`, JSON.stringify(payload, null, 2));
+                console.log(`[${label}] Sending request with aspect_ratio:`, payload.aspect_ratio);
+                
                 const startTime = Date.now();
                 const operationUrl = `${WORKER_URL}/${endpoint}`;
                 const response = await fetch(operationUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
