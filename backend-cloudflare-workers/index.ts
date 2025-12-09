@@ -1147,7 +1147,7 @@ export default {
 
           targetUrl = (presetResult as any).image_url;
           presetName = (presetResult as any).preset_name || 'Unnamed Preset';
-          presetImageId = body.preset_image_id;
+          presetImageId = body.preset_image_id || null;
         } else if (hasPresetUrl) {
           targetUrl = body.preset_image_url!;
           presetName = 'Result Preset';
@@ -1551,7 +1551,7 @@ export default {
 
           targetUrl = (presetResult as any).image_url;
           presetName = (presetResult as any).preset_name || 'Unnamed Preset';
-          presetImageId = body.preset_image_id;
+          presetImageId = body.preset_image_id || null;
         } else {
           targetUrl = body.preset_image_url!;
           presetName = 'Result Preset';
