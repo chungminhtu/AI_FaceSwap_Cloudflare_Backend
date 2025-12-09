@@ -1,6 +1,27 @@
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
 import { isUnsafe, getWorstViolation, getAccessToken } from './utils';
 
+// Efficient sanitization function - only sanitizes specific fields instead of full object traversal
+const sanitizeObject = (obj: any, maxStringLength = 100): any => {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeObject(item, maxStringLength));
+  }
+  
+  const sanitized: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === 'data' && typeof value === 'string' && value.length > maxStringLength) {
+      sanitized[key] = '...';
+    } else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = sanitizeObject(value, maxStringLength);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+};
+
 const getR2Bucket = (env: Env): R2Bucket => {
   const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || '';
   const bucket = (env as any)[bindingName] as R2Bucket;
@@ -228,12 +249,7 @@ export const callNanoBanana = async (
     };
 
     // Generate curl command for testing (with sanitized base64)
-    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
-      if (key === 'data' && typeof value === 'string' && value.length > 100) {
-        return '...'; // Replace base64 with placeholder
-      }
-      return value;
-    }));
+    const sanitizedRequestBody = sanitizeObject(requestBody);
     
     const curlCommand = `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
@@ -297,12 +313,7 @@ export const callNanoBanana = async (
     try {
       const data = JSON.parse(rawResponse);
       if (debugInfo) {
-        debugInfo.rawResponse = JSON.parse(JSON.stringify(data, (key, value) => {
-          if (key === 'data' && typeof value === 'string' && value.length > 100) {
-            return '...';
-          }
-          return value;
-        }));
+        debugInfo.rawResponse = sanitizeObject(data);
       }
       
       // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
@@ -375,21 +386,10 @@ export const callNanoBanana = async (
       const resultImageUrl = `r2://${resultKey}`;
 
       // Sanitize response data for UI - replace base64 with "..."
-      const sanitizedData = JSON.parse(JSON.stringify(data, (key, value) => {
-        if (key === 'data' && typeof value === 'string' && value.length > 100) {
-          // Likely base64 image data - replace with placeholder
-          return '...';
-        }
-        return value;
-      }));
+      const sanitizedData = sanitizeObject(data);
 
       // Generate curl command for testing (with sanitized base64)
-      const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
-        if (key === 'data' && typeof value === 'string' && value.length > 100) {
-          return '...'; // Replace base64 with placeholder
-        }
-        return value;
-      }));
+      const sanitizedRequestBody = sanitizeObject(requestBody);
 
       const curlCommand = `curl -X POST \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
@@ -688,12 +688,7 @@ Place the person into the scene, transform their visual style to match the scene
     try {
       const data = JSON.parse(rawResponse);
       if (debugInfo) {
-        debugInfo.rawResponse = JSON.parse(JSON.stringify(data, (key, value) => {
-          if (key === 'data' && typeof value === 'string' && value.length > 100) {
-            return '...';
-          }
-          return value;
-        }));
+        debugInfo.rawResponse = sanitizeObject(data);
       }
       
       const candidates = data.candidates || [];
@@ -757,19 +752,9 @@ Place the person into the scene, transform their visual style to match the scene
       
       const resultImageUrl = `r2://${resultKey}`;
 
-      const sanitizedData = JSON.parse(JSON.stringify(data, (key, value) => {
-        if (key === 'data' && typeof value === 'string' && value.length > 100) {
-          return '...';
-        }
-        return value;
-      }));
+      const sanitizedData = sanitizeObject(data);
 
-      const sanitizedRequestBodyForCurl = JSON.parse(JSON.stringify(requestBody, (key, value) => {
-        if (key === 'data' && typeof value === 'string' && value.length > 100) {
-          return '...';
-        }
-        return value;
-      }));
+      const sanitizedRequestBodyForCurl = sanitizeObject(requestBody);
 
       const curlCommandFinal = `curl -X POST \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
@@ -929,6 +914,7 @@ export const checkSafeSearch = async (
 };
 
 // Vertex AI API integration for automatic prompt generation
+// Note: Prompts are cached in database (prompt_json column), so no in-memory cache needed
 export const generateVertexPrompt = async (
   imageUrl: string,
   env: Env
@@ -1165,6 +1151,9 @@ export const generateVertexPrompt = async (
       return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
     }
 
+    // Note: Prompt is stored in database (prompt_json column) by the caller
+    // No need for in-memory cache since database serves as the cache
+
     debugInfo.responseTimeMs = Date.now() - startTime;
     return { success: true, prompt: promptJson, debug: debugInfo };
 
@@ -1270,12 +1259,7 @@ export const callUpscaler4k = async (
     try {
       const data = JSON.parse(rawResponse);
       if (debugInfo) {
-        debugInfo.rawResponse = JSON.parse(JSON.stringify(data, (key, value) => {
-          if (key === 'data' && typeof value === 'string' && value.length > 100) {
-            return '...';
-          }
-          return value;
-        }));
+        debugInfo.rawResponse = sanitizeObject(data);
       }
       
       let resultImageUrl: string | null = null;
@@ -1296,8 +1280,17 @@ export const callUpscaler4k = async (
       
       const resultEndpoint = `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`;
       
-      for (let attempt = 0; attempt < 30; attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      // Optimized polling with exponential backoff: 2s → 4s → 8s → 16s (max)
+      const maxAttempts = 18; // Reduced from 30
+      const baseDelay = 2000; // 2 seconds
+      const maxDelay = 16000; // 16 seconds max
+      
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Exponential backoff: delay = min(2^attempt * baseDelay, maxDelay)
+        const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+        if (attempt > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
         
         const resultResponse = await fetch(resultEndpoint, {
           headers: {
@@ -1307,7 +1300,7 @@ export const callUpscaler4k = async (
         
         if (!resultResponse.ok) {
           console.warn('[Upscaler4K] Poll request failed:', resultResponse.status, resultResponse.statusText);
-          if (attempt === 29) {
+          if (attempt === maxAttempts - 1) {
             throw new Error(`Failed to get result: ${resultResponse.status} ${resultResponse.statusText}`);
           }
           continue;
@@ -1317,7 +1310,8 @@ export const callUpscaler4k = async (
         
         const pollStatus = resultData.status || resultData.data?.status;
         
-        if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success' || pollStatus === 'succeeded') {
+        // Early success detection - check for completed status first
+        if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success') {
           if (resultData.output && typeof resultData.output === 'string') {
             resultImageUrl = resultData.output;
             break;
@@ -1395,7 +1389,7 @@ export const callUpscaler4k = async (
       }
       
       if (!resultImageUrl) {
-        throw new Error('Upscaling timed out - no result after 30 polling attempts');
+        throw new Error(`Upscaling timed out - no result after ${maxAttempts} polling attempts`);
       }
 
 

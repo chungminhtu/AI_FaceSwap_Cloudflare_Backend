@@ -37,11 +37,14 @@ export const CORS_HEADERS = {
   'Access-Control-Allow-Credentials': 'true',
 };
 
-export const jsonResponse = (data: any, status = 200): Response =>
-  new Response(JSON.stringify(data), {
+export const jsonResponse = (data: any, status = 200): Response => {
+  const jsonString = JSON.stringify(data);
+  
+  return new Response(jsonString, {
     status,
     headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
   });
+};
 
 export const errorResponse = (message: string, status = 500): Response =>
   jsonResponse({ Success: false, Message: message, StatusCode: status }, status);
@@ -121,13 +124,36 @@ export const base64Decode = (str: string): string => {
   return atob(str);
 };
 
+// In-memory token cache with expiration
+interface TokenCacheEntry {
+  token: string;
+  expiresAt: number;
+}
+
+const tokenCache = new Map<string, TokenCacheEntry>();
+
+// Generate cache key from service account credentials
+const getCacheKey = (serviceAccountEmail: string, privateKey: string): string => {
+  return `oauth_token:${serviceAccountEmail}`;
+};
+
 // Generate OAuth access token for Google Service Account
 // This is used for Vertex AI authentication
+// Caches tokens for 55 minutes (tokens valid for 1 hour)
 export const getAccessToken = async (
   serviceAccountEmail: string,
   privateKey: string
 ): Promise<string> => {
+  const cacheKey = getCacheKey(serviceAccountEmail, privateKey);
   const now = Math.floor(Date.now() / 1000);
+  
+  // Check cache first
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.token;
+  }
+  
+  // Cache miss or expired, generate new token
   const expiry = now + 3600; // Token valid for 1 hour
 
   // Create JWT header
@@ -207,5 +233,23 @@ export const getAccessToken = async (
   }
 
   const tokenData = await tokenResponse.json() as { access_token: string };
-  return tokenData.access_token;
+  const accessToken = tokenData.access_token;
+  
+  // Cache token with 55-minute TTL (tokens valid for 1 hour)
+  const expiresAt = now + 3300; // 55 minutes in seconds
+  tokenCache.set(cacheKey, {
+    token: accessToken,
+    expiresAt: expiresAt
+  });
+  
+  // Clean up expired entries periodically (keep cache size manageable)
+  if (tokenCache.size > 100) {
+    for (const [key, entry] of tokenCache.entries()) {
+      if (entry.expiresAt <= now) {
+        tokenCache.delete(key);
+      }
+    }
+  }
+  
+  return accessToken;
 };

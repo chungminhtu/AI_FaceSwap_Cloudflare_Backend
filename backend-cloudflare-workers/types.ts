@@ -22,6 +22,7 @@ export interface Env {
   WAVESPEED_API_KEY?: string; // WaveSpeed.ai API key
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
   SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
+  DEBUG?: string; // Optional: Set to 'true' or '1' to include debug payloads in responses
 }
 
 export interface FaceSwapRequest {

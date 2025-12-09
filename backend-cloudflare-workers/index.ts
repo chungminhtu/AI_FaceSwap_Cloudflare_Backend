@@ -172,6 +172,10 @@ const compact = <T extends Record<string, any>>(input: T): Record<string, any> =
   return output;
 };
 
+const isDebugEnabled = (env: Env): boolean => {
+  return env.DEBUG === 'true' || env.DEBUG === '1';
+};
+
 const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record<string, any> =>
   compact({
     success: result.Success,
@@ -273,7 +277,10 @@ const augmentVertexPrompt = (
     return promptPayload;
   }
 
-  const clone = JSON.parse(JSON.stringify(promptPayload));
+  // Efficient shallow clone for prompt augmentation
+  const clone = typeof promptPayload === 'object' && promptPayload !== null 
+    ? { ...promptPayload } 
+    : promptPayload;
   const additions: string[] = [];
 
   if (characterGender && GENDER_PROMPT_HINTS[characterGender]) {
@@ -379,7 +386,6 @@ export default {
         const profileResult = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
-
         if (!profileResult) {
           return errorResponse('Profile not found', 404);
         }
@@ -539,6 +545,7 @@ export default {
             return errorResponse('Database schema not initialized. Please run database migration.', 500);
           }
 
+          // Insert into selfies table
           const result = await DB.prepare(
             'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
           ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
@@ -548,22 +555,13 @@ export default {
             return errorResponse('Failed to save selfie to database', 500);
           }
 
-          // Verify it was saved by querying it back
-          const verifyResult = await DB.prepare(
-            'SELECT id, image_url, filename FROM selfies WHERE id = ?'
-          ).bind(selfieId).first();
-
-          if (verifyResult) {
-            return jsonResponse({
-              success: true,
-              url: publicUrl,
-              id: selfieId,
-              filename: filename
-            });
-          } else {
-            console.error('CRITICAL: Selfie not found in database after insert!');
-            return errorResponse('Selfie was not saved to database properly', 500);
-          }
+          // Trust insert success - no need to verify with additional query
+          return jsonResponse({
+            success: true,
+            url: publicUrl,
+            id: selfieId,
+            filename: filename
+          });
         }
 
         return jsonResponse({ success: true, url: publicUrl });
@@ -1120,43 +1118,7 @@ export default {
         const requestError = validateRequest(body);
         if (requestError) return errorResponse(requestError, 400);
 
-        const profileCheck = await DB.prepare(
-          'SELECT id FROM profiles WHERE id = ?'
-        ).bind(body.profile_id).first();
-
-        if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
-        }
-
-        // Look up preset image URL from database or use provided URL
-        let targetUrl: string;
-        let presetName: string;
-        let presetImageId: string | null = null;
-
-        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
-        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
-
-        if (hasPresetId) {
-          const presetResult = await DB.prepare(
-            'SELECT id, image_url, preset_name FROM presets WHERE id = ?'
-          ).bind(body.preset_image_id).first();
-
-          if (!presetResult) {
-            return errorResponse('Preset image not found', 404);
-          }
-
-          targetUrl = (presetResult as any).image_url;
-          presetName = (presetResult as any).preset_name || 'Unnamed Preset';
-          presetImageId = body.preset_image_id || null;
-        } else if (hasPresetUrl) {
-          targetUrl = body.preset_image_url!;
-          presetName = 'Result Preset';
-          presetImageId = null;
-        } else {
-          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400);
-        }
-
-        // Validate selfie_ids or selfie_image_urls
+        // Validate selfie_ids or selfie_image_urls early
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
         
@@ -1164,22 +1126,77 @@ export default {
           return errorResponse('Either selfie_ids or selfie_image_urls must be provided as a non-empty array', 400);
         }
 
-        // Look up all selfie image URLs from database or use provided URLs
+        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
+        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
+
+        if (!hasPresetId && !hasPresetUrl) {
+          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400);
+        }
+
+        // Parallelize all independent database queries
+        const queries: Promise<any>[] = [
+          DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first()
+        ];
+
+        if (hasPresetId) {
+          queries.push(
+            DB.prepare('SELECT id, image_url, preset_name FROM presets WHERE id = ?').bind(body.preset_image_id).first()
+          );
+        }
+
+        if (hasSelfieIds && body.selfie_ids) {
+          // Add all selfie lookups in parallel
+          for (const selfieId of body.selfie_ids) {
+            queries.push(
+              DB.prepare('SELECT id, image_url FROM selfies WHERE id = ?').bind(selfieId).first()
+            );
+          }
+        }
+
+        // Execute all queries in parallel
+        const results = await Promise.all(queries);
+
+        // Extract results
+        const profileCheck = results[0];
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
+        }
+
+        let targetUrl: string = '';
+        let presetName: string = '';
+        let presetImageId: string | null = null;
+        let presetResult: any = null;
+
+        if (hasPresetId) {
+          presetResult = results[1];
+          if (!presetResult) {
+            return errorResponse('Preset image not found', 404);
+          }
+          targetUrl = presetResult.image_url;
+          presetName = presetResult.preset_name || 'Unnamed Preset';
+          presetImageId = body.preset_image_id || null;
+        } else if (hasPresetUrl) {
+          targetUrl = body.preset_image_url!;
+          presetName = 'Result Preset';
+          presetImageId = null;
+        } else {
+          // This should never happen due to earlier validation, but TypeScript needs this
+          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400);
+        }
+
+        // Extract selfie results
         const selfieUrls: string[] = [];
         const selfieIds: string[] = [];
+        const selfieStartIndex = hasPresetId ? 2 : 1;
 
-        if (hasSelfieIds) {
-          for (const selfieId of body.selfie_ids!) {
-            const selfieResult = await DB.prepare(
-              'SELECT id, image_url FROM selfies WHERE id = ?'
-            ).bind(selfieId).first();
-
+        if (hasSelfieIds && body.selfie_ids) {
+          for (let i = 0; i < body.selfie_ids.length; i++) {
+            const selfieResult = results[selfieStartIndex + i];
             if (!selfieResult) {
-              return errorResponse(`Selfie with ID ${selfieId} not found`, 404);
+              return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404);
             }
-
-            selfieUrls.push((selfieResult as any).image_url);
-            selfieIds.push(selfieId);
+            selfieUrls.push(selfieResult.image_url);
+            selfieIds.push(body.selfie_ids[i]);
           }
         } else if (hasSelfieUrls) {
           selfieUrls.push(...body.selfie_image_urls!);
@@ -1187,6 +1204,9 @@ export default {
 
         // For now, use the first selfie as the primary source
         // In a full implementation, you might want to combine multiple selfies
+        if (selfieUrls.length === 0) {
+          return errorResponse('No valid selfie URLs found', 400);
+        }
         const sourceUrl = selfieUrls[0];
 
         const requestDebug = compact({
@@ -1264,12 +1284,16 @@ export default {
             if (fullResponse) {
               try {
                 const parsedResponse = typeof fullResponse === 'string' ? JSON.parse(fullResponse) : fullResponse;
-                sanitizedVertexFailure = JSON.parse(JSON.stringify(parsedResponse, (key, value) => {
-                  if (key === 'data' && typeof value === 'string' && value.length > 100) {
-                    return '...';
-                  }
-                  return value;
-                }));
+                // Efficient sanitization - only sanitize 'data' field if it's a long string
+                sanitizedVertexFailure = typeof parsedResponse === 'object' && parsedResponse !== null
+                  ? Object.fromEntries(
+                      Object.entries(parsedResponse).map(([key, value]) => 
+                        key === 'data' && typeof value === 'string' && value.length > 100 
+                          ? [key, '...'] 
+                          : [key, value]
+                      )
+                    )
+                  : parsedResponse;
               } catch (parseErr) {
                 if (typeof fullResponse === 'string') {
                   sanitizedVertexFailure = fullResponse.substring(0, 500) + (fullResponse.length > 500 ? '...' : '');
@@ -1285,11 +1309,12 @@ export default {
               curlCommand: (faceSwapResult as any).CurlCommand,
             });
 
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
               vertex: vertexDebugFailure,
-            });
+            }) : undefined;
 
             const failureCode = faceSwapResult.StatusCode || 500;
 
@@ -1298,7 +1323,7 @@ export default {
               status: 'error',
               message: faceSwapResult.Message || 'Nano Banana provider failed to generate image',
               code: failureCode,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, failureCode);
           }
 
@@ -1311,17 +1336,18 @@ export default {
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           console.error('FaceSwap failed:', faceSwapResult.Message || 'Unknown error');
           const failureCode = faceSwapResult.StatusCode || 500;
-          const debugPayload = compact({
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
             request: requestDebug,
             provider: buildProviderDebug(faceSwapResult),
             vertex: mergeVertexDebug(faceSwapResult, vertexPromptPayload),
-          });
+          }) : undefined;
           return jsonResponse({
             data: null,
             status: 'error',
             message: faceSwapResult.Message || 'Face swap provider error',
             code: failureCode,
-            debug: debugPayload,
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
         }
 
@@ -1329,7 +1355,14 @@ export default {
         const skipSafetyCheckForVertex = true; // Always skip for Vertex AI mode
         let safetyDebug: SafetyCheckDebug | null = null;
 
-        if (!disableSafeSearch && !skipSafetyCheckForVertex) {
+        // Early return if safety checks are disabled - skip Vision API call entirely
+        if (disableSafeSearch || skipSafetyCheckForVertex) {
+          safetyDebug = {
+            checked: false,
+            isSafe: true,
+            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+          };
+        } else if (!disableSafeSearch && !skipSafetyCheckForVertex) {
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
           safetyDebug = {
@@ -1346,18 +1379,19 @@ export default {
 
           if (safeSearchResult.error) {
             console.error('[FaceSwap] Safe search error:', safeSearchResult.error?.substring(0, 200));
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
               vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
-            });
+            }) : undefined;
             return jsonResponse({
               data: null,
               status: 'error',
               message: `Safe search validation failed: ${safeSearchResult.error}`,
               code: 500,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, 500);
           }
 
@@ -1365,18 +1399,19 @@ export default {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
             console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel);
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
               vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
-            });
+            }) : undefined;
             return jsonResponse({
               data: null,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
               code: 422,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, 422);
           }
         } else {
@@ -1408,12 +1443,12 @@ export default {
           storageDebug.attemptedDownload = true;
           const resultImageResponse = await fetch(faceSwapResult.ResultImageUrl);
           storageDebug.downloadStatus = resultImageResponse.status;
-          if (resultImageResponse.ok) {
-            const resultImageData = await resultImageResponse.arrayBuffer();
+          if (resultImageResponse.ok && resultImageResponse.body) {
+            // Stream directly to R2 instead of buffering in memory
             const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
-            await R2_BUCKET.put(resultKey, resultImageData, {
+            await R2_BUCKET.put(resultKey, resultImageResponse.body, {
               httpMetadata: {
-                contentType: 'image/jpeg',
+                contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
                 cacheControl: 'public, max-age=31536000, immutable',
               },
             });
@@ -1464,19 +1499,20 @@ export default {
           }
         }
 
-        const providerDebug = buildProviderDebug(faceSwapResult, resultUrl);
-        const vertexDebug = mergeVertexDebug(faceSwapResult, vertexPromptPayload);
-        const visionDebug = buildVisionDebug(safetyDebug);
-        const storageDebugPayload = compact(storageDebug as unknown as Record<string, any>);
-        const databaseDebugPayload = compact(databaseDebug as unknown as Record<string, any>);
-        const debugPayload = compact({
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(faceSwapResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined;
+        const visionDebug = debugEnabled ? buildVisionDebug(safetyDebug) : undefined;
+        const storageDebugPayload = debugEnabled ? compact(storageDebug as unknown as Record<string, any>) : undefined;
+        const databaseDebugPayload = debugEnabled ? compact(databaseDebug as unknown as Record<string, any>) : undefined;
+        const debugPayload = debugEnabled ? compact({
           request: requestDebug,
           provider: providerDebug,
           vertex: vertexDebug,
           vision: visionDebug,
-          storage: Object.keys(storageDebugPayload).length ? storageDebugPayload : undefined,
-          database: Object.keys(databaseDebugPayload).length ? databaseDebugPayload : undefined,
-        });
+          storage: Object.keys(storageDebugPayload || {}).length ? storageDebugPayload : undefined,
+          database: Object.keys(databaseDebugPayload || {}).length ? databaseDebugPayload : undefined,
+        }) : undefined;
 
         return jsonResponse({
           data: {
@@ -1486,7 +1522,7 @@ export default {
           status: 'success',
           message: faceSwapResult.Message || 'Processing successful',
           code: 200,
-          debug: debugPayload,
+          ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
@@ -1664,16 +1700,17 @@ Place the person into the scene, transform their visual style to match the scene
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
           console.error('[RemoveBackground] Merge failed:', mergeResult.Message || 'Unknown error');
           const failureCode = mergeResult.StatusCode || 500;
-          const debugPayload = compact({
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
             request: requestDebug,
             provider: buildProviderDebug(mergeResult),
-          });
+          }) : undefined;
           return jsonResponse({
             data: null,
             status: 'error',
             message: mergeResult.Message || 'Merge provider error',
             code: failureCode,
-            debug: debugPayload,
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
         }
 
@@ -1686,7 +1723,14 @@ Place the person into the scene, transform their visual style to match the scene
         const skipSafetyCheckForVertex = true;
         let safetyDebug: SafetyCheckDebug | null = null;
 
-        if (!disableSafeSearch && !skipSafetyCheckForVertex) {
+        // Early return if safety checks are disabled - skip Vision API call entirely
+        if (disableSafeSearch || skipSafetyCheckForVertex) {
+          safetyDebug = {
+            checked: false,
+            isSafe: true,
+            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+          };
+        } else if (!disableSafeSearch && !skipSafetyCheckForVertex) {
           const safeSearchResult = await checkSafeSearch(mergeResult.ResultImageUrl, env);
 
           safetyDebug = {
@@ -1703,44 +1747,40 @@ Place the person into the scene, transform their visual style to match the scene
 
           if (safeSearchResult.error) {
             console.error('[RemoveBackground] Safe search error:', safeSearchResult.error?.substring(0, 200));
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(mergeResult),
               vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
-            });
+            }) : undefined;
             return jsonResponse({
               data: null,
               status: 'error',
               message: `Safe search validation failed: ${safeSearchResult.error}`,
               code: 500,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, 500);
           }
 
           if (!safeSearchResult.isSafe) {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(mergeResult),
               vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
-            });
+            }) : undefined;
             return jsonResponse({
               data: null,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
               code: 422,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, 422);
           }
-        } else {
-          safetyDebug = {
-            checked: false,
-            isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
-          };
         }
 
         const storageDebug: {
@@ -1764,12 +1804,12 @@ Place the person into the scene, transform their visual style to match the scene
           storageDebug.attemptedDownload = true;
           const resultImageResponse = await fetch(mergeResult.ResultImageUrl);
           storageDebug.downloadStatus = resultImageResponse.status;
-          if (resultImageResponse.ok) {
-            const resultImageData = await resultImageResponse.arrayBuffer();
+          if (resultImageResponse.ok && resultImageResponse.body) {
+            // Stream directly to R2 instead of buffering in memory
             const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
-            await R2_BUCKET.put(resultKey, resultImageData, {
+            await R2_BUCKET.put(resultKey, resultImageResponse.body, {
               httpMetadata: {
-                contentType: 'image/jpeg',
+                contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
                 cacheControl: 'public, max-age=31536000, immutable',
               },
             });
@@ -1820,17 +1860,18 @@ Place the person into the scene, transform their visual style to match the scene
           }
         }
 
-        const providerDebug = buildProviderDebug(mergeResult, resultUrl);
-        const visionDebug = buildVisionDebug(safetyDebug);
-        const storageDebugPayload = compact(storageDebug as unknown as Record<string, any>);
-        const databaseDebugPayload = compact(databaseDebug as unknown as Record<string, any>);
-        const debugPayload = compact({
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(mergeResult, resultUrl) : undefined;
+        const visionDebug = debugEnabled ? buildVisionDebug(safetyDebug) : undefined;
+        const storageDebugPayload = debugEnabled ? compact(storageDebug as unknown as Record<string, any>) : undefined;
+        const databaseDebugPayload = debugEnabled ? compact(databaseDebug as unknown as Record<string, any>) : undefined;
+        const debugPayload = debugEnabled ? compact({
           request: requestDebug,
           provider: providerDebug,
           vision: visionDebug,
-          storage: Object.keys(storageDebugPayload).length ? storageDebugPayload : undefined,
-          database: Object.keys(databaseDebugPayload).length ? databaseDebugPayload : undefined,
-        });
+          storage: Object.keys(storageDebugPayload || {}).length ? storageDebugPayload : undefined,
+          database: Object.keys(databaseDebugPayload || {}).length ? databaseDebugPayload : undefined,
+        }) : undefined;
 
         return jsonResponse({
           data: {
@@ -1840,7 +1881,7 @@ Place the person into the scene, transform their visual style to match the scene
           status: 'success',
           message: mergeResult.Message || 'Processing successful',
           code: 200,
-          debug: debugPayload,
+          ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
@@ -1890,12 +1931,13 @@ Place the person into the scene, transform their visual style to match the scene
           };
 
           if (!inputSafeSearchResult.isSafe) {
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               inputSafety: buildVisionDebug(inputSafetyDebug),
-            });
+            }) : undefined;
             return jsonResponse({
               data: null,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
               status: 'error',
               message: `Input image failed safety check: ${inputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
               code: 400,
@@ -1908,14 +1950,15 @@ Place the person into the scene, transform their visual style to match the scene
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
           console.error('Upscaler4K failed:', upscalerResult.Message || 'Unknown error');
           const failureCode = upscalerResult.StatusCode || 500;
-          const debugPayload = compact({
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(upscalerResult),
             vertex: buildVertexDebug(upscalerResult),
             inputSafety: buildVisionDebug(inputSafetyDebug),
-          });
+          }) : undefined;
           return jsonResponse({
             data: null,
-            debug: debugPayload,
+            ...(debugPayload ? { debug: debugPayload } : {}),
             status: 'error',
             message: upscalerResult.Message || 'Upscaler4K provider error',
             code: failureCode,
@@ -1947,15 +1990,16 @@ Place the person into the scene, transform their visual style to match the scene
           };
 
           if (!outputSafeSearchResult.isSafe) {
-            const debugPayload = compact({
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
               provider: buildProviderDebug(upscalerResult, resultUrl),
               vertex: buildVertexDebug(upscalerResult),
               inputSafety: buildVisionDebug(inputSafetyDebug),
               outputSafety: buildVisionDebug(outputSafetyDebug),
-            });
+            }) : undefined;
             return jsonResponse({
               data: null,
-              debug: debugPayload,
+              ...(debugPayload ? { debug: debugPayload } : {}),
               status: 'error',
               message: `Upscaled image failed safety check: ${outputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
               code: 400,
@@ -1974,21 +2018,22 @@ Place the person into the scene, transform their visual style to match the scene
           saved = directInsert.success === true;
         }
 
-        const providerDebug = buildProviderDebug(upscalerResult, resultUrl);
-        const vertexDebug = buildVertexDebug(upscalerResult);
-        const debugPayload = compact({
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? buildVertexDebug(upscalerResult) : undefined;
+        const debugPayload = debugEnabled ? compact({
           provider: providerDebug,
           vertex: vertexDebug,
           inputSafety: buildVisionDebug(inputSafetyDebug),
           outputSafety: buildVisionDebug(outputSafetyDebug),
-        });
+        }) : undefined;
 
         return jsonResponse({
           data: {
             id: savedResultId,
             resultImageUrl: resultUrl,
           },
-          debug: debugPayload,
+          ...(debugPayload ? { debug: debugPayload } : {}),
           status: 'success',
           message: upscalerResult.Message || 'Upscaling completed',
           code: 200,
@@ -2038,16 +2083,17 @@ Place the person into the scene, transform their visual style to match the scene
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
           console.error('Enhance failed:', enhancedResult.Message || 'Unknown error');
           const failureCode = enhancedResult.StatusCode || 500;
-          const debugPayload = compact({
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(enhancedResult),
             vertex: mergeVertexDebug(enhancedResult, undefined),
-          });
+          }) : undefined;
           return jsonResponse({
             data: null,
             status: 'error',
             message: enhancedResult.Message || 'Enhancement failed',
             code: failureCode,
-            debug: debugPayload,
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
         }
 
@@ -2069,8 +2115,9 @@ Place the person into the scene, transform their visual style to match the scene
           saved = directInsert.success === true;
         }
 
-        const providerDebug = buildProviderDebug(enhancedResult, resultUrl);
-        const vertexDebug = mergeVertexDebug(enhancedResult, undefined);
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(enhancedResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(enhancedResult, undefined) : undefined;
 
         return jsonResponse({
           data: {
@@ -2080,10 +2127,10 @@ Place the person into the scene, transform their visual style to match the scene
           status: 'success',
           message: enhancedResult.Message || 'Image enhancement completed',
           code: 200,
-          debug: compact({
+          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
             provider: providerDebug,
             vertex: vertexDebug,
-          }),
+          }) } : {}),
         });
       } catch (error) {
         console.error('Enhance unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
@@ -2129,16 +2176,17 @@ Place the person into the scene, transform their visual style to match the scene
         if (!colorizedResult.Success || !colorizedResult.ResultImageUrl) {
           console.error('Colorize failed:', colorizedResult.Message || 'Unknown error');
           const failureCode = colorizedResult.StatusCode || 500;
-          const debugPayload = compact({
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(colorizedResult),
             vertex: mergeVertexDebug(colorizedResult, undefined),
-          });
+          }) : undefined;
           return jsonResponse({
             data: null,
             status: 'error',
             message: colorizedResult.Message || 'Colorization failed',
             code: failureCode,
-            debug: debugPayload,
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
         }
 
@@ -2160,8 +2208,9 @@ Place the person into the scene, transform their visual style to match the scene
           saved = directInsert.success === true;
         }
 
-        const providerDebug = buildProviderDebug(colorizedResult, resultUrl);
-        const vertexDebug = mergeVertexDebug(colorizedResult, undefined);
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(colorizedResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(colorizedResult, undefined) : undefined;
 
         return jsonResponse({
           data: {
@@ -2171,10 +2220,10 @@ Place the person into the scene, transform their visual style to match the scene
           status: 'success',
           message: colorizedResult.Message || 'Colorization completed',
           code: 200,
-          debug: compact({
+          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
             provider: providerDebug,
             vertex: vertexDebug,
-          }),
+          }) } : {}),
         });
       } catch (error) {
         console.error('Colorize unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
@@ -2223,16 +2272,17 @@ Place the person into the scene, transform their visual style to match the scene
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
           console.error('Aging failed:', agingResult.Message || 'Unknown error');
           const failureCode = agingResult.StatusCode || 500;
-          const debugPayload = compact({
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(agingResult),
             vertex: mergeVertexDebug(agingResult, undefined),
-          });
+          }) : undefined;
           return jsonResponse({
             data: null,
             status: 'error',
             message: agingResult.Message || 'Aging transformation failed',
             code: failureCode,
-            debug: debugPayload,
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
         }
 
@@ -2254,8 +2304,9 @@ Place the person into the scene, transform their visual style to match the scene
           saved = directInsert.success === true;
         }
 
-        const providerDebug = buildProviderDebug(agingResult, resultUrl);
-        const vertexDebug = mergeVertexDebug(agingResult, undefined);
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(agingResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(agingResult, undefined) : undefined;
 
         return jsonResponse({
           data: {
@@ -2265,10 +2316,10 @@ Place the person into the scene, transform their visual style to match the scene
           status: 'success',
           message: agingResult.Message || 'Aging transformation completed',
           code: 200,
-          debug: compact({
+          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
             provider: providerDebug,
             vertex: vertexDebug,
-          }),
+          }) } : {}),
         });
       } catch (error) {
         console.error('Aging unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));

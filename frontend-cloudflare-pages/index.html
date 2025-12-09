@@ -928,12 +928,12 @@
         async function loadGallery(type, genderFilter = '') {
             const config = galleries[type];
             let startTime = null;
+            const params = new URLSearchParams();
             try {
                 if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
                     config.state.items = []; config.state.page = 1; renderGallery(type); return;
                 }
                 let url = `${WORKER_URL}${config.endpoints.list}`;
-                const params = new URLSearchParams();
                 if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
                     const profileId = window.profileManager.currentProfile.id;
                     params.append('profile_id', profileId);
