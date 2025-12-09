@@ -495,7 +495,7 @@
                     <div class="sidebar-header">
                         <span>Ảnh Tự Sướng (Selfies) - Chọn tối đa 2 cho Wedding</span>
                         <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
-                        <input type="file" class="file-input" id="selfie-input" accept="image/*">
+                        <input type="file" class="file-input" id="selfie-input" accept="image/*" multiple>
                     </div>
                     <div class="sidebar-content" id="selfie-sidebar-content">
                         <div class="gallery-drop-zone" id="selfie-drop-zone">
@@ -1175,12 +1175,14 @@
 
         // Upload
         presetInput?.addEventListener('change', async e => {
-            for (const file of Array.from(e.target.files || [])) await handleImageUpload(file, 'preset');
+            const files = Array.from(e.target.files || []);
+            if (files.length > 0) await handleMultipleImageUpload(files, 'preset');
             e.target.value = '';
         });
 
         selfieInput?.addEventListener('change', async e => {
-            if (e.target.files[0]) await handleImageUpload(e.target.files[0], 'selfie');
+            const files = Array.from(e.target.files || []);
+            if (files.length > 0) await handleMultipleImageUpload(files, 'selfie');
             e.target.value = '';
         });
 
@@ -1223,24 +1225,40 @@
                     }
                 }
                 
-                const files = type === 'preset' ? Array.from(e.dataTransfer.files) : [e.dataTransfer.files[0]];
-                for (const file of files.filter(f => f?.type.match('image/(jpeg|jpg|png|webp)'))) await handleImageUpload(file, type);
+                const files = Array.from(e.dataTransfer.files).filter(f => f?.type.match('image/(jpeg|jpg|png|webp)'));
+                if (files.length > 0) await handleMultipleImageUpload(files, type);
             }, false);
         }
 
-        async function handleImageUpload(file, type) {
+        async function handleMultipleImageUpload(files, type) {
             const config = galleries[type];
             if (!window.profileManager.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi tải lên hình ảnh.', 'error'); return; }
-            if (!file.type.match('image/(jpeg|jpg|png|webp)')) { showStatusMessage('Loại tệp không hợp lệ. Vui lòng tải lên JPG, PNG hoặc WebP.', 'error'); return; }
-            if (file.size > 10 * 1024 * 1024) { showStatusMessage('Tệp vượt quá giới hạn 10MB. Vui lòng chọn tệp nhỏ hơn.', 'error'); return; }
+            
+            // Validate all files
+            const validFiles = files.filter(file => {
+                if (!file.type.match('image/(jpeg|jpg|png|webp)')) {
+                    showStatusMessage(`Loại tệp không hợp lệ: ${file.name}. Vui lòng tải lên JPG, PNG hoặc WebP.`, 'error');
+                    return false;
+                }
+                if (file.size > 10 * 1024 * 1024) {
+                    showStatusMessage(`Tệp vượt quá giới hạn 10MB: ${file.name}. Vui lòng chọn tệp nhỏ hơn.`, 'error');
+                    return false;
+                }
+                return true;
+            });
+
+            if (validFiles.length === 0) return;
 
             const dropZone = $(type + '-drop-zone');
             dropZone?.classList.add('loading');
-            showLoading(`Đang tải lên ${type === 'preset' ? 'mẫu' : 'selfie'}...`);
+            showLoading(`Đang tải lên ${validFiles.length} ${type === 'preset' ? 'mẫu' : 'selfie'}...`);
 
             try {
                 const formData = new FormData();
-                formData.append('file', file);
+                // Append all files with 'files' key (backend expects 'files' for multiple)
+                for (const file of validFiles) {
+                    formData.append('files', file);
+                }
                 formData.append('type', type);
                 formData.append('profile_id', window.profileManager.currentProfile.id);
                 
@@ -1254,21 +1272,52 @@
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
-                logApiCall({ label: `Tải Lên ${config.logName}`, method: 'POST', url: '/upload-url', fullUrl: uploadUrl, status: response.ok ? 'success' : 'error', payload: data, duration, body: formData });
+                logApiCall({ label: `Tải Lên ${config.logName} (${validFiles.length} files)`, method: 'POST', url: '/upload-url', fullUrl: uploadUrl, status: response.ok ? 'success' : 'error', payload: data, duration, body: formData });
                 if (!response.ok) throw new Error(data.message || 'Tải lên thất bại');
 
-                const newImage = { id: data.id, filename: data.filename, image_url: data.url, created_at: new Date().toISOString() };
-                config.state.items = [newImage, ...config.state.items.filter(e => e.id !== newImage.id)];
-                config.state.page = 1;
-                await loadGallery(type, config.state.genderFilter);
-                setSelectedItem(type, newImage);
-                showStatusMessage('Tải lên hình ảnh thành công', 'success');
+                // Process all results
+                const successfulResults = data.results?.filter(r => r.success) || [];
+                const failedResults = data.results?.filter(r => !r.success) || [];
+
+                if (successfulResults.length > 0) {
+                    const newImages = successfulResults.map(result => ({
+                        id: result.id,
+                        filename: result.filename,
+                        image_url: result.url,
+                        created_at: new Date().toISOString()
+                    }));
+
+                    // Add all new images to gallery
+                    config.state.items = [...newImages, ...config.state.items.filter(e => !newImages.some(ni => ni.id === e.id))];
+                    config.state.page = 1;
+                    await loadGallery(type, config.state.genderFilter);
+                    
+                    // Select the first uploaded image
+                    if (newImages.length > 0) {
+                        setSelectedItem(type, newImages[0]);
+                    }
+
+                    const successMsg = successfulResults.length === validFiles.length 
+                        ? `Tải lên thành công ${successfulResults.length} hình ảnh`
+                        : `Tải lên thành công ${successfulResults.length}/${validFiles.length} hình ảnh`;
+                    showStatusMessage(successMsg, 'success');
+                }
+
+                if (failedResults.length > 0) {
+                    const errorMsg = `Thất bại: ${failedResults.length} hình ảnh không thể tải lên`;
+                    showStatusMessage(errorMsg, 'error');
+                }
             } catch (error) {
                 showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
             } finally {
                 dropZone?.classList.remove('loading');
                 hideLoading();
             }
+        }
+
+        // Keep backward compatibility
+        async function handleImageUpload(file, type) {
+            await handleMultipleImageUpload([file], type);
         }
 
         // Face Swap & Operations

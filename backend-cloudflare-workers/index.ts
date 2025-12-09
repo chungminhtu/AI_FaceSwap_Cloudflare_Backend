@@ -327,48 +327,63 @@ export default {
       return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
     }
 
-    // Handle direct file upload endpoint - handles both preset and selfie uploads
+    // Handle direct file upload endpoint - handles both preset and selfie uploads (supports multiple files)
     if (path === '/upload-url' && request.method === 'POST') {
       try {
         const contentType = request.headers.get('Content-Type') || '';
-        let file: File | null = null;
-        let fileData: ArrayBuffer | null = null;
-        let filename: string = '';
-        let imageUrl: string | null = null;
+        let files: File[] = [];
+        let imageUrls: string[] = [];
         let type: string = '';
         let profileId: string = '';
         let presetName: string = '';
         let enableVertexPrompt: boolean = false;
-        let enableVisionScan: boolean = false;
         let gender: 'male' | 'female' | null = null;
 
         // Support both multipart/form-data (file upload) and application/json (URL upload)
         if (contentType.toLowerCase().includes('multipart/form-data')) {
           const formData = await request.formData();
-          file = formData.get('file') as unknown as File;
-          imageUrl = formData.get('image_url') as string | null;
+          // Get all files (support multiple)
+          const fileEntries = formData.getAll('files');
+          for (const entry of fileEntries) {
+            if (entry && typeof entry !== 'string') {
+              files.push(entry as any as File);
+            }
+          }
+          // Fallback to single 'file' for backward compatibility
+          if (files.length === 0) {
+            const singleFile = formData.get('file') as any;
+            if (singleFile && typeof singleFile !== 'string') {
+              files.push(singleFile as File);
+            }
+          }
+          // Get image URLs if provided
+          const urlEntries = formData.getAll('image_urls');
+          imageUrls = urlEntries.filter((url): url is string => typeof url === 'string' && url.trim() !== '');
+          // Fallback to single 'image_url' for backward compatibility
+          if (imageUrls.length === 0) {
+            const singleUrl = formData.get('image_url') as string | null;
+            if (singleUrl) imageUrls = [singleUrl];
+          }
           type = formData.get('type') as string;
           profileId = formData.get('profile_id') as string;
           presetName = formData.get('presetName') as string;
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
-          enableVisionScan = formData.get('enableVisionScan') === 'true';
           gender = (formData.get('gender') as 'male' | 'female') || null;
         } else if (contentType.toLowerCase().includes('application/json')) {
           const body = await request.json() as { 
-            image_url?: string; 
+            image_urls?: string[];
+            image_url?: string;
             type?: string; 
             profile_id?: string; 
             presetName?: string; 
             enableVertexPrompt?: boolean; 
-            enableVisionScan?: boolean; 
             gender?: 'male' | 'female' 
           };
-          imageUrl = body.image_url || null;
+          imageUrls = body.image_urls || (body.image_url ? [body.image_url] : []);
           type = body.type || '';
           profileId = body.profile_id || '';
           presetName = body.presetName || '';
           enableVertexPrompt = body.enableVertexPrompt === true;
-          enableVisionScan = body.enableVisionScan === true;
           gender = body.gender || null;
         } else {
           return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400);
@@ -390,161 +405,180 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        // Handle image URL upload (backend fetches to avoid CORS)
-        if (imageUrl && !file) {
+        // Prepare all file data (from files and URLs)
+        interface FileData {
+          fileData: ArrayBuffer;
+          filename: string;
+          contentType: string;
+        }
+
+        const allFileData: FileData[] = [];
+
+        // Process uploaded files
+        for (const file of files) {
+          const fileData = await file.arrayBuffer();
+          if (!fileData || fileData.byteLength === 0) {
+            continue; // Skip empty files
+          }
+          allFileData.push({
+            fileData,
+            filename: file.name || `upload_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            contentType: file.type || 'image/jpeg'
+          });
+        }
+
+        // Process image URLs
+        for (const imageUrl of imageUrls) {
           try {
             const imageResponse = await fetch(imageUrl);
             if (!imageResponse.ok) {
-              return errorResponse(`Failed to fetch image from URL: ${imageResponse.status} ${imageResponse.statusText}`, 400);
+              console.warn(`[Upload] Failed to fetch image from URL: ${imageResponse.status}`);
+              continue; // Skip failed URLs
             }
-            fileData = await imageResponse.arrayBuffer();
+            const fileData = await imageResponse.arrayBuffer();
             if (!fileData || fileData.byteLength === 0) {
-              return errorResponse('Empty image data from URL', 400);
+              continue; // Skip empty data
             }
             const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
             const urlParts = imageUrl.split('/');
-            filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.${contentType.split('/')[1] || 'jpg'}`;
-            // Remove query parameters from filename
-            filename = filename.split('?')[0];
+            let filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.${contentType.split('/')[1] || 'jpg'}`;
+            filename = filename.split('?')[0]; // Remove query parameters
+            allFileData.push({
+              fileData,
+              filename,
+              contentType
+            });
           } catch (fetchError) {
             console.error('[Upload] Error fetching image from URL:', fetchError instanceof Error ? fetchError.message.substring(0, 200) : String(fetchError).substring(0, 200));
-            return errorResponse(`Failed to fetch image from URL: ${fetchError instanceof Error ? fetchError.message.substring(0, 200) : String(fetchError).substring(0, 200)}`, 400);
+            // Continue with other files
           }
-        } else if (file) {
-          // Handle file upload (existing behavior)
-          fileData = await file.arrayBuffer();
-          if (!fileData || fileData.byteLength === 0) {
-            return errorResponse('Empty file data', 400);
-          }
-          filename = file.name || `upload_${Date.now()}`;
-        } else {
-          return errorResponse('Either file or image_url must be provided', 400);
         }
 
-        // Generate a unique key for the file
-        const key = `${type}/${filename}`;
-
-        const detectedContentType = file?.type || (imageUrl ? 'image/jpeg' : 'image/jpeg');
-
-        // Upload to R2 with cache-control headers
-        try {
-          await R2_BUCKET.put(key, fileData, {
-            httpMetadata: {
-              contentType: detectedContentType,
-              cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
-            },
-          });
-        } catch (r2Error) {
-          console.error('R2 upload error:', r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200));
-          return errorResponse(`R2 upload failed: ${r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200)}`, 500);
+        if (allFileData.length === 0) {
+          return errorResponse('No valid files or image URLs provided', 400);
         }
 
-        // Get the public URL (R2 CDN URL)
-        const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
+        // Process all files in parallel
+        const processFile = async (fileData: FileData, index: number): Promise<any> => {
+          const timestamp = Date.now();
+          const randomSuffix = Math.random().toString(36).substring(2, 15);
+          const uniqueFilename = `${timestamp}_${index}_${randomSuffix}_${fileData.filename}`;
+          const key = `${type}/${uniqueFilename}`;
 
-        // Save upload metadata to database based on type
-        if (type === 'preset') {
-          // Vision API safety scan disabled for all Vertex API operations
-          let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
+          // Upload to R2
+          try {
+            await R2_BUCKET.put(key, fileData.fileData, {
+              httpMetadata: {
+                contentType: fileData.contentType,
+                cacheControl: 'public, max-age=31536000, immutable',
+              },
+            });
+          } catch (r2Error) {
+            console.error('R2 upload error:', r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200));
+            return {
+              success: false,
+              error: `R2 upload failed: ${r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200)}`,
+              filename: fileData.filename
+            };
+          }
 
-          // Generate Vertex AI prompt only if enabled
-          let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };
-          let promptJson: string | null = null;
+          const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
+          const createdAt = Math.floor(Date.now() / 1000);
 
-          if (enableVertexPrompt) {
-            try {
-              const promptResult = await generateVertexPrompt(publicUrl, env);
-              if (promptResult.success && promptResult.prompt) {
-                promptJson = JSON.stringify(promptResult.prompt);
-                const promptKeys = Object.keys(promptResult.prompt);
-                vertexCallInfo = {
-                  success: true,
-                  promptKeys,
-                  debug: promptResult.debug
-                };
-              } else {
+          if (type === 'preset') {
+            // Generate Vertex AI prompt in parallel
+            let promptJson: string | null = null;
+            let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };
+
+            if (enableVertexPrompt) {
+              try {
+                const promptResult = await generateVertexPrompt(publicUrl, env);
+                if (promptResult.success && promptResult.prompt) {
+                  promptJson = JSON.stringify(promptResult.prompt);
+                  vertexCallInfo = {
+                    success: true,
+                    promptKeys: Object.keys(promptResult.prompt),
+                    debug: promptResult.debug
+                  };
+                } else {
+                  vertexCallInfo = {
+                    success: false,
+                    error: promptResult.error || 'Unknown error',
+                    debug: promptResult.debug
+                  };
+                }
+              } catch (vertexError) {
+                const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
                 vertexCallInfo = {
                   success: false,
-                  error: promptResult.error || 'Unknown error',
-                  debug: promptResult.debug
+                  error: errorMsg.substring(0, 200),
+                  debug: { errorDetails: errorMsg.substring(0, 200) }
                 };
-                console.error('[Vertex] Failed to generate prompt:', promptResult.error);
               }
-            } catch (vertexError) {
-              const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
-              vertexCallInfo = {
-                success: false,
-                error: errorMsg.substring(0, 200),
-                debug: { errorDetails: errorMsg.substring(0, 200) }
-              };
-              console.error('[Vertex] Exception during prompt generation:', errorMsg.substring(0, 200));
             }
+
+            const imageId = `image_${timestamp}_${randomSuffix}`;
+            const validGender = (gender === 'male' || gender === 'female') ? gender : null;
+            const presetNameForFile = presetName || `Preset ${timestamp}_${index}`;
+
+            // Save to database
+            const result = await DB.prepare(
+              'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            ).bind(imageId, publicUrl, uniqueFilename, presetNameForFile, promptJson, validGender, createdAt).run();
+
+            if (!result.success) {
+              return {
+                success: false,
+                error: 'Database insert failed',
+                filename: fileData.filename
+              };
+            }
+
+            return {
+              success: true,
+              url: publicUrl,
+              id: imageId,
+              filename: uniqueFilename,
+              hasPrompt: !!promptJson,
+              prompt_json: promptJson ? JSON.parse(promptJson) : null,
+              vertex_info: vertexCallInfo
+            };
+          } else if (type === 'selfie') {
+            const selfieId = `selfie_${timestamp}_${randomSuffix}`;
+
+            const result = await DB.prepare(
+              'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(selfieId, publicUrl, uniqueFilename, profileId, createdAt).run();
+
+            if (!result.success) {
+              return {
+                success: false,
+                error: 'Database insert failed',
+                filename: fileData.filename
+              };
+            }
+
+            return {
+              success: true,
+              url: publicUrl,
+              id: selfieId,
+              filename: uniqueFilename
+            };
           }
 
-          // Always save image to database (even if prompt generation or vision scan failed)
-          const imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          const createdAt = Math.floor(Date.now() / 1000);
+          return { success: true, url: publicUrl };
+        };
 
+        // Process all files in parallel
+        const results = await Promise.all(allFileData.map((fileData, index) => processFile(fileData, index)));
 
-          // Validate gender before insert
-          const validGender = (gender === 'male' || gender === 'female') ? gender : null;
-
-          // Insert into simplified presets table
-          const result = await DB.prepare(
-            'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-          ).bind(imageId, publicUrl, filename, presetName || `Preset ${Date.now()}`, promptJson, validGender, createdAt).run();
-
-          if (!result.success) {
-            console.error('[DB] Insert failed');
-            throw new Error('Database insert failed');
-          }
-
-
-
-          return jsonResponse({
-            success: true,
-            url: publicUrl,
-            id: imageId,
-            filename: filename,
-            hasPrompt: !!promptJson,
-            prompt_json: promptJson ? JSON.parse(promptJson) : null,
-            vertex_info: vertexCallInfo,
-            vision_scan: visionScanResult
-          });
-
-        } else if (type === 'selfie') {
-          const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          const createdAt = Math.floor(Date.now() / 1000);
-
-          const tableCheck = await DB.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
-          ).first();
-
-          if (!tableCheck) {
-            console.error('ERROR: selfies table does not exist in database!');
-            return errorResponse('Database schema not initialized. Please run database migration.', 500);
-          }
-
-          // Insert into selfies table
-          const result = await DB.prepare(
-            'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-          ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
-
-          if (!result.success) {
-            console.error('Database insert returned success=false');
-            return errorResponse('Failed to save selfie to database', 500);
-          }
-
-          // Trust insert success - no need to verify with additional query
-          return jsonResponse({
-            success: true,
-            url: publicUrl,
-            id: selfieId,
-            filename: filename
-          });
-        }
-
-        return jsonResponse({ success: true, url: publicUrl });
+        return jsonResponse({
+          success: true,
+          results: results,
+          count: results.length,
+          successful: results.filter(r => r.success).length,
+          failed: results.filter(r => !r.success).length
+        });
       } catch (error) {
         console.error('Upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Upload failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);

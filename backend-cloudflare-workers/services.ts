@@ -147,18 +147,39 @@ export const callNanoBanana = async (
     const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
 
     // Convert prompt_json to text string for Vertex AI
-    // The prompt_json from DB is already the complete text to send - no modifications needed
+    // Enhance prompt with strong facial preservation instruction
     let promptText = '';
     if (prompt && typeof prompt === 'object') {
-      // Convert the entire prompt_json object to a formatted text string
-      promptText = JSON.stringify(prompt, null, 2);
+      // Clone the prompt object to avoid mutating the original
+      const enhancedPrompt = { ...prompt };
+      
+      // Ensure the prompt field includes strong facial preservation instruction
+      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. 1:1 aspect ratio, 4K detail.';
+      
+      if (enhancedPrompt.prompt && typeof enhancedPrompt.prompt === 'string') {
+        // Check if the instruction is already present to avoid duplication
+        if (!enhancedPrompt.prompt.includes('100% identical facial features')) {
+          enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${facialPreservationInstruction}`;
+        }
+      } else {
+        enhancedPrompt.prompt = facialPreservationInstruction;
+      }
+      
+      // Convert the enhanced prompt object to a formatted text string
+      promptText = JSON.stringify(enhancedPrompt, null, 2);
     } else if (typeof prompt === 'string') {
-      promptText = prompt;
+      // For string prompts, append the instruction if not already present
+      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. 1:1 aspect ratio, 4K detail.';
+      if (!prompt.includes('100% identical facial features')) {
+        promptText = `${prompt} ${facialPreservationInstruction}`;
+      } else {
+        promptText = prompt;
+      }
     } else {
       promptText = JSON.stringify(prompt);
     }
 
-    // Use prompt_json as-is - it's already the complete instruction text
+    // Use enhanced prompt with facial preservation instruction
     const faceSwapPrompt = promptText;
 
     // Vertex AI requires OAuth token for service account authentication
@@ -973,7 +994,7 @@ export const generateVertexPrompt = async (
     debugInfo.model = geminiModel;
 
     // Exact prompt text as specified by user
-    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later; the final face must look exactly like the face in my uploaded image. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
+    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio and 4K detail. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(imageUrl);
