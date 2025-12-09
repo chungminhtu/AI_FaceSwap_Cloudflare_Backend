@@ -324,21 +324,51 @@ export default {
     if (path === '/upload-url' && request.method === 'POST') {
       try {
         const contentType = request.headers.get('Content-Type') || '';
-        if (!contentType.toLowerCase().includes('multipart/form-data')) {
-          return errorResponse(`Content-Type must be multipart/form-data. Received: ${contentType}`, 400);
+        let file: File | null = null;
+        let fileData: ArrayBuffer | null = null;
+        let filename: string = '';
+        let imageUrl: string | null = null;
+        let type: string = '';
+        let profileId: string = '';
+        let presetName: string = '';
+        let enableVertexPrompt: boolean = false;
+        let enableVisionScan: boolean = false;
+        let gender: 'male' | 'female' | null = null;
+
+        // Support both multipart/form-data (file upload) and application/json (URL upload)
+        if (contentType.toLowerCase().includes('multipart/form-data')) {
+          const formData = await request.formData();
+          file = formData.get('file') as unknown as File;
+          imageUrl = formData.get('image_url') as string | null;
+          type = formData.get('type') as string;
+          profileId = formData.get('profile_id') as string;
+          presetName = formData.get('presetName') as string;
+          enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
+          enableVisionScan = formData.get('enableVisionScan') === 'true';
+          gender = (formData.get('gender') as 'male' | 'female') || null;
+        } else if (contentType.toLowerCase().includes('application/json')) {
+          const body = await request.json() as { 
+            image_url?: string; 
+            type?: string; 
+            profile_id?: string; 
+            presetName?: string; 
+            enableVertexPrompt?: boolean; 
+            enableVisionScan?: boolean; 
+            gender?: 'male' | 'female' 
+          };
+          imageUrl = body.image_url || null;
+          type = body.type || '';
+          profileId = body.profile_id || '';
+          presetName = body.presetName || '';
+          enableVertexPrompt = body.enableVertexPrompt === true;
+          enableVisionScan = body.enableVisionScan === true;
+          gender = body.gender || null;
+        } else {
+          return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400);
         }
 
-        const formData = await request.formData();
-        const file = formData.get('file') as unknown as File;
-        const type = formData.get('type') as string;
-        const profileId = formData.get('profile_id') as string;
-        const presetName = formData.get('presetName') as string;
-        const enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
-        const enableVisionScan = formData.get('enableVisionScan') === 'true';
-        const gender = formData.get('gender') as 'male' | 'female';
-
-        if (!file || !type || !profileId) {
-          return errorResponse('Missing required fields: file, type, and profile_id', 400);
+        if (!type || !profileId) {
+          return errorResponse('Missing required fields: type and profile_id', 400);
         }
 
         if (type !== 'preset' && type !== 'selfie') {
@@ -354,22 +384,50 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        const fileData = await file.arrayBuffer();
-        if (!fileData || fileData.byteLength === 0) {
-          return errorResponse('Empty file data', 400);
+        // Handle image URL upload (backend fetches to avoid CORS)
+        if (imageUrl && !file) {
+          try {
+            console.log(`[Upload] Fetching image from URL: ${imageUrl}`);
+            const imageResponse = await fetch(imageUrl);
+            if (!imageResponse.ok) {
+              return errorResponse(`Failed to fetch image from URL: ${imageResponse.status} ${imageResponse.statusText}`, 400);
+            }
+            fileData = await imageResponse.arrayBuffer();
+            if (!fileData || fileData.byteLength === 0) {
+              return errorResponse('Empty image data from URL', 400);
+            }
+            const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+            const urlParts = imageUrl.split('/');
+            filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.${contentType.split('/')[1] || 'jpg'}`;
+            // Remove query parameters from filename
+            filename = filename.split('?')[0];
+            console.log(`[Upload] Fetched image from URL: ${filename}, size: ${fileData.byteLength}, type: ${contentType}`);
+          } catch (fetchError) {
+            console.error('[Upload] Error fetching image from URL:', fetchError);
+            return errorResponse(`Failed to fetch image from URL: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`, 400);
+          }
+        } else if (file) {
+          // Handle file upload (existing behavior)
+          fileData = await file.arrayBuffer();
+          if (!fileData || fileData.byteLength === 0) {
+            return errorResponse('Empty file data', 400);
+          }
+          filename = file.name || `upload_${Date.now()}`;
+        } else {
+          return errorResponse('Either file or image_url must be provided', 400);
         }
 
         // Generate a unique key for the file
-        const filename = file.name || `upload_${Date.now()}`;
         const key = `${type}/${filename}`;
 
-        console.log(`Upload request: type=${type}, key=${key}, content-type=${file.type}, size=${fileData.byteLength}`);
+        const detectedContentType = file?.type || (imageUrl ? 'image/jpeg' : 'image/jpeg');
+        console.log(`Upload request: type=${type}, key=${key}, content-type=${detectedContentType}, size=${fileData.byteLength}, source=${imageUrl ? 'URL' : 'file'}`);
 
         // Upload to R2 with cache-control headers
         try {
           await R2_BUCKET.put(key, fileData, {
             httpMetadata: {
-              contentType: file.type || 'image/jpeg',
+              contentType: detectedContentType,
               cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
             },
           });

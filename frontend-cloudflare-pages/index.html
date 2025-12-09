@@ -322,6 +322,18 @@
         .lightbox-content { position: relative; max-width: 90%; max-height: 90%; z-index: 10001; display: flex; flex-direction: column; align-items: center; }
         .lightbox-content img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px; }
         .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
+        .lightbox-actions {
+            margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+        }
+        .lightbox-action-btn {
+            padding: 10px 20px; background: rgba(139, 92, 246, 0.9); border: none; border-radius: 8px;
+            color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .lightbox-action-btn:hover { background: rgba(139, 92, 246, 1); transform: translateY(-2px); }
+        .lightbox-action-btn:active { transform: translateY(0); }
+        .lightbox-action-btn.secondary { background: rgba(59, 130, 246, 0.9); }
+        .lightbox-action-btn.secondary:hover { background: rgba(59, 130, 246, 1); }
         .lightbox-close, .lightbox-nav {
             position: absolute; width: 40px; height: 40px;
             background: rgba(255,255,255,0.2); border: none; border-radius: 12px;
@@ -611,6 +623,16 @@
         <div class="lightbox-content">
             <img id="lightbox-image" src="" alt="">
             <div class="lightbox-info"><span id="lightbox-counter"></span></div>
+            <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
+                <button class="lightbox-action-btn" onclick="selectAsPreset()">
+                    <span>📸</span>
+                    <span>Chọn làm Mẫu</span>
+                </button>
+                <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
+                    <span>👤</span>
+                    <span>Chọn làm Selfie</span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -674,11 +696,12 @@
                     let profileId = localStorage.getItem('userProfileId');
                     if (profileId) {
                         const startTime = Date.now();
-                        const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
+                        const profileUrl = `${WORKER_URL}/profiles/${profileId}`;
+                        const response = await fetch(profileUrl);
                         const duration = Date.now() - startTime;
                         if (response.ok) {
                             const data = await response.json();
-                            logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId}`, status: 'success', duration });
+                            logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId}`, fullUrl: profileUrl, status: 'success', duration });
                             this.currentProfile = data;
                             this.updateProfileDisplay();
                             await Promise.all([loadGallery('selfie'), loadGallery('results')]);
@@ -700,11 +723,12 @@
             },
             async createProfile() {
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}/profiles`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                const createProfileUrl = `${WORKER_URL}/profiles`;
+                const response = await fetch(createProfileUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
                 const duration = Date.now() - startTime;
                 if (!response.ok) throw new Error('Không thể tạo hồ sơ');
                 const data = await response.json();
-                logApiCall({ label: 'Tạo Hồ Sơ', method: 'POST', url: '/profiles', status: 'success', payload: data, duration });
+                logApiCall({ label: 'Tạo Hồ Sơ', method: 'POST', url: '/profiles', fullUrl: createProfileUrl, status: 'success', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: {} });
                 return data;
             },
             updateProfileDisplay() {
@@ -722,11 +746,12 @@
                 showLoading('Đang chuyển hồ sơ...');
                 try {
                     const startTime = Date.now();
-                    const response = await fetch(`${WORKER_URL}/profiles/${profileId.trim()}`);
+                    const getProfileUrl = `${WORKER_URL}/profiles/${profileId.trim()}`;
+                    const response = await fetch(getProfileUrl);
                     const duration = Date.now() - startTime;
                     if (!response.ok) throw new Error(response.status === 404 ? 'Không tìm thấy hồ sơ' : `HTTP ${response.status}`);
                     const data = await response.json();
-                    logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId.trim()}`, status: 'success', duration });
+                    logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId.trim()}`, fullUrl: getProfileUrl, status: 'success', duration });
                     this.currentProfile = data;
                     localStorage.setItem('userProfileId', this.currentProfile.id);
                     this.updateProfileDisplay();
@@ -805,21 +830,64 @@
         }
 
         // Logging
-        function logApiCall({ label, method, url, status = 'info', payload, duration }) {
+        function generateCurlCommand(method, fullUrl, headers, body) {
+            let curl = `curl -X ${method}`;
+            
+            if (headers) {
+                Object.entries(headers).forEach(([key, value]) => {
+                    curl += ` \\\n  -H "${key}: ${value}"`;
+                });
+            }
+            
+            curl += ` \\\n  "${fullUrl}"`;
+            
+            if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+                if (body instanceof FormData) {
+                    curl += ` \\\n  -F "file=@filename.jpg"`;
+                    curl += ` \\\n  -F "type=preset"`;
+                    curl += ` \\\n  -F "profile_id=YOUR_PROFILE_ID"`;
+                } else if (typeof body === 'string') {
+                    try {
+                        const parsed = JSON.parse(body);
+                        curl += ` \\\n  -d '${JSON.stringify(parsed, null, 2).replace(/'/g, "'\\''")}'`;
+                    } catch {
+                        curl += ` \\\n  -d '${body.replace(/'/g, "'\\''")}'`;
+                    }
+                } else if (body && typeof body === 'object') {
+                    curl += ` \\\n  -d '${JSON.stringify(body, null, 2).replace(/'/g, "'\\''")}'`;
+                }
+            }
+            
+            return curl;
+        }
+
+        function logApiCall({ label, method, url, status = 'info', payload, duration, headers, body, fullUrl }) {
             if (!apiLogList || !['POST', 'PUT', 'DELETE', 'GET'].includes((method || '').toUpperCase())) return;
+            
             const entry = document.createElement('div');
             entry.className = `api-log-entry log-${status}`;
             const durationText = duration ? formatDuration(duration) : '';
             const durationHtml = durationText ? ` <span style="color:#666;font-size:11px;font-weight:600;">⏱️ ${durationText}</span>` : '';
+            
+            const displayUrl = fullUrl || (url.startsWith('http') ? url : `${WORKER_URL}${url.startsWith('/') ? url : '/' + url}`);
+            
             let payloadHtml = '';
             if (payload) {
-                payloadHtml = `<div class="api-log-payload">${escapeHtml(JSON.stringify(payload, null, 2))}</div>`;
+                payloadHtml = `<div class="api-log-payload"><strong>Response:</strong><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></div>`;
             }
+            
+            let curlHtml = '';
+            if (method && displayUrl) {
+                const curlCommand = generateCurlCommand(method, displayUrl, headers, body);
+                curlHtml = `<div class="api-log-payload" style="margin-top: 8px;"><strong>CURL:</strong><pre style="background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 11px;">${escapeHtml(curlCommand)}</pre></div>`;
+            }
+            
             entry.innerHTML = `
                 <div class="api-log-entry-header"><span>${new Date().toLocaleTimeString()}</span><span>${status}</span></div>
                 <div class="api-log-action">${label}${durationHtml}</div>
-                <div class="api-log-detail">${method} ${url}</div>
+                <div class="api-log-detail">${method} ${displayUrl}</div>
                 ${payloadHtml}
+                ${curlHtml}
             `;
             apiLogList.prepend(entry);
             while (apiLogList.childElementCount > MAX_LOG_ENTRIES) apiLogList.removeChild(apiLogList.lastElementChild);
@@ -876,14 +944,15 @@
                 const duration = Date.now() - startTime;
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
-                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, status: 'success', duration });
+                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status: 'success', duration });
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);
             } catch (error) {
                 const duration = startTime ? Date.now() - startTime : 0;
-                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: config.endpoints.list, status: 'error', duration });
+                const errorUrl = `${WORKER_URL}${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`;
+                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: config.endpoints.list, fullUrl: errorUrl, status: 'error', duration });
                 config.state.items = []; config.state.page = 1; renderGallery(type);
             }
         }
@@ -973,7 +1042,23 @@
             updatePreview(type);
             renderGallery(type);
             updateGenerateButton();
+            
+            // Clear result preview when preset or selfie is selected
+            if ((type === 'preset' || type === 'selfie') && item) {
+                clearResultPreview();
+            }
+            
             if (options.showMessage && item) showStatusMessage(config.labels.selectSuccess, 'success');
+        }
+
+        function clearResultPreview() {
+            const resultPreview = $('result-preview');
+            if (resultPreview) {
+                resultPreview.innerHTML = `<div class="preview-empty">
+                    <div class="preview-empty-icon">✨</div>
+                    <div class="preview-empty-text">Kết quả sẽ hiển thị ở đây (Result will appear here)</div>
+                </div>`;
+            }
         }
 
         function updatePreview(type) {
@@ -1019,10 +1104,11 @@
 
             try {
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}${config.endpoints.delete}/${itemId}`, { method: 'DELETE' });
+                const deleteUrl = `${WORKER_URL}${config.endpoints.delete}/${itemId}`;
+                const response = await fetch(deleteUrl, { method: 'DELETE' });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
-                logApiCall({ label: `Xóa ${config.logName}`, method: 'DELETE', url: `${config.endpoints.delete}/${itemId}`, status: response.ok ? 'success' : 'error', payload: data, duration });
+                logApiCall({ label: `Xóa ${config.logName}`, method: 'DELETE', url: `${config.endpoints.delete}/${itemId}`, fullUrl: deleteUrl, status: response.ok ? 'success' : 'error', payload: data, duration });
                 if (!response.ok) throw new Error(data.message || 'Xóa thất bại');
 
                 config.state.items = config.state.items.filter(item => item.id !== itemId);
@@ -1052,6 +1138,16 @@
             event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'result', itemId, imageUrl }));
             event.dataTransfer.effectAllowed = 'copy';
         };
+
+        async function handleResultDrop(data, type) {
+            if (!data.imageUrl) {
+                showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
+                return;
+            }
+            await uploadImageFromUrl(data.imageUrl, type);
+        }
+
+        window.handleResultDrop = handleResultDrop;
 
         function setupDragDrop(type) {
             const dropZone = $(type + '-drop-zone');
@@ -1103,12 +1199,13 @@
                     formData.append('enableVisionScan', 'true');
                 }
 
+                const uploadUrl = `${WORKER_URL}/upload-url`;
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}/upload-url`, { method: 'POST', body: formData });
+                const response = await fetch(uploadUrl, { method: 'POST', body: formData });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
-                logApiCall({ label: `Tải Lên ${config.logName}`, method: 'POST', url: '/upload-url', status: response.ok ? 'success' : 'error', payload: data, duration });
+                logApiCall({ label: `Tải Lên ${config.logName}`, method: 'POST', url: '/upload-url', fullUrl: uploadUrl, status: response.ok ? 'success' : 'error', payload: data, duration, body: formData });
                 if (!response.ok) throw new Error(data.message || 'Tải lên thất bại');
 
                 const newImage = { id: data.id, filename: data.filename, image_url: data.url, created_at: new Date().toISOString() };
@@ -1160,12 +1257,13 @@
                 console.log('[Frontend] Full request body:', JSON.stringify(requestBody, null, 2));
                 console.log('[Frontend] Sending request with aspect_ratio:', requestBody.aspect_ratio);
 
+                const faceswapUrl = `${WORKER_URL}/faceswap`;
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}/faceswap`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const response = await fetch(faceswapUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
-                logApiCall({ label: 'Tạo Đổi Mặt', method: 'POST', url: '/faceswap', status: response.ok ? 'success' : 'error', payload: data, duration });
+                logApiCall({ label: 'Tạo Đổi Mặt', method: 'POST', url: '/faceswap', fullUrl: faceswapUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
                 if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Đổi mặt thất bại');
 
                 // Reload results from server to ensure we have the saved result with correct profile_id
@@ -1199,11 +1297,12 @@
             try {
                 const payload = { image_url: selfieSelected.image_url, profile_id: window.profileManager.currentProfile.id, ...extra };
                 const startTime = Date.now();
-                const response = await fetch(`${WORKER_URL}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const operationUrl = `${WORKER_URL}/${endpoint}`;
+                const response = await fetch(operationUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
-                logApiCall({ label, method: 'POST', url: `/${endpoint}`, status: response.ok ? 'success' : 'error', payload: data, duration });
+                logApiCall({ label, method: 'POST', url: `/${endpoint}`, fullUrl: operationUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: payload });
                 if (!response.ok || !data?.data?.resultImageUrl) throw new Error(data.message || `${label} thất bại`);
 
                 displayResultInPreview(data.data.resultImageUrl);
@@ -1322,15 +1421,18 @@
 
         function updateLightbox() {
             const lightbox = $('lightbox'), img = $('lightbox-image'), counter = $('lightbox-counter');
+            const actions = $('lightbox-actions');
             if (!lightbox || lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
             const item = lightboxItems[lightboxCurrentIndex];
             
             if (lightboxMode === 'preview') {
                 img.src = item.image_url || '';
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
+                if (actions) actions.style.display = item.type === 'result' ? 'flex' : 'none';
             } else {
                 img.src = item.result_url || item.image_url || '';
                 if (counter) counter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
+                if (actions) actions.style.display = 'flex';
             }
             
             document.querySelector('.lightbox-prev').disabled = lightboxItems.length <= 1;
@@ -1339,6 +1441,99 @@
         }
 
         window.openPreviewLightbox = openPreviewLightbox;
+
+        async function uploadImageFromUrl(imageUrl, type) {
+            if (!window.profileManager.currentProfile) {
+                showStatusMessage('Vui lòng chọn hồ sơ trước khi tải lên hình ảnh.', 'error');
+                return;
+            }
+
+            showLoading(`Đang tải ${type === 'preset' ? 'mẫu' : 'selfie'} từ URL...`);
+
+            const config = galleries[type];
+            const dropZone = $(type + '-drop-zone');
+            dropZone?.classList.add('loading');
+
+            try {
+                const requestBody = {
+                    image_url: imageUrl,
+                    type: type,
+                    profile_id: window.profileManager.currentProfile.id,
+                    presetName: type === 'preset' ? `Preset ${Date.now()}` : undefined,
+                    enableVertexPrompt: type === 'preset',
+                    enableVisionScan: type === 'preset'
+                };
+
+                const uploadUrl = `${WORKER_URL}/upload-url`;
+                const startTime = Date.now();
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                const data = await uploadResponse.json();
+                const duration = Date.now() - startTime;
+
+                logApiCall({ 
+                    label: `Tải Lên ${config.logName}`, 
+                    method: 'POST', 
+                    url: '/upload-url',
+                    fullUrl: uploadUrl,
+                    status: uploadResponse.ok ? 'success' : 'error', 
+                    payload: data, 
+                    duration,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: requestBody
+                });
+
+                if (!uploadResponse.ok) throw new Error(data.message || 'Tải lên thất bại');
+
+                const newImage = { 
+                    id: data.id, 
+                    filename: data.filename, 
+                    image_url: data.url, 
+                    created_at: new Date().toISOString() 
+                };
+                config.state.items = [newImage, ...config.state.items.filter(e => e.id !== newImage.id)];
+                config.state.page = 1;
+                await loadGallery(type, config.state.genderFilter);
+                setSelectedItem(type, newImage);
+                showStatusMessage(`Đã chọn làm ${type === 'preset' ? 'mẫu' : 'selfie'} thành công!`, 'success');
+                closeLightbox();
+            } catch (error) {
+                showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+                dropZone?.classList.remove('loading');
+            }
+        }
+
+        async function selectAsPreset() {
+            if (lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
+            const item = lightboxItems[lightboxCurrentIndex];
+            const imageUrl = item.result_url || item.image_url || '';
+            if (!imageUrl) {
+                showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
+                return;
+            }
+            await uploadImageFromUrl(imageUrl, 'preset');
+        }
+
+        async function selectAsSelfie() {
+            if (lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
+            const item = lightboxItems[lightboxCurrentIndex];
+            const imageUrl = item.result_url || item.image_url || '';
+            if (!imageUrl) {
+                showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
+                return;
+            }
+            await uploadImageFromUrl(imageUrl, 'selfie');
+        }
+
+        window.selectAsPreset = selectAsPreset;
+        window.selectAsSelfie = selectAsSelfie;
 
         // UI Helpers
         function showLoading(text = 'Đang tải dữ liệu') {
