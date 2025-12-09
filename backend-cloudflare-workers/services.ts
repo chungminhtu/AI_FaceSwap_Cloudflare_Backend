@@ -58,7 +58,6 @@ export const callFaceSwap = async (
 
   try {
     const data = JSON.parse(responseText);
-    console.log('FaceSwap API response:', JSON.stringify(data).substring(0, 200));
     debugInfo.rawResponse = data;
     
     // Transform API response to match FaceSwapResponse format
@@ -180,7 +179,6 @@ export const callNanoBanana = async (
     const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
     const providedRatio = aspectRatio || "1:1";
     const normalizedAspectRatio = supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
-    console.log('[Upscaler4K] Received aspectRatio parameter:', aspectRatio, '-> normalized:', normalizedAspectRatio);
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
@@ -255,9 +253,6 @@ export const callNanoBanana = async (
       receivedAspectRatio: aspectRatio, // Log the aspect ratio received
       normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
     };
-    
-    console.log('[Vertex-NanoBanana] Requesting image generation with aspect ratio:', normalizedAspectRatio, 'in generationConfig.imageConfig');
-    console.log('[Vertex-NanoBanana] Full requestBody generationConfig:', JSON.stringify(requestBody.generationConfig, null, 2));
 
     // Call Vertex AI Gemini API
     const startTime = Date.now();
@@ -350,7 +345,6 @@ export const callNanoBanana = async (
           Message: 'Vertex AI Gemini API did not return an image in the response',
           StatusCode: 500,
           Error: 'No inline_data found in response parts',
-          FullResponse: JSON.stringify(data, null, 2), // Include full response for debugging
           Debug: debugInfo,
         };
       }
@@ -419,23 +413,21 @@ export const callNanoBanana = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Vertex-NanoBanana] JSON parse error:', parseError);
-      console.error('[Vertex-NanoBanana] Full raw response that failed to parse:', rawResponse);
+      console.error('[Vertex-NanoBanana] JSON parse error:', parseError instanceof Error ? parseError.message : String(parseError));
       if (debugInfo) {
-        debugInfo.rawResponse = rawResponse.substring(0, 2000);
+        debugInfo.rawResponse = rawResponse.substring(0, 200);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
       }
       return {
         Success: false,
         Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
         StatusCode: 500,
-        Error: rawResponse, // Include full response text
-        FullResponse: rawResponse, // Also include in separate field for UI display
+        Error: rawResponse.substring(0, 200),
         Debug: debugInfo,
       };
     }
   } catch (error) {
-    console.error('[Vertex-NanoBanana] Unexpected error:', error);
+      console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message : String(error));
     const debugPayload = debugInfo;
     if (debugPayload) {
       debugPayload.error = error instanceof Error ? error.message : String(error);
@@ -444,7 +436,7 @@ export const callNanoBanana = async (
       Success: false,
       Message: `Vertex AI face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
-      Error: error instanceof Error ? error.stack : String(error),
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
       Debug: debugPayload,
     };
   }
@@ -501,12 +493,8 @@ export const checkSafeSearch = async (
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[SafeSearch] API error response:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText.substring(0, 500)
-      });
-      debugInfo.rawResponse = errorText.substring(0, 2000);
+      console.error('[SafeSearch] API error:', response.status, response.statusText);
+      debugInfo.rawResponse = errorText.substring(0, 200);
       
       // Provide helpful error message for billing errors
       let errorMessage = `API error: ${response.status} - ${errorText.substring(0, 200)}`;
@@ -518,7 +506,6 @@ export const checkSafeSearch = async (
     }
 
     const data = await response.json() as GoogleVisionResponse;
-    console.log('[SafeSearch] API Response data:', JSON.stringify(data, null, 2));
     debugInfo.response = data;
 
     const annotation = data.responses?.[0]?.safeSearchAnnotation;
@@ -735,11 +722,7 @@ export const generateVertexPrompt = async (
       const errorPreview = errorText.substring(0, 1000);
       debugInfo.errorDetails = errorPreview;
       debugInfo.rawError = errorText;
-      console.error('[Vertex] API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorPreview
-      });
+      console.error('[Vertex] API error:', response.status, response.statusText);
       return { 
         success: false, 
         error: `Vertex AI API error: ${response.status} ${response.statusText}`,
@@ -748,9 +731,7 @@ export const generateVertexPrompt = async (
     }
 
     const data = await response.json() as any;
-    const responseStructure = JSON.stringify(data).substring(0, 500);
-    debugInfo.responseStructure = responseStructure;
-    console.log('[Vertex] Response structure:', responseStructure);
+    debugInfo.responseStructure = JSON.stringify(data).substring(0, 200);
 
     // With structured outputs (responseMimeType: "application/json"), Vertex AI returns JSON directly
     const parts = data.candidates?.[0]?.content?.parts;
@@ -798,10 +779,8 @@ export const generateVertexPrompt = async (
     }
 
     if (!promptJson) {
-      const partsDebug = JSON.stringify(parts).substring(0, 500);
-      console.error('[Vertex] Could not extract JSON from response. Parts:', partsDebug);
+      console.error('[Vertex] Could not extract JSON from response parts');
       debugInfo.errorDetails = 'Could not extract valid JSON from response parts';
-      debugInfo.responseStructure = partsDebug;
       return { 
         success: false, 
         error: 'No valid JSON response from Vertex AI API',
@@ -814,8 +793,7 @@ export const generateVertexPrompt = async (
     const missingKeys = requiredKeys.filter(key => !promptJson[key] || promptJson[key] === '');
 
     if (missingKeys.length > 0) {
-      console.error('[Vertex] Missing required keys:', missingKeys);
-      console.error('[Vertex] Received JSON:', JSON.stringify(promptJson));
+      console.error('[Vertex] Missing required keys:', missingKeys.join(', '));
       return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
     }
 
@@ -824,11 +802,8 @@ export const generateVertexPrompt = async (
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    console.error('[Vertex] Prompt generation failed:', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    debugInfo.errorDetails = errorMessage;
-    debugInfo.rawError = errorStack || String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      debugInfo.errorDetails = errorMessage.substring(0, 200);
     debugInfo.responseTimeMs = responseTime;
     return { 
       success: false, 
@@ -935,29 +910,23 @@ export const callUpscaler4k = async (
         }));
       }
       
-      console.log('[Upscaler4K] Initial response structure:', JSON.stringify(data, null, 2).substring(0, 1000));
-      
       let resultImageUrl: string | null = null;
       let requestId: string | null = null;
       
       requestId = data.id || data.requestId || data.request_id || data.data?.id || data.data?.requestId || data.data?.request_id;
       
       if (!requestId) {
-        console.error('[Upscaler4K] No requestId found in response. Full response:', JSON.stringify(data, null, 2));
+        console.error('[Upscaler4K] No requestId found in response');
         return {
           Success: false,
           Message: 'WaveSpeed API did not return a request ID',
           StatusCode: 500,
           Error: 'No requestId in response',
-          FullResponse: JSON.stringify(data, null, 2),
           Debug: debugInfo,
         };
       }
       
-      console.log('[Upscaler4K] Extracted requestId:', requestId);
-      
       const resultEndpoint = `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`;
-      console.log('[Upscaler4K] Polling result endpoint:', resultEndpoint);
       
       for (let attempt = 0; attempt < 30; attempt++) {
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -977,7 +946,6 @@ export const callUpscaler4k = async (
         }
         
         const resultData: any = await resultResponse.json();
-        console.log('[Upscaler4K] Poll attempt', attempt + 1, 'result:', JSON.stringify(resultData, null, 2).substring(0, 1000));
         
         const pollStatus = resultData.status || resultData.data?.status;
         
@@ -1062,7 +1030,6 @@ export const callUpscaler4k = async (
         throw new Error('Upscaling timed out - no result after 30 polling attempts');
       }
 
-      console.log('[Upscaler4K] Extracted resultImageUrl:', resultImageUrl);
 
       let imageBytes: Uint8Array;
       let contentType = 'image/png';
@@ -1115,8 +1082,7 @@ export const callUpscaler4k = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Upscaler4K] JSON parse error:', parseError);
-      console.error('[Upscaler4K] Full raw response that failed to parse:', rawResponse);
+      console.error('[Upscaler4K] JSON parse error:', parseError instanceof Error ? parseError.message : String(parseError));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 2000);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
@@ -1125,13 +1091,12 @@ export const callUpscaler4k = async (
         Success: false,
         Message: `Failed to parse WaveSpeed API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
         StatusCode: 500,
-        Error: rawResponse,
-        FullResponse: rawResponse,
+        Error: rawResponse.substring(0, 200),
         Debug: debugInfo,
       };
     }
   } catch (error) {
-    console.error('[Upscaler4K] Unexpected error:', error);
+    console.error('[Upscaler4K] Unexpected error:', error instanceof Error ? error.message : String(error));
     const debugPayload = debugInfo;
     if (debugPayload) {
       debugPayload.error = error instanceof Error ? error.message : String(error);
@@ -1140,7 +1105,7 @@ export const callUpscaler4k = async (
       Success: false,
       Message: `Upscaler4K request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
-      Error: error instanceof Error ? error.stack : String(error),
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
       Debug: debugPayload,
     };
   }

@@ -387,7 +387,6 @@ export default {
         // Handle image URL upload (backend fetches to avoid CORS)
         if (imageUrl && !file) {
           try {
-            console.log(`[Upload] Fetching image from URL: ${imageUrl}`);
             const imageResponse = await fetch(imageUrl);
             if (!imageResponse.ok) {
               return errorResponse(`Failed to fetch image from URL: ${imageResponse.status} ${imageResponse.statusText}`, 400);
@@ -401,10 +400,9 @@ export default {
             filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.${contentType.split('/')[1] || 'jpg'}`;
             // Remove query parameters from filename
             filename = filename.split('?')[0];
-            console.log(`[Upload] Fetched image from URL: ${filename}, size: ${fileData.byteLength}, type: ${contentType}`);
           } catch (fetchError) {
-            console.error('[Upload] Error fetching image from URL:', fetchError);
-            return errorResponse(`Failed to fetch image from URL: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`, 400);
+            console.error('[Upload] Error fetching image from URL:', fetchError instanceof Error ? fetchError.message.substring(0, 200) : String(fetchError).substring(0, 200));
+            return errorResponse(`Failed to fetch image from URL: ${fetchError instanceof Error ? fetchError.message.substring(0, 200) : String(fetchError).substring(0, 200)}`, 400);
           }
         } else if (file) {
           // Handle file upload (existing behavior)
@@ -421,7 +419,6 @@ export default {
         const key = `${type}/${filename}`;
 
         const detectedContentType = file?.type || (imageUrl ? 'image/jpeg' : 'image/jpeg');
-        console.log(`Upload request: type=${type}, key=${key}, content-type=${detectedContentType}, size=${fileData.byteLength}, source=${imageUrl ? 'URL' : 'file'}`);
 
         // Upload to R2 with cache-control headers
         try {
@@ -431,10 +428,9 @@ export default {
               cacheControl: 'public, max-age=31536000, immutable', // 1 year cache
             },
           });
-          console.log(`File uploaded successfully to R2: ${key}`);
         } catch (r2Error) {
-          console.error('R2 upload error:', r2Error);
-          return errorResponse(`R2 upload failed: ${r2Error instanceof Error ? r2Error.message : String(r2Error)}`, 500);
+          console.error('R2 upload error:', r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200));
+          return errorResponse(`R2 upload failed: ${r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200)}`, 500);
         }
 
         // Get the public URL (R2 CDN URL)
@@ -442,12 +438,9 @@ export default {
 
         // Save upload metadata to database based on type
         if (type === 'preset') {
-          console.log('Processing preset upload:', key);
-
           // Perform Vision API safety scan if enabled
           let visionScanResult: { success: boolean; isSafe?: boolean; error?: string; rawResponse?: any } | null = null;
           if (enableVisionScan) {
-            console.log('[Vision] Scanning preset image with Google Vision API for safety check...');
             try {
               const visionResult = await checkSafeSearch(publicUrl, env);
               visionScanResult = {
@@ -456,20 +449,16 @@ export default {
                 error: visionResult.error,
                 rawResponse: visionResult.rawResponse
               };
-              if (visionResult.isSafe) {
-                console.log('[Vision] ✅ Image passed safety check');
-              } else {
-                console.warn('[Vision] ⚠️ Image failed safety check:', visionResult.error);
+              if (!visionResult.isSafe) {
+                console.warn('[Vision] Image failed safety check:', visionResult.error);
               }
             } catch (visionError) {
-              console.error('[Vision] ❌ Error during Vision API scan:', visionError);
+              console.error('[Vision] Error during Vision API scan:', visionError instanceof Error ? visionError.message : String(visionError));
               visionScanResult = {
                 success: false,
-                error: visionError instanceof Error ? visionError.message : String(visionError)
+                error: visionError instanceof Error ? visionError.message.substring(0, 200) : String(visionError).substring(0, 200)
               };
             }
-          } else {
-            console.log('[Vision] Vision API scan skipped (not enabled)');
           }
 
           // Generate Vertex AI prompt only if enabled
@@ -477,7 +466,6 @@ export default {
           let promptJson: string | null = null;
 
           if (enableVertexPrompt) {
-            console.log('[Vertex] Generating prompt for uploaded preset image:', publicUrl);
             try {
               const promptResult = await generateVertexPrompt(publicUrl, env);
               if (promptResult.success && promptResult.prompt) {
@@ -488,39 +476,29 @@ export default {
                   promptKeys,
                   debug: promptResult.debug
                 };
-                console.log('[Vertex] ✅ Generated prompt successfully, length:', promptJson.length);
               } else {
                 vertexCallInfo = {
                   success: false,
                   error: promptResult.error || 'Unknown error',
                   debug: promptResult.debug
                 };
-                console.error('[Vertex] ❌ Failed to generate prompt:', promptResult.error);
+                console.error('[Vertex] Failed to generate prompt:', promptResult.error);
               }
             } catch (vertexError) {
               const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
               vertexCallInfo = {
                 success: false,
-                error: errorMsg,
-                debug: { errorDetails: errorMsg }
+                error: errorMsg.substring(0, 200),
+                debug: { errorDetails: errorMsg.substring(0, 200) }
               };
-              console.error('[Vertex] ❌ Exception during prompt generation:', vertexError);
+              console.error('[Vertex] Exception during prompt generation:', errorMsg.substring(0, 200));
             }
-          } else {
-            console.log('[Vertex] Vertex AI prompt generation skipped (not enabled)');
           }
 
           // Always save image to database (even if prompt generation or vision scan failed)
           const imageId = `image_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
 
-          console.log(`[DB] Inserting preset image:`, {
-            id: imageId,
-            imageUrl: publicUrl,
-            hasPrompt: !!promptJson,
-            promptLength: promptJson ? promptJson.length : 0,
-            createdAt
-          });
 
           // Validate gender before insert
           const validGender = (gender === 'male' || gender === 'female') ? gender : null;
@@ -531,25 +509,11 @@ export default {
           ).bind(imageId, publicUrl, filename, presetName || `Preset ${Date.now()}`, promptJson, validGender, createdAt).run();
 
           if (!result.success) {
-            console.error('[DB] Insert result:', result);
-            throw new Error(`Database insert failed: ${JSON.stringify(result)}`);
+            console.error('[DB] Insert failed');
+            throw new Error('Database insert failed');
           }
 
-          console.log(`[DB] Preset saved successfully:`, {
-            imageId,
-            presetName,
-            hasPrompt: !!promptJson,
-            meta: result.meta
-          });
 
-          // Verify the save by querying back
-          const verify = await DB.prepare(
-            'SELECT id, CASE WHEN prompt_json IS NOT NULL THEN 1 ELSE 0 END as has_prompt FROM presets WHERE id = ?'
-          ).bind(imageId).first();
-
-          if (verify) {
-            console.log(`[DB] Verified save: id=${(verify as any).id}, has_prompt=${(verify as any).has_prompt}`);
-          }
 
           return jsonResponse({
             success: true,
@@ -563,12 +527,8 @@ export default {
           });
 
         } else if (type === 'selfie') {
-          console.log('Processing selfie upload:', key);
-
           const selfieId = `selfie_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
           const createdAt = Math.floor(Date.now() / 1000);
-
-          console.log(`Saving selfie to database: id=${selfieId}, url=${publicUrl}, filename=${filename}, created_at=${createdAt}`);
 
           const tableCheck = await DB.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='selfies'"
@@ -584,14 +544,9 @@ export default {
           ).bind(selfieId, publicUrl, filename, profileId, createdAt).run();
 
           if (!result.success) {
-            console.error('Database insert returned success=false:', result);
+            console.error('Database insert returned success=false');
             return errorResponse('Failed to save selfie to database', 500);
           }
-
-          console.log(`Selfie saved to database successfully: ${selfieId}`, {
-            success: result.success,
-            meta: result.meta
-          });
 
           // Verify it was saved by querying it back
           const verifyResult = await DB.prepare(
@@ -599,7 +554,6 @@ export default {
           ).bind(selfieId).first();
 
           if (verifyResult) {
-            console.log('Selfie verified in database:', verifyResult);
             return jsonResponse({
               success: true,
               url: publicUrl,
@@ -614,8 +568,8 @@ export default {
 
         return jsonResponse({ success: true, url: publicUrl });
       } catch (error) {
-        console.error('Upload error:', error);
-        return errorResponse(`Upload failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Upload failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -650,15 +604,6 @@ export default {
         const createdAt = Math.floor(Date.now() / 1000);
         const updatedAt = Math.floor(Date.now() / 1000);
         
-        console.log('[DB] Attempting to insert profile:', {
-          profileId,
-          name: body.name || null,
-          email: body.email || null,
-          avatar_url: body.avatar_url || null,
-          preferences: body.preferences || null,
-          createdAt,
-          updatedAt
-        });
 
         const result = await DB.prepare(
           'INSERT INTO profiles (id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -672,20 +617,11 @@ export default {
           updatedAt
         ).run();
 
-        console.log('[DB] Profile insert result:', {
-          success: result.success,
-          meta: result.meta,
-          changes: result.meta?.changes
-        });
 
         if (!result.success) {
-          console.error('[DB] Profile insert failed:', {
-            success: result.success,
-            meta: result.meta,
-            error: (result as any).error
-          });
+          console.error('[DB] Profile insert failed');
           const errorDetails = result.meta?.error || (result as any).error || 'Unknown database error';
-          return errorResponse(`Failed to create profile: ${errorDetails}`, 500);
+          return errorResponse(`Failed to create profile: ${errorDetails.substring(0, 200)}`, 500);
         }
 
         if (result.meta?.changes === 0) {
@@ -705,13 +641,8 @@ export default {
 
         return jsonResponse(profile);
       } catch (error) {
-        console.error('Profile creation error:', error);
-        console.error('Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-          errorType: error instanceof Error ? error.constructor.name : typeof error
-        });
-        return errorResponse(`Profile creation failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Profile creation error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Profile creation failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -739,8 +670,8 @@ export default {
 
         return jsonResponse(profile);
       } catch (error) {
-        console.error('Profile retrieval error:', error);
-        return errorResponse(`Profile retrieval failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Profile retrieval error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Profile retrieval failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -782,8 +713,8 @@ export default {
 
         return jsonResponse(profile);
       } catch (error) {
-        console.error('Profile update error:', error);
-        return errorResponse(`Profile update failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Profile update error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Profile update failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -806,16 +737,14 @@ export default {
 
         return jsonResponse({ profiles });
       } catch (error) {
-        console.error('Profile listing error:', error);
-        return errorResponse(`Profile listing failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Profile listing error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Profile listing failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
     // Handle preset listing
     if (path === '/presets' && request.method === 'GET') {
       try {
-        console.log('Fetching presets from database...');
-
         // Check for gender filter query parameter
         const url = new URL(request.url);
         const genderFilter = url.searchParams.get('gender') as 'male' | 'female' | null;
@@ -837,22 +766,13 @@ export default {
         if (genderFilter) {
           query += ' WHERE gender = ?';
           params.push(genderFilter);
-          console.log(`Filtering presets by gender: ${genderFilter}`);
         }
 
         query += ' ORDER BY created_at DESC';
 
         const imagesResult = await DB.prepare(query).bind(...params).all();
 
-        console.log('Presets query result:', {
-          success: imagesResult.success,
-          resultsCount: imagesResult.results?.length || 0,
-          meta: imagesResult.meta,
-          genderFilter: genderFilter || 'none'
-        });
-
         if (!imagesResult || !imagesResult.results) {
-          console.log('No presets found in database');
           return jsonResponse({ presets: [] });
         }
 
@@ -868,14 +788,9 @@ export default {
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
-        console.log(`Returning ${presets.length} presets${genderFilter ? ` (filtered by gender: ${genderFilter})` : ''}`);
         return jsonResponse({ presets });
       } catch (error) {
-        console.error('List presets error:', error);
-        console.error('Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        });
+        console.error('List presets error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
         return jsonResponse({ presets: [] });
       }
@@ -896,7 +811,6 @@ export default {
         ).bind(presetId).first();
 
         if (!checkResult) {
-          console.warn(`[DELETE] Preset not found: ${presetId}`);
           return errorResponse('Preset not found', 404);
         }
 
@@ -923,10 +837,8 @@ export default {
             
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
-            console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
-            console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
             // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
@@ -936,8 +848,8 @@ export default {
           message: 'Preset deleted successfully'
         });
       } catch (error) {
-        console.error('[DELETE] Delete preset exception:', error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('[DELETE] Delete preset exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return jsonResponse({ 
           success: false, 
           message: `Failed to delete preset: ${errorMessage}`,
@@ -953,8 +865,6 @@ export default {
     // Handle selfies listing
     if (path === '/selfies' && request.method === 'GET') {
       try {
-        console.log('Fetching selfies from database...');
-
         // Check for required profile_id query parameter
         const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
@@ -974,15 +884,7 @@ export default {
 
         const result = await DB.prepare(query).bind(profileId).all();
 
-        console.log('Selfies query result:', {
-          success: result.success,
-          resultsCount: result.results?.length || 0,
-          meta: result.meta,
-          profileId: profileId
-        });
-
         if (!result || !result.results) {
-          console.log('No selfies found in database');
           return jsonResponse({ selfies: [] });
         }
 
@@ -993,14 +895,9 @@ export default {
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
-        console.log(`Returning ${selfies.length} selfies`);
         return jsonResponse({ selfies });
       } catch (error) {
-        console.error('List selfies error:', error);
-        console.error('Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        });
+        console.error('List selfies error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
         return jsonResponse({ selfies: [] });
       }
@@ -1046,10 +943,8 @@ export default {
             
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
-            console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
-            console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
             // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
@@ -1059,8 +954,8 @@ export default {
           message: 'Selfie deleted successfully'
         });
       } catch (error) {
-        console.error('[DELETE] Delete selfie exception:', error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('[DELETE] Delete selfie exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return jsonResponse({ 
           success: false, 
           message: `Failed to delete selfie: ${errorMessage}`,
@@ -1127,11 +1022,7 @@ export default {
 
         return jsonResponse({ results });
       } catch (error) {
-        console.error('[Results] List results error:', error);
-        console.error('[Results] Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined
-        });
+        console.error('[Results] List results error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return jsonResponse({ results: [] });
       }
     }
@@ -1144,15 +1035,12 @@ export default {
           return errorResponse('Result ID is required', 400);
         }
 
-        console.log(`[DELETE] Deleting result: ${resultId}`);
-
         // First, check if result exists and get the R2 key
         const checkResult = await DB.prepare(
           'SELECT result_url FROM results WHERE id = ?'
         ).bind(resultId).first();
 
         if (!checkResult) {
-          console.warn(`[DELETE] Result not found: ${resultId}`);
           return errorResponse('Result not found', 404);
         }
 
@@ -1164,11 +1052,8 @@ export default {
         ).bind(resultId).run();
 
         if (!deleteResult.success || deleteResult.meta?.changes === 0) {
-          console.warn(`[DELETE] No rows deleted for result: ${resultId}`);
           return errorResponse('Result not found or already deleted', 404);
         }
-
-        console.log(`[DELETE] Successfully deleted result from database: ${resultId}`);
 
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
@@ -1189,11 +1074,9 @@ export default {
             if (r2Key) {
               await R2_BUCKET.delete(r2Key);
               r2Deleted = true;
-              console.log(`[DELETE] Successfully deleted from R2: ${r2Key}`);
             }
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
-            console.warn('[DELETE] R2 delete error (non-fatal):', r2Error);
           }
         }
 
@@ -1210,8 +1093,8 @@ export default {
           }
         });
       } catch (error) {
-        console.error('[DELETE] Delete result exception:', error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('[DELETE] Delete result exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return jsonResponse({ 
           success: false, 
           message: `Failed to delete result: ${errorMessage}`,
@@ -1300,7 +1183,6 @@ export default {
           characterGender: body.character_gender,
         });
 
-        console.log('[Vertex] Using Vertex AI-generated prompt for preset:', body.preset_image_id);
 
         let promptResult = await DB.prepare(
           'SELECT prompt_json, image_url FROM presets WHERE id = ?'
@@ -1314,13 +1196,12 @@ export default {
             try {
               storedPromptPayload = JSON.parse(promptJson);
             } catch (parseError) {
-              console.error('[Vertex] Failed to parse stored prompt_json:', parseError);
+              console.error('[Vertex] Failed to parse stored prompt_json:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
             }
           }
         }
 
         if (!storedPromptPayload) {
-          console.log('[Vertex] No valid prompt_json found in database, generating on-the-fly for preset:', body.preset_image_id);
           const presetImageUrl = (promptResult as any)?.image_url || targetUrl;
           
           const generateResult = await generateVertexPrompt(presetImageUrl, env);
@@ -1331,8 +1212,6 @@ export default {
             await DB.prepare(
               'UPDATE presets SET prompt_json = ? WHERE id = ?'
             ).bind(promptJsonString, body.preset_image_id).run();
-            
-            console.log('[Vertex] Generated and saved prompt_json to database for preset:', body.preset_image_id);
           } else {
             return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400);
           }
@@ -1344,28 +1223,20 @@ export default {
         );
         const vertexPromptPayload = augmentedPromptPayload;
 
-        console.log('[Vertex] Dispatching prompt to Nano Banana provider with', selfieUrls.length, 'selfie(s)');
         // Extract aspect ratio from request body, default to "1:1" if not provided
-        console.log('[Vertex] Full request body:', JSON.stringify(body, null, 2));
-        console.log('[Vertex] body.aspect_ratio value:', body.aspect_ratio);
-        console.log('[Vertex] body.aspect_ratio type:', typeof body.aspect_ratio);
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
-        console.log('[Vertex] Extracted aspect ratio:', aspectRatio);
         // Validate aspect ratio is one of the supported values for Vertex AI
         // Supported: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
         const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
-        console.log('[Vertex] Using validated aspect ratio:', validAspectRatio);
-        console.log('[Vertex] Passing aspect ratio to callNanoBanana:', validAspectRatio);
         // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
         // may not work correctly and may always return 1:1 images regardless of the specified ratio.
         // This is a limitation of the current API version.
         // For now, use the first selfie. In a full implementation, you might want to combine multiple selfies
         const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env, validAspectRatio);
-        console.log('[Vertex] callNanoBanana completed with aspect ratio:', validAspectRatio);
 
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
-            console.error('[Vertex] Nano Banana provider failed:', JSON.stringify(faceSwapResult, null, 2));
+            console.error('[Vertex] Nano Banana provider failed:', faceSwapResult.Message || 'Unknown error');
 
             let sanitizedVertexFailure: any = null;
             const fullResponse = (faceSwapResult as any).FullResponse;
@@ -1414,11 +1285,10 @@ export default {
             const r2Key = faceSwapResult.ResultImageUrl.replace('r2://', '');
             const requestUrl = new URL(request.url);
             faceSwapResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            console.log('[Vertex] Converted R2 URL to public URL:', faceSwapResult.ResultImageUrl);
           }
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
-          console.error('FaceSwap failed:', faceSwapResult);
+          console.error('FaceSwap failed:', faceSwapResult.Message || 'Unknown error');
           const failureCode = faceSwapResult.StatusCode || 500;
           const debugPayload = compact({
             request: requestDebug,
@@ -1439,7 +1309,6 @@ export default {
         let safetyDebug: SafetyCheckDebug | null = null;
 
         if (!disableSafeSearch && !skipSafetyCheckForVertex) {
-          console.log('[FaceSwap] Running safety check on result image:', faceSwapResult.ResultImageUrl);
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
           safetyDebug = {
@@ -1455,7 +1324,7 @@ export default {
           };
 
           if (safeSearchResult.error) {
-            console.error('[FaceSwap] Safe search error:', safeSearchResult.error);
+            console.error('[FaceSwap] Safe search error:', safeSearchResult.error?.substring(0, 200));
             const debugPayload = compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -1489,23 +1358,12 @@ export default {
               debug: debugPayload,
             }, 422);
           }
-          console.log('[FaceSwap] Safe search validation passed:', safeSearchResult.details);
         } else {
-          if (skipSafetyCheckForVertex) {
-            console.log('[FaceSwap] Safe search validation skipped for Nano Banana (Vertex AI)');
-            safetyDebug = {
-              checked: false,
-              isSafe: true,
-              error: 'Safety check skipped for Vertex AI mode',
-            };
-          } else {
-            console.log('[FaceSwap] Safe search validation disabled via DISABLE_SAFE_SEARCH config');
-            safetyDebug = {
-              checked: false,
-              isSafe: true,
-              error: 'Safety check disabled via DISABLE_SAFE_SEARCH',
-            };
-          }
+          safetyDebug = {
+            checked: false,
+            isSafe: true,
+            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+          };
         }
 
         const storageDebug: {
@@ -1610,8 +1468,8 @@ export default {
           debug: debugPayload,
         });
       } catch (error) {
-        console.error('Unhandled error:', error);
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -1643,7 +1501,6 @@ export default {
         let inputSafetyDebug: SafetyCheckDebug | null = null;
 
         if (!disableSafeSearch) {
-          console.log('[Upscaler4K] Running safety check on input image:', body.image_url);
           const inputSafeSearchResult = await checkSafeSearch(body.image_url, env);
           inputSafetyDebug = {
             checked: true,
@@ -1658,7 +1515,6 @@ export default {
           };
 
           if (!inputSafeSearchResult.isSafe) {
-            console.warn('[Upscaler4K] Input image failed safety check');
             const debugPayload = compact({
               inputSafety: buildVisionDebug(inputSafetyDebug),
             });
@@ -1675,7 +1531,7 @@ export default {
         const upscalerResult = await callUpscaler4k(body.image_url, env);
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
-          console.error('Upscaler4K failed:', upscalerResult);
+          console.error('Upscaler4K failed:', upscalerResult.Message || 'Unknown error');
           const failureCode = upscalerResult.StatusCode || 500;
           const debugPayload = compact({
             provider: buildProviderDebug(upscalerResult),
@@ -1696,14 +1552,12 @@ export default {
           const r2Key = upscalerResult.ResultImageUrl.replace('r2://', '');
           const requestUrl = new URL(request.url);
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-          console.log('[Upscaler4K] Converted R2 URL to public URL:', resultUrl);
         }
 
         // Check output image safety after upscaling
         let outputSafetyDebug: SafetyCheckDebug | null = null;
 
         if (!disableSafeSearch) {
-          console.log('[Upscaler4K] Running safety check on output image:', resultUrl);
           const outputSafeSearchResult = await checkSafeSearch(resultUrl, env);
           outputSafetyDebug = {
             checked: true,
@@ -1718,7 +1572,6 @@ export default {
           };
 
           if (!outputSafeSearchResult.isSafe) {
-            console.warn('[Upscaler4K] Output image failed safety check');
             const debugPayload = compact({
               provider: buildProviderDebug(upscalerResult, resultUrl),
               vertex: buildVertexDebug(upscalerResult),
@@ -1808,7 +1661,7 @@ export default {
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
-          console.error('Enhance failed:', enhancedResult);
+          console.error('Enhance failed:', enhancedResult.Message || 'Unknown error');
           const failureCode = enhancedResult.StatusCode || 500;
           const debugPayload = compact({
             provider: buildProviderDebug(enhancedResult),
@@ -1828,7 +1681,6 @@ export default {
           const r2Key = enhancedResult.ResultImageUrl.replace('r2://', '');
           const requestUrl = new URL(request.url);
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-          console.log('[Enhance] Converted R2 URL to public URL:', resultUrl);
         }
 
         const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -1900,7 +1752,7 @@ export default {
         );
 
         if (!colorizedResult.Success || !colorizedResult.ResultImageUrl) {
-          console.error('Colorize failed:', colorizedResult);
+          console.error('Colorize failed:', colorizedResult.Message || 'Unknown error');
           const failureCode = colorizedResult.StatusCode || 500;
           const debugPayload = compact({
             provider: buildProviderDebug(colorizedResult),
@@ -1994,7 +1846,7 @@ export default {
         );
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
-          console.error('Aging failed:', agingResult);
+          console.error('Aging failed:', agingResult.Message || 'Unknown error');
           const failureCode = agingResult.StatusCode || 500;
           const debugPayload = compact({
             provider: buildProviderDebug(agingResult),
@@ -2014,7 +1866,6 @@ export default {
           const r2Key = agingResult.ResultImageUrl.replace('r2://', '');
           const requestUrl = new URL(request.url);
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-          console.log('[Aging] Converted R2 URL to public URL:', resultUrl);
         }
 
         const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
