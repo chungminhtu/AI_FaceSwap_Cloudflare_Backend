@@ -176,8 +176,8 @@ export const callNanoBanana = async (
     selfieImageData = await fetchImageAsBase64(sourceUrl);
 
     // Validate and normalize aspect ratio
-    // Supported values: "1:1", "3:4", "4:3", "16:9", "9:16"
-    const supportedRatios = ["1:1", "3:4", "4:3", "16:9", "9:16"];
+    // Supported values: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
+    const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
     const normalizedAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
 
     // Vertex AI Gemini API request format with image generation
@@ -202,9 +202,9 @@ export const callNanoBanana = async (
         responseModalities: ["TEXT", "IMAGE"],  // Request both text and image output
         temperature: 0.7,
         maxOutputTokens: 2048,
-      },
-      parameters: {
-        ASPECT_RATIO: normalizedAspectRatio,  // Parameter name is "ASPECT_RATIO", value is string like "16:9"
+        imageConfig: {
+          aspectRatio: normalizedAspectRatio,  // Aspect ratio in format like "16:9", "4:3", etc.
+        },
       },
       safetySettings: [{
         method: "PROBABILITY",
@@ -240,7 +240,7 @@ export const callNanoBanana = async (
       normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
     };
     
-    console.log('[Vertex-NanoBanana] Requesting image generation with aspect ratio:', normalizedAspectRatio);
+    console.log('[Vertex-NanoBanana] Requesting image generation with aspect ratio:', normalizedAspectRatio, 'in generationConfig.imageConfig');
 
     // Call Vertex AI Gemini API
     const startTime = Date.now();

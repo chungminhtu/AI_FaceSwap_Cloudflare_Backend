@@ -9,6 +9,7 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 
 ### Nội dung yêu cầu
 
+**Ví dụ 1: Sử dụng selfie_ids (từ database)**
 ```json
 {
   "preset_image_id": "image_1234567890_abc123",
@@ -20,13 +21,30 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 }
 ```
 
+**Ví dụ 2: Sử dụng selfie_image_urls (URL trực tiếp)**
+```json
+{
+  "preset_image_id": "image_1234567890_abc123",
+  "selfie_image_urls": ["https://example.com/selfie1.jpg", "https://example.com/selfie2.jpg"],
+  "profile_id": "profile_1234567890",
+  "additional_prompt": "Add dramatic lighting and cinematic atmosphere",
+  "character_gender": "male",
+  "aspect_ratio": "16:9"
+}
+```
+
 **Các trường:**
 - `preset_image_id` (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu.
-- `selfie_ids` (array of strings, bắt buộc): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung. Thông tin gender (male/female) của mỗi selfie được lưu trong database.
+- `selfie_ids` (array of strings, tùy chọn): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung. Thông tin gender (male/female) của mỗi selfie được lưu trong database.
+- `selfie_image_urls` (array of strings, tùy chọn): Mảng các URL ảnh selfie trực tiếp (thay thế cho `selfie_ids`). Hỗ trợ multiple selfies. **Lưu ý**: Phải cung cấp `selfie_ids` HOẶC `selfie_image_urls` (không phải cả hai).
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, tùy chọn): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
 - `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
+
+**Lưu ý về prompt generation:**
+- Nếu preset đã có `prompt_json` trong database, hệ thống sẽ sử dụng prompt đó.
+- Nếu preset chưa có `prompt_json`, hệ thống sẽ tự động tạo prompt bằng Vertex AI và lưu vào database để sử dụng cho các lần sau.
 
 ### Phản hồi thành công
 
@@ -427,16 +445,7 @@ DELETE https://api.d.shotpix.app/presets/image_1234567890_abc123
 ```json
 {
   "success": true,
-  "message": "Preset deleted successfully",
-  "debug": {
-    "presetId": "...",
-    "resultsDeleted": 2,
-    "databaseDeleted": 1,
-    "r2Deleted": true,
-    "r2Key": "preset/example.jpg",
-    "r2Error": null,
-    "imageUrl": "https://..."
-  }
+  "message": "Preset deleted successfully"
 }
 ```
 
@@ -463,7 +472,6 @@ GET https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
       "id": "...",
       "image_url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
       "filename": "example.jpg",
-      "gender": "male",
       "created_at": "2024-01-01T00:00:00.000Z"
     }
   ]
@@ -485,16 +493,7 @@ DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
 ```json
 {
   "success": true,
-  "message": "Selfie deleted successfully",
-  "debug": {
-    "selfieId": "...",
-    "resultsDeleted": 3,
-    "databaseDeleted": 1,
-    "r2Deleted": true,
-    "r2Key": "selfie/example.jpg",
-    "r2Error": null,
-    "imageUrl": "https://..."
-  }
+  "message": "Selfie deleted successfully"
 }
 ```
 
@@ -512,6 +511,7 @@ GET https://api.d.shotpix.app/results?profile_id=profile_1234567890
 ```
 
 - `profile_id` (tùy chọn): ID profile để lọc kết quả.
+- `gender` (tùy chọn): Tham số này được chấp nhận nhưng hiện tại chưa được sử dụng để lọc kết quả.
 
 ### Phản hồi
 
@@ -520,10 +520,9 @@ GET https://api.d.shotpix.app/results?profile_id=profile_1234567890
   "results": [
     {
       "id": "...",
-      "selfie_id": "...",
-      "preset_id": "...",
       "preset_name": "Studio Neon",
       "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+      "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
       "profile_id": "...",
       "created_at": "2024-01-01T00:00:00.000Z"
     }
@@ -703,11 +702,27 @@ GET https://api.d.shotpix.app/config
 }
 ```
 
+## 18. OPTIONS `/*`
+
+### Mục đích
+Xử lý CORS preflight requests cho tất cả các endpoints. Tự động được gọi bởi trình duyệt khi thực hiện cross-origin requests.
+
+### Phản hồi
+
+Trả về HTTP 204 (No Content) với các headers CORS:
+- `Access-Control-Allow-Origin`: Cho phép tất cả origins
+- `Access-Control-Allow-Methods`: GET, POST, PUT, DELETE, OPTIONS
+- `Access-Control-Allow-Headers`: Content-Type, Authorization, và các headers khác
+- `Access-Control-Max-Age`: 86400 (24 giờ)
+
+**Lưu ý đặc biệt:**
+- Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
+
 ---
 
 ## Tổng kết
 
-**Tổng số API endpoints: 17**
+**Tổng số API endpoints: 18**
 
 1. POST `/faceswap` - Face swap (luôn dùng Vertex AI, hỗ trợ multiple selfies)
 2. POST `/enhance` - AI enhance ảnh
@@ -726,6 +741,7 @@ GET https://api.d.shotpix.app/config
 15. PUT `/profiles/{id}` - Cập nhật profile
 16. GET `/profiles` - Liệt kê profiles
 17. GET `/config` - Lấy config
+18. OPTIONS `/*` - CORS preflight requests
  
 
 ## Lưu ý về Custom Domain

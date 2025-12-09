@@ -1288,11 +1288,14 @@ export default {
 
         console.log('[Vertex] Dispatching prompt to Nano Banana provider with', selfieUrls.length, 'selfie(s)');
         // Extract aspect ratio from request body, default to "1:1" if not provided
+        console.log('[Vertex] Full request body:', JSON.stringify(body, null, 2));
+        console.log('[Vertex] body.aspect_ratio value:', body.aspect_ratio);
+        console.log('[Vertex] body.aspect_ratio type:', typeof body.aspect_ratio);
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
-        console.log('[Vertex] Received aspect_ratio from request:', aspectRatio);
+        console.log('[Vertex] Extracted aspect ratio:', aspectRatio);
         // Validate aspect ratio is one of the supported values for Vertex AI
-        // Supported: "1:1", "3:4", "4:3", "16:9", "9:16"
-        const supportedRatios = ["1:1", "3:4", "4:3", "16:9", "9:16"];
+        // Supported: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
+        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
         console.log('[Vertex] Using validated aspect ratio:', validAspectRatio);
         // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
