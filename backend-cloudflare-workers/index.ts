@@ -1491,7 +1491,7 @@ export default {
         };
 
         let savedResultId: string | null = null;
-        if (presetImageId) {
+        if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -1835,7 +1835,7 @@ Remove the background completely and create a clean transparent image with the p
         };
 
         let savedResultId: string | null = null;
-        if (presetImageId) {
+        if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
