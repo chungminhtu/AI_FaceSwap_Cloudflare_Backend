@@ -1202,12 +1202,11 @@ export default {
           selfieUrls.push(...body.selfie_image_urls!);
         }
 
-        // For now, use the first selfie as the primary source
-        // In a full implementation, you might want to combine multiple selfies
+        // Support multiple selfies for wedding faceswap (e.g., bride and groom)
         if (selfieUrls.length === 0) {
           return errorResponse('No valid selfie URLs found', 400);
         }
-        const sourceUrl = selfieUrls[0];
+        const sourceUrl = selfieUrls.length === 1 ? selfieUrls[0] : selfieUrls;
 
         const requestDebug = compact({
           targetUrl: targetUrl,

@@ -493,7 +493,7 @@
                 </div>
                 <div class="sidebar-section">
                     <div class="sidebar-header">
-                        <span>Ảnh Tự Sướng (Selfies)</span>
+                        <span>Ảnh Tự Sướng (Selfies) - Chọn tối đa 2 cho Wedding</span>
                         <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
                         <input type="file" class="file-input" id="selfie-input" accept="image/*">
                     </div>
@@ -527,7 +527,7 @@
                         </div>
                         <div class="preview-card selfie-card" id="selfie-card">
                             <div class="preview-header">
-                                <div class="preview-label">Ảnh Tự Sướng (Selfie)</div>
+                                <div class="preview-label">Ảnh Tự Sướng (Selfie) - Tối đa 2 cho Wedding</div>
                                 <button class="delete-btn" onclick="clearSelection('selfie', event)" style="display: none;" id="selfie-clear-btn">×</button>
                             </div>
                             <div id="selfie-preview" class="preview-image">
@@ -679,7 +679,7 @@
                 key: 'selfie', responseKey: 'selfies', endpoints: { list: '/selfies', delete: '/selfies' },
                 logName: 'Thư Viện Selfie', labels: { selectSuccess: 'Đã chọn selfie thành công', deleteSuccess: 'Đã xóa selfie thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa selfie này không?' },
                 elements: { input: selfieInput, preview: selfiePreview, gallery: selfieGallery, pagination: $('selfie-pagination'), prevBtn: $('selfie-prev'), nextBtn: $('selfie-next') },
-                state: { items: [], selected: null, page: 1, genderFilter: '' }
+                state: { items: [], selected: [], page: 1, genderFilter: '' }
             },
             results: {
                 key: 'results', responseKey: 'results', endpoints: { list: '/results', delete: '/results' },
@@ -997,7 +997,10 @@
                 gallery.innerHTML = pageItems.map(item => {
                     const genderBadge = type === 'preset' && item.gender ?
                         `<div style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 6px;border-radius:10px;font-size:12px;">${item.gender === 'male' ? '👨' : '👩'}</div>` : '';
-                    return `<div class="gallery-item ${selected?.id === item.id ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
+                    const isSelected = type === 'selfie' && Array.isArray(selected) 
+                        ? selected.some(s => s.id === item.id)
+                        : selected?.id === item.id;
+                    return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
                         <img src="${item.image_url}" alt="" loading="lazy">
                         ${genderBadge}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
@@ -1041,7 +1044,26 @@
 
         function setSelectedItem(type, item, options = {}) {
             const config = galleries[type];
-            config.state.selected = item || null;
+            if (type === 'selfie') {
+                // Support multiple selfie selection (up to 2 for wedding faceswap)
+                const selected = config.state.selected || [];
+                const itemIndex = selected.findIndex(s => s.id === item.id);
+                if (itemIndex >= 0) {
+                    // Deselect if already selected
+                    selected.splice(itemIndex, 1);
+                } else {
+                    // Add to selection (max 2)
+                    if (selected.length < 2) {
+                        selected.push(item);
+                    } else {
+                        // Replace the first one if already at max
+                        selected[0] = item;
+                    }
+                }
+                config.state.selected = selected;
+            } else {
+                config.state.selected = item || null;
+            }
             updatePreview(type);
             renderGallery(type);
             updateGenerateButton();
@@ -1071,6 +1093,23 @@
             if (!preview) return;
 
             const clearBtn = $(type + '-clear-btn');
+            if (type === 'selfie' && Array.isArray(selected)) {
+                // Handle multiple selfie selection
+                if (selected.length === 0) {
+                    preview.innerHTML = `<div class="preview-empty"><div class="preview-empty-icon">📷</div><div class="preview-empty-text">Chọn từ ảnh tự sướng (Select from selfies)</div></div>`;
+                    if (clearBtn) clearBtn.style.display = 'none';
+                    return;
+                }
+                // Display both selfies side by side
+                const imagesHtml = selected.map((item, index) => {
+                    const imageUrl = item.image_url || item.result_url || '';
+                    return `<div style="flex: 1; padding: 4px;"><img src="${imageUrl}" alt="Selfie ${index + 1}" style="width: 100%; height: 100%; object-fit: contain; cursor: pointer; border: 2px solid #4CAF50; border-radius: 4px;" onclick="openPreviewLightbox('selfie', ${index})"></div>`;
+                }).join('');
+                preview.innerHTML = `<div style="display: flex; gap: 8px; height: 100%;">${imagesHtml}</div>`;
+                if (clearBtn) clearBtn.style.display = 'block';
+                return;
+            }
+            
             if (!selected) {
                 const emptyText = type === 'preset' ? 'Chọn từ mẫu (Select from presets)' : type === 'selfie' ? 'Chọn từ ảnh tự sướng (Select from selfies)' : 'Kết quả sẽ hiển thị ở đây (Result will appear here)';
                 preview.innerHTML = `<div class="preview-empty"><div class="preview-empty-icon">${type === 'result' ? '✨' : '📷'}</div><div class="preview-empty-text">${emptyText}</div></div>`;
@@ -1083,8 +1122,10 @@
         }
 
         function updateGenerateButton() {
-            if (generateBtn) generateBtn.disabled = !(galleries.preset.state.selected && galleries.selfie.state.selected);
-            if (mergeBtn) mergeBtn.disabled = !(galleries.preset.state.selected && galleries.selfie.state.selected);
+            const hasPreset = !!galleries.preset.state.selected;
+            const hasSelfie = galleries.selfie.state.selected && (Array.isArray(galleries.selfie.state.selected) ? galleries.selfie.state.selected.length > 0 : galleries.selfie.state.selected);
+            if (generateBtn) generateBtn.disabled = !(hasPreset && hasSelfie);
+            if (mergeBtn) mergeBtn.disabled = !(hasPreset && hasSelfie);
         }
 
         function updateResultsCount() {
@@ -1095,7 +1136,7 @@
         function clearSelection(type, event) {
             event?.stopPropagation();
             const config = galleries[type];
-            config.state.selected = null;
+            config.state.selected = type === 'selfie' ? [] : null;
             updatePreview(type);
             renderGallery(type);
             updateGenerateButton();
@@ -1118,7 +1159,12 @@
                 config.state.items = config.state.items.filter(item => item.id !== itemId);
                 const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
                 config.state.page = Math.min(config.state.page, totalPages);
-                if (config.state.selected?.id === itemId) { config.state.selected = null; updatePreview(type); }
+                if (type === 'selfie' && Array.isArray(config.state.selected)) {
+                    config.state.selected = config.state.selected.filter(item => item.id !== itemId);
+                } else if (config.state.selected?.id === itemId) {
+                    config.state.selected = null;
+                }
+                updatePreview(type);
                 renderGallery(type);
                 updateGenerateButton();
                 showStatusMessage(config.labels.deleteSuccess, 'success');
@@ -1230,7 +1276,8 @@
         async function generateFaceSwap() {
             const presetSelected = galleries.preset.state.selected;
             const selfieSelected = galleries.selfie.state.selected;
-            if (!presetSelected || !selfieSelected) { showStatusMessage('Vui lòng chọn cả mẫu và selfie trước khi tạo đổi mặt.', 'error'); return; }
+            const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
+            if (!presetSelected || selfieArray.length === 0) { showStatusMessage('Vui lòng chọn cả mẫu và ít nhất một selfie trước khi tạo đổi mặt.', 'error'); return; }
             if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi tạo đổi mặt.', 'error'); return; }
 
             generateBtn.disabled = true;
@@ -1247,21 +1294,36 @@
                 console.log('[Frontend] Aspect ratio select value:', aspectRatioSelect?.value);
                 console.log('[Frontend] Selected aspect ratio:', selectedAspectRatio);
                 const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
-                const useSelfieUrl = !selfieSelected.id || selfieSelected.id?.startsWith('result-selfie-');
+                
+                // Build selfie arrays (support multiple selfies for wedding faceswap)
+                const selfieIds = [];
+                const selfieUrls = [];
+                for (const selfie of selfieArray) {
+                    const useSelfieUrl = !selfie.id || selfie.id?.startsWith('result-selfie-');
+                    if (useSelfieUrl) {
+                        selfieUrls.push(selfie.image_url);
+                    } else {
+                        selfieIds.push(selfie.id);
+                    }
+                }
+                
                 const requestBody = {
                     ...(usePresetUrl 
                         ? { preset_image_url: presetSelected.image_url }
                         : { preset_image_id: presetSelected.id }
-                    ),
-                    ...(useSelfieUrl 
-                        ? { selfie_image_urls: [selfieSelected.image_url] }
-                        : { selfie_ids: [selfieSelected.id] }
                     ),
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
                     character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || ''),
                     aspect_ratio: selectedAspectRatio
                 };
+                
+                if (selfieUrls.length > 0) {
+                    requestBody.selfie_image_urls = selfieUrls;
+                }
+                if (selfieIds.length > 0) {
+                    requestBody.selfie_ids = selfieIds;
+                }
                 console.log('[Frontend] Full request body:', JSON.stringify(requestBody, null, 2));
                 console.log('[Frontend] Sending request with aspect_ratio:', requestBody.aspect_ratio);
 
@@ -1416,7 +1478,7 @@
             }
         }
 
-        function openPreviewLightbox(startType) {
+        function openPreviewLightbox(startType, selfieIndex) {
             lightboxMode = 'preview';
             lightboxItems = [];
             
@@ -1434,11 +1496,22 @@
                 });
             }
             if (selfieSelected) {
-                lightboxItems.push({
-                    type: 'selfie',
-                    image_url: selfieSelected.image_url,
-                    label: 'Ảnh Tự Sướng (Selfie)'
-                });
+                if (Array.isArray(selfieSelected)) {
+                    // Add all selected selfies
+                    selfieSelected.forEach((selfie, index) => {
+                        lightboxItems.push({
+                            type: 'selfie',
+                            image_url: selfie.image_url,
+                            label: `Ảnh Tự Sướng ${index + 1} (Selfie ${index + 1})`
+                        });
+                    });
+                } else {
+                    lightboxItems.push({
+                        type: 'selfie',
+                        image_url: selfieSelected.image_url,
+                        label: 'Ảnh Tự Sướng (Selfie)'
+                    });
+                }
             }
             if (resultUrl && resultUrl !== '' && !resultUrl.includes('data:image/svg') && resultUrl !== window.location.href) {
                 lightboxItems.push({
@@ -1450,8 +1523,14 @@
             
             if (lightboxItems.length === 0) return;
             
-            const startIndex = lightboxItems.findIndex(item => item.type === startType);
-            lightboxCurrentIndex = startIndex >= 0 ? startIndex : 0;
+            // If selfieIndex is provided and we have multiple selfies, start at that selfie
+            if (startType === 'selfie' && typeof selfieIndex === 'number' && Array.isArray(selfieSelected)) {
+                const presetOffset = presetSelected ? 1 : 0;
+                lightboxCurrentIndex = presetOffset + selfieIndex;
+            } else {
+                const startIndex = lightboxItems.findIndex(item => item.type === startType);
+                lightboxCurrentIndex = startIndex >= 0 ? startIndex : 0;
+            }
             updateLightbox();
             setupLightboxKeyboard();
         }

@@ -118,7 +118,7 @@ export const callFaceSwap = async (
 export const callNanoBanana = async (
   prompt: unknown,
   targetUrl: string,
-  sourceUrl: string,
+  sourceUrl: string | string[],
   env: Env,
   aspectRatio?: string
 ): Promise<FaceSwapResponse> => {
@@ -187,13 +187,17 @@ export const callNanoBanana = async (
         };
       }
 
-    // Fetch only the selfie image as base64
-    // For Nano Banana (Vertex AI), we only send the selfie image and text prompt
+    // Fetch selfie image(s) as base64
+    // For Nano Banana (Vertex AI), we send the selfie image(s) and text prompt
     // The preset image style is described in the prompt_json text
-    // IMPORTANT: Declare variable first, then fetch to avoid TDZ (Temporal Dead Zone) issues
-    let selfieImageData: string;
+    // Support multiple selfies for wedding faceswap (e.g., bride and groom)
+    const sourceUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
+    const selfieImageDataArray: string[] = [];
     
-    selfieImageData = await fetchImageAsBase64(sourceUrl);
+    for (const url of sourceUrls) {
+      const imageData = await fetchImageAsBase64(url);
+      selfieImageDataArray.push(imageData);
+    }
 
     // Validate and normalize aspect ratio
     // Supported values: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
@@ -203,19 +207,22 @@ export const callNanoBanana = async (
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
-    // IMPORTANT: For Nano Banana, we only send the selfie image + text prompt (not preset image)
+    // IMPORTANT: For Nano Banana, we send the selfie image(s) + text prompt (not preset image)
     // The preset image style is described in the prompt_json text
     // contents must be an ARRAY (as per Vertex AI API documentation)
+    // For multiple selfies, include all images in the parts array
+    const imageParts = selfieImageDataArray.map(imageData => ({
+      inline_data: {
+        mime_type: "image/jpeg",
+        data: imageData
+      }
+    }));
+    
     const requestBody = {
       contents: [{
         role: "user",  // Lowercase as per Vertex AI API documentation
         parts: [
-          {
-            inline_data: {
-              mime_type: "image/jpeg",  // snake_case to match generateVertexPrompt format
-              data: selfieImageData
-            }
-          },
+          ...imageParts,
           { text: faceSwapPrompt }  // This contains the prompt_json text describing the preset style
         ]
       }],
@@ -262,10 +269,11 @@ export const callNanoBanana = async (
       model: geminiModel,
       requestPayload: sanitizedRequestBody,
       curlCommand,
-      inputImageBytes: selfieImageData.length,
+      inputImageBytes: selfieImageDataArray.map(d => d.length),
+      inputImageCount: selfieImageDataArray.length,
       promptLength: faceSwapPrompt.length,
       targetUrl,
-      sourceUrl,
+      sourceUrl: Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl],
       receivedAspectRatio: aspectRatio, // Log the aspect ratio received
       normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
     };
