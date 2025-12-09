@@ -1068,15 +1068,8 @@
                 if (dragData) {
                     try {
                         const data = JSON.parse(dragData);
-                        if (data.type === 'result' && type === 'selfie') {
-                            const resultItem = {
-                                id: `result-selfie-${data.itemId}`,
-                                image_url: data.imageUrl,
-                                filename: `Result-${data.itemId}`,
-                                created_at: new Date().toISOString()
-                            };
-                            setSelectedItem('selfie', resultItem, { showMessage: true });
-                            showStatusMessage('Đã sử dụng kết quả làm nguồn selfie', 'success');
+                        if (data.type === 'result') {
+                            await handleResultDrop(data, type);
                             return;
                         }
                     } catch (err) {

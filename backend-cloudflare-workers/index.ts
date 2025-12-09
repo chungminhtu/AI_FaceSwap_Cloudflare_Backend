@@ -1560,7 +1560,7 @@ export default {
     // Handle upscaler4k endpoint
     if (path === '/upscaler4k' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string };
+        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
         
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -1716,7 +1716,7 @@ export default {
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string };
+        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -1737,11 +1737,16 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
+        const aspectRatio = (body.aspect_ratio as string) || "1:1";
+        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+
         const enhancedResult = await callNanoBanana(
           'Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance.',
           body.image_url,
           body.image_url,
-          env
+          env,
+          validAspectRatio
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
@@ -1804,7 +1809,7 @@ export default {
     // Handle colorize endpoint
     if (path === '/colorize' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string };
+        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -1824,11 +1829,16 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
+        const aspectRatio = (body.aspect_ratio as string) || "1:1";
+        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+
         const colorizedResult = await callNanoBanana(
           'Restore and enhance this damaged photo to a hyper-realistic, ultra-detailed image, 16K DSLR quality. Fix scratches, tears, noise, and blurriness. Enhance colors to vivid, vibrant tones while keeping natural skin tones. Perfectly sharpen details in face, eyes, hair, and clothing. Add realistic lighting, shadows, and depth of field. Photoshop-level professional retouching. High dynamic range, ultra-HD, lifelike textures, cinematic finish, crisp and clean background, fully restored and enhanced version of the original photo.',
           body.image_url,
           body.image_url,
-          env
+          env,
+          validAspectRatio
         );
 
         if (!colorizedResult.Success || !colorizedResult.ResultImageUrl) {
@@ -1890,7 +1900,7 @@ export default {
     // Handle aging endpoint
     if (path === '/aging' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string };
+        const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -1911,13 +1921,18 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
+        const aspectRatio = (body.aspect_ratio as string) || "1:1";
+        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+
         // For now, implement aging using existing Nano Banana API
         // This is a placeholder - in production, you'd want a dedicated aging model
         const agingResult = await callNanoBanana(
           `Age this person by ${ageYears} years. Add realistic aging effects including facial wrinkles, gray hair, maturity in appearance while maintaining the person's identity and natural features. Make the changes subtle and realistic.`,
           body.image_url,
           body.image_url, // Use same image as target and source for aging
-          env
+          env,
+          validAspectRatio
         );
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
