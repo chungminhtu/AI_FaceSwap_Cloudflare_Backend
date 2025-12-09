@@ -93,6 +93,8 @@
         }
         .app-header h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); letter-spacing: 0.3px; }
         .header-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        #profile-section { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; flex-wrap: wrap; }
+        #profile-section span:first-child { white-space: nowrap; }
 
         /* Three Column Layout: Left Sidebar | Main Content | Log Panel */
         .app-layout {
@@ -418,6 +420,29 @@
         @media (max-width: 768px) {
             .main-container { padding: 12px; }
             .app-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .header-controls { width: 100%; gap: 6px; }
+            #profile-section { 
+                font-size: 11px; 
+                padding: 4px 8px; 
+                gap: 4px; 
+                width: 100%; 
+                max-width: 100%;
+            }
+            #profile-section span:first-child { display: none; }
+            #profile-section #profile-id-input { 
+                width: 80px; 
+                height: 24px; 
+                font-size: 11px; 
+                padding: 2px 6px; 
+            }
+            #profile-section #switch-profile-btn { 
+                padding: 2px 8px; 
+                font-size: 11px; 
+                height: 24px; 
+                white-space: nowrap;
+            }
+            #profile-section #profile-status { font-size: 11px; }
+            #profile-section #profile-id-display { font-size: 10px; }
             .sidebar-column { grid-template-columns: 1fr; }
             .preview-panel { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
             .preview-card.preset-card { grid-column: 1; grid-row: 1; min-height: 250px; }
@@ -446,7 +471,7 @@
         <div class="app-header">
             <h1>Đổi Mặt AI (Face Swap AI)</h1>
             <div class="header-controls">
-                <div id="profile-section" style="display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;">
+                <div id="profile-section">
                     <span style="color: var(--text-secondary);">Hồ Sơ (Profile):</span>
                     <span id="profile-status" style="color: var(--text-muted);">Đang tải...</span>
                     <span id="profile-info" style="display: none;">
@@ -1460,8 +1485,12 @@
 
         async function runImageOperation(label, endpoint, extra = {}) {
             const selfieSelected = galleries.selfie.state.selected;
-            if (!selfieSelected) { showStatusMessage('Chọn selfie để chạy API.', 'error'); return; }
+            const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
+            if (selfieArray.length === 0) { showStatusMessage('Chọn selfie để chạy API.', 'error'); return; }
             if (!window.profileManager?.currentProfile) { showStatusMessage('Hồ sơ chưa sẵn sàng.', 'error'); return; }
+
+            // Use the first selfie for image operations
+            const selectedSelfie = selfieArray[0];
 
             showLoading(label);
             try {
@@ -1469,12 +1498,12 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '1:1';
                 console.log(`[${label}] Aspect ratio select value:`, aspectRatioSelect?.value);
                 console.log(`[${label}] Selected aspect ratio:`, selectedAspectRatio);
-                
-                const payload = { 
-                    image_url: selfieSelected.image_url, 
-                    profile_id: window.profileManager.currentProfile.id, 
+
+                const payload = {
+                    image_url: selectedSelfie.image_url,
+                    profile_id: window.profileManager.currentProfile.id,
                     aspect_ratio: selectedAspectRatio,
-                    ...extra 
+                    ...extra
                 };
                 console.log(`[${label}] Full request body:`, JSON.stringify(payload, null, 2));
                 console.log(`[${label}] Sending request with aspect_ratio:`, payload.aspect_ratio);
