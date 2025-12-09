@@ -345,6 +345,7 @@
         .spinner { width: 36px; height: 36px; border: 3px solid rgba(139, 92, 246, 0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto 12px; }
         .loading-text { font-size: 14px; color: var(--accent); font-weight: 600; }
         .loading-subtext { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .loading-timer { font-size: 16px; color: var(--accent-strong); font-weight: 700; margin-top: 8px; font-family: monospace; }
 
         /* Toast */
         .toast-container { position: fixed; top: 20px; right: 20px; z-index: 10000; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
@@ -620,6 +621,7 @@
             <div class="spinner"></div>
             <div class="loading-text">Đang tải dữ liệu</div>
             <div class="loading-subtext">Vui lòng chờ...</div>
+            <div class="loading-timer" id="loading-timer">0.0s</div>
         </div>
     </div>
 
@@ -671,9 +673,13 @@
                 try {
                     let profileId = localStorage.getItem('userProfileId');
                     if (profileId) {
+                        const startTime = Date.now();
                         const response = await fetch(`${WORKER_URL}/profiles/${profileId}`);
+                        const duration = Date.now() - startTime;
                         if (response.ok) {
-                            this.currentProfile = await response.json();
+                            const data = await response.json();
+                            logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId}`, status: 'success', duration });
+                            this.currentProfile = data;
                             this.updateProfileDisplay();
                             await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                             return this.currentProfile;
@@ -693,9 +699,13 @@
                 }
             },
             async createProfile() {
+                const startTime = Date.now();
                 const response = await fetch(`${WORKER_URL}/profiles`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                const duration = Date.now() - startTime;
                 if (!response.ok) throw new Error('Không thể tạo hồ sơ');
-                return response.json();
+                const data = await response.json();
+                logApiCall({ label: 'Tạo Hồ Sơ', method: 'POST', url: '/profiles', status: 'success', payload: data, duration });
+                return data;
             },
             updateProfileDisplay() {
                 const statusDiv = $('profile-status'), infoDiv = $('profile-info'), idSpan = $('profile-id-display');
@@ -709,10 +719,15 @@
                 if (!profileId?.trim()) { showStatusMessage('Vui lòng nhập ID hồ sơ', 'error'); return; }
                 const statusDiv = $('profile-status');
                 statusDiv.textContent = 'Đang chuyển...';
+                showLoading('Đang chuyển hồ sơ...');
                 try {
+                    const startTime = Date.now();
                     const response = await fetch(`${WORKER_URL}/profiles/${profileId.trim()}`);
+                    const duration = Date.now() - startTime;
                     if (!response.ok) throw new Error(response.status === 404 ? 'Không tìm thấy hồ sơ' : `HTTP ${response.status}`);
-                    this.currentProfile = await response.json();
+                    const data = await response.json();
+                    logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId.trim()}`, status: 'success', duration });
+                    this.currentProfile = data;
                     localStorage.setItem('userProfileId', this.currentProfile.id);
                     this.updateProfileDisplay();
                     await Promise.all([loadGallery('selfie'), loadGallery('results')]);
@@ -722,6 +737,8 @@
                     statusDiv.textContent = '✗ Lỗi';
                     statusDiv.style.color = 'var(--danger)';
                     showStatusMessage(`Chuyển hồ sơ thất bại: ${error.message}`, 'error');
+                } finally {
+                    hideLoading();
                 }
             }
         };
@@ -760,12 +777,40 @@
             setTimeout(() => accessInput?.focus(), 50);
         }
 
+        // Loading Timer
+        let loadingTimerInterval = null;
+        let loadingStartTime = null;
+
+        function startLoadingTimer() {
+            loadingStartTime = Date.now();
+            const timerEl = $('loading-timer');
+            if (!timerEl) return;
+            
+            if (loadingTimerInterval) clearInterval(loadingTimerInterval);
+            loadingTimerInterval = setInterval(() => {
+                if (!loadingStartTime) return;
+                const elapsed = ((Date.now() - loadingStartTime) / 1000).toFixed(1);
+                if (timerEl) timerEl.textContent = `${elapsed}s`;
+            }, 100);
+        }
+
+        function stopLoadingTimer() {
+            if (loadingTimerInterval) {
+                clearInterval(loadingTimerInterval);
+                loadingTimerInterval = null;
+            }
+            const timerEl = $('loading-timer');
+            if (timerEl) timerEl.textContent = '0.0s';
+            loadingStartTime = null;
+        }
+
         // Logging
         function logApiCall({ label, method, url, status = 'info', payload, duration }) {
-            if (!apiLogList || !['POST', 'PUT', 'DELETE'].includes((method || '').toUpperCase())) return;
+            if (!apiLogList || !['POST', 'PUT', 'DELETE', 'GET'].includes((method || '').toUpperCase())) return;
             const entry = document.createElement('div');
             entry.className = `api-log-entry log-${status}`;
-            const durationHtml = duration ? ` <span style="color:#666;font-size:11px;">⏱️${duration}ms</span>` : '';
+            const durationText = duration ? formatDuration(duration) : '';
+            const durationHtml = durationText ? ` <span style="color:#666;font-size:11px;font-weight:600;">⏱️ ${durationText}</span>` : '';
             let payloadHtml = '';
             if (payload) {
                 payloadHtml = `<div class="api-log-payload">${escapeHtml(JSON.stringify(payload, null, 2))}</div>`;
@@ -778,6 +823,15 @@
             `;
             apiLogList.prepend(entry);
             while (apiLogList.childElementCount > MAX_LOG_ENTRIES) apiLogList.removeChild(apiLogList.lastElementChild);
+        }
+
+        function formatDuration(ms) {
+            if (ms < 1000) return `${ms}ms`;
+            const seconds = (ms / 1000).toFixed(1);
+            if (seconds < 60) return `${seconds}s`;
+            const minutes = Math.floor(ms / 60000);
+            const secs = ((ms % 60000) / 1000).toFixed(0);
+            return `${minutes}m ${secs}s`;
         }
 
         function clearApiLogs() { if (apiLogList) apiLogList.innerHTML = ''; }
@@ -802,6 +856,7 @@
         // Gallery Functions
         async function loadGallery(type, genderFilter = '') {
             const config = galleries[type];
+            let startTime = null;
             try {
                 if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
                     config.state.items = []; config.state.page = 1; renderGallery(type); return;
@@ -816,14 +871,19 @@
                     params.append('gender', genderFilter);
                 }
                 if (params.toString()) url += `?${params.toString()}`;
+                startTime = Date.now();
                 const response = await fetch(url);
+                const duration = Date.now() - startTime;
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
+                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, status: 'success', duration });
                 config.state.items = data[config.responseKey] || [];
                 config.state.page = 1;
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);
             } catch (error) {
+                const duration = startTime ? Date.now() - startTime : 0;
+                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: config.endpoints.list, status: 'error', duration });
                 config.state.items = []; config.state.page = 1; renderGallery(type);
             }
         }
@@ -958,9 +1018,11 @@
             if (!confirm(config.labels.confirmDelete)) return;
 
             try {
+                const startTime = Date.now();
                 const response = await fetch(`${WORKER_URL}${config.endpoints.delete}/${itemId}`, { method: 'DELETE' });
                 const data = await response.json();
-                logApiCall({ label: `Xóa ${config.logName}`, method: 'DELETE', url: `${config.endpoints.delete}/${itemId}`, status: response.ok ? 'success' : 'error', payload: data });
+                const duration = Date.now() - startTime;
+                logApiCall({ label: `Xóa ${config.logName}`, method: 'DELETE', url: `${config.endpoints.delete}/${itemId}`, status: response.ok ? 'success' : 'error', payload: data, duration });
                 if (!response.ok) throw new Error(data.message || 'Xóa thất bại');
 
                 config.state.items = config.state.items.filter(item => item.id !== itemId);
@@ -1035,6 +1097,7 @@
 
             const dropZone = $(type + '-drop-zone');
             dropZone?.classList.add('loading');
+            showLoading(`Đang tải lên ${type === 'preset' ? 'mẫu' : 'selfie'}...`);
 
             try {
                 const formData = new FormData();
@@ -1047,10 +1110,12 @@
                     formData.append('enableVisionScan', 'true');
                 }
 
+                const startTime = Date.now();
                 const response = await fetch(`${WORKER_URL}/upload-url`, { method: 'POST', body: formData });
                 const data = await response.json();
+                const duration = Date.now() - startTime;
 
-                logApiCall({ label: `Tải Lên ${config.logName}`, method: 'POST', url: '/upload-url', status: response.ok ? 'success' : 'error', payload: data });
+                logApiCall({ label: `Tải Lên ${config.logName}`, method: 'POST', url: '/upload-url', status: response.ok ? 'success' : 'error', payload: data, duration });
                 if (!response.ok) throw new Error(data.message || 'Tải lên thất bại');
 
                 const newImage = { id: data.id, filename: data.filename, image_url: data.url, created_at: new Date().toISOString() };
@@ -1063,6 +1128,7 @@
                 showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
             } finally {
                 dropZone?.classList.remove('loading');
+                hideLoading();
             }
         }
 
@@ -1075,6 +1141,7 @@
 
             generateBtn.disabled = true;
             generateBtn.classList.add('loading');
+            showLoading('Đang tạo đổi mặt...');
 
             try {
                 const genderRadio = document.querySelector('input[name="character-gender"]:checked');
@@ -1125,6 +1192,7 @@
             } finally {
                 generateBtn.disabled = false;
                 generateBtn.classList.remove('loading');
+                hideLoading();
                 updateGenerateButton();
             }
         }
@@ -1286,12 +1354,14 @@
                 overlay.style.display = 'flex';
                 const textEl = overlay.querySelector('.loading-text');
                 if (textEl) textEl.textContent = text;
+                startLoadingTimer();
             }
         }
 
         function hideLoading() {
             const overlay = $('loading-overlay');
             if (overlay) overlay.style.display = 'none';
+            stopLoadingTimer();
         }
 
         function showStatusMessage(message, type = 'info') {

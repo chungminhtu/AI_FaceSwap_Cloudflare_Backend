@@ -178,28 +178,29 @@ export const callNanoBanana = async (
     // Validate and normalize aspect ratio
     // Supported values: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
     const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-    const providedRatio = aspectRatio || "1:1";
-    const normalizedAspectRatio = supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
-    console.log('[Upscaler4K] Received aspectRatio parameter:', aspectRatio, '-> normalized:', normalizedAspectRatio);
+    const providedRatio = aspectRatio && typeof aspectRatio === 'string' ? aspectRatio.trim() : null;
+    const normalizedAspectRatio = providedRatio && supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
+    console.log('[Vertex-NanoBanana] Received aspectRatio parameter:', aspectRatio, '(type:', typeof aspectRatio, ')');
+    console.log('[Vertex-NanoBanana] Normalized aspect ratio:', normalizedAspectRatio);
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
     // IMPORTANT: For Nano Banana, we only send the selfie image + text prompt (not preset image)
     // The preset image style is described in the prompt_json text
-    // contents must be an OBJECT, not an array (as per documentation)
+    // contents must be an ARRAY as per Vertex AI API documentation
     const requestBody = {
-      contents: {
-        role: "USER",  // Uppercase as per documentation
+      contents: [{
+        role: "user",  // Lowercase as per Vertex AI API documentation
         parts: [
           {
             inline_data: {
-              mimeType: "image/jpeg",  // camelCase as per documentation
+              mime_type: "image/jpeg",  // snake_case as per Vertex AI API documentation
               data: selfieImageData
             }
           },
           { text: faceSwapPrompt }  // This contains the prompt_json text describing the preset style
         ]
-      },
+      }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],  // Request both text and image output
         temperature: 0.7,
@@ -244,6 +245,8 @@ export const callNanoBanana = async (
     
     console.log('[Vertex-NanoBanana] Requesting image generation with aspect ratio:', normalizedAspectRatio, 'in generationConfig.imageConfig');
     console.log('[Vertex-NanoBanana] Full requestBody generationConfig:', JSON.stringify(requestBody.generationConfig, null, 2));
+    console.log('[Vertex-NanoBanana] Full requestBody structure (contents is array):', Array.isArray(requestBody.contents));
+    console.log('[Vertex-NanoBanana] imageConfig.aspectRatio value:', requestBody.generationConfig.imageConfig?.aspectRatio);
 
     // Call Vertex AI Gemini API
     const startTime = Date.now();
