@@ -475,40 +475,69 @@ export const callNanoBananaMerge = async (
       promptText = JSON.stringify(prompt);
     }
 
-    const mergePrompt = promptText || `You are a professional photo compositor. Your task is to seamlessly blend and composite the person from the first image (which has a transparent background) into the second image (the landscape scene).
+    const mergePrompt = promptText || `You are a professional photo compositor. Your task is to place the person from the first image (which has a transparent background) into the second image (the landscape scene), making them look like they naturally belong in that scene.
 
 CRITICAL REQUIREMENTS:
-1. COMPOSITING, NOT PASTING: Do NOT simply paste or glue the person onto the scene. You must blend them together as if the person was actually photographed in that scene.
+1. PLACE THE PERSON INTO THE SCENE:
+   - Insert the person from the first image into the second image scene
+   - Position them naturally within the scene context
+   - Make them look like they are actually standing/sitting/existing in that scene
+   - Do NOT merge or blend their appearance - keep the person recognizable as they are
 
-2. PRESERVE FACIAL FEATURES: Keep the person's face EXACTLY the same - same facial structure, same identity, same age, same ethnicity. Only adjust lighting and color grading on the face to match the scene's lighting conditions.
+2. STYLE TRANSFORMATION TO MATCH SCENE:
+   - Analyze the visual style of the scene (realistic photography, 3D rendering, comic book, anime, watercolor, oil painting, sketch, etc.)
+   - Transform the person's visual appearance to match the EXACT same style as the scene
+   - If the scene is 3D rendered, make the person look 3D rendered with matching rendering quality, lighting, and texture
+   - If the scene is comic book style, transform the person to comic book style with matching line art, colors, and shading
+   - If the scene is realistic photography, make the person look like realistic photography
+   - Match the color palette, saturation, contrast, and overall visual aesthetic exactly
+   - The person should look like they were originally created/drawn/photographed in the same style as the scene
 
-3. REALISTIC LIGHTING INTEGRATION:
-   - Match the direction, intensity, and color temperature of the scene's lighting
+3. PRESERVE FACIAL IDENTITY:
+   - Keep the person's facial features EXACTLY the same - same facial structure, same identity, same age, same ethnicity
+   - Only transform the visual style (3D/comic/realistic/etc.) while preserving who they are
+   - Apply the style transformation to the face while maintaining recognizability
+
+4. LIGHTING INTEGRATION:
+   - Match the direction, intensity, and color temperature of the scene's lighting exactly
    - Add appropriate highlights and shadows on the person based on the scene's light sources
-   - Ensure the person's skin tone and clothing colors match the ambient lighting
+   - Adjust the person's skin tone and clothing colors to match the ambient lighting and style
+   - Make the lighting on the person look consistent with the scene's lighting
 
-4. NATURAL POSE ADJUSTMENT:
-   - Adjust the person's body pose and position to fit naturally within the scene context
-   - Make the pose look realistic for the environment (e.g., standing on ground, sitting on objects, etc.)
-   - Ensure proper perspective and scale relative to the scene
+5. FLEXIBLE POSE AND PLACEMENT:
+   - You have complete flexibility to adjust the person's body pose, position, and orientation to fit naturally within the scene
+   - Change the pose as needed to make it look realistic for the environment (e.g., standing on ground, sitting on objects, walking, etc.)
+   - Adjust the person's position, angle, and orientation to integrate seamlessly into the scene
+   - The pose should look like the person naturally belongs in that specific scene context
 
-5. SEAMLESS BLENDING:
+6. PROPER SCALE AND PROPORTION:
+   - CRITICAL: Ensure the person's size is appropriate and proportional to the scene
+   - The person should NOT be too large - they must be properly scaled relative to the scene elements
+   - If the scene is a wide landscape, the person should be appropriately small to fit the scale
+   - If the scene has other people or objects, match the person's size to be consistent with them
+   - The person should look like they are at the correct distance and scale within the scene
+   - Ensure proper perspective - the person should appear at a realistic distance relative to the scene's depth
+   - The person should never dominate or fill the entire scene - they should be part of the scene, not the whole scene
+
+7. SEAMLESS INTEGRATION:
    - Remove any visible edges or artifacts from the transparent background
-   - Blend the person's edges naturally into the scene
-   - Add realistic shadows cast by the person onto the ground/objects in the scene
+   - Integrate the person's edges naturally into the scene using the same style
+   - Add realistic shadows cast by the person onto the ground/objects in the scene (matching the scene's shadow style)
    - Match the depth of field and atmospheric effects (fog, haze, etc.) if present
 
-6. SCENE INTEGRATION:
-   - If the scene contains other people, position the person naturally among them as if they were all photographed together
+8. SCENE INTEGRATION:
+   - If the scene contains other people, position the person naturally among them
    - Make interactions look natural and realistic
    - Ensure proper scale and perspective relative to other people/objects
+   - Match the visual quality and detail level of other elements in the scene
 
-7. PHOTOREALISTIC RESULT:
-   - The final image should look like a single, cohesive photograph
+9. UNIFIED RESULT:
+   - The final image should look like ONE SINGLE, COHESIVE image that was captured/created as a whole
    - No visible seams, artifacts, or signs of compositing
-   - The person should appear to belong naturally in the scene
+   - The person should appear to belong naturally in the scene and match its style perfectly
+   - It should look like the person was originally part of the scene
 
-Generate a photorealistic composite image that seamlessly blends the person into the landscape scene.`;
+Place the person into the scene, transform their visual style to match the scene exactly, and create one unified, cohesive image that looks like it was originally captured/created as a single piece.`;
 
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBananaMerge] Missing service account credentials');
