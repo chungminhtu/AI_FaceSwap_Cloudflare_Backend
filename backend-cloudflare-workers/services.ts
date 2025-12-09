@@ -100,7 +100,7 @@ export const callNanoBanana = async (
   targetUrl: string,
   sourceUrl: string,
   env: Env,
-  aspectRatio: string = "1:1"
+  aspectRatio?: string
 ): Promise<FaceSwapResponse> => {
   // Use Vertex AI Gemini API with image generation support
   // Based on official documentation: responseModalities: ["TEXT", "IMAGE"] is supported
@@ -178,7 +178,9 @@ export const callNanoBanana = async (
     // Validate and normalize aspect ratio
     // Supported values: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
     const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-    const normalizedAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+    const providedRatio = aspectRatio || "1:1";
+    const normalizedAspectRatio = supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
+    console.log('[Upscaler4K] Received aspectRatio parameter:', aspectRatio, '-> normalized:', normalizedAspectRatio);
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
@@ -236,11 +238,12 @@ export const callNanoBanana = async (
       promptLength: faceSwapPrompt.length,
       targetUrl,
       sourceUrl,
-      aspectRatio: aspectRatio, // Log the aspect ratio being sent
+      receivedAspectRatio: aspectRatio, // Log the aspect ratio received
       normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
     };
     
     console.log('[Vertex-NanoBanana] Requesting image generation with aspect ratio:', normalizedAspectRatio, 'in generationConfig.imageConfig');
+    console.log('[Vertex-NanoBanana] Full requestBody generationConfig:', JSON.stringify(requestBody.generationConfig, null, 2));
 
     // Call Vertex AI Gemini API
     const startTime = Date.now();
@@ -853,16 +856,20 @@ export const callUpscaler4k = async (
 
   try {
     const apiKey = env.WAVESPEED_API_KEY;
-    const apiEndpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/ultimate-image-upscaler';
+    const apiEndpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/image-upscaler';
     
     debugInfo = {
       endpoint: apiEndpoint,
-      model: 'wavespeed-ai/ultimate-image-upscaler',
+      model: 'wavespeed-ai/image-upscaler',
       imageUrl,
     };
 
     const requestBody = {
-      image: imageUrl
+      enable_base64_output: false,
+      enable_sync_mode: false,
+      image: imageUrl,
+      output_format: 'jpeg',
+      target_resolution: '4k'
     };
 
     const startTime = Date.now();
@@ -914,187 +921,160 @@ export const callUpscaler4k = async (
         }));
       }
       
-      console.log('[Upscaler4K] Full response structure:', JSON.stringify(data, null, 2).substring(0, 1000));
+      console.log('[Upscaler4K] Initial response structure:', JSON.stringify(data, null, 2).substring(0, 1000));
       
       let resultImageUrl: string | null = null;
+      let requestId: string | null = null;
       
-      // WaveSpeed API returns image in data.outputs array
-      if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
-        const output = data.data.outputs[0];
-        if (typeof output === 'string') {
-          resultImageUrl = output;
-        } else if (output?.url) {
-          resultImageUrl = output.url;
-        }
-      } else if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
-        const output = data.outputs[0];
-        if (typeof output === 'string') {
-          resultImageUrl = output;
-        } else if (output?.url) {
-          resultImageUrl = output.url;
-        }
-      } else if (data.data?.output_url) {
-        resultImageUrl = data.data.output_url;
-      } else if (data.output_url) {
-        resultImageUrl = data.output_url;
-      } else if (data.output) {
-        resultImageUrl = typeof data.output === 'string' ? data.output : data.output.url || data.output.image_url;
-      } else if (data.image_url) {
-        resultImageUrl = data.image_url;
-      } else if (data.url) {
-        resultImageUrl = data.url;
-      } else if (data.result?.url) {
-        resultImageUrl = data.result.url;
-      } else if (data.result?.output_url) {
-        resultImageUrl = data.result.output_url;
-      } else if (data.result?.image_url) {
-        resultImageUrl = data.result.image_url;
-      } else if (data.data?.url) {
-        resultImageUrl = data.data.url;
-      } else if (data.data?.image_url) {
-        resultImageUrl = data.data.image_url;
-      } else if (data.image) {
-        resultImageUrl = typeof data.image === 'string' ? data.image : data.image.url || data.image.output_url;
-      } else if (data.upscaled_image) {
-        resultImageUrl = typeof data.upscaled_image === 'string' ? data.upscaled_image : data.upscaled_image.url;
-      } else if (data.upscaled) {
-        resultImageUrl = typeof data.upscaled === 'string' ? data.upscaled : data.upscaled.url;
+      requestId = data.id || data.requestId || data.request_id || data.data?.id || data.data?.requestId || data.data?.request_id;
+      
+      if (!requestId) {
+        console.error('[Upscaler4K] No requestId found in response. Full response:', JSON.stringify(data, null, 2));
+        return {
+          Success: false,
+          Message: 'WaveSpeed API did not return a request ID',
+          StatusCode: 500,
+          Error: 'No requestId in response',
+          FullResponse: JSON.stringify(data, null, 2),
+          Debug: debugInfo,
+        };
       }
       
-      // Check if status is "processing" and we need to poll the result URL
-      if (!resultImageUrl && data.data?.status === 'processing' && data.data?.urls?.get) {
-        const getUrl = data.data.urls.get;
-        console.log('[Upscaler4K] Task is processing, polling result URL:', getUrl);
+      console.log('[Upscaler4K] Extracted requestId:', requestId);
+      
+      const resultEndpoint = `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`;
+      console.log('[Upscaler4K] Polling result endpoint:', resultEndpoint);
+      
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Poll the result URL (max 10 attempts, 2 seconds apart)
-        for (let attempt = 0; attempt < 10; attempt++) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          const resultResponse = await fetch(getUrl, {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`
-            }
-          });
-          
-          if (resultResponse.ok) {
-            const resultData = await resultResponse.json();
-            console.log('[Upscaler4K] Poll result:', JSON.stringify(resultData, null, 2).substring(0, 500));
-            
-            if (resultData.data?.outputs && Array.isArray(resultData.data.outputs) && resultData.data.outputs.length > 0) {
-              const output = resultData.data.outputs[0];
-              if (typeof output === 'string') {
-                resultImageUrl = output;
-                break;
-              } else if (output?.url) {
-                resultImageUrl = output.url;
-                break;
-              }
-            } else if (resultData.data?.status === 'completed' && resultData.data?.output_url) {
-              resultImageUrl = resultData.data.output_url;
+        const resultResponse = await fetch(resultEndpoint, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`
+          }
+        });
+        
+        if (!resultResponse.ok) {
+          console.warn('[Upscaler4K] Poll request failed:', resultResponse.status, resultResponse.statusText);
+          if (attempt === 29) {
+            throw new Error(`Failed to get result: ${resultResponse.status} ${resultResponse.statusText}`);
+          }
+          continue;
+        }
+        
+        const resultData: any = await resultResponse.json();
+        console.log('[Upscaler4K] Poll attempt', attempt + 1, 'result:', JSON.stringify(resultData, null, 2).substring(0, 1000));
+        
+        const pollStatus = resultData.status || resultData.data?.status;
+        
+        if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success' || pollStatus === 'succeeded') {
+          if (resultData.output && typeof resultData.output === 'string') {
+            resultImageUrl = resultData.output;
+            break;
+          } else if (resultData.output?.url) {
+            resultImageUrl = resultData.output.url;
+            break;
+          } else if (resultData.data?.output && typeof resultData.data.output === 'string') {
+            resultImageUrl = resultData.data.output;
+            break;
+          } else if (resultData.data?.output?.url) {
+            resultImageUrl = resultData.data.output.url;
+            break;
+          } else if (resultData.url) {
+            resultImageUrl = resultData.url;
+            break;
+          } else if (resultData.data?.url) {
+            resultImageUrl = resultData.data.url;
+            break;
+          } else if (resultData.image_url) {
+            resultImageUrl = resultData.image_url;
+            break;
+          } else if (resultData.data?.image_url) {
+            resultImageUrl = resultData.data.image_url;
+            break;
+          } else if (resultData.output_url) {
+            resultImageUrl = resultData.output_url;
+            break;
+          } else if (resultData.data?.output_url) {
+            resultImageUrl = resultData.data.output_url;
+            break;
+          } else if (resultData.data?.outputs && Array.isArray(resultData.data.outputs) && resultData.data.outputs.length > 0) {
+            const output = resultData.data.outputs[0];
+            if (typeof output === 'string') {
+              resultImageUrl = output;
               break;
-            } else if (resultData.data?.status === 'failed') {
-              throw new Error(`Upscaling failed: ${resultData.data.error || 'Unknown error'}`);
+            } else if (output?.url) {
+              resultImageUrl = output.url;
+              break;
             }
+          } else if (resultData.outputs && Array.isArray(resultData.outputs) && resultData.outputs.length > 0) {
+            const output = resultData.outputs[0];
+            if (typeof output === 'string') {
+              resultImageUrl = output;
+              break;
+            } else if (output?.url) {
+              resultImageUrl = output.url;
+              break;
+            }
+          }
+        } else if (pollStatus === 'failed' || pollStatus === 'error') {
+          throw new Error(`Upscaling failed: ${resultData.error || resultData.message || resultData.data?.error || 'Unknown error'}`);
+        } else if (pollStatus === 'processing' || pollStatus === 'pending' || pollStatus === 'starting') {
+          continue;
+        } else {
+          if (resultData.output && typeof resultData.output === 'string') {
+            resultImageUrl = resultData.output;
+            break;
+          } else if (resultData.output?.url) {
+            resultImageUrl = resultData.output.url;
+            break;
+          } else if (resultData.data?.output && typeof resultData.data.output === 'string') {
+            resultImageUrl = resultData.data.output;
+            break;
+          } else if (resultData.data?.output?.url) {
+            resultImageUrl = resultData.data.output.url;
+            break;
+          } else if (resultData.url) {
+            resultImageUrl = resultData.url;
+            break;
+          } else if (resultData.data?.url) {
+            resultImageUrl = resultData.data.url;
+            break;
           }
         }
       }
+      
+      if (!resultImageUrl) {
+        throw new Error('Upscaling timed out - no result after 30 polling attempts');
+      }
+
+      console.log('[Upscaler4K] Extracted resultImageUrl:', resultImageUrl);
 
       let imageBytes: Uint8Array;
       let contentType = 'image/png';
       
-      if (!resultImageUrl) {
-        // Check for base64 in outputs array
-        let base64Data: string | null = null;
-        
-        if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
-          const output = data.data.outputs[0];
-          if (typeof output === 'string' && (output.startsWith('data:') || output.length > 100)) {
-            base64Data = output;
-          }
-        } else if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
-          const output = data.outputs[0];
-          if (typeof output === 'string' && (output.startsWith('data:') || output.length > 100)) {
-            base64Data = output;
-          }
-        } else if (data.base64 || data.data?.base64 || data.image_base64) {
-          base64Data = data.base64 || data.data?.base64 || data.image_base64;
-        }
-        
-        if (base64Data) {
-          if (typeof base64Data === 'string' && base64Data.startsWith('data:')) {
-            const base64Match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-            if (base64Match) {
-              contentType = base64Match[1] || 'image/png';
-              const base64String = base64Match[2];
-              const binaryString = atob(base64String);
-              imageBytes = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                imageBytes[i] = binaryString.charCodeAt(i);
-              }
-            } else {
-              console.error('[Upscaler4K] Invalid base64 data URL format');
-              return {
-                Success: false,
-                Message: 'WaveSpeed API returned invalid base64 image data',
-                StatusCode: 500,
-                Error: 'Invalid base64 format',
-                FullResponse: JSON.stringify(data, null, 2),
-                Debug: debugInfo,
-              };
-            }
-          } else if (typeof base64Data === 'string') {
-            const binaryString = atob(base64Data);
-            imageBytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              imageBytes[i] = binaryString.charCodeAt(i);
-            }
-          } else {
-            console.error('[Upscaler4K] No image URL or base64 data found in response. Full response:', JSON.stringify(data, null, 2));
-            return {
-              Success: false,
-              Message: 'WaveSpeed API did not return an image URL or base64 data in the response',
-              StatusCode: 500,
-              Error: 'No image URL or base64 data found in response',
-              FullResponse: JSON.stringify(data, null, 2),
-              Debug: debugInfo,
-            };
+      if (resultImageUrl.startsWith('data:')) {
+        const base64Match = resultImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (base64Match) {
+          contentType = base64Match[1] || 'image/png';
+          const base64String = base64Match[2];
+          const binaryString = atob(base64String);
+          imageBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            imageBytes[i] = binaryString.charCodeAt(i);
           }
         } else {
-          console.error('[Upscaler4K] No image URL or base64 data found in response. Full response:', JSON.stringify(data, null, 2));
-          return {
-            Success: false,
-            Message: 'WaveSpeed API did not return an image URL or base64 data in the response',
-            StatusCode: 500,
-            Error: 'No image URL or base64 data found in response',
-            FullResponse: JSON.stringify(data, null, 2),
-            Debug: debugInfo,
-          };
+          throw new Error('Invalid base64 data URL format');
         }
       } else {
-        // Check if resultImageUrl is a base64 data URL
-        if (resultImageUrl.startsWith('data:')) {
-          const base64Match = resultImageUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (base64Match) {
-            contentType = base64Match[1] || 'image/png';
-            const base64String = base64Match[2];
-            const binaryString = atob(base64String);
-            imageBytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              imageBytes[i] = binaryString.charCodeAt(i);
-            }
-          } else {
-            throw new Error('Invalid base64 data URL format');
-          }
-        } else {
-          const imageResponse = await fetch(resultImageUrl);
-          if (!imageResponse.ok) {
-            throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
-          }
-
-          const imageData = await imageResponse.arrayBuffer();
-          imageBytes = new Uint8Array(imageData);
-          contentType = imageResponse.headers.get('content-type') || 'image/png';
+        const imageResponse = await fetch(resultImageUrl);
+        if (!imageResponse.ok) {
+          throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
         }
+
+        const imageData = await imageResponse.arrayBuffer();
+        imageBytes = new Uint8Array(imageData);
+        contentType = imageResponse.headers.get('content-type') || 'image/png';
       }
       
       const resultKey = `results/upscaler4k_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${contentType.split('/')[1] || 'png'}`;
