@@ -22,11 +22,18 @@ export const validateEnv = (env: Env, mode: 'rapidapi' | 'vertex' = 'rapidapi'):
 };
 
 export const validateRequest = (body: any): string | null => {
-  if (!body?.preset_image_id) {
-    return 'Missing required field: preset_image_id';
+  const hasPresetId = body?.preset_image_id && body.preset_image_id.trim() !== '';
+  const hasPresetUrl = body?.preset_image_url && body.preset_image_url.trim() !== '';
+  if (!hasPresetId && !hasPresetUrl) {
+    return 'Missing required field: preset_image_id or preset_image_url';
   }
-  if (!Array.isArray(body?.selfie_ids) || body.selfie_ids.length === 0) {
-    return 'Missing required field: selfie_ids (must be a non-empty array)';
+  if (hasPresetId && hasPresetUrl) {
+    return 'Cannot provide both preset_image_id and preset_image_url. Please provide only one.';
+  }
+  const hasSelfieIds = Array.isArray(body?.selfie_ids) && body.selfie_ids.length > 0;
+  const hasSelfieUrls = Array.isArray(body?.selfie_image_urls) && body.selfie_image_urls.length > 0;
+  if (!hasSelfieIds && !hasSelfieUrls) {
+    return 'Missing required field: selfie_ids or selfie_image_urls (must be a non-empty array)';
   }
   if (!body?.profile_id) {
     return 'Missing required field: profile_id';

@@ -1246,10 +1246,14 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '16:9';
                 console.log('[Frontend] Aspect ratio select value:', aspectRatioSelect?.value);
                 console.log('[Frontend] Selected aspect ratio:', selectedAspectRatio);
-                const isResultSelfie = selfieSelected.id?.startsWith('result-selfie-');
+                const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                const useSelfieUrl = !selfieSelected.id || selfieSelected.id?.startsWith('result-selfie-');
                 const requestBody = {
-                    preset_image_id: presetSelected.id,
-                    ...(isResultSelfie 
+                    ...(usePresetUrl 
+                        ? { preset_image_url: presetSelected.image_url }
+                        : { preset_image_id: presetSelected.id }
+                    ),
+                    ...(useSelfieUrl 
                         ? { selfie_image_urls: [selfieSelected.image_url] }
                         : { selfie_ids: [selfieSelected.id] }
                     ),
@@ -1303,10 +1307,14 @@
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '16:9';
-                const isResultSelfie = selfieSelected.id?.startsWith('result-selfie-');
+                const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                const useSelfieUrl = !selfieSelected.id || selfieSelected.id?.startsWith('result-selfie-');
                 const requestBody = {
-                    preset_image_id: presetSelected.id,
-                    ...(isResultSelfie 
+                    ...(usePresetUrl 
+                        ? { preset_image_url: presetSelected.image_url }
+                        : { preset_image_id: presetSelected.id }
+                    ),
+                    ...(useSelfieUrl 
                         ? { selfie_image_url: selfieSelected.image_url }
                         : { selfie_id: selfieSelected.id }
                     ),
@@ -1583,7 +1591,14 @@
                 showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
                 return;
             }
-            await uploadImageFromUrl(imageUrl, 'preset');
+            const tempPreset = {
+                image_url: imageUrl,
+                filename: imageUrl.split('/').pop() || 'result.jpg',
+                created_at: new Date().toISOString()
+            };
+            setSelectedItem('preset', tempPreset, { showMessage: true });
+            showStatusMessage('Đã chọn làm mẫu thành công!', 'success');
+            closeLightbox();
         }
 
         async function selectAsSelfie() {
@@ -1594,7 +1609,14 @@
                 showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
                 return;
             }
-            await uploadImageFromUrl(imageUrl, 'selfie');
+            const tempSelfie = {
+                image_url: imageUrl,
+                filename: imageUrl.split('/').pop() || 'result.jpg',
+                created_at: new Date().toISOString()
+            };
+            setSelectedItem('selfie', tempSelfie, { showMessage: true });
+            showStatusMessage('Đã chọn làm selfie thành công!', 'success');
+            closeLightbox();
         }
 
         window.selectAsPreset = selectAsPreset;

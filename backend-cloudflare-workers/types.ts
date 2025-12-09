@@ -25,7 +25,8 @@ export interface Env {
 }
 
 export interface FaceSwapRequest {
-  preset_image_id: string; // Required: Preset image ID from database
+  preset_image_id?: string; // Optional: Preset image ID from database
+  preset_image_url?: string; // Optional: Preset image URL (alternative to preset_image_id)
   selfie_ids?: string[]; // Optional: Array of selfie IDs from database
   selfie_image_urls?: string[]; // Optional: Array of selfie image URLs (alternative to selfie_ids)
   profile_id: string; // Required: Profile ID for the operation
@@ -35,7 +36,8 @@ export interface FaceSwapRequest {
 }
 
 export interface RemoveBackgroundRequest {
-  preset_image_id: string; // Required: Preset image ID from database (landscape scene)
+  preset_image_id?: string; // Optional: Preset image ID from database (landscape scene)
+  preset_image_url?: string; // Optional: Preset image URL (alternative to preset_image_id)
   selfie_id?: string; // Optional: Selfie ID from database (person with transparent background)
   selfie_image_url?: string; // Optional: Selfie image URL (alternative to selfie_id)
   profile_id: string; // Required: Profile ID for the operation

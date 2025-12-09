@@ -1128,13 +1128,32 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        // Look up preset image URL from database
-        const presetResult = await DB.prepare(
-          'SELECT id, image_url, preset_name FROM presets WHERE id = ?'
-        ).bind(body.preset_image_id).first();
+        // Look up preset image URL from database or use provided URL
+        let targetUrl: string;
+        let presetName: string;
+        let presetImageId: string | null = null;
 
-        if (!presetResult) {
-          return errorResponse('Preset image not found', 404);
+        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
+        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
+
+        if (hasPresetId) {
+          const presetResult = await DB.prepare(
+            'SELECT id, image_url, preset_name FROM presets WHERE id = ?'
+          ).bind(body.preset_image_id).first();
+
+          if (!presetResult) {
+            return errorResponse('Preset image not found', 404);
+          }
+
+          targetUrl = (presetResult as any).image_url;
+          presetName = (presetResult as any).preset_name || 'Unnamed Preset';
+          presetImageId = body.preset_image_id;
+        } else if (hasPresetUrl) {
+          targetUrl = body.preset_image_url!;
+          presetName = 'Result Preset';
+          presetImageId = null;
+        } else {
+          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400);
         }
 
         // Validate selfie_ids or selfie_image_urls
@@ -1166,9 +1185,6 @@ export default {
           selfieUrls.push(...body.selfie_image_urls!);
         }
 
-        const targetUrl = (presetResult as any).image_url;
-        const presetName = (presetResult as any).preset_name || 'Unnamed Preset';
-
         // For now, use the first selfie as the primary source
         // In a full implementation, you might want to combine multiple selfies
         const sourceUrl = selfieUrls[0];
@@ -1176,7 +1192,8 @@ export default {
         const requestDebug = compact({
           targetUrl: targetUrl,
           sourceUrls: selfieUrls,
-          presetImageId: body.preset_image_id,
+          presetImageId: presetImageId,
+          presetImageUrl: hasPresetUrl ? body.preset_image_url : undefined,
           presetName: presetName,
           selfieIds: selfieIds,
           additionalPrompt: body.additional_prompt,
@@ -1184,9 +1201,12 @@ export default {
         });
 
 
-        let promptResult = await DB.prepare(
-          'SELECT prompt_json, image_url FROM presets WHERE id = ?'
-        ).bind(body.preset_image_id).first();
+        let promptResult: any = null;
+        if (presetImageId) {
+          promptResult = await DB.prepare(
+            'SELECT prompt_json, image_url FROM presets WHERE id = ?'
+          ).bind(presetImageId).first();
+        }
 
         let storedPromptPayload: any = null;
 
@@ -1207,11 +1227,12 @@ export default {
           const generateResult = await generateVertexPrompt(presetImageUrl, env);
           if (generateResult.success && generateResult.prompt) {
             storedPromptPayload = generateResult.prompt;
-            const promptJsonString = JSON.stringify(storedPromptPayload);
-            
-            await DB.prepare(
-              'UPDATE presets SET prompt_json = ? WHERE id = ?'
-            ).bind(promptJsonString, body.preset_image_id).run();
+            if (presetImageId) {
+              const promptJsonString = JSON.stringify(storedPromptPayload);
+              await DB.prepare(
+                'UPDATE presets SET prompt_json = ? WHERE id = ?'
+              ).bind(promptJsonString, presetImageId).run();
+            }
           } else {
             return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400);
           }
@@ -1422,7 +1443,7 @@ export default {
         };
 
         let savedResultId: string | null = null;
-        if (body.preset_image_id) {
+        if (presetImageId) {
           databaseDebug.attempted = true;
           try {
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -1478,8 +1499,15 @@ export default {
       try {
         const body: RemoveBackgroundRequest = await request.json();
 
-        if (!body.preset_image_id) {
-          return errorResponse('preset_image_id is required', 400);
+        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
+        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
+
+        if (!hasPresetId && !hasPresetUrl) {
+          return errorResponse('Either preset_image_id or preset_image_url is required', 400);
+        }
+
+        if (hasPresetId && hasPresetUrl) {
+          return errorResponse('Cannot provide both preset_image_id and preset_image_url. Please provide only one.', 400);
         }
 
         if (!body.profile_id) {
@@ -1508,12 +1536,26 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        const presetResult = await DB.prepare(
-          'SELECT id, image_url, filename, preset_name FROM presets WHERE id = ?'
-        ).bind(body.preset_image_id).first();
+        let targetUrl: string;
+        let presetName: string;
+        let presetImageId: string | null = null;
 
-        if (!presetResult) {
-          return errorResponse('Preset image not found', 404);
+        if (hasPresetId) {
+          const presetResult = await DB.prepare(
+            'SELECT id, image_url, filename, preset_name FROM presets WHERE id = ?'
+          ).bind(body.preset_image_id).first();
+
+          if (!presetResult) {
+            return errorResponse('Preset image not found', 404);
+          }
+
+          targetUrl = (presetResult as any).image_url;
+          presetName = (presetResult as any).preset_name || 'Unnamed Preset';
+          presetImageId = body.preset_image_id;
+        } else {
+          targetUrl = body.preset_image_url!;
+          presetName = 'Result Preset';
+          presetImageId = null;
         }
 
         let selfieUrl: string;
@@ -1531,13 +1573,11 @@ export default {
           selfieUrl = body.selfie_image_url!;
         }
 
-        const targetUrl = (presetResult as any).image_url;
-        const presetName = (presetResult as any).preset_name || 'Unnamed Preset';
-
         const requestDebug = compact({
           targetUrl: targetUrl,
           selfieUrl: selfieUrl,
-          presetImageId: body.preset_image_id,
+          presetImageId: presetImageId,
+          presetImageUrl: hasPresetUrl ? body.preset_image_url : undefined,
           presetName: presetName,
           selfieId: body.selfie_id,
           additionalPrompt: body.additional_prompt,
@@ -1759,7 +1799,7 @@ Place the person into the scene, transform their visual style to match the scene
         };
 
         let savedResultId: string | null = null;
-        if (body.preset_image_id) {
+        if (presetImageId) {
           databaseDebug.attempted = true;
           try {
             const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
