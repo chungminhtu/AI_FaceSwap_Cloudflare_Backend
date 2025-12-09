@@ -1,8 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, RemoveBackgroundRequest } from './types';
 import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
-import { callFaceSwap, callNanoBanana, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
 
 const DEFAULT_R2_BUCKET_NAME = '';
@@ -1341,9 +1341,9 @@ export default {
           }
 
           if (!safeSearchResult.isSafe) {
-            console.warn('[FaceSwap] Content blocked - unsafe content detected:', safeSearchResult.details);
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
+            console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel);
             const debugPayload = compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -1464,6 +1464,312 @@ export default {
           },
           status: 'success',
           message: faceSwapResult.Message || 'Processing successful',
+          code: 200,
+          debug: debugPayload,
+        });
+      } catch (error) {
+        console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+      }
+    }
+
+    // Handle removeBackground endpoint
+    if (path === '/removeBackground' && request.method === 'POST') {
+      try {
+        const body: RemoveBackgroundRequest = await request.json();
+
+        if (!body.preset_image_id) {
+          return errorResponse('preset_image_id is required', 400);
+        }
+
+        if (!body.profile_id) {
+          return errorResponse('profile_id is required', 400);
+        }
+
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          return errorResponse('Either selfie_id or selfie_image_url must be provided', 400);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url. Please provide only one.', 400);
+        }
+
+        const DB = getD1Database(env);
+        const R2_BUCKET = getR2Bucket(env);
+        const requestUrl = new URL(request.url);
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404);
+        }
+
+        const presetResult = await DB.prepare(
+          'SELECT id, image_url, filename, preset_name FROM presets WHERE id = ?'
+        ).bind(body.preset_image_id).first();
+
+        if (!presetResult) {
+          return errorResponse('Preset image not found', 404);
+        }
+
+        let selfieUrl: string;
+        if (hasSelfieId) {
+          const selfieResult = await DB.prepare(
+            'SELECT id, image_url FROM selfies WHERE id = ?'
+          ).bind(body.selfie_id!).first();
+
+          if (!selfieResult) {
+            return errorResponse(`Selfie with ID ${body.selfie_id} not found`, 404);
+          }
+
+          selfieUrl = (selfieResult as any).image_url;
+        } else {
+          selfieUrl = body.selfie_image_url!;
+        }
+
+        const targetUrl = (presetResult as any).image_url;
+        const presetName = (presetResult as any).preset_name || 'Unnamed Preset';
+
+        const requestDebug = compact({
+          targetUrl: targetUrl,
+          selfieUrl: selfieUrl,
+          presetImageId: body.preset_image_id,
+          presetName: presetName,
+          selfieId: body.selfie_id,
+          additionalPrompt: body.additional_prompt,
+        });
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+
+        const defaultMergePrompt = `You are a professional photo compositor. Your task is to seamlessly blend and composite the person from the first image (which has a transparent background) into the second image (the landscape scene).
+
+CRITICAL REQUIREMENTS:
+1. COMPOSITING, NOT PASTING: Do NOT simply paste or glue the person onto the scene. You must blend them together as if the person was actually photographed in that scene.
+
+2. PRESERVE FACIAL FEATURES: Keep the person's face EXACTLY the same - same facial structure, same identity, same age, same ethnicity. Only adjust lighting and color grading on the face to match the scene's lighting conditions.
+
+3. REALISTIC LIGHTING INTEGRATION:
+   - Match the direction, intensity, and color temperature of the scene's lighting
+   - Add appropriate highlights and shadows on the person based on the scene's light sources
+   - Ensure the person's skin tone and clothing colors match the ambient lighting
+
+4. NATURAL POSE ADJUSTMENT:
+   - Adjust the person's body pose and position to fit naturally within the scene context
+   - Make the pose look realistic for the environment (e.g., standing on ground, sitting on objects, etc.)
+   - Ensure proper perspective and scale relative to the scene
+
+5. SEAMLESS BLENDING:
+   - Remove any visible edges or artifacts from the transparent background
+   - Blend the person's edges naturally into the scene
+   - Add realistic shadows cast by the person onto the ground/objects in the scene
+   - Match the depth of field and atmospheric effects (fog, haze, etc.) if present
+
+6. SCENE INTEGRATION:
+   - If the scene contains other people, position the person naturally among them as if they were all photographed together
+   - Make interactions look natural and realistic
+   - Ensure proper scale and perspective relative to other people/objects
+
+7. PHOTOREALISTIC RESULT:
+   - The final image should look like a single, cohesive photograph
+   - No visible seams, artifacts, or signs of compositing
+   - The person should appear to belong naturally in the scene
+
+Generate a photorealistic composite image that seamlessly blends the person into the landscape scene.`;
+
+        let mergePrompt = defaultMergePrompt;
+        if (body.additional_prompt) {
+          mergePrompt = `${defaultMergePrompt} Additional instructions: ${body.additional_prompt}`;
+        }
+
+        const aspectRatio = (body.aspect_ratio as string) || "1:1";
+        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+
+        const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio);
+
+        if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
+          console.error('[RemoveBackground] Merge failed:', mergeResult.Message || 'Unknown error');
+          const failureCode = mergeResult.StatusCode || 500;
+          const debugPayload = compact({
+            request: requestDebug,
+            provider: buildProviderDebug(mergeResult),
+          });
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: mergeResult.Message || 'Merge provider error',
+            code: failureCode,
+            debug: debugPayload,
+          }, failureCode);
+        }
+
+        if (mergeResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = mergeResult.ResultImageUrl.replace('r2://', '');
+          mergeResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
+        const skipSafetyCheckForVertex = true;
+        let safetyDebug: SafetyCheckDebug | null = null;
+
+        if (!disableSafeSearch && !skipSafetyCheckForVertex) {
+          const safeSearchResult = await checkSafeSearch(mergeResult.ResultImageUrl, env);
+
+          safetyDebug = {
+            checked: true,
+            isSafe: !!safeSearchResult.isSafe,
+            statusCode: safeSearchResult.statusCode,
+            violationCategory: safeSearchResult.violationCategory,
+            violationLevel: safeSearchResult.violationLevel,
+            details: safeSearchResult.details,
+            error: safeSearchResult.error,
+            rawResponse: safeSearchResult.rawResponse,
+            debug: safeSearchResult.debug,
+          };
+
+          if (safeSearchResult.error) {
+            console.error('[RemoveBackground] Safe search error:', safeSearchResult.error?.substring(0, 200));
+            const debugPayload = compact({
+              request: requestDebug,
+              provider: buildProviderDebug(mergeResult),
+              vertex: undefined,
+              vision: buildVisionDebug(safetyDebug),
+            });
+            return jsonResponse({
+              data: null,
+              status: 'error',
+              message: `Safe search validation failed: ${safeSearchResult.error}`,
+              code: 500,
+              debug: debugPayload,
+            }, 500);
+          }
+
+          if (!safeSearchResult.isSafe) {
+            const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
+            const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
+            const debugPayload = compact({
+              request: requestDebug,
+              provider: buildProviderDebug(mergeResult),
+              vertex: undefined,
+              vision: buildVisionDebug(safetyDebug),
+            });
+            return jsonResponse({
+              data: null,
+              status: 'error',
+              message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
+              code: 422,
+              debug: debugPayload,
+            }, 422);
+          }
+        } else {
+          safetyDebug = {
+            checked: false,
+            isSafe: true,
+            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+          };
+        }
+
+        const storageDebug: {
+          attemptedDownload: boolean;
+          downloadStatus: number | null;
+          savedToR2: boolean;
+          r2Key: string | null;
+          publicUrl: string | null;
+          error: string | null;
+        } = {
+          attemptedDownload: false,
+          downloadStatus: null,
+          savedToR2: false,
+          r2Key: null,
+          publicUrl: null,
+          error: null,
+        };
+
+        let resultUrl = mergeResult.ResultImageUrl;
+        try {
+          storageDebug.attemptedDownload = true;
+          const resultImageResponse = await fetch(mergeResult.ResultImageUrl);
+          storageDebug.downloadStatus = resultImageResponse.status;
+          if (resultImageResponse.ok) {
+            const resultImageData = await resultImageResponse.arrayBuffer();
+            const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+            await R2_BUCKET.put(resultKey, resultImageData, {
+              httpMetadata: {
+                contentType: 'image/jpeg',
+                cacheControl: 'public, max-age=31536000, immutable',
+              },
+            });
+            storageDebug.savedToR2 = true;
+            storageDebug.r2Key = resultKey;
+            resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
+            storageDebug.publicUrl = resultUrl;
+          } else {
+            storageDebug.error = `Download failed with status ${resultImageResponse.status}`;
+          }
+        } catch (r2Error) {
+          storageDebug.error = r2Error instanceof Error ? r2Error.message : String(r2Error);
+        }
+
+        const databaseDebug: {
+          attempted: boolean;
+          success: boolean;
+          resultId: string | null;
+          error: string | null;
+          lookupError: string | null;
+        } = {
+          attempted: false,
+          success: false,
+          resultId: null,
+          error: null,
+          lookupError: null,
+        };
+
+        let savedResultId: string | null = null;
+        if (body.preset_image_id) {
+          databaseDebug.attempted = true;
+          try {
+            const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+            const insertResult = await DB.prepare(
+              'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(resultId, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+            
+            if (insertResult.success && (insertResult.meta?.changes || 0) > 0) {
+              databaseDebug.success = true;
+              databaseDebug.resultId = resultId;
+              savedResultId = resultId;
+              databaseDebug.error = null;
+            } else {
+              databaseDebug.error = 'Database insert failed';
+            }
+          } catch (dbError) {
+            databaseDebug.error = dbError instanceof Error ? dbError.message : String(dbError);
+          }
+        }
+
+        const providerDebug = buildProviderDebug(mergeResult, resultUrl);
+        const visionDebug = buildVisionDebug(safetyDebug);
+        const storageDebugPayload = compact(storageDebug as unknown as Record<string, any>);
+        const databaseDebugPayload = compact(databaseDebug as unknown as Record<string, any>);
+        const debugPayload = compact({
+          request: requestDebug,
+          provider: providerDebug,
+          vision: visionDebug,
+          storage: Object.keys(storageDebugPayload).length ? storageDebugPayload : undefined,
+          database: Object.keys(databaseDebugPayload).length ? databaseDebugPayload : undefined,
+        });
+
+        return jsonResponse({
+          data: {
+            id: savedResultId,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: mergeResult.Message || 'Processing successful',
           code: 200,
           debug: debugPayload,
         });
@@ -1619,8 +1925,8 @@ export default {
           code: 200,
         });
       } catch (error) {
-        console.error('Upscaler4K unhandled error:', error);
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Upscaler4K unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -1711,8 +2017,8 @@ export default {
           }),
         });
       } catch (error) {
-        console.error('Enhance unhandled error:', error);
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Enhance unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -1802,8 +2108,8 @@ export default {
           }),
         });
       } catch (error) {
-        console.error('Colorize unhandled error:', error);
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Colorize unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -1896,8 +2202,8 @@ export default {
           }),
         });
       } catch (error) {
-        console.error('Aging unhandled error:', error);
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message : String(error)}`, 500);
+        console.error('Aging unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 

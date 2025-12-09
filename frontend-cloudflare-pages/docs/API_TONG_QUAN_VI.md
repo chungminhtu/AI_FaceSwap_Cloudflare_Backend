@@ -139,7 +139,101 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 
 
 
-## 2. POST `/enhance`
+## 2. POST `/removeBackground`
+
+### Mục đích
+Merge người từ ảnh selfie (đã có transparent background) vào ảnh preset (landscape scene) sử dụng Vertex AI. Giữ nguyên khuôn mặt, điều chỉnh tư thế để phù hợp với scene, và blend tự nhiên vào scene.
+
+### Nội dung yêu cầu
+
+**Ví dụ 1: Sử dụng selfie_id (từ database)**
+```json
+{
+  "preset_image_id": "image_1234567890_abc123",
+  "selfie_id": "selfie_1234567890_xyz789",
+  "profile_id": "profile_1234567890",
+  "additional_prompt": "Make the person look happy and relaxed",
+  "aspect_ratio": "16:9"
+}
+```
+
+**Ví dụ 2: Sử dụng selfie_image_url (URL trực tiếp)**
+```json
+{
+  "preset_image_id": "image_1234567890_abc123",
+  "selfie_image_url": "https://example.com/selfie.png",
+  "profile_id": "profile_1234567890",
+  "additional_prompt": "Make the person look happy and relaxed",
+  "aspect_ratio": "16:9"
+}
+```
+
+**Các trường:**
+- `preset_image_id` (string, bắt buộc): ID ảnh preset (landscape scene) đã lưu trong cơ sở dữ liệu.
+- `selfie_id` (string, tùy chọn): ID ảnh selfie đã lưu trong cơ sở dữ liệu (người có transparent background). **Lưu ý**: Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
+- `selfie_image_url` (string, tùy chọn): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`). Ảnh phải có transparent background sẵn.
+- `profile_id` (string, bắt buộc): ID profile người dùng.
+- `additional_prompt` (string, tùy chọn): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
+- `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
+
+**Lưu ý về merge:**
+- API sẽ gửi cả 2 ảnh (selfie và preset) trực tiếp đến Vertex AI cùng với prompt hướng dẫn merge.
+- Khuôn mặt sẽ được giữ nguyên (có thể enhance nhẹ để match lighting của scene).
+- Tư thế sẽ được điều chỉnh tự nhiên để phù hợp với scene.
+- Nếu scene có người khác, sẽ blend tự nhiên (ví dụ: như đang chụp ảnh cùng nhau).
+
+### Phản hồi thành công
+
+```json
+{
+  "data": {
+    "id": "result_1234567890_abc123",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200,
+  "debug": {
+    "request": {
+      "targetUrl": "https://resources.d.shotpix.app/faceswap-images/preset/landscape.jpg",
+      "selfieUrl": "https://resources.d.shotpix.app/faceswap-images/selfie/selfie_001.png"
+    },
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Processing successful",
+      "finalResultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+    },
+    "vision": {
+      "checked": false,
+      "isSafe": true,
+      "error": "Safety check skipped for Vertex AI mode"
+    },
+    "storage": {
+      "attemptedDownload": true,
+      "downloadStatus": 200,
+      "savedToR2": true,
+      "r2Key": "results/result_123.jpg",
+      "publicUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+    },
+    "database": {
+      "attempted": true,
+      "success": true,
+      "resultId": "result_1234567890_abc123"
+    }
+  }
+}
+```
+
+### Phản hồi lỗi
+
+- Lỗi validation: HTTP 400 nếu thiếu `preset_image_id`, `profile_id`, hoặc cả `selfie_id` và `selfie_image_url`.
+- Lỗi không tìm thấy: HTTP 404 nếu preset hoặc selfie không tồn tại.
+- Lỗi merge: HTTP 500 với thông tin chi tiết trong `debug.provider`.
+
+
+
+## 3. POST `/enhance`
 
 ### Mục đích
 AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
@@ -722,26 +816,29 @@ Trả về HTTP 204 (No Content) với các headers CORS:
 
 ## Tổng kết
 
-**Tổng số API endpoints: 18**
+**Tổng số API endpoints: 19**
 
-1. POST `/faceswap` - Face swap (luôn dùng Vertex AI, hỗ trợ multiple selfies)
-2. POST `/enhance` - AI enhance ảnh
-3. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
-4. POST `/aging` - AI lão hóa khuôn mặt
-5. POST `/upscaler4k` - Upscale ảnh 4K
-6. POST `/upload-url` - Upload file trực tiếp
-7. GET `/presets` - Liệt kê presets
-8. DELETE `/presets/{id}` - Xóa preset
-9. GET `/selfies` - Liệt kê selfies
-10. DELETE `/selfies/{id}` - Xóa selfie
-11. GET `/results` - Liệt kê results
-12. DELETE `/results/{id}` - Xóa result
-13. POST `/profiles` - Tạo profile
-14. GET `/profiles/{id}` - Lấy profile
-15. PUT `/profiles/{id}` - Cập nhật profile
-16. GET `/profiles` - Liệt kê profiles
-17. GET `/config` - Lấy config
-18. OPTIONS `/*` - CORS preflight requests
+**Danh sách đầy đủ các API endpoints:**
+
+1. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
+2. POST `/removeBackground` - Merge người vào scene
+3. POST `/enhance` - AI enhance ảnh
+4. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
+5. POST `/aging` - AI lão hóa khuôn mặt
+6. POST `/upscaler4k` - AI upscale ảnh lên 4K
+7. POST `/upload-url` - Tạo upload URL
+8. GET `/presets` - Liệt kê presets
+9. DELETE `/presets/{id}` - Xóa preset
+10. GET `/selfies` - Liệt kê selfies
+11. DELETE `/selfies/{id}` - Xóa selfie
+12. GET `/results` - Liệt kê results
+13. DELETE `/results/{id}` - Xóa result
+14. POST `/profiles` - Tạo profile
+15. GET `/profiles/{id}` - Lấy profile
+16. PUT `/profiles/{id}` - Cập nhật profile
+17. GET `/profiles` - Liệt kê profiles
+18. GET `/config` - Lấy config
+19. OPTIONS `/*` - CORS preflight requests
  
 
 ## Lưu ý về Custom Domain

@@ -81,8 +81,8 @@ export const callFaceSwap = async (
     
     return transformedResponse;
   } catch (error) {
-    console.error('JSON parse error:', error, 'Response:', responseText.substring(0, 200));
-    debugInfo.rawResponse = responseText.substring(0, 2000);
+    console.error('JSON parse error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+    debugInfo.rawResponse = responseText.substring(0, 200);
     debugInfo.parseError = error instanceof Error ? error.message : String(error);
     return {
       Success: false,
@@ -274,7 +274,7 @@ export const callNanoBanana = async (
     }
 
     if (!response.ok) {
-      console.error('[Vertex-NanoBanana] API error:', response.status, rawResponse.substring(0, 500));
+      console.error('[Vertex-NanoBanana] API error:', response.status, response.statusText);
       if (debugInfo) {
         try {
           debugInfo.rawResponse = JSON.parse(rawResponse);
@@ -413,7 +413,7 @@ export const callNanoBanana = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Vertex-NanoBanana] JSON parse error:', parseError instanceof Error ? parseError.message : String(parseError));
+      console.error('[Vertex-NanoBanana] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 200);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
@@ -427,7 +427,7 @@ export const callNanoBanana = async (
       };
     }
   } catch (error) {
-      console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message : String(error));
+      console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
     const debugPayload = debugInfo;
     if (debugPayload) {
       debugPayload.error = error instanceof Error ? error.message : String(error);
@@ -435,6 +435,357 @@ export const callNanoBanana = async (
     return {
       Success: false,
       Message: `Vertex AI face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugPayload,
+    };
+  }
+};
+
+export const callNanoBananaMerge = async (
+  prompt: unknown,
+  selfieUrl: string,
+  presetUrl: string,
+  env: Env,
+  aspectRatio?: string
+): Promise<FaceSwapResponse> => {
+  if (!env.GOOGLE_VERTEX_PROJECT_ID) {
+    return {
+      Success: false,
+      Message: 'GOOGLE_VERTEX_PROJECT_ID is required',
+      StatusCode: 500,
+    };
+  }
+
+  let debugInfo: Record<string, any> | undefined;
+
+  try {
+    const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    
+    const geminiModel = 'gemini-2.5-flash-image';
+    const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
+
+    let promptText = '';
+    if (prompt && typeof prompt === 'object') {
+      promptText = JSON.stringify(prompt, null, 2);
+    } else if (typeof prompt === 'string') {
+      promptText = prompt;
+    } else {
+      promptText = JSON.stringify(prompt);
+    }
+
+    const mergePrompt = promptText || `You are a professional photo compositor. Your task is to seamlessly blend and composite the person from the first image (which has a transparent background) into the second image (the landscape scene).
+
+CRITICAL REQUIREMENTS:
+1. COMPOSITING, NOT PASTING: Do NOT simply paste or glue the person onto the scene. You must blend them together as if the person was actually photographed in that scene.
+
+2. PRESERVE FACIAL FEATURES: Keep the person's face EXACTLY the same - same facial structure, same identity, same age, same ethnicity. Only adjust lighting and color grading on the face to match the scene's lighting conditions.
+
+3. REALISTIC LIGHTING INTEGRATION:
+   - Match the direction, intensity, and color temperature of the scene's lighting
+   - Add appropriate highlights and shadows on the person based on the scene's light sources
+   - Ensure the person's skin tone and clothing colors match the ambient lighting
+
+4. NATURAL POSE ADJUSTMENT:
+   - Adjust the person's body pose and position to fit naturally within the scene context
+   - Make the pose look realistic for the environment (e.g., standing on ground, sitting on objects, etc.)
+   - Ensure proper perspective and scale relative to the scene
+
+5. SEAMLESS BLENDING:
+   - Remove any visible edges or artifacts from the transparent background
+   - Blend the person's edges naturally into the scene
+   - Add realistic shadows cast by the person onto the ground/objects in the scene
+   - Match the depth of field and atmospheric effects (fog, haze, etc.) if present
+
+6. SCENE INTEGRATION:
+   - If the scene contains other people, position the person naturally among them as if they were all photographed together
+   - Make interactions look natural and realistic
+   - Ensure proper scale and perspective relative to other people/objects
+
+7. PHOTOREALISTIC RESULT:
+   - The final image should look like a single, cohesive photograph
+   - No visible seams, artifacts, or signs of compositing
+   - The person should appear to belong naturally in the scene
+
+Generate a photorealistic composite image that seamlessly blends the person into the landscape scene.`;
+
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      console.error('[Vertex-NanoBananaMerge] Missing service account credentials');
+      return {
+        Success: false,
+        Message: 'Google Service Account credentials are required for Vertex AI. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY environment variables.',
+        StatusCode: 500,
+        Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
+      };
+    }
+      
+    let accessToken: string;
+    try {
+      accessToken = await getAccessToken(
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
+    } catch (tokenError) {
+      console.error('[Vertex-NanoBananaMerge] Failed to get OAuth token:', tokenError);
+      return {
+        Success: false,
+        Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        StatusCode: 500,
+      };
+    }
+
+    const selfieImageData = await fetchImageAsBase64(selfieUrl);
+    const presetImageData = await fetchImageAsBase64(presetUrl);
+
+    const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
+    const providedRatio = aspectRatio || "1:1";
+    const normalizedAspectRatio = supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
+
+    const requestBody = {
+      contents: [{
+        role: "user",
+        parts: [
+          {
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: selfieImageData
+            }
+          },
+          {
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: presetImageData
+            }
+          },
+          { text: mergePrompt }
+        ]
+      }],
+      generationConfig: {
+        temperature: 1,
+        maxOutputTokens: 32768,
+        responseModalities: ["TEXT", "IMAGE"],
+        topP: 0.95,
+        imageConfig: {
+          aspectRatio: normalizedAspectRatio,
+          imageSize: "1K",
+          imageOutputOptions: {
+            mimeType: "image/png"
+          },
+          personGeneration: "ALLOW_ALL"
+        },
+      },
+      safetySettings: [{
+        category: "HARM_CATEGORY_HATE_SPEECH",
+        threshold: "OFF"
+      }, {
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "OFF"
+      }, {
+        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold: "OFF"
+      }, {
+        category: "HARM_CATEGORY_HARASSMENT",
+        threshold: "OFF"
+      }]
+    };
+
+    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+      if (key === 'data' && typeof value === 'string' && value.length > 100) {
+        return '...';
+      }
+      return value;
+    }));
+    
+    const curlCommand = `curl -X POST \\
+  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+
+    debugInfo = {
+      endpoint: geminiEndpoint,
+      model: geminiModel,
+      requestPayload: sanitizedRequestBody,
+      curlCommand,
+      selfieImageBytes: selfieImageData.length,
+      presetImageBytes: presetImageData.length,
+      promptLength: mergePrompt.length,
+      selfieUrl,
+      presetUrl,
+      receivedAspectRatio: aspectRatio,
+      normalizedAspectRatio: normalizedAspectRatio,
+    };
+
+    const startTime = Date.now();
+    const response = await fetch(geminiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const rawResponse = await response.text();
+    const durationMs = Date.now() - startTime;
+    if (debugInfo) {
+      debugInfo.status = response.status;
+      debugInfo.statusText = response.statusText;
+      debugInfo.durationMs = durationMs;
+    }
+
+    if (!response.ok) {
+      console.error('[Vertex-NanoBananaMerge] API error:', response.status, response.statusText);
+      if (debugInfo) {
+        try {
+          debugInfo.rawResponse = JSON.parse(rawResponse);
+        } catch {
+          debugInfo.rawResponse = rawResponse.substring(0, 200);
+        }
+      }
+      
+      return {
+        Success: false,
+        Message: `Vertex AI Gemini API error: ${response.status} ${response.statusText}`,
+        StatusCode: response.status,
+        Error: rawResponse.substring(0, 200),
+        FullResponse: rawResponse.substring(0, 200),
+        CurlCommand: curlCommand,
+        Debug: debugInfo,
+      };
+    }
+
+    try {
+      const data = JSON.parse(rawResponse);
+      if (debugInfo) {
+        debugInfo.rawResponse = JSON.parse(JSON.stringify(data, (key, value) => {
+          if (key === 'data' && typeof value === 'string' && value.length > 100) {
+            return '...';
+          }
+          return value;
+        }));
+      }
+      
+      const candidates = data.candidates || [];
+      if (candidates.length === 0) {
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return any candidates',
+          StatusCode: 500,
+          Error: 'No candidates found in response',
+          Debug: debugInfo,
+        };
+      }
+
+      const parts = candidates[0].content?.parts || [];
+      let base64Image: string | null = null;
+      let mimeType = 'image/png';
+
+      for (const part of parts) {
+        if (part.inlineData) {
+          base64Image = part.inlineData.data;
+          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/png';
+          break;
+        }
+        if (part.inline_data) {
+          base64Image = part.inline_data.data;
+          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/png';
+          break;
+        }
+      }
+
+      if (!base64Image) {
+        console.error('[Vertex-NanoBananaMerge] No image data found in response');
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return an image in the response',
+          StatusCode: 500,
+          Error: 'No inline_data found in response parts',
+          Debug: debugInfo,
+        };
+      }
+
+      const binaryString = atob(base64Image);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const resultKey = `results/merge_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'png'}`;
+      
+      const R2_BUCKET = getR2Bucket(env);
+      await R2_BUCKET.put(resultKey, bytes, {
+        httpMetadata: {
+          contentType: mimeType,
+          cacheControl: 'public, max-age=31536000, immutable',
+        },
+      });
+      if (debugInfo) {
+        debugInfo.r2Key = resultKey;
+        debugInfo.mimeType = mimeType;
+      }
+      
+      const resultImageUrl = `r2://${resultKey}`;
+
+      const sanitizedData = JSON.parse(JSON.stringify(data, (key, value) => {
+        if (key === 'data' && typeof value === 'string' && value.length > 100) {
+          return '...';
+        }
+        return value;
+      }));
+
+      const sanitizedRequestBodyForCurl = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+        if (key === 'data' && typeof value === 'string' && value.length > 100) {
+          return '...';
+        }
+        return value;
+      }));
+
+      const curlCommandFinal = `curl -X POST \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'`;
+      if (debugInfo) {
+        debugInfo.requestPayload = sanitizedRequestBodyForCurl;
+        debugInfo.curlCommand = curlCommandFinal;
+        debugInfo.response = sanitizedData;
+      }
+
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: 'Vertex AI image merge completed',
+        StatusCode: response.status,
+        VertexResponse: sanitizedData,
+        Prompt: prompt,
+        CurlCommand: curlCommandFinal,
+        Debug: debugInfo,
+      };
+    } catch (parseError) {
+      console.error('[Vertex-NanoBananaMerge] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+      if (debugInfo) {
+        debugInfo.rawResponse = rawResponse.substring(0, 200);
+        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      }
+      return {
+        Success: false,
+        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+        StatusCode: 500,
+        Error: rawResponse.substring(0, 200),
+        Debug: debugInfo,
+      };
+    }
+  } catch (error) {
+    console.error('[Vertex-NanoBananaMerge] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+    const debugPayload = debugInfo;
+    if (debugPayload) {
+      debugPayload.error = error instanceof Error ? error.message : String(error);
+    }
+    return {
+      Success: false,
+      Message: `Vertex AI merge request failed: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
       Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
       Debug: debugPayload,
@@ -458,11 +809,6 @@ export const checkSafeSearch = async (
 
     // Call Vision API with API key
     const endpoint = `${env.GOOGLE_VISION_ENDPOINT}?key=${apiKey}`;
-    console.log('[SafeSearch] Calling Google Vision API:', {
-      endpoint: env.GOOGLE_VISION_ENDPOINT,
-      imageUrl: imageUrl.substring(0, 100) + '...',
-      hasApiKey: !!apiKey
-    });
 
     const requestBody = {
       requests: [{
@@ -480,7 +826,6 @@ export const checkSafeSearch = async (
       body: JSON.stringify(requestBody),
     });
 
-    console.log('[SafeSearch] API Response status:', response.status, response.statusText);
     const durationMs = Date.now() - startTime;
     const debugInfo: Record<string, any> = {
       endpoint: env.GOOGLE_VISION_ENDPOINT,
@@ -511,7 +856,9 @@ export const checkSafeSearch = async (
     const annotation = data.responses?.[0]?.safeSearchAnnotation;
 
     if (data.responses?.[0]?.error) {
-      console.error('[SafeSearch] API returned error:', data.responses[0].error);
+      const errorObj: any = data.responses[0].error;
+      const errorMsg = typeof errorObj === 'string' ? errorObj.substring(0, 200) : (errorObj?.message ? String(errorObj.message).substring(0, 200) : JSON.stringify(errorObj).substring(0, 200));
+      console.error('[SafeSearch] API returned error:', errorMsg);
       return { 
         isSafe: false, 
         error: data.responses[0].error.message,
@@ -536,14 +883,6 @@ export const checkSafeSearch = async (
     
     // Find worst violation (highest severity)
     const worstViolation = getWorstViolation(annotation);
-    
-    console.log('[SafeSearch] Safety check result:', {
-      ...annotation,
-      isSafe: !isUnsafeResult,
-      isUnsafe: isUnsafeResult,
-      strictness: strictness,
-      worstViolation: worstViolation
-    });
 
     return {
       isSafe: !isUnsafeResult,
@@ -555,8 +894,8 @@ export const checkSafeSearch = async (
       debug: debugInfo,
     };
   } catch (error) {
-    console.error('[SafeSearch] Exception:', error);
-    return { isSafe: false, error: error instanceof Error ? error.message : String(error) };
+    console.error('[SafeSearch] Exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+    return { isSafe: false, error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200) };
   }
 };
 
@@ -587,7 +926,7 @@ export const generateVertexPrompt = async (
   try {
     // Use Vertex AI credentials (OAuth token from service account, not API key)
     if (!env.GOOGLE_VERTEX_PROJECT_ID) {
-      console.error('[Vertex] ❌ ERROR: GOOGLE_VERTEX_PROJECT_ID is required');
+      console.error('[Vertex] ERROR: GOOGLE_VERTEX_PROJECT_ID is required');
       return { 
         success: false, 
         error: 'GOOGLE_VERTEX_PROJECT_ID is required',
@@ -679,7 +1018,7 @@ export const generateVertexPrompt = async (
     
     // Vertex AI requires OAuth token
       if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
-      console.error('[Vertex] ❌ Vertex AI requires service account credentials');
+      console.error('[Vertex] Vertex AI requires service account credentials');
         return {
           success: false,
           error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
@@ -694,7 +1033,7 @@ export const generateVertexPrompt = async (
         env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
       );
       } catch (tokenError) {
-      console.error('[Vertex] ❌ Failed to get OAuth token:', tokenError);
+      console.error('[Vertex] Failed to get OAuth token:', tokenError instanceof Error ? tokenError.message.substring(0, 200) : String(tokenError).substring(0, 200));
         return {
           success: false,
           error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
@@ -772,7 +1111,7 @@ export const generateVertexPrompt = async (
             promptJson = JSON.parse(jsonText);
             break;
           } catch (parseError) {
-            console.warn('[Vertex] Failed to parse JSON from text:', parseError);
+            console.warn('[Vertex] Failed to parse JSON from text:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
           }
         }
       }
@@ -802,7 +1141,7 @@ export const generateVertexPrompt = async (
 
   } catch (error) {
     const responseTime = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
       debugInfo.errorDetails = errorMessage.substring(0, 200);
     debugInfo.responseTimeMs = responseTime;
     return { 
@@ -880,7 +1219,7 @@ export const callUpscaler4k = async (
     }
 
     if (!response.ok) {
-      console.error('[Upscaler4K] WaveSpeed API error:', response.status, rawResponse.substring(0, 500));
+      console.error('[Upscaler4K] WaveSpeed API error:', response.status, response.statusText);
       if (debugInfo) {
         try {
           debugInfo.rawResponse = JSON.parse(rawResponse);
@@ -1082,7 +1421,7 @@ export const callUpscaler4k = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Upscaler4K] JSON parse error:', parseError instanceof Error ? parseError.message : String(parseError));
+      console.error('[Upscaler4K] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 2000);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
@@ -1096,7 +1435,7 @@ export const callUpscaler4k = async (
       };
     }
   } catch (error) {
-    console.error('[Upscaler4K] Unexpected error:', error instanceof Error ? error.message : String(error));
+    console.error('[Upscaler4K] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
     const debugPayload = debugInfo;
     if (debugPayload) {
       debugPayload.error = error instanceof Error ? error.message : String(error);

@@ -555,6 +555,9 @@
                         <button class="action-btn primary" id="generate-btn" disabled onclick="generateFaceSwap()">
                             <span>✨</span><span>Đổi Mặt (Face Swap)</span>
                         </button>
+                        <button class="action-btn primary" id="merge-btn" disabled onclick="generateRemoveBackground()">
+                            <span>🖼️</span><span>Merge vào Scene</span>
+                        </button>
                         <button class="action-btn" onclick="runEnhance()">🔍 Nâng Cấp (Enhance)</button>
                         <button class="action-btn" onclick="runUpscale4k()">📐 Nâng Cấp 4K (4K Upscale)</button>
                         <button class="action-btn" onclick="runColorize()">🎨 Tô Màu (Colorize)</button>
@@ -660,7 +663,7 @@
         const $ = id => document.getElementById(id);
         const presetInput = $('preset-input'), presetPreview = $('preset-preview'), presetGallery = $('preset-gallery');
         const selfieInput = $('selfie-input'), selfiePreview = $('selfie-preview'), selfieGallery = $('selfie-gallery');
-        const resultsGallery = $('results-gallery'), generateBtn = $('generate-btn');
+        const resultsGallery = $('results-gallery'), generateBtn = $('generate-btn'), mergeBtn = $('merge-btn');
         const apiLogList = $('api-log-list'), additionalPromptInput = $('additional-prompt');
         const accessGate = $('access-gate'), accessInput = $('access-input'), accessSubmit = $('access-submit'), accessError = $('access-error');
 
@@ -1081,6 +1084,7 @@
 
         function updateGenerateButton() {
             if (generateBtn) generateBtn.disabled = !(galleries.preset.state.selected && galleries.selfie.state.selected);
+            if (mergeBtn) mergeBtn.disabled = !(galleries.preset.state.selected && galleries.selfie.state.selected);
         }
 
         function updateResultsCount() {
@@ -1285,6 +1289,54 @@
                 generateBtn.classList.remove('loading');
                 hideLoading();
                 updateGenerateButton();
+            }
+        }
+
+        async function generateRemoveBackground() {
+            const presetSelected = galleries.preset.state.selected;
+            const selfieSelected = galleries.selfie.state.selected;
+            if (!presetSelected || !selfieSelected) { showStatusMessage('Vui lòng chọn cả mẫu và selfie trước khi merge.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi merge.', 'error'); return; }
+
+            showLoading('Đang merge vào scene...');
+
+            try {
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '16:9';
+                const isResultSelfie = selfieSelected.id?.startsWith('result-selfie-');
+                const requestBody = {
+                    preset_image_id: presetSelected.id,
+                    ...(isResultSelfie 
+                        ? { selfie_image_url: selfieSelected.image_url }
+                        : { selfie_id: selfieSelected.id }
+                    ),
+                    profile_id: window.profileManager.currentProfile.id,
+                    additional_prompt: additionalPromptInput?.value.trim() || '',
+                    aspect_ratio: selectedAspectRatio
+                };
+
+                const removeBackgroundUrl = `${WORKER_URL}/removeBackground`;
+                const startTime = Date.now();
+                const response = await fetch(removeBackgroundUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const data = await response.json();
+                const duration = Date.now() - startTime;
+
+                logApiCall({ label: 'Merge vào Scene', method: 'POST', url: '/removeBackground', fullUrl: removeBackgroundUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
+                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Merge thất bại');
+
+                await loadGallery('results');
+                
+                const loadedResults = galleries.results.state.items;
+                const newResult = loadedResults.find(r => r.result_url === data.data.resultImageUrl) || 
+                                 { id: data.data.id || `result-${Date.now()}`, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
+                
+                displayResultInPreview(newResult.image_url);
+                updateResultsCount();
+                showStatusMessage('Merge vào scene thành công!', 'success');
+            } catch (error) {
+                showStatusMessage(`Merge thất bại: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
             }
         }
 

@@ -34,6 +34,15 @@ export interface FaceSwapRequest {
   aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)
 }
 
+export interface RemoveBackgroundRequest {
+  preset_image_id: string; // Required: Preset image ID from database (landscape scene)
+  selfie_id?: string; // Optional: Selfie ID from database (person with transparent background)
+  selfie_image_url?: string; // Optional: Selfie image URL (alternative to selfie_id)
+  profile_id: string; // Required: Profile ID for the operation
+  additional_prompt?: string; // Optional: Additional instructions for merging
+  aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)
+}
+
 export interface FaceSwapResponse {
   ResultImageUrl?: string;
   FaceSwapCount?: number;
