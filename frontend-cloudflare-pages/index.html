@@ -581,7 +581,7 @@
                             <span>✨</span><span>Đổi Mặt (Face Swap)</span>
                         </button>
                         <button class="action-btn primary" id="merge-btn" disabled onclick="generateRemoveBackground()">
-                            <span>🖼️</span><span>Merge vào Scene</span>
+                            <span>🖼️</span><span>Xóa Nền (Remove Background)</span>
                         </button>
                         <button class="action-btn" onclick="runEnhance()">🔍 Nâng Cấp (Enhance)</button>
                         <button class="action-btn" onclick="runUpscale4k()">📐 Nâng Cấp 4K (4K Upscale)</button>
@@ -1434,10 +1434,10 @@
         async function generateRemoveBackground() {
             const presetSelected = galleries.preset.state.selected;
             const selfieSelected = galleries.selfie.state.selected;
-            if (!presetSelected || !selfieSelected) { showStatusMessage('Vui lòng chọn cả mẫu và selfie trước khi merge.', 'error'); return; }
-            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi merge.', 'error'); return; }
+            if (!selfieSelected) { showStatusMessage('Vui lòng chọn selfie trước khi xóa nền.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi xóa nền.', 'error'); return; }
 
-            showLoading('Đang merge vào scene...');
+            showLoading('Đang xóa nền...');
 
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
@@ -1464,8 +1464,8 @@
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
-                logApiCall({ label: 'Merge vào Scene', method: 'POST', url: '/removeBackground', fullUrl: removeBackgroundUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
-                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Merge thất bại');
+                logApiCall({ label: 'Xóa Nền', method: 'POST', url: '/removeBackground', fullUrl: removeBackgroundUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
+                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Xóa nền thất bại');
 
                 await loadGallery('results');
                 
@@ -1475,9 +1475,9 @@
                 
                 displayResultInPreview(newResult.image_url);
                 updateResultsCount();
-                showStatusMessage('Merge vào scene thành công!', 'success');
+                showStatusMessage('Xóa nền thành công!', 'success');
             } catch (error) {
-                showStatusMessage(`Merge thất bại: ${error.message}`, 'error');
+                showStatusMessage(`Xóa nền thất bại: ${error.message}`, 'error');
             } finally {
                 hideLoading();
             }

@@ -151,10 +151,10 @@ export const callNanoBanana = async (
     let promptText = '';
     if (prompt && typeof prompt === 'object') {
       // Clone the prompt object to avoid mutating the original
-      const enhancedPrompt = { ...prompt };
+      const enhancedPrompt = { ...prompt } as any;
       
       // Ensure the prompt field includes strong facial preservation instruction
-      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. 1:1 aspect ratio, 4K detail.';
+      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.';
       
       if (enhancedPrompt.prompt && typeof enhancedPrompt.prompt === 'string') {
         // Check if the instruction is already present to avoid duplication
@@ -169,7 +169,7 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(enhancedPrompt, null, 2);
     } else if (typeof prompt === 'string') {
       // For string prompts, append the instruction if not already present
-      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. 1:1 aspect ratio, 4K detail.';
+      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.';
       if (!prompt.includes('100% identical facial features')) {
         promptText = `${prompt} ${facialPreservationInstruction}`;
       } else {
@@ -504,69 +504,52 @@ export const callNanoBananaMerge = async (
       promptText = JSON.stringify(prompt);
     }
 
-    const mergePrompt = promptText || `You are a professional photo compositor. Your task is to place the person from the first image (which has a transparent background) into the second image (the landscape scene), making them look like they naturally belong in that scene.
+    const mergePrompt = promptText || `You are a professional background removal specialist. Your task is to remove the background from the person in the image, creating a clean transparent background while preserving the person perfectly.
 
 CRITICAL REQUIREMENTS:
-1. PLACE THE PERSON INTO THE SCENE:
-   - Insert the person from the first image into the second image scene
-   - Position them naturally within the scene context
-   - Make them look like they are actually standing/sitting/existing in that scene
-   - Do NOT merge or blend their appearance - keep the person recognizable as they are
+1. PERFECT BACKGROUND REMOVAL:
+   - Remove ALL background elements completely - walls, furniture, objects, scenery, everything behind the person
+   - Create a 100% transparent background with no visible artifacts or remnants
+   - Ensure clean, precise edges around the person with no halos, fringes, or color bleeding
+   - Remove shadows cast on the background (but preserve shadows on the person's body/clothing if they are part of the person)
 
-2. STYLE TRANSFORMATION TO MATCH SCENE:
-   - Analyze the visual style of the scene (realistic photography, 3D rendering, comic book, anime, watercolor, oil painting, sketch, etc.)
-   - Transform the person's visual appearance to match the EXACT same style as the scene
-   - If the scene is 3D rendered, make the person look 3D rendered with matching rendering quality, lighting, and texture
-   - If the scene is comic book style, transform the person to comic book style with matching line art, colors, and shading
-   - If the scene is realistic photography, make the person look like realistic photography
-   - Match the color palette, saturation, contrast, and overall visual aesthetic exactly
-   - The person should look like they were originally created/drawn/photographed in the same style as the scene
+2. PRESERVE THE PERSON COMPLETELY:
+   - Keep the person EXACTLY as they appear - same facial features, same body, same clothing, same pose
+   - Do NOT alter, modify, or enhance the person's appearance in any way
+   - Maintain 100% of the original person's details, colors, lighting, and visual quality
+   - Preserve all fine details including hair strands, clothing textures, accessories, and facial features
 
-3. PRESERVE FACIAL IDENTITY:
-   - Keep the person's facial features EXACTLY the same - same facial structure, same identity, same age, same ethnicity
-   - Only transform the visual style (3D/comic/realistic/etc.) while preserving who they are
-   - Apply the style transformation to the face while maintaining recognizability
+3. PRECISE EDGE DETECTION:
+   - Use advanced edge detection to identify the exact boundary between person and background
+   - Handle complex edges like hair, transparent clothing, and fine details with precision
+   - Remove background elements that may appear between fingers, arms, or other body parts
+   - Ensure smooth, natural edges without jagged or pixelated borders
 
-4. LIGHTING INTEGRATION:
-   - Match the direction, intensity, and color temperature of the scene's lighting exactly
-   - Add appropriate highlights and shadows on the person based on the scene's light sources
-   - Adjust the person's skin tone and clothing colors to match the ambient lighting and style
-   - Make the lighting on the person look consistent with the scene's lighting
+4. HANDLE COMPLEX AREAS:
+   - For hair: Remove background between individual hair strands while keeping all hair visible
+   - For clothing: Remove background visible through mesh, lace, or semi-transparent materials
+   - For accessories: Remove background around glasses, jewelry, and other items while keeping them intact
+   - For overlapping elements: Remove background from areas where body parts overlap (e.g., crossed arms)
 
-5. FLEXIBLE POSE AND PLACEMENT:
-   - You have complete flexibility to adjust the person's body pose, position, and orientation to fit naturally within the scene
-   - Change the pose as needed to make it look realistic for the environment (e.g., standing on ground, sitting on objects, walking, etc.)
-   - Adjust the person's position, angle, and orientation to integrate seamlessly into the scene
-   - The pose should look like the person naturally belongs in that specific scene context
+5. MAINTAIN ORIGINAL QUALITY:
+   - Preserve the original image resolution and quality
+   - Keep all fine details, textures, and sharpness of the person
+   - Maintain original colors, lighting, and contrast exactly as in the source image
+   - Do NOT apply any filters, enhancements, or modifications to the person
 
-6. PROPER SCALE AND PROPORTION:
-   - CRITICAL: Ensure the person's size is appropriate and proportional to the scene
-   - The person should NOT be too large - they must be properly scaled relative to the scene elements
-   - If the scene is a wide landscape, the person should be appropriately small to fit the scale
-   - If the scene has other people or objects, match the person's size to be consistent with them
-   - The person should look like they are at the correct distance and scale within the scene
-   - Ensure proper perspective - the person should appear at a realistic distance relative to the scene's depth
-   - The person should never dominate or fill the entire scene - they should be part of the scene, not the whole scene
+6. TRANSPARENT BACKGROUND:
+   - The final image must have a completely transparent background (alpha channel)
+   - No white, black, or colored background - only transparency
+   - The person should appear to float on a transparent canvas
+   - Output format must support transparency (PNG with alpha channel)
 
-7. SEAMLESS INTEGRATION:
-   - Remove any visible edges or artifacts from the transparent background
-   - Integrate the person's edges naturally into the scene using the same style
-   - Add realistic shadows cast by the person onto the ground/objects in the scene (matching the scene's shadow style)
-   - Match the depth of field and atmospheric effects (fog, haze, etc.) if present
+7. NO ARTIFACTS OR RESIDUES:
+   - Remove all background color spill or color contamination on edges
+   - Eliminate any halos, fringes, or color bleeding from the removed background
+   - Clean up any partial background elements that may remain
+   - Ensure professional, studio-quality background removal
 
-8. SCENE INTEGRATION:
-   - If the scene contains other people, position the person naturally among them
-   - Make interactions look natural and realistic
-   - Ensure proper scale and perspective relative to other people/objects
-   - Match the visual quality and detail level of other elements in the scene
-
-9. UNIFIED RESULT:
-   - The final image should look like ONE SINGLE, COHESIVE image that was captured/created as a whole
-   - No visible seams, artifacts, or signs of compositing
-   - The person should appear to belong naturally in the scene and match its style perfectly
-   - It should look like the person was originally part of the scene
-
-Place the person into the scene, transform their visual style to match the scene exactly, and create one unified, cohesive image that looks like it was originally captured/created as a single piece.`;
+Remove the background completely and create a clean transparent image with the person perfectly preserved.`;
 
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBananaMerge] Missing service account credentials');
@@ -994,7 +977,7 @@ export const generateVertexPrompt = async (
     debugInfo.model = geminiModel;
 
     // Exact prompt text as specified by user
-    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio and 4K detail. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
+    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(imageUrl);
