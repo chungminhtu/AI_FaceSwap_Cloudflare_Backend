@@ -125,9 +125,6 @@ export interface UploadUrlResponse {
       id: string;
       url: string;
       filename: string;
-      hasPrompt?: boolean;
-      prompt_json?: any;
-      vertex_info?: any;
     }>;
     count: number;
     successful: number;
@@ -136,6 +133,13 @@ export interface UploadUrlResponse {
   status: 'success' | 'error';
   message: string;
   code: number;
+  debug?: {
+    vertex?: Array<{
+      hasPrompt?: boolean;
+      prompt_json?: any;
+      vertex_info?: any;
+    }>;
+  };
 }
 
 export interface Profile {
@@ -150,17 +154,15 @@ export interface Profile {
 
 export interface PresetImage {
   id: string;
-  image_url: string;
+  preset_url: string;
   prompt_json?: string;
   thumbnail_url?: string;
-  thumbnail_format?: 'webp' | 'lottie';
-  thumbnail_resolution?: string;
   created_at: string;
 }
 
 export interface Selfie {
   id: string;
-  image_url: string;
+  selfie_url: string;
   profile_id: string;
   created_at: string;
 }

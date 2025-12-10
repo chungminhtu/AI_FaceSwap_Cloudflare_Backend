@@ -1481,33 +1481,59 @@ async function main() {
 
       try {
         logger.startStep(`[Cloudflare] D1 Database Migration`);
-        const migrationPath = path.join(process.cwd(), 'backend-cloudflare-workers', 'migrate_add_thumbnail_columns.sql');
+        const migrationsDir = path.join(process.cwd(), 'backend-cloudflare-workers', 'migrations');
         
-        if (!fs.existsSync(migrationPath)) {
-          throw new Error(`Migration file not found: ${migrationPath}`);
+        if (!fs.existsSync(migrationsDir)) {
+          logger.completeStep(`[Cloudflare] D1 Database Migration`, 'No migrations folder found');
+          logger.renderSummary({ workerUrl: '', pagesUrl: '' });
+          return;
         }
 
-        const execResult = await runCommandWithRetry(
-          `wrangler d1 execute ${config.databaseName} --remote --file=${migrationPath}`,
-          process.cwd(),
-          2,
-          2000
-        );
+        const files = fs.readdirSync(migrationsDir)
+          .filter(file => file.endsWith('.sql') && !file.includes('.executed.'))
+          .map(file => ({
+            name: file,
+            path: path.join(migrationsDir, file),
+            order: parseInt(file.match(/^(\d+)_/)?.[1] || '999999', 10)
+          }))
+          .sort((a, b) => a.order - b.order);
 
-        if (execResult.success) {
-          logger.completeStep(`[Cloudflare] D1 Database Migration`, 'Migration completed successfully');
+        if (files.length === 0) {
+          logger.completeStep(`[Cloudflare] D1 Database Migration`, 'No migration files found');
+          logger.renderSummary({ workerUrl: '', pagesUrl: '' });
+          return;
+        }
+
+        console.log(`\n${colors.cyan}Found ${files.length} migration file(s) to execute${colors.reset}`);
+        
+        const executedFiles = [];
+        for (const file of files) {
+          console.log(`\n${colors.blue}→${colors.reset} Executing: ${file.name}`);
           
-          // Delete migration file after successful execution
-          try {
-            fs.unlinkSync(migrationPath);
-            console.log(`\n${colors.green}✓${colors.reset} Migration file deleted: ${path.basename(migrationPath)}`);
-          } catch (deleteError) {
-            console.warn(`\n${colors.yellow}⚠${colors.reset} Could not delete migration file: ${deleteError.message}`);
+          const execResult = await runCommandWithRetry(
+            `wrangler d1 execute ${config.databaseName} --remote --file=${file.path}`,
+            process.cwd(),
+            2,
+            2000
+          );
+
+          if (execResult.success) {
+            executedFiles.push(file);
+            console.log(`${colors.green}✓${colors.reset} Migration completed: ${file.name}`);
+            
+            try {
+              const executedPath = file.path.replace(/\.sql$/, '.executed.sql');
+              fs.renameSync(file.path, executedPath);
+              console.log(`${colors.green}✓${colors.reset} Migration file renamed: ${file.name} → ${path.basename(executedPath)}`);
+            } catch (renameError) {
+              console.warn(`${colors.yellow}⚠${colors.reset} Could not rename migration file: ${renameError.message}`);
+            }
+          } else {
+            throw new Error(`Migration failed for ${file.name}: ${execResult.error || 'Unknown error'}`);
           }
-        } else {
-          throw new Error(`Migration failed: ${execResult.error || 'Unknown error'}`);
         }
 
+        logger.completeStep(`[Cloudflare] D1 Database Migration`, `Successfully executed ${executedFiles.length} migration(s)`);
         logger.renderSummary({ workerUrl: '', pagesUrl: '' });
       } finally {
         restoreEnv(origToken, origAccountId);

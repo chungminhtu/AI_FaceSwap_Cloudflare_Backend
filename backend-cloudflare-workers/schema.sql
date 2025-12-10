@@ -15,12 +15,9 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Metadata (type, sub_category, gender, position) is stored in R2 bucket path, not in DB
 CREATE TABLE IF NOT EXISTS presets (
   id TEXT PRIMARY KEY,
-  image_url TEXT NOT NULL, -- Original preset image URL
+  preset_url TEXT NOT NULL, -- Original preset image URL
   prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
   thumbnail_url TEXT, -- Thumbnail file URL (webp or lottie)
-  thumbnail_format TEXT, -- 'webp' or 'lottie'
-  thumbnail_resolution TEXT, -- '1x', '1.5x', '2x', '3x', '4x'
-  thumbnail_r2_key TEXT, -- R2 storage key for thumbnail
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -31,7 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_presets_has_thumbnail ON presets(thumbnail_url);
 -- Selfies table: Store uploaded selfie images
 CREATE TABLE IF NOT EXISTS selfies (
   id TEXT PRIMARY KEY,
-  image_url TEXT NOT NULL,
+  selfie_url TEXT NOT NULL,
   profile_id TEXT NOT NULL, -- Profile that owns this selfie
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
