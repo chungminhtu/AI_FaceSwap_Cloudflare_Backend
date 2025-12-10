@@ -12,7 +12,7 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 **Ví dụ 1: Sử dụng selfie_ids (từ database)**
 ```json
 {
-  "preset_image_id": "image_1234567890_abc123",
+  "preset_image_id": "preset_1234567890_abc123",
   "selfie_ids": ["selfie_1234567890_xyz789"],
   "profile_id": "profile_1234567890",
   "additional_prompt": "Add dramatic lighting and cinematic atmosphere",
@@ -24,7 +24,7 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 **Ví dụ 2: Sử dụng selfie_image_urls (URL trực tiếp)**
 ```json
 {
-  "preset_image_id": "image_1234567890_abc123",
+  "preset_image_id": "preset_1234567890_abc123",
   "selfie_image_urls": ["https://example.com/selfie1.jpg", "https://example.com/selfie2.jpg"],
   "profile_id": "profile_1234567890",
   "additional_prompt": "Add dramatic lighting and cinematic atmosphere",
@@ -34,8 +34,8 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 ```
 
 **Các trường:**
-- `preset_image_id` (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu.
-- `selfie_ids` (array of strings, tùy chọn): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung. Thông tin gender (male/female) của mỗi selfie được lưu trong database.
+- `preset_image_id` (string, bắt buộc): ID ảnh preset đã lưu trong cơ sở dữ liệu (format: `preset_...`).
+- `selfie_ids` (array of strings, tùy chọn): Mảng các ID ảnh selfie đã lưu trong cơ sở dữ liệu (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung.
 - `selfie_image_urls` (array of strings, tùy chọn): Mảng các URL ảnh selfie trực tiếp (thay thế cho `selfie_ids`). Hỗ trợ multiple selfies. **Lưu ý**: Phải cung cấp `selfie_ids` HOẶC `selfie_image_urls` (không phải cả hai).
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
@@ -142,14 +142,14 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 ## 2. POST `/removeBackground`
 
 ### Mục đích
-Merge người từ ảnh selfie (đã có transparent background) vào ảnh preset (landscape scene) sử dụng Vertex AI. Giữ nguyên khuôn mặt, điều chỉnh tư thế để phù hợp với scene, và blend tự nhiên vào scene.
+Xóa nền của ảnh selfie, giữ lại người với transparent background sử dụng Vertex AI. Kết quả là ảnh người không có nền, sẵn sàng để sử dụng.
 
 ### Nội dung yêu cầu
 
 **Ví dụ 1: Sử dụng selfie_id (từ database)**
 ```json
 {
-  "preset_image_id": "image_1234567890_abc123",
+  "preset_image_id": "preset_1234567890_abc123",
   "selfie_id": "selfie_1234567890_xyz789",
   "profile_id": "profile_1234567890",
   "additional_prompt": "Make the person look happy and relaxed",
@@ -160,7 +160,7 @@ Merge người từ ảnh selfie (đã có transparent background) vào ảnh pr
 **Ví dụ 2: Sử dụng selfie_image_url (URL trực tiếp)**
 ```json
 {
-  "preset_image_id": "image_1234567890_abc123",
+  "preset_image_id": "preset_1234567890_abc123",
   "selfie_image_url": "https://example.com/selfie.png",
   "profile_id": "profile_1234567890",
   "additional_prompt": "Make the person look happy and relaxed",
@@ -169,11 +169,11 @@ Merge người từ ảnh selfie (đã có transparent background) vào ảnh pr
 ```
 
 **Các trường:**
-- `preset_image_id` (string, bắt buộc): ID ảnh preset (landscape scene) đã lưu trong cơ sở dữ liệu.
+- `preset_image_id` (string, bắt buộc): ID ảnh preset (landscape scene) đã lưu trong cơ sở dữ liệu (format: `preset_...`).
 - `selfie_id` (string, tùy chọn): ID ảnh selfie đã lưu trong cơ sở dữ liệu (người có transparent background). **Lưu ý**: Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
 - `selfie_image_url` (string, tùy chọn): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`). Ảnh phải có transparent background sẵn.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
-- `additional_prompt` (string, tùy chọn): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
+- `additional_prompt` (string, tùy chọn): Câu mô tả bổ sung cho việc xóa nền (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
 - `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
 
 **Lưu ý về merge:**
@@ -418,38 +418,42 @@ Tải ảnh trực tiếp lên server và lưu vào cơ sở dữ liệu với x
 
 ### Nội dung yêu cầu (multipart/form-data)
 
-**Ví dụ với cURL:**
+**Ví dụ với cURL (multipart/form-data):**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
-  -F "file=@/path/to/image.jpg" \
+  -F "files=@/path/to/image1.jpg" \
+  -F "files=@/path/to/image2.jpg" \
   -F "type=preset" \
   -F "profile_id=profile_1234567890" \
-  -F "presetName=Studio Neon Collection" \
-  -F "enableVertexPrompt=true" \
-  -F "enableVisionScan=true" \
-  -F "gender=female"
+  -F "enableVertexPrompt=true"
 ```
 
 **Ví dụ với JavaScript (FormData):**
 ```javascript
 const formData = new FormData();
-formData.append('file', fileInput.files[0]);
+formData.append('files', fileInput.files[0]);
+formData.append('files', fileInput.files[1]); // Hỗ trợ nhiều file
 formData.append('type', 'preset');
 formData.append('profile_id', 'profile_1234567890');
-formData.append('presetName', 'Studio Neon Collection');
 formData.append('enableVertexPrompt', 'true');
-formData.append('enableVisionScan', 'true');
-formData.append('gender', 'female');
+```
+
+**Ví dụ với JSON (image_url):**
+```json
+{
+  "image_url": "https://example.com/image.jpg",
+  "type": "preset",
+  "profile_id": "profile_1234567890",
+  "enableVertexPrompt": true
+}
 ```
 
 **Các trường:**
-- `file` (file, bắt buộc): file ảnh cần upload.
+- `files` (file[], bắt buộc nếu dùng multipart): Mảng file ảnh cần upload (hỗ trợ nhiều file).
+- `image_url` hoặc `image_urls` (string/string[], bắt buộc nếu dùng JSON): URL ảnh trực tiếp.
 - `type` (string, bắt buộc): `preset` hoặc `selfie`.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
-- `presetName` (string, tùy chọn): tên bộ sưu tập preset.
-- `enableVertexPrompt` (string, tùy chọn): `"true"` để bật tạo prompt Vertex khi upload preset.
-- `enableVisionScan` (string, tùy chọn): `"true"` để bật Vision API safety scan.
-- `gender` (string, tùy chọn): `"male"` hoặc `"female"`.
+- `enableVertexPrompt` (boolean/string, tùy chọn): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset.
 
 ### Phản hồi thành công
 
@@ -458,9 +462,8 @@ formData.append('gender', 'female');
   "data": {
     "results": [
       {
-        "id": "image_1234567890_abc123",
+        "id": "preset_1234567890_abc123",
         "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-        "filename": "example.jpg",
         "hasPrompt": true,
         "prompt_json": {
           "prompt": "...",
@@ -483,16 +486,32 @@ formData.append('gender', 'female');
     "failed": 0
   },
   "status": "success",
-  "message": "Successfully uploaded 1 file",
+  "message": "Processing successful",
   "code": 200
+}
+```
+
+### Phản hồi lỗi
+
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Upload failed: ...",
+  "code": 500,
+  "debug": {
+    "error": "...",
+    "stack": "..."
+  }
 }
 ```
 
 **Lưu ý:**
 - Khi upload nhiều file, mảng `results` sẽ chứa nhiều phần tử
-- Mỗi phần tử trong `results` có `id`, `url`, `filename`
+- Mỗi phần tử trong `results` có `id`, `url`
 - Với preset: có thêm `hasPrompt`, `prompt_json`, `vertex_info` (nếu bật `enableVertexPrompt`)
-- Với selfie: chỉ có `id`, `url`, `filename`
+- Với selfie: chỉ có `id`, `url`
+- Response format được chuẩn hóa: `{ data, status, message, code, debug? }`
 
 ## 7. GET `/presets`
 
@@ -504,11 +523,10 @@ Trả về danh sách preset trong cơ sở dữ liệu.
 **Ví dụ:**
 ```
 GET https://api.d.shotpix.app/presets
-GET https://api.d.shotpix.app/presets?gender=male
-GET https://api.d.shotpix.app/presets?gender=female
+GET https://api.d.shotpix.app/presets?include_thumbnails=true
 ```
 
-- `gender` (tùy chọn): `male` hoặc `female` để lọc theo giới tính.
+- `include_thumbnails` (tùy chọn): `true` để bao gồm cả presets có thumbnail. Mặc định chỉ trả về presets không có thumbnail.
 
 ### Phản hồi
 
@@ -516,18 +534,22 @@ GET https://api.d.shotpix.app/presets?gender=female
 {
   "presets": [
     {
-      "id": "...",
+      "id": "preset_1234567890_abc123",
       "image_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-      "filename": "example.jpg",
-      "preset_name": "Studio Neon",
       "hasPrompt": true,
       "prompt_json": { "...": "..." },
-      "gender": "female",
+      "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+      "thumbnail_format": "webp",
+      "thumbnail_resolution": "1x",
       "created_at": "2024-01-01T00:00:00.000Z"
     }
   ]
 }
 ```
+
+**Lưu ý:**
+- Metadata (type, sub_category, gender, position) được lưu trong R2 bucket path, không lưu trong database
+- `thumbnail_url`, `thumbnail_format`, `thumbnail_resolution` chỉ có khi preset có thumbnail
 
 ## 8. DELETE `/presets/{id}`
 
@@ -536,7 +558,7 @@ Xóa preset khỏi D1 và R2.
 
 **Ví dụ:**
 ```
-DELETE https://api.d.shotpix.app/presets/image_1234567890_abc123
+DELETE https://api.d.shotpix.app/presets/preset_1234567890_abc123
 ```
 
 ### Phản hồi
@@ -568,9 +590,8 @@ GET https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
 {
   "selfies": [
     {
-      "id": "...",
+      "id": "selfie_1234567890_xyz789",
       "image_url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
-      "filename": "example.jpg",
       "created_at": "2024-01-01T00:00:00.000Z"
     }
   ]
@@ -610,7 +631,6 @@ GET https://api.d.shotpix.app/results?profile_id=profile_1234567890
 ```
 
 - `profile_id` (tùy chọn): ID profile để lọc kết quả.
-- `gender` (tùy chọn): Tham số này được chấp nhận nhưng hiện tại chưa được sử dụng để lọc kết quả.
 
 ### Phản hồi
 
@@ -819,31 +839,171 @@ Trả về HTTP 204 (No Content) với các headers CORS:
 
 ---
 
+## 19. POST `/upload-thumbnails`
+
+### Mục đích
+Tải lên thư mục chứa thumbnails (WebP và Lottie JSON) và original presets. Hỗ trợ batch upload nhiều file cùng lúc.
+
+### Nội dung yêu cầu (multipart/form-data)
+
+**Cấu trúc thư mục:**
+```
+/webp_1x/face-swap/wedding_both_1.webp
+/webp_1.5x/face-swap/portrait_female_1.webp
+/lottie_1x/packs/autum_male_1.json
+/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp
+```
+
+**Ví dụ với JavaScript (FormData):**
+```javascript
+const formData = new FormData();
+// Append files với path prefix
+formData.append('files', file1);
+formData.append('path_webp_1x_face-swap_wedding_both_1.webp', 'webp_1x/face-swap/');
+formData.append('files', file2);
+formData.append('path_original_preset_face-swap_wedding_both_1.webp', 'original_preset/face-swap/wedding_both_1/webp/');
+```
+
+**Quy tắc đặt tên file:**
+- Format: `[type]_[sub_category]_[gender]_[position].[webp|json]`
+- Ví dụ: `face-swap_wedding_both_1.webp`
+- Type có thể chứa dấu gạch ngang (face-swap, packs, filters)
+- Metadata được parse từ tên file và lưu trong R2 path
+
+### Phản hồi thành công
+
+```json
+{
+  "data": {
+    "results": [
+      {
+        "filename": "face-swap_wedding_both_1.webp",
+        "success": true,
+        "type": "preset",
+        "preset_id": "preset_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp"
+      },
+      {
+        "filename": "wedding_both_1.webp",
+        "success": true,
+        "type": "thumbnail",
+        "preset_id": "preset_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "metadata": {
+          "format": "webp",
+          "resolution": "1x"
+        }
+      }
+    ],
+    "count": 2,
+    "successful": 2,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200
+}
+```
+
+**Lưu ý:**
+- Original presets được tạo record trong database
+- Thumbnails được UPDATE vào cùng row với preset (same-row approach)
+- R2 path structure: `[format]_[resolution]/[type]/[remaining_filename]`
+
+## 20. GET `/thumbnails`
+
+### Mục đích
+Lấy danh sách thumbnails từ database.
+
+### Query Parameters
+
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/thumbnails
+GET https://api.d.shotpix.app/thumbnails?thumbnail_format=webp
+GET https://api.d.shotpix.app/thumbnails?thumbnail_resolution=1x
+```
+
+- `thumbnail_format` (tùy chọn): `webp` hoặc `lottie`
+- `thumbnail_resolution` (tùy chọn): `1x`, `1.5x`, `2x`, `3x`, `4x`
+
+### Phản hồi
+
+```json
+{
+  "data": {
+    "thumbnails": [
+      {
+        "id": "preset_1234567890_abc123",
+        "image_url": "https://resources.d.shotpix.app/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp",
+        "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "thumbnail_format": "webp",
+        "thumbnail_resolution": "1x",
+        "thumbnail_r2_key": "webp_1x/face-swap/wedding_both_1.webp",
+        "created_at": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "status": "success",
+  "message": "Thumbnails retrieved successfully",
+  "code": 200
+}
+```
+
+## 21. GET `/thumbnails/{id}/preset`
+
+### Mục đích
+Lấy preset_id từ thumbnail_id (dùng cho mobile app).
+
+**Ví dụ:**
+```
+GET https://api.d.shotpix.app/thumbnails/preset_1234567890_abc123/preset
+```
+
+### Phản hồi
+
+```json
+{
+  "data": {
+    "preset_id": "preset_1234567890_abc123"
+  },
+  "status": "success",
+  "message": "Preset ID retrieved successfully",
+  "code": 200
+}
+```
+
+**Lưu ý:** Thumbnail và preset cùng một row trong database, nên `id` chính là `preset_id`.
+
 ## Tổng kết
 
-**Tổng số API endpoints: 19**
+**Tổng số API endpoints: 21**
 
 **Danh sách đầy đủ các API endpoints:**
 
 1. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
-2. POST `/removeBackground` - Merge người vào scene
+2. POST `/removeBackground` - Xóa nền (Remove Background)
 3. POST `/enhance` - AI enhance ảnh
 4. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
 5. POST `/aging` - AI lão hóa khuôn mặt
 6. POST `/upscaler4k` - AI upscale ảnh lên 4K
-7. POST `/upload-url` - Tạo upload URL
+7. POST `/upload-url` - Tải ảnh lên server (hỗ trợ nhiều file)
 8. GET `/presets` - Liệt kê presets
-9. DELETE `/presets/{id}` - Xóa preset
-10. GET `/selfies` - Liệt kê selfies
-11. DELETE `/selfies/{id}` - Xóa selfie
-12. GET `/results` - Liệt kê results
-13. DELETE `/results/{id}` - Xóa result
-14. POST `/profiles` - Tạo profile
-15. GET `/profiles/{id}` - Lấy profile
-16. PUT `/profiles/{id}` - Cập nhật profile
-17. GET `/profiles` - Liệt kê profiles
-18. GET `/config` - Lấy config
-19. OPTIONS `/*` - CORS preflight requests
+9. GET `/presets/{id}` - Lấy preset theo ID
+10. DELETE `/presets/{id}` - Xóa preset
+11. GET `/selfies` - Liệt kê selfies
+12. DELETE `/selfies/{id}` - Xóa selfie
+13. GET `/results` - Liệt kê results
+14. DELETE `/results/{id}` - Xóa result
+15. POST `/profiles` - Tạo profile
+16. GET `/profiles/{id}` - Lấy profile
+17. PUT `/profiles/{id}` - Cập nhật profile
+18. GET `/profiles` - Liệt kê profiles
+19. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
+20. GET `/thumbnails` - Liệt kê thumbnails
+21. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+22. GET `/config` - Lấy config
+23. OPTIONS `/*` - CORS preflight requests
  
 
 ## Lưu ý về Custom Domain

@@ -151,18 +151,16 @@ export interface Profile {
 export interface PresetImage {
   id: string;
   image_url: string;
-  filename: string;
-  preset_name?: string;
   prompt_json?: string;
-  gender?: 'male' | 'female'; // Optional gender classification
+  thumbnail_url?: string;
+  thumbnail_format?: 'webp' | 'lottie';
+  thumbnail_resolution?: string;
   created_at: string;
 }
 
 export interface Selfie {
   id: string;
   image_url: string;
-  filename: string;
-  gender?: 'male' | 'female'; // Optional gender classification
   profile_id: string;
   created_at: string;
 }

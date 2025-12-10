@@ -531,21 +531,26 @@ A minimal web application for face swapping that allows users to upload preset i
 - Production: `https://ai-faceswap-backend.chungminhtu03.workers.dev`
 
 ### Backend Database Schema
-- `presets` table: `id`, `filename` (unique), `image_url`, `created_at`
-- `selfies` table: `id`, `filename` (unique), `image_url`, `created_at`
-- `results` table: `id`, `result_url`, `created_at`
+- `presets` table: `id`, `image_url`, `prompt_json`, `thumbnail_url`, `thumbnail_format`, `thumbnail_resolution`, `thumbnail_r2_key`, `created_at`
+- `selfies` table: `id`, `image_url`, `profile_id`, `created_at`
+- `results` table: `id`, `preset_name`, `result_url`, `profile_id`, `created_at`
+
+**Lưu ý:**
+- Metadata (type, sub_category, gender, position) được lưu trong R2 bucket path, không lưu trong database
+- Thumbnails được lưu trong cùng row với preset (same-row approach)
 
 ### Endpoints
 
 #### GET `/presets`
 - Returns: `{ presets: [...] }`
-- Each preset contains: `id`, `filename`, `image_url`, `created_at`
+- Each preset contains: `id`, `image_url`, `prompt_json`, `thumbnail_url`, `thumbnail_format`, `thumbnail_resolution`, `created_at`
+- Query params: `include_thumbnails` (optional, default: false) - bao gồm presets có thumbnail
 - Presets are stored as individual entries (no collections)
 - Backend queries database and returns all presets
 
 #### GET `/selfies`
 - Returns: `{ selfies: [...] }`
-- Each selfie contains: `id`, `filename`, `image_url`, `created_at`
+- Each selfie contains: `id`, `image_url`, `created_at`
 - Selfies are stored as individual entries
 - Backend queries database and returns all selfies
 
@@ -568,25 +573,15 @@ A minimal web application for face swapping that allows users to upload preset i
 - Error handling: Return 404 if selfie not found, 500 on deletion failure
 
 #### POST `/upload-url`
-- Body: `{ filename: string, type: 'preset' | 'selfie' }`
+- Content-Type: `multipart/form-data` hoặc `application/json`
+- Body (multipart): `files` (file[]), `type`, `profile_id`, `enableVertexPrompt` (optional)
+- Body (JSON): `image_url` hoặc `image_urls` (string[]), `type`, `profile_id`, `enableVertexPrompt` (optional)
 - Backend logic:
-  1. Sanitize filename (remove special chars, keep alphanumeric, dots, hyphens, underscores)
-  2. Check if filename already exists in database (query `presets` or `selfies` table by `filename`)
-  3. If duplicate exists: Return `{ exists: true, url: string }` (existing final `image_url` from database - ready to use directly)
-  4. If new: Generate upload URL and return `{ exists: false, uploadUrl: string }` (temporary upload URL for PUT request)
-- No database insert at this stage (only on actual upload)
-- The `url` returned for duplicates is the final accessible URL stored in database
-
-#### PUT `/upload-proxy/{key}`
-- Headers:
-  - `Content-Type: image/*`
-- Body: Image file binary
-- Backend logic:
-  1. Upload file to R2 storage at the correct path (e.g., `preset/filename.jpg` or `selfie/filename.jpg`)
-  2. Extract filename from key path
-  3. Construct the final accessible URL (e.g., `/r2/preset/filename.jpg` or full URL with worker domain)
-  4. Insert record into database (`presets` or `selfies` table) with `filename` and `image_url` (store the final accessible URL directly)
-  5. Return `{ url: string }` (the final accessible URL that can be used directly, no conversion needed)
+  1. Upload file(s) to R2 storage
+  2. Insert record(s) into database (`presets` hoặc `selfies` table) với `image_url`
+  3. Với preset: tự động generate Vertex prompt nếu `enableVertexPrompt=true`
+- Response format: `{ data: { results: [...], count, successful, failed }, status, message, code, debug? }`
+- Hỗ trợ upload nhiều file cùng lúc
 
 #### POST `/faceswap`
 - Body:
@@ -713,8 +708,11 @@ A minimal web application for face swapping that allows users to upload preset i
 ```javascript
 {
   id: string,
-  filename: string,
   image_url: string,
+  prompt_json: object | null,
+  thumbnail_url: string | null,
+  thumbnail_format: 'webp' | 'lottie' | null,
+  thumbnail_resolution: string | null,
   created_at: string
 }
 ```
@@ -723,7 +721,6 @@ A minimal web application for face swapping that allows users to upload preset i
 ```javascript
 {
   id: string,
-  filename: string,
   image_url: string,
   created_at: string
 }

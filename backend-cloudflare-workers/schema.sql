@@ -11,33 +11,36 @@ CREATE TABLE IF NOT EXISTS profiles (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
--- Presets table: Store preset images (simplified - no collections)
+-- Presets table: Store preset images with optional thumbnails (same row)
+-- Metadata (type, sub_category, gender, position) is stored in R2 bucket path, not in DB
 CREATE TABLE IF NOT EXISTS presets (
   id TEXT PRIMARY KEY,
-  image_url TEXT NOT NULL,
-  filename TEXT NOT NULL,
-  preset_name TEXT, -- Optional name for the preset
+  image_url TEXT NOT NULL, -- Original preset image URL
   prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
-  gender TEXT CHECK(gender IN ('male', 'female')), -- Optional gender classification
-  type TEXT, -- filters, face-swap, packs (for thumbnail linking)
-  sub_category TEXT, -- e.g., wedding, portrait, autumn (for thumbnail linking)
-  position INTEGER, -- Position number (for thumbnail linking)
+  thumbnail_url TEXT, -- Thumbnail file URL (webp or lottie)
+  thumbnail_format TEXT, -- 'webp' or 'lottie'
+  thumbnail_resolution TEXT, -- '1x', '1.5x', '2x', '3x', '4x'
+  thumbnail_r2_key TEXT, -- R2 storage key for thumbnail
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
--- Index for thumbnail linking
-CREATE INDEX IF NOT EXISTS idx_presets_lookup ON presets(type, sub_category, gender, position);
+-- Indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_presets_created_at ON presets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_presets_has_thumbnail ON presets(thumbnail_url);
 
 -- Selfies table: Store uploaded selfie images
 CREATE TABLE IF NOT EXISTS selfies (
   id TEXT PRIMARY KEY,
   image_url TEXT NOT NULL,
-  filename TEXT NOT NULL,
-  gender TEXT CHECK(gender IN ('male', 'female')), -- Optional gender classification
   profile_id TEXT NOT NULL, -- Profile that owns this selfie
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
+
+-- Indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_profiles_created_at ON profiles(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_selfies_created_at ON selfies(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_selfies_profile_id ON selfies(profile_id);
 
 -- Results table: Store face swap results
 CREATE TABLE IF NOT EXISTS results (
@@ -49,13 +52,5 @@ CREATE TABLE IF NOT EXISTS results (
 );
 
 -- Indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_profiles_created_at ON profiles(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_presets_created_at ON presets(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_presets_gender ON presets(gender);
-CREATE INDEX IF NOT EXISTS idx_presets_preset_name ON presets(preset_name);
-CREATE INDEX IF NOT EXISTS idx_selfies_created_at ON selfies(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_selfies_gender ON selfies(gender);
-CREATE INDEX IF NOT EXISTS idx_selfies_profile_id ON selfies(profile_id);
 CREATE INDEX IF NOT EXISTS idx_results_created_at ON results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_results_profile_id ON results(profile_id);
-

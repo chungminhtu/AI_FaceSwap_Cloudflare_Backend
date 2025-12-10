@@ -46,8 +46,14 @@ export const jsonResponse = (data: any, status = 200): Response => {
   });
 };
 
-export const errorResponse = (message: string, status = 500): Response =>
-  jsonResponse({ Success: false, Message: message, StatusCode: status }, status);
+export const errorResponse = (message: string, status = 500, debug?: Record<string, any>): Response =>
+  jsonResponse({ 
+    data: null,
+    status: 'error', 
+    message, 
+    code: status,
+    ...(debug ? { debug } : {})
+  }, status);
 
 export const isUnsafe = (
   annotation: { adult: string; violence: string; racy: string },

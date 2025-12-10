@@ -441,6 +441,59 @@
             font-size: 11px; color: var(--text-muted);
             word-break: break-word;
         }
+        /* Main Tabs */
+        .main-tabs {
+            display: flex; gap: 8px; margin-bottom: 20px;
+            border-bottom: 2px solid var(--border);
+        }
+        .main-tab {
+            padding: 12px 24px; background: none; border: none;
+            border-bottom: 2px solid transparent; margin-bottom: -2px;
+            color: var(--text-secondary); font-size: 15px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .main-tab:hover {
+            color: var(--accent);
+        }
+        .main-tab.active {
+            color: var(--accent); border-bottom-color: var(--accent);
+        }
+        .main-tab-content {
+            display: none;
+        }
+        .main-tab-content.active {
+            display: block;
+        }
+        
+        /* Thumbnails Tab Container */
+        .thumbnails-tab-container {
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .thumbnails-tab-header {
+            margin-bottom: 8px;
+        }
+        .thumbnails-tabs {
+            display: flex; gap: 8px;
+            border-bottom: 2px solid var(--border);
+        }
+        .thumbnail-subtab {
+            padding: 10px 20px; background: none; border: none;
+            border-bottom: 2px solid transparent; margin-bottom: -2px;
+            color: var(--text-secondary); font-size: 14px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .thumbnail-subtab:hover {
+            color: var(--accent);
+        }
+        .thumbnail-subtab.active {
+            color: var(--accent); border-bottom-color: var(--accent);
+        }
+        .thumbnail-subtab-content {
+            display: none;
+        }
+        .thumbnail-subtab-content.active {
+            display: block;
+        }
 
         /* Loading Overlay */
         .loading-overlay {
@@ -579,7 +632,7 @@
                 </select>
                 <button class="log-toggle-btn" onclick="window.open('docs/index.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--accent); color: #fff; transition: all 0.2s;">📖 API Docs</button>
                 <button class="log-toggle-btn" onclick="showComparisonView()" id="comparison-view-btn" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(59, 130, 246, 0.9); color: #fff; transition: all 0.2s;" title="Xem So Sánh">🔍 So Sánh (<span id="comparison-count">0</span>)</button>
-                <button class="log-toggle-btn" onclick="openThumbnailManager()" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(34, 197, 94, 0.9); color: #fff; transition: all 0.2s;" title="Quản Lý Thumbnail">🖼️ Thumbnails</button>
+                <button class="log-toggle-btn" onclick="switchMainTab('thumbnails')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(34, 197, 94, 0.9); color: #fff; transition: all 0.2s;" title="Quản Lý Thumbnail">🖼️ Thumbnails</button>
                 <button class="log-toggle-btn" onclick="toggleLogPanel()">Nhật Ký (Log)</button>
             </div>
         </div>
@@ -632,7 +685,19 @@
 
             <!-- Main Content Area -->
             <div class="main-content-area">
-                <div class="preview-panel">
+                <!-- Main Tabs -->
+                <div class="main-tabs">
+                    <button class="main-tab active" onclick="switchMainTab('faceswap')" id="main-tab-faceswap">
+                        ✨ Đổi Mặt (Face Swap)
+                    </button>
+                    <button class="main-tab" onclick="switchMainTab('thumbnails')" id="main-tab-thumbnails">
+                        🖼️ Thumbnails
+                    </button>
+                </div>
+
+                <!-- Face Swap Tab Content -->
+                <div id="faceswap-tab-content" class="main-tab-content active">
+                    <div class="preview-panel">
                         <div class="preview-card preset-card" id="preset-card">
                             <div class="preview-header">
                                 <div class="preview-label">Mẫu (Preset)</div>
@@ -723,6 +788,57 @@
                         <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">▶</button>
                     </div>
                 </div>
+                </div>
+
+                <!-- Thumbnails Tab Content -->
+                <div id="thumbnails-tab-content" class="main-tab-content" style="display: none;">
+                    <div class="thumbnails-tab-container">
+                        <div class="thumbnails-tab-header">
+                            <div class="thumbnails-tabs">
+                                <button class="thumbnail-subtab active" onclick="switchThumbnailSubTab('upload')" id="thumbnail-subtab-upload">
+                                    📤 Tải Lên
+                                </button>
+                                <button class="thumbnail-subtab" onclick="switchThumbnailSubTab('view')" id="thumbnail-subtab-view">
+                                    👁️ Xem Thumbnails
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="thumbnails-upload-section" class="thumbnail-subtab-content active">
+                            <div class="thumbnail-upload-section" style="padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border);">
+                                <h3 style="margin-top: 0;">Tải Lên Thư Mục</h3>
+                                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                                    Chọn thư mục chứa các file webp và lottie. Tên file phải theo định dạng:<br>
+                                    <code>[type]_[sub_category]_[gender]_[position].[webp|json]</code><br>
+                                    Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code>
+                                </p>
+                                <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
+                                <button class="action-btn" onclick="$('thumbnail-folder-input').click()" style="width: 100%; margin-bottom: 16px;">
+                                    <span>📁</span>
+                                    <span>Chọn Thư Mục</span>
+                                </button>
+                                <div id="thumbnail-upload-progress" style="display: none;">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="thumbnail-progress-fill"></div>
+                                    </div>
+                                    <div id="thumbnail-upload-status" style="margin-top: 8px; font-size: 12px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="thumbnails-view-section" class="thumbnail-subtab-content" style="display: none;">
+                            <div class="thumbnail-list-section" style="padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                    <h3 style="margin: 0;">Danh Sách Thumbnails</h3>
+                                    <button class="action-btn" onclick="loadThumbnails()" style="padding: 6px 12px; font-size: 12px;">
+                                        🔄 Làm Mới
+                                    </button>
+                                </div>
+                                <div id="thumbnail-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-top: 12px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Log Panel - Right Sidebar -->
@@ -776,41 +892,6 @@
                         <span>←</span>
                         <span>Quay Lại Xem Đơn</span>
                     </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Thumbnail Manager Modal -->
-    <div id="thumbnail-manager" class="modal-overlay" style="display: none;">
-        <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
-            <div class="modal-header">
-                <h2>Quản Lý Thumbnails</h2>
-                <button class="modal-close" onclick="closeThumbnailManager()">×</button>
-            </div>
-            <div class="modal-body">
-                <div class="thumbnail-upload-section">
-                    <h3>Tải Lên Thư Mục</h3>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                        Chọn thư mục chứa các file webp và lottie. Tên file phải theo định dạng:<br>
-                        <code>[type]_[sub_category]_[gender]_[position].[webp|json]</code><br>
-                        Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code>
-                    </p>
-                    <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
-                    <button class="action-btn" onclick="$('thumbnail-folder-input').click()" style="width: 100%; margin-bottom: 16px;">
-                        <span>📁</span>
-                        <span>Chọn Thư Mục</span>
-                    </button>
-                    <div id="thumbnail-upload-progress" style="display: none;">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="thumbnail-progress-fill"></div>
-                        </div>
-                        <div id="thumbnail-upload-status" style="margin-top: 8px; font-size: 12px;"></div>
-                    </div>
-                </div>
-                <div class="thumbnail-list-section" style="margin-top: 24px;">
-                    <h3>Danh Sách Thumbnails</h3>
-                    <div id="thumbnail-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px;"></div>
                 </div>
             </div>
         </div>
@@ -1115,9 +1196,7 @@
                     const profileId = window.profileManager.currentProfile.id;
                     params.append('profile_id', profileId);
                 }
-                if (type === 'preset' && ['male', 'female'].includes(genderFilter)) {
-                    params.append('gender', genderFilter);
-                }
+                // Gender filter removed - metadata is in R2 path, not DB
                 if (params.toString()) url += `?${params.toString()}`;
                 startTime = Date.now();
                 const response = await fetch(url);
@@ -1172,14 +1251,11 @@
                 }).join('');
             } else {
                 gallery.innerHTML = pageItems.map(item => {
-                    const genderBadge = type === 'preset' && item.gender ?
-                        `<div style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 6px;border-radius:10px;font-size:12px;">${item.gender === 'male' ? '👨' : '👩'}</div>` : '';
                     const isSelected = type === 'selfie' && Array.isArray(selected) 
                         ? selected.some(s => s.id === item.id)
                         : selected?.id === item.id;
                     return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
                         <img src="${item.image_url}" alt="" loading="lazy">
-                        ${genderBadge}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>`;
                 }).join('');
@@ -1450,7 +1526,14 @@
                 const duration = Date.now() - startTime;
 
                 logApiCall({ label: `Tải Lên ${config.logName} (${validFiles.length} files)`, method: 'POST', url: '/upload-url', fullUrl: uploadUrl, status: response.ok ? 'success' : 'error', payload: data, duration, body: formData });
-                if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Tải lên thất bại');
+                if (!response.ok || data.status !== 'success') {
+                    const errorMsg = data.message || 'Tải lên thất bại';
+                    const error = new Error(errorMsg);
+                    if (data.debug) {
+                        error.debug = data.debug;
+                    }
+                    throw error;
+                }
 
                 // Process all results from data.data.results
                 const results = data.data?.results || [];
@@ -1460,7 +1543,6 @@
                 if (successfulResults.length > 0) {
                     const newImages = successfulResults.map(result => ({
                         id: result.id,
-                        filename: result.filename,
                         image_url: result.url,
                         created_at: new Date().toISOString()
                     }));
@@ -2057,7 +2139,14 @@
                     body: requestBody
                 });
 
-                if (!uploadResponse.ok || data.status !== 'success') throw new Error(data.message || 'Tải lên thất bại');
+                if (!uploadResponse.ok || data.status !== 'success') {
+                    const errorMsg = data.message || 'Tải lên thất bại';
+                    const error = new Error(errorMsg);
+                    if (data.debug) {
+                        error.debug = data.debug;
+                    }
+                    throw error;
+                }
 
                 // Handle new response format with data property
                 const result = data.data?.results?.[0];
@@ -2078,7 +2167,12 @@
                 showStatusMessage(`Đã chọn làm ${type === 'preset' ? 'mẫu' : 'selfie'} thành công!`, 'success');
                 closeLightbox();
             } catch (error) {
-                showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
+                const errorMsg = error instanceof Error ? error.message : 'Tải lên thất bại';
+                const debugInfo = error?.debug;
+                if (debugInfo) {
+                    console.error('[Upload Error Debug]', debugInfo);
+                }
+                showStatusMessage(`Tải lên thất bại: ${errorMsg}`, 'error');
             } finally {
                 hideLoading();
                 dropZone?.classList.remove('loading');
@@ -2124,14 +2218,53 @@
         window.selectAsPreset = selectAsPreset;
         window.selectAsSelfie = selectAsSelfie;
 
-        // Thumbnail Manager
-        function openThumbnailManager() {
-            $('thumbnail-manager').style.display = 'flex';
-            loadThumbnails();
+        // Main Tab Switching
+        function switchMainTab(tab) {
+            // Hide all main tabs
+            document.querySelectorAll('.main-tab-content').forEach(content => {
+                content.classList.remove('active');
+                content.style.display = 'none';
+            });
+            document.querySelectorAll('.main-tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            if (tab === 'faceswap') {
+                $('faceswap-tab-content').classList.add('active');
+                $('faceswap-tab-content').style.display = 'block';
+                $('main-tab-faceswap').classList.add('active');
+            } else if (tab === 'thumbnails') {
+                $('thumbnails-tab-content').classList.add('active');
+                $('thumbnails-tab-content').style.display = 'block';
+                $('main-tab-thumbnails').classList.add('active');
+                switchThumbnailSubTab('view');
+                loadThumbnails();
+            }
         }
 
-        function closeThumbnailManager() {
-            $('thumbnail-manager').style.display = 'none';
+        // Thumbnail Sub Tab Switching
+        function switchThumbnailSubTab(tab) {
+            // Hide all sub tabs
+            document.querySelectorAll('.thumbnail-subtab-content').forEach(content => {
+                content.classList.remove('active');
+                content.style.display = 'none';
+            });
+            document.querySelectorAll('.thumbnail-subtab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected sub tab
+            if (tab === 'upload') {
+                $('thumbnails-upload-section').classList.add('active');
+                $('thumbnails-upload-section').style.display = 'block';
+                $('thumbnail-subtab-upload').classList.add('active');
+            } else if (tab === 'view') {
+                $('thumbnails-view-section').classList.add('active');
+                $('thumbnails-view-section').style.display = 'block';
+                $('thumbnail-subtab-view').classList.add('active');
+                loadThumbnails();
+            }
         }
 
         async function loadThumbnails() {
@@ -2152,26 +2285,79 @@
             if (!container) return;
             
             if (thumbnails.length === 0) {
-                container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Chưa có thumbnail nào</p>';
+                container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 40px;">Chưa có thumbnail nào. Hãy tải lên thư mục chứa thumbnails.</p>';
                 return;
             }
             
-            container.innerHTML = thumbnails.map(thumb => `
-                <div class="thumbnail-item">
-                    ${thumb.file_format === 'webp' 
-                        ? `<img src="${thumb.file_url}" alt="${thumb.filename}" loading="lazy">`
-                        : `<div style="height: 120px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: 4px; margin-bottom: 8px;">
-                            <span style="font-size: 24px;">🎬</span>
-                        </div>`
-                    }
-                    <div class="thumbnail-item-info">
-                        <div><strong>${thumb.type}</strong></div>
-                        <div>${thumb.sub_category}</div>
-                        <div>${thumb.gender} - ${thumb.resolution}</div>
-                        <div style="font-size: 10px; color: var(--text-muted);">${thumb.file_format}</div>
+            // Thumbnails are now stored in same row as presets
+            // Group by preset ID (each preset can have one thumbnail)
+            const grouped = {};
+            thumbnails.forEach(thumb => {
+                const presetId = thumb.id; // Thumbnail is in same row, so id is preset_id
+                if (!grouped[presetId]) {
+                    grouped[presetId] = {
+                        preset_id: presetId,
+                        image_url: thumb.image_url,
+                        thumbnail_url: thumb.thumbnail_url,
+                        thumbnail_format: thumb.thumbnail_format,
+                        thumbnail_resolution: thumb.thumbnail_resolution,
+                        items: [thumb]
+                    };
+                } else {
+                    grouped[presetId].items.push(thumb);
+                }
+            });
+            
+            container.innerHTML = Object.values(grouped).map((group) => {
+                const displayUrl = group.thumbnail_url || group.image_url;
+                const isWebp = group.thumbnail_format === 'webp';
+                const isLottie = group.thumbnail_format === 'lottie';
+                
+                return `
+                    <div class="thumbnail-item" style="cursor: pointer;" onclick="selectThumbnail('${group.preset_id}')">
+                        ${isWebp 
+                            ? `<img src="${displayUrl}" alt="Thumbnail" loading="lazy" style="width: 100%; height: 150px; object-fit: cover;">`
+                            : isLottie
+                            ? `<div style="height: 150px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: 4px; margin-bottom: 8px;">
+                                <span style="font-size: 32px;">🎬</span>
+                            </div>`
+                            : `<img src="${group.image_url}" alt="Preset" loading="lazy" style="width: 100%; height: 150px; object-fit: cover;">`
+                        }
+                        <div class="thumbnail-item-info">
+                            <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">
+                                ${isWebp ? '🖼️' : ''} ${isLottie ? '🎬' : ''} 
+                                ${group.thumbnail_format || 'No thumbnail'} ${group.thumbnail_resolution || ''}
+                            </div>
+                            <div style="font-size: 9px; color: var(--accent); margin-top: 2px;">Preset: ${group.preset_id.substring(0, 20)}...</div>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
+        }
+
+        async function selectThumbnail(presetId) {
+            if (!presetId) {
+                showStatusMessage('Thumbnail chưa được liên kết với preset', 'error');
+                return;
+            }
+            // Load preset and set as selected
+            try {
+                const response = await fetch(`${WORKER_URL}/presets/${presetId}`);
+                const data = await response.json();
+                if (data && data.image_url) {
+                    const tempPreset = {
+                        id: presetId,
+                        image_url: data.image_url,
+                        filename: data.filename,
+                        created_at: new Date().toISOString()
+                    };
+                    setSelectedItem('preset', tempPreset, { showMessage: true });
+                    showStatusMessage('Đã chọn preset từ thumbnail', 'success');
+                    switchMainTab('faceswap');
+                }
+            } catch (error) {
+                showStatusMessage('Không thể tải preset', 'error');
+            }
         }
 
         async function handleThumbnailFolderSelect(event) {
@@ -2216,15 +2402,14 @@
                         showStatusMessage('Tải lên thành công!', 'success');
                     }
                     
-                    // Reload thumbnails
-                    await loadThumbnails();
-                    
                     // Reset input
                     event.target.value = '';
                     
+                    // Switch to view sub tab and reload thumbnails
                     setTimeout(() => {
                         progressContainer.style.display = 'none';
-                    }, 3000);
+                        switchThumbnailSubTab('view');
+                    }, 1000);
                 } else {
                     throw new Error(data.message || 'Upload failed');
                 }
@@ -2236,9 +2421,10 @@
             }
         }
 
-        window.openThumbnailManager = openThumbnailManager;
-        window.closeThumbnailManager = closeThumbnailManager;
+        window.switchMainTab = switchMainTab;
+        window.switchThumbnailSubTab = switchThumbnailSubTab;
         window.handleThumbnailFolderSelect = handleThumbnailFolderSelect;
+        window.selectThumbnail = selectThumbnail;
 
         // UI Helpers
         function showLoading(text = 'Đang tải dữ liệu') {

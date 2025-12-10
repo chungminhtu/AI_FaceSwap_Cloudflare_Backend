@@ -1481,7 +1481,7 @@ async function main() {
 
       try {
         logger.startStep(`[Cloudflare] D1 Database Migration`);
-        const migrationPath = path.join(process.cwd(), 'backend-cloudflare-workers', 'migrate_remove_columns.sql');
+        const migrationPath = path.join(process.cwd(), 'backend-cloudflare-workers', 'migrate_add_thumbnail_columns.sql');
         
         if (!fs.existsSync(migrationPath)) {
           throw new Error(`Migration file not found: ${migrationPath}`);
@@ -1496,6 +1496,14 @@ async function main() {
 
         if (execResult.success) {
           logger.completeStep(`[Cloudflare] D1 Database Migration`, 'Migration completed successfully');
+          
+          // Delete migration file after successful execution
+          try {
+            fs.unlinkSync(migrationPath);
+            console.log(`\n${colors.green}✓${colors.reset} Migration file deleted: ${path.basename(migrationPath)}`);
+          } catch (deleteError) {
+            console.warn(`\n${colors.yellow}⚠${colors.reset} Could not delete migration file: ${deleteError.message}`);
+          }
         } else {
           throw new Error(`Migration failed: ${execResult.error || 'Unknown error'}`);
         }

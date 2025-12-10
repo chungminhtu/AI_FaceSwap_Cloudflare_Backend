@@ -44,36 +44,26 @@ const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
   const existing = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(systemPresetId).first();
   if (!existing) {
     await DB.prepare(
-      'INSERT OR IGNORE INTO presets (id, image_url, filename, preset_name, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(systemPresetId, '', 'system', 'System', Math.floor(Date.now() / 1000)).run();
+      'INSERT OR IGNORE INTO presets (id, image_url, created_at) VALUES (?, ?, ?)'
+    ).bind(systemPresetId, '', Math.floor(Date.now() / 1000)).run();
   }
   return systemPresetId;
 };
 
 const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string | null> => {
   try {
-    let selfieResult = await DB.prepare(
+    const selfieResult = await DB.prepare(
       'SELECT id FROM selfies WHERE image_url = ? AND profile_id = ? LIMIT 1'
     ).bind(imageUrl, profileId).first();
-    
-    if (!selfieResult) {
-      const urlParts = imageUrl.split('/');
-      const filename = urlParts[urlParts.length - 1];
-      selfieResult = await DB.prepare(
-        'SELECT id FROM selfies WHERE filename = ? AND profile_id = ? LIMIT 1'
-      ).bind(filename, profileId).first();
-    }
     
     if (selfieResult) {
       return (selfieResult as any).id;
     }
     
-    const urlParts = imageUrl.split('/');
-    const filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.jpg`;
     const systemSelfieId = `system_selfie_${profileId}_${Date.now()}`;
     const insertResult = await DB.prepare(
-      'INSERT OR IGNORE INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(systemSelfieId, imageUrl, filename, profileId, Math.floor(Date.now() / 1000)).run();
+      'INSERT OR IGNORE INTO selfies (id, image_url, profile_id, created_at) VALUES (?, ?, ?, ?)'
+    ).bind(systemSelfieId, imageUrl, profileId, Math.floor(Date.now() / 1000)).run();
     
     if (insertResult.success) {
       return systemSelfieId;
@@ -517,14 +507,12 @@ export default {
               }
             }
 
-            const imageId = `image_${timestamp}_${randomSuffix}`;
-            const validGender = (gender === 'male' || gender === 'female') ? gender : null;
-            const presetNameForFile = presetName || `Preset ${timestamp}_${index}`;
+            const imageId = `preset_${timestamp}_${randomSuffix}`;
 
             // Save to database
             const result = await DB.prepare(
-              'INSERT INTO presets (id, image_url, filename, preset_name, prompt_json, gender, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-            ).bind(imageId, publicUrl, uniqueFilename, presetNameForFile, promptJson, validGender, createdAt).run();
+              'INSERT INTO presets (id, image_url, prompt_json, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(imageId, publicUrl, promptJson, createdAt).run();
 
             if (!result.success) {
               return {
@@ -547,8 +535,8 @@ export default {
             const selfieId = `selfie_${timestamp}_${randomSuffix}`;
 
             const result = await DB.prepare(
-              'INSERT INTO selfies (id, image_url, filename, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, uniqueFilename, profileId, createdAt).run();
+              'INSERT INTO selfies (id, image_url, profile_id, created_at) VALUES (?, ?, ?, ?)'
+            ).bind(selfieId, publicUrl, profileId, createdAt).run();
 
             if (!result.success) {
               return {
@@ -601,25 +589,35 @@ export default {
           },
           status: 'success',
           message: failed.length === 0 
-            ? `Successfully uploaded ${successful.length} file${successful.length !== 1 ? 's' : ''}`
+            ? 'Processing successful'
             : `Uploaded ${successful.length} of ${results.length} file${results.length !== 1 ? 's' : ''}`,
           code: 200
         });
       } catch (error) {
-        console.error('Upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Upload failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        console.error('Upload error:', errorMsg);
+        return errorResponse(
+          `Upload failed: ${errorMsg}`, 
+          500,
+          { 
+            error: errorMsg,
+            ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {})
+          }
+        );
       }
     }
 
     // Parse thumbnail filename: [type]_[sub_category]_[gender]_[position].[ext]
     // Type uses hyphens (face-swap), other parts use underscores
     // Example: face-swap_wedding_both_1.webp -> type: face-swap, sub_category: wedding, gender: both, position: 1
-    function parseThumbnailFilename(filename: string): { type: string; sub_category: string; gender: string; position: number; format: string; folderName: string } | null {
+    // Returns remaining filename without type: wedding_both_1.webp
+    function parseThumbnailFilename(filename: string): { type: string; sub_category: string; gender: string; position: number; format: string; remainingFilename: string } | null {
       const extMatch = filename.match(/\.(webp|json)$/i);
       if (!extMatch) return null;
       
       const format = extMatch[1].toLowerCase() === 'json' ? 'lottie' : 'webp';
       const nameWithoutExt = filename.replace(/\.(webp|json)$/i, '');
+      const fileExtension = extMatch[1];
       
       // Format: [type]_[sub_category]_[gender]_[position]
       // Type can contain hyphens (face-swap), so we need to split carefully
@@ -632,13 +630,14 @@ export default {
       
       const gender = parts[parts.length - 2];
       // Everything before gender is type_sub_category, but type can have hyphens
-      // We need to find where type ends and sub_category begins
-      // For now, assume first part is type (can have hyphens), rest is sub_category
+      // First part is type (can have hyphens), rest is sub_category
       const type = parts[0]; // e.g., "face-swap"
       const sub_category = parts.slice(1, parts.length - 2).join('_'); // e.g., "wedding"
-      const folderName = nameWithoutExt; // Used for original_preset path
       
-      return { type, sub_category, gender, position, format, folderName };
+      // Remaining filename without type prefix: [sub_category]_[gender]_[position].[ext]
+      const remainingFilename = `${sub_category}_${gender}_${position}.${fileExtension}`;
+      
+      return { type, sub_category, gender, position, format, remainingFilename };
     }
 
     // Handle thumbnail folder upload endpoint - processes both original presets and thumbnails
@@ -699,15 +698,16 @@ export default {
         }
 
         // Process original presets first (create preset records)
-        const presetMap = new Map<string, string>(); // key: type_sub_category_gender_position, value: preset_id
+        // Map: R2 key -> preset_id (for linking thumbnails)
+        const presetMap = new Map<string, string>();
         
         for (const { file, path, parsed } of originalPresets) {
           try {
             const filename = file.name;
-            const folderName = parsed.folderName;
             
-            // Build R2 key: original_preset/[folderName]/webp/[filename]
-            const r2Key = `original_preset/${folderName}/webp/${filename}`;
+            // Build R2 key: original_preset/[type]/[remainingFilename]/webp/[remainingFilename]
+            // Example: original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp
+            const r2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
             
             // Read and upload file
             const fileData = await file.arrayBuffer();
@@ -720,20 +720,19 @@ export default {
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
             
-            // Check if preset already exists
-            const lookupKey = `${parsed.type}_${parsed.sub_category}_${parsed.gender}_${parsed.position}`;
-            let presetId: string | undefined = presetMap.get(lookupKey);
+            // Check if preset already exists by image_url (R2 path is unique)
+            let presetId: string | undefined = presetMap.get(r2Key);
             
             if (!presetId) {
-              // Check database for existing preset
+              // Check database for existing preset with same image_url
               const existing = await DB.prepare(
-                'SELECT id FROM presets WHERE type = ? AND sub_category = ? AND gender = ? AND position = ?'
-              ).bind(parsed.type, parsed.sub_category, parsed.gender || '', parsed.position).first();
+                'SELECT id FROM presets WHERE image_url = ?'
+              ).bind(publicUrl).first();
               
               if (existing) {
                 presetId = (existing as any).id as string;
                 if (presetId) {
-                  presetMap.set(lookupKey, presetId);
+                  presetMap.set(r2Key, presetId);
                 }
               } else {
                 // Create new preset
@@ -741,20 +740,10 @@ export default {
                 const createdAt = Math.floor(Date.now() / 1000);
                 
                 await DB.prepare(
-                  'INSERT INTO presets (id, image_url, filename, preset_name, type, sub_category, gender, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).bind(
-                  presetId,
-                  publicUrl,
-                  filename,
-                  `${parsed.type} ${parsed.sub_category} ${parsed.gender}`,
-                  parsed.type,
-                  parsed.sub_category,
-                  parsed.gender || null,
-                  parsed.position,
-                  createdAt
-                ).run();
+                  'INSERT INTO presets (id, image_url, created_at) VALUES (?, ?, ?)'
+                ).bind(presetId, publicUrl, createdAt).run();
                 
-                presetMap.set(lookupKey, presetId);
+                presetMap.set(r2Key, presetId);
               }
             }
 
@@ -774,7 +763,7 @@ export default {
           }
         }
 
-        // Process thumbnails (link to presets)
+        // Process thumbnails (UPDATE preset row with thumbnail fields - same row approach)
         for (const { file, path, parsed } of thumbnails) {
           try {
             const filename = file.name;
@@ -788,10 +777,11 @@ export default {
 
             const fileFormat = parsed.format;
             const isLottie = fileFormat === 'lottie';
-            const fileExtension = isLottie ? 'json' : 'webp';
             
-            // Build R2 key: [format]_[resolution]/[filename] (no preset subfolder)
-            const r2Key = `${fileFormat}_${resolution}/${filename}`;
+            // Build R2 key: [format]_[resolution]/[type]/[remainingFilename]
+            // Example: webp_1.5x/face-swap/portrait_female_1.webp
+            // Example: lottie_2x/packs/autum_male_1.json
+            const r2Key = `${fileFormat}_${resolution}/${parsed.type}/${parsed.remainingFilename}`;
             
             // Read and upload file
             const fileData = await file.arrayBuffer();
@@ -806,58 +796,49 @@ export default {
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
             
-            // Find or get preset_id from map
-            const lookupKey = `${parsed.type}_${parsed.sub_category}_${parsed.gender}_${parsed.position}`;
-            let presetId: string | undefined = presetMap.get(lookupKey);
+            // Find preset by matching original_preset R2 path
+            // Build expected original preset R2 key from thumbnail metadata
+            const originalPresetR2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
+            const originalPresetUrl = getR2PublicUrl(env, originalPresetR2Key, requestUrl.origin);
+            
+            // Find preset by image_url
+            let presetId: string | undefined = presetMap.get(originalPresetR2Key);
             
             if (!presetId) {
-              // Try to find in database
+              // Try to find in database by image_url
               const existing = await DB.prepare(
-                'SELECT id FROM presets WHERE type = ? AND sub_category = ? AND gender = ? AND position = ?'
-              ).bind(parsed.type, parsed.sub_category, parsed.gender || '', parsed.position).first();
+                'SELECT id FROM presets WHERE image_url = ?'
+              ).bind(originalPresetUrl).first();
               
               if (existing) {
                 presetId = (existing as any).id as string;
                 if (presetId) {
-                  presetMap.set(lookupKey, presetId);
+                  presetMap.set(originalPresetR2Key, presetId);
                 }
               }
             }
             
-            // Save thumbnail to database
-            const thumbnailId = `thumbnail_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-            const createdAt = Math.floor(Date.now() / 1000);
+            if (!presetId) {
+              results.push({
+                filename,
+                success: false,
+                error: 'Preset not found. Upload preset first before thumbnail.'
+              });
+              continue;
+            }
             
+            // UPDATE preset row with thumbnail fields (same row approach)
             await DB.prepare(
-              'INSERT INTO thumbnails (id, type, sub_category, gender, position, file_format, resolution, file_url, r2_key, filename, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            ).bind(
-              thumbnailId,
-              parsed.type,
-              parsed.sub_category,
-              parsed.gender,
-              parsed.position,
-              fileFormat,
-              resolution,
-              publicUrl,
-              r2Key,
-              filename,
-              presetId || null,
-              createdAt,
-              createdAt
-            ).run();
+              'UPDATE presets SET thumbnail_url = ?, thumbnail_format = ?, thumbnail_resolution = ?, thumbnail_r2_key = ? WHERE id = ?'
+            ).bind(publicUrl, fileFormat, resolution, r2Key, presetId).run();
 
             results.push({
               filename,
               success: true,
               type: 'thumbnail',
-              id: thumbnailId,
               preset_id: presetId,
               url: publicUrl,
               metadata: {
-                type: parsed.type,
-                sub_category: parsed.sub_category,
-                gender: parsed.gender,
-                position: parsed.position,
                 format: fileFormat,
                 resolution
               }
@@ -1060,30 +1041,52 @@ export default {
     }
 
     // Handle preset listing
+    // Get single preset by ID
+    if (path.startsWith('/presets/') && path.split('/').length === 3 && request.method === 'GET') {
+      try {
+        const presetId = path.split('/presets/')[1];
+        if (!presetId) {
+          return errorResponse('Preset ID required', 400);
+        }
+
+        const DB = getD1Database(env);
+        const result = await DB.prepare(
+          'SELECT * FROM presets WHERE id = ?'
+        ).bind(presetId).first();
+
+        if (!result) {
+          return errorResponse('Preset not found', 404);
+        }
+
+        return jsonResponse(result);
+      } catch (error) {
+        console.error('Get preset error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Failed to retrieve preset: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+      }
+    }
+
     if (path === '/presets' && request.method === 'GET') {
       try {
-        // Check for gender filter query parameter
+        // Gender filter removed - metadata is in R2 path, not DB
         const url = new URL(request.url);
-        const genderFilter = url.searchParams.get('gender') as 'male' | 'female' | null;
 
+        const includeThumbnails = url.searchParams.get('include_thumbnails') === 'true';
+        
+        // By default, exclude presets with thumbnails (thumbnail_url IS NOT NULL)
         let query = `
           SELECT
             id,
             image_url,
-            filename,
-            preset_name,
             prompt_json,
-            gender,
+            thumbnail_url,
+            thumbnail_format,
+            thumbnail_resolution,
             created_at
           FROM presets
+          WHERE ${includeThumbnails ? '1=1' : 'thumbnail_url IS NULL'}
         `;
 
         const params: any[] = [];
-
-        if (genderFilter) {
-          query += ' WHERE gender = ?';
-          params.push(genderFilter);
-        }
 
         query += ' ORDER BY created_at DESC';
 
@@ -1097,11 +1100,11 @@ export default {
         const presets = imagesResult.results.map((row: any) => ({
           id: row.id || '',
           image_url: convertLegacyUrl(row.image_url || '', env),
-          filename: row.filename || row.image_url?.split('/').pop() || `preset_${row.id}.jpg`,
-          preset_name: row.preset_name || null,
           hasPrompt: row.prompt_json ? true : false,
           prompt_json: row.prompt_json || null,
-          gender: row.gender || null,
+          thumbnail_url: row.thumbnail_url || null,
+          thumbnail_format: row.thumbnail_format || null,
+          thumbnail_resolution: row.thumbnail_resolution || null,
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
@@ -1197,7 +1200,7 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        let query = 'SELECT id, image_url, filename, profile_id, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+        let query = 'SELECT id, image_url, profile_id, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
 
         const result = await DB.prepare(query).bind(profileId).all();
 
@@ -1208,7 +1211,6 @@ export default {
         const selfies = result.results.map((row: any) => ({
           id: row.id || '',
           image_url: convertLegacyUrl(row.image_url || '', env),
-          filename: row.filename || '',
           created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
 
@@ -1287,7 +1289,7 @@ export default {
 
 
     // Handle results listing
-    // Get preset_id from thumbnail_id (for mobile app)
+    // Get preset_id from thumbnail_id (for mobile app) - thumbnail is in same row as preset
     if (path.startsWith('/thumbnails/') && path.endsWith('/preset') && request.method === 'GET') {
       try {
         const thumbnailId = path.split('/thumbnails/')[1]?.replace('/preset', '');
@@ -1296,21 +1298,17 @@ export default {
         }
 
         const DB = getD1Database(env);
-        const result = await DB.prepare(
-          'SELECT preset_id FROM thumbnails WHERE id = ?'
+        // Thumbnail is stored in same row as preset, so the ID is the preset ID
+        const preset = await DB.prepare(
+          'SELECT id FROM presets WHERE id = ? AND thumbnail_url IS NOT NULL'
         ).bind(thumbnailId).first();
 
-        if (!result) {
+        if (!preset) {
           return errorResponse('Thumbnail not found', 404);
         }
 
-        const presetId = (result as any).preset_id;
-        if (!presetId) {
-          return errorResponse('Thumbnail not linked to any preset', 404);
-        }
-
         return jsonResponse({
-          data: { preset_id: presetId },
+          data: { preset_id: (preset as any).id },
           status: 'success',
           message: 'Preset ID retrieved successfully',
           code: 200
@@ -1321,60 +1319,39 @@ export default {
       }
     }
 
+    // Get thumbnails - query presets table where thumbnail_url IS NOT NULL
     if (path === '/thumbnails' && request.method === 'GET') {
       try {
         const DB = getD1Database(env);
         const url = new URL(request.url);
-        const type = url.searchParams.get('type');
-        const sub_category = url.searchParams.get('sub_category');
-        const gender = url.searchParams.get('gender');
-        const file_format = url.searchParams.get('file_format');
-        const resolution = url.searchParams.get('resolution');
+        const thumbnail_format = url.searchParams.get('thumbnail_format');
+        const thumbnail_resolution = url.searchParams.get('thumbnail_resolution');
         
-        let query = 'SELECT * FROM thumbnails WHERE 1=1';
+        let query = 'SELECT id, image_url, thumbnail_url, thumbnail_format, thumbnail_resolution, thumbnail_r2_key, created_at FROM presets WHERE thumbnail_url IS NOT NULL';
         const bindings: any[] = [];
         
-        if (type) {
-          query += ' AND type = ?';
-          bindings.push(type);
+        if (thumbnail_format) {
+          query += ' AND thumbnail_format = ?';
+          bindings.push(thumbnail_format);
         }
-        if (sub_category) {
-          query += ' AND sub_category = ?';
-          bindings.push(sub_category);
-        }
-        if (gender) {
-          query += ' AND gender = ?';
-          bindings.push(gender);
-        }
-        if (file_format) {
-          query += ' AND file_format = ?';
-          bindings.push(file_format);
-        }
-        if (resolution) {
-          query += ' AND resolution = ?';
-          bindings.push(resolution);
+        if (thumbnail_resolution) {
+          query += ' AND thumbnail_resolution = ?';
+          bindings.push(thumbnail_resolution);
         }
         
         query += ' ORDER BY created_at DESC';
         
         const stmt = DB.prepare(query);
-        if (bindings.length > 0) {
-          const result = await stmt.bind(...bindings).all();
-          return jsonResponse({
-            data: { thumbnails: result.results || [] },
-            status: 'success',
-            message: 'Thumbnails retrieved successfully',
-            code: 200
-          });
-        } else {
-          const result = await stmt.all();
-          return jsonResponse({
-            data: { thumbnails: result.results || [] },
-            status: 'success',
-            message: 'Thumbnails retrieved successfully',
-            code: 200
-          });
-        }
+        const result = bindings.length > 0 
+          ? await stmt.bind(...bindings).all()
+          : await stmt.all();
+          
+        return jsonResponse({
+          data: { thumbnails: result.results || [] },
+          status: 'success',
+          message: 'Thumbnails retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('Get thumbnails error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Failed to retrieve thumbnails: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
@@ -1553,7 +1530,7 @@ export default {
 
         if (hasPresetId) {
           queries.push(
-            DB.prepare('SELECT id, image_url, preset_name FROM presets WHERE id = ?').bind(body.preset_image_id).first()
+            DB.prepare('SELECT id, image_url FROM presets WHERE id = ?').bind(body.preset_image_id).first()
           );
         }
 
@@ -1990,7 +1967,7 @@ export default {
 
         if (hasPresetId) {
           const presetResult = await DB.prepare(
-            'SELECT id, image_url, filename, preset_name FROM presets WHERE id = ?'
+            'SELECT id, image_url FROM presets WHERE id = ?'
           ).bind(body.preset_image_id).first();
 
           if (!presetResult) {
@@ -1998,7 +1975,7 @@ export default {
           }
 
           targetUrl = (presetResult as any).image_url;
-          presetName = (presetResult as any).preset_name || 'Unnamed Preset';
+          presetName = 'Preset';
           presetImageId = body.preset_image_id || null;
         } else {
           targetUrl = body.preset_image_url!;
