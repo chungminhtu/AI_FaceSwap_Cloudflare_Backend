@@ -4,7 +4,7 @@ const path = require('path');
 // Build a fully static Docsify site with embedded content and search
 function buildStatic() {
   const docsDir = __dirname;
-  const outputFile = path.join(docsDir, 'index-static.html');
+  const outputFile = path.join(docsDir, 'index-static.generated.html');
   
   // Read all markdown files
   const files = {};

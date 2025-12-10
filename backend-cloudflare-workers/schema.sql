@@ -17,7 +17,12 @@ CREATE TABLE IF NOT EXISTS presets (
   id TEXT PRIMARY KEY,
   preset_url TEXT NOT NULL, -- Original preset image URL
   prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
-  thumbnail_url TEXT, -- Thumbnail file URL (webp or lottie)
+  thumbnail_url TEXT, -- Thumbnail file URL (webp or lottie) - deprecated, use thumbnail_url_1x
+  thumbnail_url_1x TEXT, -- Thumbnail URL for 1x resolution
+  thumbnail_url_1_5x TEXT, -- Thumbnail URL for 1.5x resolution
+  thumbnail_url_2x TEXT, -- Thumbnail URL for 2x resolution
+  thumbnail_url_3x TEXT, -- Thumbnail URL for 3x resolution
+  thumbnail_url_4x TEXT, -- Thumbnail URL for 4x resolution
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 

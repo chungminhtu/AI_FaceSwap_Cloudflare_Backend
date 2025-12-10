@@ -1510,26 +1510,42 @@ async function main() {
         for (const file of files) {
           console.log(`\n${colors.blue}→${colors.reset} Executing: ${file.name}`);
           
-          const execResult = await runCommandWithRetry(
-            `wrangler d1 execute ${config.databaseName} --remote --file=${file.path}`,
-            process.cwd(),
-            2,
-            2000
-          );
+          try {
+            const execResult = await runCommandWithRetry(
+              `wrangler d1 execute ${config.databaseName} --remote --file=${file.path}`,
+              process.cwd(),
+              2,
+              2000
+            );
 
-          if (execResult.success) {
-            executedFiles.push(file);
-            console.log(`${colors.green}✓${colors.reset} Migration completed: ${file.name}`);
-            
-            try {
-              const executedPath = file.path.replace(/\.sql$/, '.executed.sql');
-              fs.renameSync(file.path, executedPath);
-              console.log(`${colors.green}✓${colors.reset} Migration file renamed: ${file.name} → ${path.basename(executedPath)}`);
-            } catch (renameError) {
-              console.warn(`${colors.yellow}⚠${colors.reset} Could not rename migration file: ${renameError.message}`);
+            if (execResult.success) {
+              executedFiles.push(file);
+              console.log(`${colors.green}✓${colors.reset} Migration completed: ${file.name}`);
+              
+              try {
+                const executedPath = file.path.replace(/\.sql$/, '.executed.sql');
+                fs.renameSync(file.path, executedPath);
+                console.log(`${colors.green}✓${colors.reset} Migration file renamed: ${file.name} → ${path.basename(executedPath)}`);
+              } catch (renameError) {
+                console.warn(`${colors.yellow}⚠${colors.reset} Could not rename migration file: ${renameError.message}`);
+              }
             }
-          } else {
-            throw new Error(`Migration failed for ${file.name}: ${execResult.error || 'Unknown error'}`);
+          } catch (error) {
+            const errorMsg = error.message || error.stderr || error.stdout || String(error);
+            // Ignore "duplicate column name" errors - column already exists
+            if (errorMsg.includes('duplicate column name') || errorMsg.includes('already exists')) {
+              console.log(`${colors.yellow}⚠${colors.reset} Column already exists, skipping: ${file.name}`);
+              executedFiles.push(file);
+              try {
+                const executedPath = file.path.replace(/\.sql$/, '.executed.sql');
+                fs.renameSync(file.path, executedPath);
+                console.log(`${colors.green}✓${colors.reset} Migration file renamed: ${file.name} → ${path.basename(executedPath)}`);
+              } catch (renameError) {
+                console.warn(`${colors.yellow}⚠${colors.reset} Could not rename migration file: ${renameError.message}`);
+              }
+            } else {
+              throw new Error(`Migration failed for ${file.name}: ${errorMsg}`);
+            }
           }
         }
 

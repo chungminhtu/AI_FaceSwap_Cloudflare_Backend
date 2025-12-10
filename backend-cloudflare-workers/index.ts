@@ -838,10 +838,29 @@ export default {
               continue;
             }
             
-            // UPDATE preset row with thumbnail fields (same row approach)
-            await DB.prepare(
-              'UPDATE presets SET thumbnail_url = ? WHERE id = ?'
-            ).bind(publicUrl, presetId).run();
+            // UPDATE preset row with thumbnail fields (multiple resolutions)
+            // Update the specific resolution column based on resolution value
+            let updateQuery = '';
+            if (resolution === '1x') {
+              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ?, thumbnail_url = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(publicUrl, publicUrl, presetId).run();
+            } else if (resolution === '1.5x') {
+              updateQuery = 'UPDATE presets SET thumbnail_url_1_5x = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+            } else if (resolution === '2x') {
+              updateQuery = 'UPDATE presets SET thumbnail_url_2x = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+            } else if (resolution === '3x') {
+              updateQuery = 'UPDATE presets SET thumbnail_url_3x = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+            } else if (resolution === '4x') {
+              updateQuery = 'UPDATE presets SET thumbnail_url_4x = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+            } else {
+              // Default to 1x if resolution not recognized
+              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ?, thumbnail_url = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(publicUrl, publicUrl, presetId).run();
+            }
 
             results.push({
               filename,
@@ -1083,16 +1102,21 @@ export default {
 
         const includeThumbnails = url.searchParams.get('include_thumbnails') === 'true';
         
-        // By default, exclude presets with thumbnails (thumbnail_url IS NOT NULL)
+        // By default, exclude presets with thumbnails (check all thumbnail columns)
         let query = `
           SELECT
             id,
             preset_url,
             prompt_json,
             thumbnail_url,
+            thumbnail_url_1x,
+            thumbnail_url_1_5x,
+            thumbnail_url_2x,
+            thumbnail_url_3x,
+            thumbnail_url_4x,
             created_at
           FROM presets
-          WHERE ${includeThumbnails ? '1=1' : 'thumbnail_url IS NULL'}
+          WHERE ${includeThumbnails ? '1=1' : '(thumbnail_url IS NULL AND thumbnail_url_1x IS NULL AND thumbnail_url_1_5x IS NULL AND thumbnail_url_2x IS NULL AND thumbnail_url_3x IS NULL AND thumbnail_url_4x IS NULL)'}
         `;
 
         const params: any[] = [];
@@ -1106,14 +1130,24 @@ export default {
         }
 
         // Flatten to match frontend expectations
-        const presets = imagesResult.results.map((row: any) => ({
-          id: row.id || '',
-          preset_url: convertLegacyUrl(row.preset_url || '', env),
-          hasPrompt: row.prompt_json ? true : false,
-          prompt_json: row.prompt_json || null,
-          thumbnail_url: row.thumbnail_url || null,
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
+        const presets = imagesResult.results.map((row: any) => {
+          // Use new columns if available, fallback to legacy thumbnail_url
+          const thumbnailUrl = row.thumbnail_url_1x || row.thumbnail_url || null;
+          
+          return {
+            id: row.id || '',
+            preset_url: convertLegacyUrl(row.preset_url || '', env),
+            hasPrompt: row.prompt_json ? true : false,
+            prompt_json: row.prompt_json || null,
+            thumbnail_url: thumbnailUrl,
+            thumbnail_url_1x: row.thumbnail_url_1x || null,
+            thumbnail_url_1_5x: row.thumbnail_url_1_5x || null,
+            thumbnail_url_2x: row.thumbnail_url_2x || null,
+            thumbnail_url_3x: row.thumbnail_url_3x || null,
+            thumbnail_url_4x: row.thumbnail_url_4x || null,
+            created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+          };
+        });
 
         return jsonResponse({ presets });
       } catch (error) {
@@ -1326,12 +1360,28 @@ export default {
       }
     }
 
-    // Get thumbnails - query presets table where thumbnail_url IS NOT NULL
+    // Get thumbnails - query presets table where any thumbnail column IS NOT NULL
     if (path === '/thumbnails' && request.method === 'GET') {
       try {
         const DB = getD1Database(env);
         
-        let query = 'SELECT id, preset_url, thumbnail_url, created_at FROM presets WHERE thumbnail_url IS NOT NULL';
+        let query = `SELECT 
+          id, 
+          preset_url, 
+          thumbnail_url,
+          thumbnail_url_1x,
+          thumbnail_url_1_5x,
+          thumbnail_url_2x,
+          thumbnail_url_3x,
+          thumbnail_url_4x,
+          created_at 
+        FROM presets 
+        WHERE thumbnail_url IS NOT NULL 
+           OR thumbnail_url_1x IS NOT NULL 
+           OR thumbnail_url_1_5x IS NOT NULL 
+           OR thumbnail_url_2x IS NOT NULL 
+           OR thumbnail_url_3x IS NOT NULL 
+           OR thumbnail_url_4x IS NOT NULL`;
         const bindings: any[] = [];
         
         query += ' ORDER BY created_at DESC';
@@ -1341,8 +1391,15 @@ export default {
           ? await stmt.bind(...bindings).all()
           : await stmt.all();
           
+        // Map results to include all thumbnail resolutions
+        const thumbnails = (result.results || []).map((row: any) => ({
+          ...row,
+          // Use 1x as primary thumbnail_url for backward compatibility
+          thumbnail_url: row.thumbnail_url_1x || row.thumbnail_url || null
+        }));
+          
         return jsonResponse({
-          data: { thumbnails: result.results || [] },
+          data: { thumbnails },
           status: 'success',
           message: 'Thumbnails retrieved successfully',
           code: 200

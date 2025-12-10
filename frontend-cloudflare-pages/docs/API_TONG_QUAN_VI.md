@@ -464,6 +464,19 @@ formData.append('enableVertexPrompt', 'true');
       {
         "id": "preset_1234567890_abc123",
         "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+        "filename": "example.jpg"
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200,
+  "debug": {
+    "vertex": [
+      {
         "hasPrompt": true,
         "prompt_json": {
           "prompt": "...",
@@ -480,14 +493,8 @@ formData.append('enableVertexPrompt', 'true');
           }
         }
       }
-    ],
-    "count": 1,
-    "successful": 1,
-    "failed": 0
-  },
-  "status": "success",
-  "message": "Processing successful",
-  "code": 200
+    ]
+  }
 }
 ```
 
@@ -508,10 +515,11 @@ formData.append('enableVertexPrompt', 'true');
 
 **Lưu ý:**
 - Khi upload nhiều file, mảng `results` sẽ chứa nhiều phần tử
-- Mỗi phần tử trong `results` có `id`, `url`
-- Với preset: có thêm `hasPrompt`, `prompt_json`, `vertex_info` (nếu bật `enableVertexPrompt`)
-- Với selfie: chỉ có `id`, `url`
+- Mỗi phần tử trong `results` có `id`, `url`, `filename`
+- Với preset: thông tin Vertex AI (`hasPrompt`, `prompt_json`, `vertex_info`) được đặt trong `debug.vertex` (chỉ khi bật `enableVertexPrompt` và `DEBUG` env var = `'true'` hoặc `'1'`)
+- Với selfie: chỉ có `id`, `url`, `filename`
 - Response format được chuẩn hóa: `{ data, status, message, code, debug? }`
+- `debug` property chỉ xuất hiện khi `DEBUG` env var được bật (giống như faceswap API)
 
 ## 7. GET `/presets`
 

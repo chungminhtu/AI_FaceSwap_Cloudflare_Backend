@@ -808,15 +808,18 @@
                             <div class="thumbnail-upload-section" style="padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border);">
                                 <h3 style="margin-top: 0;">Tải Lên Thư Mục</h3>
                                 <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                                    Chọn thư mục chứa các file webp và lottie. Tên file phải theo định dạng:<br>
+                                    Kéo thả thư mục hoặc file zip vào đây, hoặc chọn thư mục. Tên file phải theo định dạng:<br>
                                     <code>[type]_[sub_category]_[gender]_[position].[webp|json]</code><br>
-                                    Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code>
+                                    Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code><br>
+                                    Zip file sẽ được tự động giải nén và tải lên.
                                 </p>
-                                <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
-                                <button class="action-btn" onclick="$('thumbnail-folder-input').click()" style="width: 100%; margin-bottom: 16px;">
-                                    <span>📁</span>
-                                    <span>Chọn Thư Mục</span>
-                                </button>
+                                <div id="thumbnail-drop-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; background: var(--bg-primary); cursor: pointer; transition: all 0.2s; margin-bottom: 16px;" onclick="event.stopPropagation(); $('thumbnail-folder-input').click();">
+                                    <div style="font-size: 48px; margin-bottom: 12px;">📁</div>
+                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip vào đây</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">hoặc click để chọn thư mục/zip</div>
+                                </div>
+                                <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json,.zip" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
+                                <input type="file" id="thumbnail-zip-input" accept=".zip" style="display: none;" onchange="handleThumbnailZipSelect(event)">
                                 <div id="thumbnail-upload-progress" style="display: none;">
                                     <div class="progress-bar">
                                         <div class="progress-fill" id="thumbnail-progress-fill"></div>
@@ -910,6 +913,7 @@
 
     <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký">📋</button>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // Config
         let WORKER_URL = 'https://api.d.shotpix.app';
@@ -2391,16 +2395,85 @@
         }
 
         async function handleThumbnailFolderSelect(event) {
-            const files = Array.from(event.target.files || []);
-            if (files.length === 0) return;
+            const inputFiles = Array.from(event.target.files || []);
+            if (inputFiles.length === 0) return;
 
+            // Check if any file is a zip
+            const zipFiles = inputFiles.filter(f => f.name.toLowerCase().endsWith('.zip'));
+            const regularFiles = inputFiles.filter(f => !f.name.toLowerCase().endsWith('.zip'));
+
+            await processThumbnailFiles(zipFiles, regularFiles);
+            
+            // Reset input
+            event.target.value = '';
+        }
+
+        async function handleThumbnailZipSelect(event) {
+            const zipFiles = Array.from(event.target.files || []);
+            if (zipFiles.length === 0) return;
+            await processThumbnailFiles(zipFiles, []);
+            
+            // Reset input
+            event.target.value = '';
+        }
+
+        async function processThumbnailFiles(zipFiles, regularFiles) {
             const progressContainer = $('thumbnail-upload-progress');
             const progressFill = $('thumbnail-progress-fill');
             const statusText = $('thumbnail-upload-status');
             
             progressContainer.style.display = 'block';
             progressFill.style.width = '0%';
+            statusText.textContent = 'Đang xử lý file...';
+
+            let files = [];
+            
+            // Process zip files
+            if (zipFiles.length > 0) {
+                statusText.textContent = `Đang giải nén ${zipFiles.length} file zip...`;
+                
+                for (const zipFile of zipFiles) {
+                    try {
+                        const zipData = await zipFile.arrayBuffer();
+                        const zip = await JSZip.loadAsync(zipData);
+                        
+                        // Extract all files from zip
+                        const zipFilePromises = [];
+                        zip.forEach((relativePath, zipEntry) => {
+                            if (!zipEntry.dir) {
+                                zipFilePromises.push(
+                                    zipEntry.async('blob').then(blob => {
+                                        // Create a File object from the blob with the path
+                                        const fileName = relativePath.split('/').pop();
+                                        const file = new File([blob], fileName, { type: blob.type });
+                                        // Store the relative path for resolution detection
+                                        file.webkitRelativePath = relativePath;
+                                        return file;
+                                    })
+                                );
+                            }
+                        });
+                        
+                        const extractedFiles = await Promise.all(zipFilePromises);
+                        files.push(...extractedFiles);
+                    } catch (error) {
+                        console.error('Error extracting zip:', error);
+                        showStatusMessage(`Lỗi giải nén file ${zipFile.name}: ${error.message}`, 'error');
+                    }
+                }
+            }
+            
+            // Add regular files
+            files.push(...regularFiles);
+            
+            if (files.length === 0) {
+                statusText.textContent = 'Không có file nào để tải lên';
+                progressContainer.style.display = 'none';
+                return;
+            }
+
             statusText.textContent = `Đang tải lên ${files.length} file...`;
+            progressFill.style.width = '10%';
 
             const formData = new FormData();
             files.forEach((file) => {
@@ -2413,6 +2486,7 @@
             });
 
             try {
+                progressFill.style.width = '30%';
                 const response = await fetch(`${WORKER_URL}/upload-thumbnails`, {
                     method: 'POST',
                     body: formData
@@ -2432,8 +2506,11 @@
                         showStatusMessage('Tải lên thành công!', 'success');
                     }
                     
-                    // Reset input
-                    event.target.value = '';
+                    // Reset inputs
+                    const folderInput = $('thumbnail-folder-input');
+                    const zipInput = $('thumbnail-zip-input');
+                    if (folderInput) folderInput.value = '';
+                    if (zipInput) zipInput.value = '';
                     
                     // Switch to view sub tab and reload thumbnails
                     setTimeout(() => {
@@ -2451,9 +2528,72 @@
             }
         }
 
+        function setupThumbnailDragDrop() {
+            const dropZone = $('thumbnail-drop-zone');
+            if (!dropZone) return;
+
+            // Prevent default drag behaviors
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            // Visual feedback
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.style.borderColor = 'var(--accent)';
+                    dropZone.style.background = 'var(--bg-tertiary)';
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.style.borderColor = 'var(--border)';
+                    dropZone.style.background = 'var(--bg-primary)';
+                }, false);
+            });
+
+            // Handle drop
+            dropZone.addEventListener('drop', async (e) => {
+                const items = Array.from(e.dataTransfer.items || []);
+                const zipFiles = [];
+                const regularFiles = [];
+
+                for (const item of items) {
+                    if (item.kind === 'file') {
+                        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+                        const file = item.getAsFile();
+
+                        if (file) {
+                            if (file.name.toLowerCase().endsWith('.zip')) {
+                                zipFiles.push(file);
+                            } else if (entry && entry.isDirectory) {
+                                // Directory - trigger folder input
+                                const folderInput = $('thumbnail-folder-input');
+                                if (folderInput) {
+                                    // Can't directly set directory, so show message
+                                    showStatusMessage('Vui lòng sử dụng nút "Chọn Thư Mục" để chọn thư mục', 'info');
+                                }
+                            } else {
+                                regularFiles.push(file);
+                            }
+                        }
+                    }
+                }
+
+                // Process files
+                if (zipFiles.length > 0 || regularFiles.length > 0) {
+                    await processThumbnailFiles(zipFiles, regularFiles);
+                }
+            }, false);
+        }
+
         window.switchMainTab = switchMainTab;
         window.switchThumbnailSubTab = switchThumbnailSubTab;
         window.handleThumbnailFolderSelect = handleThumbnailFolderSelect;
+        window.handleThumbnailZipSelect = handleThumbnailZipSelect;
         window.selectThumbnail = selectThumbnail;
 
         // UI Helpers
@@ -2543,6 +2683,9 @@
             // Initialize profile FIRST, then load galleries
             await window.profileManager.initializeProfile();
             await init();
+            
+            // Setup thumbnail drag and drop
+            setupThumbnailDragDrop();
         });
     </script>
 </body>
