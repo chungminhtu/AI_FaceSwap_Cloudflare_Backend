@@ -572,16 +572,321 @@ export default {
         // Process all files in parallel
         const results = await Promise.all(allFileData.map((fileData, index) => processFile(fileData, index)));
 
+        const successful = results.filter(r => r.success);
+        const failed = results.filter(r => !r.success);
+
         return jsonResponse({
-          success: true,
-          results: results,
-          count: results.length,
-          successful: results.filter(r => r.success).length,
-          failed: results.filter(r => !r.success).length
+          data: {
+            results: results.map(r => {
+              if (r.success) {
+                return {
+                  id: r.id,
+                  url: r.url,
+                  filename: r.filename,
+                  ...(r.hasPrompt !== undefined ? { hasPrompt: r.hasPrompt } : {}),
+                  ...(r.prompt_json ? { prompt_json: r.prompt_json } : {}),
+                  ...(r.vertex_info ? { vertex_info: r.vertex_info } : {})
+                };
+              } else {
+                return {
+                  success: false,
+                  error: r.error,
+                  filename: r.filename
+                };
+              }
+            }),
+            count: results.length,
+            successful: successful.length,
+            failed: failed.length
+          },
+          status: 'success',
+          message: failed.length === 0 
+            ? `Successfully uploaded ${successful.length} file${successful.length !== 1 ? 's' : ''}`
+            : `Uploaded ${successful.length} of ${results.length} file${results.length !== 1 ? 's' : ''}`,
+          code: 200
         });
       } catch (error) {
         console.error('Upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Upload failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+      }
+    }
+
+    // Parse thumbnail filename: [type]_[sub_category]_[gender]_[position].[ext]
+    // Type uses hyphens (face-swap), other parts use underscores
+    // Example: face-swap_wedding_both_1.webp -> type: face-swap, sub_category: wedding, gender: both, position: 1
+    function parseThumbnailFilename(filename: string): { type: string; sub_category: string; gender: string; position: number; format: string; folderName: string } | null {
+      const extMatch = filename.match(/\.(webp|json)$/i);
+      if (!extMatch) return null;
+      
+      const format = extMatch[1].toLowerCase() === 'json' ? 'lottie' : 'webp';
+      const nameWithoutExt = filename.replace(/\.(webp|json)$/i, '');
+      
+      // Format: [type]_[sub_category]_[gender]_[position]
+      // Type can contain hyphens (face-swap), so we need to split carefully
+      // Split by underscore and reconstruct: last part is position, second-to-last is gender, rest is type_sub_category
+      const parts = nameWithoutExt.split('_');
+      if (parts.length < 4) return null;
+      
+      const position = parseInt(parts[parts.length - 1], 10);
+      if (isNaN(position)) return null;
+      
+      const gender = parts[parts.length - 2];
+      // Everything before gender is type_sub_category, but type can have hyphens
+      // We need to find where type ends and sub_category begins
+      // For now, assume first part is type (can have hyphens), rest is sub_category
+      const type = parts[0]; // e.g., "face-swap"
+      const sub_category = parts.slice(1, parts.length - 2).join('_'); // e.g., "wedding"
+      const folderName = nameWithoutExt; // Used for original_preset path
+      
+      return { type, sub_category, gender, position, format, folderName };
+    }
+
+    // Handle thumbnail folder upload endpoint - processes both original presets and thumbnails
+    if (path === '/upload-thumbnails' && request.method === 'POST') {
+      try {
+        const contentType = request.headers.get('Content-Type') || '';
+        if (!contentType.toLowerCase().includes('multipart/form-data')) {
+          return errorResponse('Content-Type must be multipart/form-data', 400);
+        }
+
+        const formData = await request.formData();
+        const files: Array<{ file: File; path: string }> = [];
+        const fileEntries = formData.getAll('files');
+        
+        // Collect files with their paths
+        for (const entry of fileEntries) {
+          if (entry && typeof entry !== 'string') {
+            const file = entry as any as File;
+            const pathKey = Array.from(formData.keys()).find(k => k === `path_${file.name}`);
+            const filePath = pathKey ? (formData.get(pathKey) as string || '') : '';
+            files.push({ file, path: filePath });
+          }
+        }
+
+        if (files.length === 0) {
+          return errorResponse('No files provided', 400);
+        }
+
+        const DB = getD1Database(env);
+        const R2_BUCKET = getR2Bucket(env);
+        const requestUrl = new URL(request.url);
+        const results: any[] = [];
+        
+        // Separate original presets from thumbnails
+        const originalPresets: Array<{ file: File; path: string; parsed: any }> = [];
+        const thumbnails: Array<{ file: File; path: string; parsed: any }> = [];
+
+        // First pass: parse and categorize files
+        for (const { file, path } of files) {
+          const filename = file.name || '';
+          const parsed = parseThumbnailFilename(filename);
+          
+          if (!parsed) {
+            results.push({
+              filename,
+              success: false,
+              error: 'Invalid filename format. Expected: [type]_[sub_category]_[gender]_[position].[webp|json]'
+            });
+            continue;
+          }
+
+          // Check if it's an original preset (in original_preset folder)
+          if (path.includes('original_preset/')) {
+            originalPresets.push({ file, path, parsed });
+          } else {
+            thumbnails.push({ file, path, parsed });
+          }
+        }
+
+        // Process original presets first (create preset records)
+        const presetMap = new Map<string, string>(); // key: type_sub_category_gender_position, value: preset_id
+        
+        for (const { file, path, parsed } of originalPresets) {
+          try {
+            const filename = file.name;
+            const folderName = parsed.folderName;
+            
+            // Build R2 key: original_preset/[folderName]/webp/[filename]
+            const r2Key = `original_preset/${folderName}/webp/${filename}`;
+            
+            // Read and upload file
+            const fileData = await file.arrayBuffer();
+            await R2_BUCKET.put(r2Key, fileData, {
+              httpMetadata: {
+                contentType: 'image/webp',
+                cacheControl: 'public, max-age=31536000, immutable',
+              },
+            });
+
+            const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            
+            // Check if preset already exists
+            const lookupKey = `${parsed.type}_${parsed.sub_category}_${parsed.gender}_${parsed.position}`;
+            let presetId: string | undefined = presetMap.get(lookupKey);
+            
+            if (!presetId) {
+              // Check database for existing preset
+              const existing = await DB.prepare(
+                'SELECT id FROM presets WHERE type = ? AND sub_category = ? AND gender = ? AND position = ?'
+              ).bind(parsed.type, parsed.sub_category, parsed.gender || '', parsed.position).first();
+              
+              if (existing) {
+                presetId = (existing as any).id as string;
+                if (presetId) {
+                  presetMap.set(lookupKey, presetId);
+                }
+              } else {
+                // Create new preset
+                presetId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+                const createdAt = Math.floor(Date.now() / 1000);
+                
+                await DB.prepare(
+                  'INSERT INTO presets (id, image_url, filename, preset_name, type, sub_category, gender, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).bind(
+                  presetId,
+                  publicUrl,
+                  filename,
+                  `${parsed.type} ${parsed.sub_category} ${parsed.gender}`,
+                  parsed.type,
+                  parsed.sub_category,
+                  parsed.gender || null,
+                  parsed.position,
+                  createdAt
+                ).run();
+                
+                presetMap.set(lookupKey, presetId);
+              }
+            }
+
+            results.push({
+              filename,
+              success: true,
+              type: 'preset',
+              preset_id: presetId,
+              url: publicUrl
+            });
+          } catch (fileError) {
+            results.push({
+              filename: file.name || 'unknown',
+              success: false,
+              error: fileError instanceof Error ? fileError.message : String(fileError)
+            });
+          }
+        }
+
+        // Process thumbnails (link to presets)
+        for (const { file, path, parsed } of thumbnails) {
+          try {
+            const filename = file.name;
+            
+            // Extract resolution from path (webp_1x/, lottie_2x/, etc.)
+            let resolution = '1x';
+            const resolutionMatch = path.match(/(webp|lottie)_([\d.]+x)/i);
+            if (resolutionMatch) {
+              resolution = resolutionMatch[2];
+            }
+
+            const fileFormat = parsed.format;
+            const isLottie = fileFormat === 'lottie';
+            const fileExtension = isLottie ? 'json' : 'webp';
+            
+            // Build R2 key: [format]_[resolution]/[filename] (no preset subfolder)
+            const r2Key = `${fileFormat}_${resolution}/${filename}`;
+            
+            // Read and upload file
+            const fileData = await file.arrayBuffer();
+            const contentType = isLottie ? 'application/json' : 'image/webp';
+            
+            await R2_BUCKET.put(r2Key, fileData, {
+              httpMetadata: {
+                contentType,
+                cacheControl: 'public, max-age=31536000, immutable',
+              },
+            });
+
+            const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            
+            // Find or get preset_id from map
+            const lookupKey = `${parsed.type}_${parsed.sub_category}_${parsed.gender}_${parsed.position}`;
+            let presetId: string | undefined = presetMap.get(lookupKey);
+            
+            if (!presetId) {
+              // Try to find in database
+              const existing = await DB.prepare(
+                'SELECT id FROM presets WHERE type = ? AND sub_category = ? AND gender = ? AND position = ?'
+              ).bind(parsed.type, parsed.sub_category, parsed.gender || '', parsed.position).first();
+              
+              if (existing) {
+                presetId = (existing as any).id as string;
+                if (presetId) {
+                  presetMap.set(lookupKey, presetId);
+                }
+              }
+            }
+            
+            // Save thumbnail to database
+            const thumbnailId = `thumbnail_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+            const createdAt = Math.floor(Date.now() / 1000);
+            
+            await DB.prepare(
+              'INSERT INTO thumbnails (id, type, sub_category, gender, position, file_format, resolution, file_url, r2_key, filename, preset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            ).bind(
+              thumbnailId,
+              parsed.type,
+              parsed.sub_category,
+              parsed.gender,
+              parsed.position,
+              fileFormat,
+              resolution,
+              publicUrl,
+              r2Key,
+              filename,
+              presetId || null,
+              createdAt,
+              createdAt
+            ).run();
+
+            results.push({
+              filename,
+              success: true,
+              type: 'thumbnail',
+              id: thumbnailId,
+              preset_id: presetId,
+              url: publicUrl,
+              metadata: {
+                type: parsed.type,
+                sub_category: parsed.sub_category,
+                gender: parsed.gender,
+                position: parsed.position,
+                format: fileFormat,
+                resolution
+              }
+            });
+          } catch (fileError) {
+            results.push({
+              filename: file.name || 'unknown',
+              success: false,
+              error: fileError instanceof Error ? fileError.message : String(fileError)
+            });
+          }
+        }
+
+        return jsonResponse({
+          data: {
+            total: files.length,
+            successful: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            presets_created: originalPresets.length,
+            thumbnails_created: thumbnails.length,
+            results
+          },
+          status: 'success',
+          message: `Processed ${results.filter(r => r.success).length} of ${files.length} files`,
+          code: 200
+        });
+      } catch (error) {
+        console.error('Thumbnail upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Thumbnail upload failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
       }
     }
 
@@ -982,6 +1287,100 @@ export default {
 
 
     // Handle results listing
+    // Get preset_id from thumbnail_id (for mobile app)
+    if (path.startsWith('/thumbnails/') && path.endsWith('/preset') && request.method === 'GET') {
+      try {
+        const thumbnailId = path.split('/thumbnails/')[1]?.replace('/preset', '');
+        if (!thumbnailId) {
+          return errorResponse('Thumbnail ID required', 400);
+        }
+
+        const DB = getD1Database(env);
+        const result = await DB.prepare(
+          'SELECT preset_id FROM thumbnails WHERE id = ?'
+        ).bind(thumbnailId).first();
+
+        if (!result) {
+          return errorResponse('Thumbnail not found', 404);
+        }
+
+        const presetId = (result as any).preset_id;
+        if (!presetId) {
+          return errorResponse('Thumbnail not linked to any preset', 404);
+        }
+
+        return jsonResponse({
+          data: { preset_id: presetId },
+          status: 'success',
+          message: 'Preset ID retrieved successfully',
+          code: 200
+        });
+      } catch (error) {
+        console.error('Get preset from thumbnail error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Failed to retrieve preset ID: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+      }
+    }
+
+    if (path === '/thumbnails' && request.method === 'GET') {
+      try {
+        const DB = getD1Database(env);
+        const url = new URL(request.url);
+        const type = url.searchParams.get('type');
+        const sub_category = url.searchParams.get('sub_category');
+        const gender = url.searchParams.get('gender');
+        const file_format = url.searchParams.get('file_format');
+        const resolution = url.searchParams.get('resolution');
+        
+        let query = 'SELECT * FROM thumbnails WHERE 1=1';
+        const bindings: any[] = [];
+        
+        if (type) {
+          query += ' AND type = ?';
+          bindings.push(type);
+        }
+        if (sub_category) {
+          query += ' AND sub_category = ?';
+          bindings.push(sub_category);
+        }
+        if (gender) {
+          query += ' AND gender = ?';
+          bindings.push(gender);
+        }
+        if (file_format) {
+          query += ' AND file_format = ?';
+          bindings.push(file_format);
+        }
+        if (resolution) {
+          query += ' AND resolution = ?';
+          bindings.push(resolution);
+        }
+        
+        query += ' ORDER BY created_at DESC';
+        
+        const stmt = DB.prepare(query);
+        if (bindings.length > 0) {
+          const result = await stmt.bind(...bindings).all();
+          return jsonResponse({
+            data: { thumbnails: result.results || [] },
+            status: 'success',
+            message: 'Thumbnails retrieved successfully',
+            code: 200
+          });
+        } else {
+          const result = await stmt.all();
+          return jsonResponse({
+            data: { thumbnails: result.results || [] },
+            status: 'success',
+            message: 'Thumbnails retrieved successfully',
+            code: 200
+          });
+        }
+      } catch (error) {
+        console.error('Get thumbnails error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        return errorResponse(`Failed to retrieve thumbnails: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+      }
+    }
+
     if (path === '/results' && request.method === 'GET') {
       try {
         const url = new URL(request.url);

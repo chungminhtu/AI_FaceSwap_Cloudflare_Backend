@@ -321,7 +321,8 @@
             display: flex; align-items: center; justify-content: center;
         }
         .lightbox-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); cursor: pointer; }
-        .lightbox-content { position: relative; max-width: 90%; max-height: 90%; z-index: 10001; display: flex; flex-direction: column; align-items: center; }
+        .lightbox-content { position: relative; max-width: 95%; max-height: 95%; z-index: 10001; display: flex; flex-direction: column; align-items: center; }
+        .lightbox-single { display: flex; flex-direction: column; align-items: center; width: 100%; }
         .lightbox-content img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px; }
         .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
         .lightbox-actions {
@@ -336,6 +337,8 @@
         .lightbox-action-btn:active { transform: translateY(0); }
         .lightbox-action-btn.secondary { background: rgba(59, 130, 246, 0.9); }
         .lightbox-action-btn.secondary:hover { background: rgba(59, 130, 246, 1); }
+        .lightbox-action-btn.danger { background: rgba(239, 68, 68, 0.9); }
+        .lightbox-action-btn.danger:hover { background: rgba(239, 68, 68, 1); }
         .lightbox-close, .lightbox-nav {
             position: absolute; width: 40px; height: 40px;
             background: rgba(255,255,255,0.2); border: none; border-radius: 12px;
@@ -348,6 +351,96 @@
         .lightbox-prev { left: 20px; }
         .lightbox-next { right: 20px; }
         .lightbox-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+        
+        /* Comparison Mode */
+        .lightbox-comparison { width: 100%; max-width: 100%; }
+        .comparison-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; color: #fff;
+        }
+        .comparison-header h3 { margin: 0; font-size: 18px; font-weight: 600; }
+        .comparison-grid {
+            display: grid; gap: 16px; width: 100%;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            max-height: 75vh; overflow-y: auto; padding: 10px;
+        }
+        .comparison-grid.compare-2 { grid-template-columns: 1fr 1fr; }
+        .comparison-grid.compare-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .comparison-item {
+            position: relative; background: rgba(255,255,255,0.1);
+            border-radius: 8px; padding: 10px; display: flex; flex-direction: column;
+        }
+        .comparison-item img {
+            width: 100%; max-height: 60vh; object-fit: contain;
+            border-radius: 4px; margin-bottom: 8px;
+        }
+        .comparison-item-label {
+            color: #fff; font-size: 12px; text-align: center;
+            margin-bottom: 8px; font-weight: 500;
+        }
+        .comparison-item-remove {
+            position: absolute; top: 5px; right: 5px;
+            width: 28px; height: 28px; background: rgba(239, 68, 68, 0.9);
+            border: none; border-radius: 50%; color: #fff; font-size: 16px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; z-index: 10;
+        }
+        .comparison-item-remove:hover { background: rgba(239, 68, 68, 1); transform: scale(1.1); }
+        .comparison-actions {
+            margin-top: 20px; display: flex; justify-content: center;
+        }
+        @media (max-width: 768px) {
+            .comparison-grid.compare-2,
+            .comparison-grid.compare-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 10003;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.8);
+        }
+        .modal-content {
+            background: var(--bg-primary); border-radius: 12px;
+            padding: 24px; max-width: 600px; width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px;
+        }
+        .modal-header h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+        .modal-close {
+            width: 32px; height: 32px; background: rgba(239, 68, 68, 0.9);
+            border: none; border-radius: 8px; color: #fff; font-size: 20px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .modal-close:hover { background: rgba(239, 68, 68, 1); transform: scale(1.1); }
+        .modal-body { color: var(--text-primary); }
+        .progress-bar {
+            width: 100%; height: 8px; background: var(--bg-secondary);
+            border-radius: 4px; overflow: hidden; margin-top: 8px;
+        }
+        .progress-fill {
+            height: 100%; background: var(--accent); transition: width 0.3s;
+            width: 0%;
+        }
+        .thumbnail-item {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px; text-align: center;
+        }
+        .thumbnail-item img {
+            width: 100%; height: 120px; object-fit: contain;
+            border-radius: 4px; margin-bottom: 8px;
+        }
+        .thumbnail-item-info {
+            font-size: 11px; color: var(--text-muted);
+            word-break: break-word;
+        }
 
         /* Loading Overlay */
         .loading-overlay {
@@ -485,6 +578,8 @@
                     <option value="rapidapi">RapidAPI</option>
                 </select>
                 <button class="log-toggle-btn" onclick="window.open('docs/index.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--accent); color: #fff; transition: all 0.2s;">📖 API Docs</button>
+                <button class="log-toggle-btn" onclick="showComparisonView()" id="comparison-view-btn" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(59, 130, 246, 0.9); color: #fff; transition: all 0.2s;" title="Xem So Sánh">🔍 So Sánh (<span id="comparison-count">0</span>)</button>
+                <button class="log-toggle-btn" onclick="openThumbnailManager()" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(34, 197, 94, 0.9); color: #fff; transition: all 0.2s;" title="Quản Lý Thumbnail">🖼️ Thumbnails</button>
                 <button class="log-toggle-btn" onclick="toggleLogPanel()">Nhật Ký (Log)</button>
             </div>
         </div>
@@ -648,18 +743,75 @@
         <button class="lightbox-close" onclick="closeLightbox()">×</button>
         <button class="lightbox-nav lightbox-prev" onclick="lightboxNavigate(-1)">‹</button>
         <button class="lightbox-nav lightbox-next" onclick="lightboxNavigate(1)">›</button>
-        <div class="lightbox-content">
-            <img id="lightbox-image" src="" alt="">
-            <div class="lightbox-info"><span id="lightbox-counter"></span></div>
-            <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
-                <button class="lightbox-action-btn" onclick="selectAsPreset()">
-                    <span>📸</span>
-                    <span>Chọn làm Mẫu</span>
-                </button>
-                <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
-                    <span>👤</span>
-                    <span>Chọn làm Selfie</span>
-                </button>
+        <div class="lightbox-content" id="lightbox-content">
+            <div class="lightbox-single" id="lightbox-single">
+                <img id="lightbox-image" src="" alt="">
+                <div class="lightbox-info"><span id="lightbox-counter"></span></div>
+                <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
+                    <button class="lightbox-action-btn" onclick="selectAsPreset()">
+                        <span>📸</span>
+                        <span>Chọn làm Mẫu</span>
+                    </button>
+                    <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
+                        <span>👤</span>
+                        <span>Chọn làm Selfie</span>
+                    </button>
+                    <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
+                        <span>➕</span>
+                        <span>Thêm vào So Sánh</span>
+                    </button>
+                </div>
+            </div>
+            <div class="lightbox-comparison" id="lightbox-comparison" style="display: none;">
+                <div class="comparison-header">
+                    <h3>So Sánh Hình Ảnh</h3>
+                    <button class="lightbox-action-btn danger" onclick="clearComparison()">
+                        <span>🗑️</span>
+                        <span>Xóa Tất Cả</span>
+                    </button>
+                </div>
+                <div class="comparison-grid" id="comparison-grid"></div>
+                <div class="comparison-actions">
+                    <button class="lightbox-action-btn" onclick="switchToSingleView()">
+                        <span>←</span>
+                        <span>Quay Lại Xem Đơn</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thumbnail Manager Modal -->
+    <div id="thumbnail-manager" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>Quản Lý Thumbnails</h2>
+                <button class="modal-close" onclick="closeThumbnailManager()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="thumbnail-upload-section">
+                    <h3>Tải Lên Thư Mục</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                        Chọn thư mục chứa các file webp và lottie. Tên file phải theo định dạng:<br>
+                        <code>[type]_[sub_category]_[gender]_[position].[webp|json]</code><br>
+                        Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code>
+                    </p>
+                    <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
+                    <button class="action-btn" onclick="$('thumbnail-folder-input').click()" style="width: 100%; margin-bottom: 16px;">
+                        <span>📁</span>
+                        <span>Chọn Thư Mục</span>
+                    </button>
+                    <div id="thumbnail-upload-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="thumbnail-progress-fill"></div>
+                        </div>
+                        <div id="thumbnail-upload-status" style="margin-top: 8px; font-size: 12px;"></div>
+                    </div>
+                </div>
+                <div class="thumbnail-list-section" style="margin-top: 24px;">
+                    <h3>Danh Sách Thumbnails</h3>
+                    <div id="thumbnail-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -1298,11 +1450,12 @@
                 const duration = Date.now() - startTime;
 
                 logApiCall({ label: `Tải Lên ${config.logName} (${validFiles.length} files)`, method: 'POST', url: '/upload-url', fullUrl: uploadUrl, status: response.ok ? 'success' : 'error', payload: data, duration, body: formData });
-                if (!response.ok) throw new Error(data.message || 'Tải lên thất bại');
+                if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Tải lên thất bại');
 
-                // Process all results
-                const successfulResults = data.results?.filter(r => r.success) || [];
-                const failedResults = data.results?.filter(r => !r.success) || [];
+                // Process all results from data.data.results
+                const results = data.data?.results || [];
+                const successfulResults = results.filter(r => r.id && r.url) || [];
+                const failedResults = results.filter(r => !r.id || !r.url) || [];
 
                 if (successfulResults.length > 0) {
                     const newImages = successfulResults.map(result => ({
@@ -1544,6 +1697,44 @@
         let lightboxCurrentIndex = -1, lightboxItems = [];
         let lightboxKeyboardHandler = null;
         let lightboxMode = 'gallery'; // 'gallery' for results gallery, 'preview' for preset/selfie/result preview
+        let comparisonItems = [];
+        const COMPARISON_STORAGE_KEY = 'faceswap_comparison_items';
+        
+        // Load comparison from localStorage
+        function loadComparisonFromStorage() {
+            try {
+                const stored = localStorage.getItem(COMPARISON_STORAGE_KEY);
+                if (stored) {
+                    comparisonItems = JSON.parse(stored);
+                } else {
+                    comparisonItems = [];
+                }
+            } catch (e) {
+                comparisonItems = [];
+            }
+        }
+        
+        // Save comparison to localStorage
+        function saveComparisonToStorage() {
+            try {
+                localStorage.setItem(COMPARISON_STORAGE_KEY, JSON.stringify(comparisonItems));
+                updateComparisonButton();
+            } catch (e) {
+                console.error('Failed to save comparison to storage:', e);
+            }
+        }
+        
+        // Update comparison button count
+        function updateComparisonButton() {
+            const btn = $('comparison-count');
+            if (btn) {
+                btn.textContent = comparisonItems.length;
+            }
+        }
+        
+        // Initialize comparison on page load
+        loadComparisonFromStorage();
+        updateComparisonButton();
 
         function openLightbox(index) {
             lightboxMode = 'gallery';
@@ -1618,6 +1809,13 @@
             lightboxItems = [];
             lightboxMode = 'gallery';
             removeLightboxKeyboard();
+            // Reset to single view when closing
+            const comparisonContainer = $('lightbox-comparison');
+            const singleView = $('lightbox-single');
+            if (comparisonContainer && singleView) {
+                comparisonContainer.style.display = 'none';
+                singleView.style.display = 'flex';
+            }
         }
 
         function lightboxNavigate(delta) {
@@ -1651,23 +1849,166 @@
         function updateLightbox() {
             const lightbox = $('lightbox'), img = $('lightbox-image'), counter = $('lightbox-counter');
             const actions = $('lightbox-actions');
+            const addToComparisonBtn = $('add-to-comparison-btn');
             if (!lightbox || lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
             const item = lightboxItems[lightboxCurrentIndex];
+            const imageUrl = item.result_url || item.image_url || '';
             
             if (lightboxMode === 'preview') {
                 img.src = item.image_url || '';
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
-                if (actions) actions.style.display = item.type === 'result' ? 'flex' : 'none';
+                if (actions) actions.style.display = item.type === 'result' ? 'flex' : 'flex';
             } else {
-                img.src = item.result_url || item.image_url || '';
+                img.src = imageUrl;
                 if (counter) counter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
                 if (actions) actions.style.display = 'flex';
+            }
+            
+            // Update add to comparison button state
+            if (addToComparisonBtn) {
+                const isInComparison = comparisonItems.some(ci => ci.image_url === imageUrl);
+                if (isInComparison) {
+                    addToComparisonBtn.innerHTML = '<span>✓</span><span>Đã Thêm</span>';
+                    addToComparisonBtn.disabled = true;
+                    addToComparisonBtn.style.opacity = '0.6';
+                } else {
+                    addToComparisonBtn.innerHTML = '<span>➕</span><span>Thêm vào So Sánh</span>';
+                    addToComparisonBtn.disabled = false;
+                    addToComparisonBtn.style.opacity = '1';
+                }
             }
             
             document.querySelector('.lightbox-prev').disabled = lightboxItems.length <= 1;
             document.querySelector('.lightbox-next').disabled = lightboxItems.length <= 1;
             lightbox.style.display = 'flex';
         }
+        
+        function addToComparison() {
+            if (lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
+            const item = lightboxItems[lightboxCurrentIndex];
+            const imageUrl = item.result_url || item.image_url || '';
+            if (!imageUrl) {
+                showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
+                return;
+            }
+            
+            // Check if already in comparison
+            if (comparisonItems.some(ci => ci.image_url === imageUrl)) {
+                showStatusMessage('Hình ảnh đã có trong danh sách so sánh', 'info');
+                return;
+            }
+            
+            // Add to comparison (max 3 items)
+            if (comparisonItems.length >= 3) {
+                showStatusMessage('Chỉ có thể so sánh tối đa 3 hình ảnh. Vui lòng xóa một hình trước.', 'error');
+                return;
+            }
+            
+            const comparisonItem = {
+                image_url: imageUrl,
+                label: item.label || `Hình ${comparisonItems.length + 1}`,
+                type: item.type || 'result',
+                added_at: Date.now()
+            };
+            
+            comparisonItems.push(comparisonItem);
+            saveComparisonToStorage();
+            updateLightbox();
+            updateComparisonButton();
+            showStatusMessage(`Đã thêm vào so sánh (${comparisonItems.length}/3)`, 'success');
+        }
+        
+        function removeFromComparison(index) {
+            if (index >= 0 && index < comparisonItems.length) {
+                comparisonItems.splice(index, 1);
+                saveComparisonToStorage();
+                updateComparisonButton();
+                renderComparison();
+                showStatusMessage('Đã xóa khỏi so sánh', 'success');
+            }
+        }
+        
+        function clearComparison() {
+            if (comparisonItems.length === 0) return;
+            comparisonItems = [];
+            saveComparisonToStorage();
+            updateComparisonButton();
+            renderComparison();
+            showStatusMessage('Đã xóa tất cả hình ảnh so sánh', 'success');
+        }
+        
+        function renderComparison() {
+            const comparisonContainer = $('lightbox-comparison');
+            const comparisonGrid = $('comparison-grid');
+            const singleView = $('lightbox-single');
+            
+            if (!comparisonContainer || !comparisonGrid) return;
+            
+            if (comparisonItems.length === 0) {
+                comparisonContainer.style.display = 'none';
+                if (singleView) singleView.style.display = 'flex';
+                comparisonGrid.innerHTML = '';
+                return;
+            }
+            
+            // Show comparison view
+            comparisonContainer.style.display = 'flex';
+            if (singleView) singleView.style.display = 'none';
+            
+            // Update grid class based on count
+            comparisonGrid.className = 'comparison-grid';
+            if (comparisonItems.length === 2) {
+                comparisonGrid.classList.add('compare-2');
+            } else if (comparisonItems.length === 3) {
+                comparisonGrid.classList.add('compare-3');
+            }
+            
+            // Render items
+            comparisonGrid.innerHTML = comparisonItems.map((item, index) => `
+                <div class="comparison-item">
+                    <button class="comparison-item-remove" onclick="removeFromComparison(${index})" title="Xóa">×</button>
+                    <img src="${item.image_url}" alt="${item.label}" loading="lazy" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'200\\'%3E%3Crect fill=\\'%23ccc\\' width=\\'200\\' height=\\'200\\'/%3E%3Ctext fill=\\'%23999\\' font-family=\\'sans-serif\\' font-size=\\'14\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3ELỗi tải hình%3C/text%3E%3C/svg%3E';">
+                    <div class="comparison-item-label">${item.label}</div>
+                </div>
+            `).join('');
+        }
+        
+        function switchToComparisonView() {
+            const comparisonContainer = $('lightbox-comparison');
+            const singleView = $('lightbox-single');
+            if (comparisonContainer && singleView) {
+                singleView.style.display = 'none';
+                comparisonContainer.style.display = 'flex';
+                renderComparison();
+            }
+        }
+        
+        function switchToSingleView() {
+            const comparisonContainer = $('lightbox-comparison');
+            const singleView = $('lightbox-single');
+            if (comparisonContainer && singleView) {
+                comparisonContainer.style.display = 'none';
+                singleView.style.display = 'flex';
+                updateLightbox();
+            }
+        }
+        
+        // Add button to show comparison view from lightbox
+        function showComparisonView() {
+            if (comparisonItems.length === 0) {
+                showStatusMessage('Chưa có hình ảnh nào trong danh sách so sánh. Vui lòng thêm hình ảnh từ lightbox trước.', 'info');
+                return;
+            }
+            $('lightbox').style.display = 'flex';
+            switchToComparisonView();
+            setupLightboxKeyboard();
+        }
+        
+        window.addToComparison = addToComparison;
+        window.removeFromComparison = removeFromComparison;
+        window.clearComparison = clearComparison;
+        window.switchToSingleView = switchToSingleView;
+        window.showComparisonView = showComparisonView;
 
         window.openPreviewLightbox = openPreviewLightbox;
 
@@ -1716,12 +2057,18 @@
                     body: requestBody
                 });
 
-                if (!uploadResponse.ok) throw new Error(data.message || 'Tải lên thất bại');
+                if (!uploadResponse.ok || data.status !== 'success') throw new Error(data.message || 'Tải lên thất bại');
+
+                // Handle new response format with data property
+                const result = data.data?.results?.[0];
+                if (!result || !result.id || !result.url) {
+                    throw new Error('Upload response missing required data');
+                }
 
                 const newImage = { 
-                    id: data.id, 
-                    filename: data.filename, 
-                    image_url: data.url, 
+                    id: result.id, 
+                    filename: result.filename, 
+                    image_url: result.url, 
                     created_at: new Date().toISOString() 
                 };
                 config.state.items = [newImage, ...config.state.items.filter(e => e.id !== newImage.id)];
@@ -1776,6 +2123,122 @@
 
         window.selectAsPreset = selectAsPreset;
         window.selectAsSelfie = selectAsSelfie;
+
+        // Thumbnail Manager
+        function openThumbnailManager() {
+            $('thumbnail-manager').style.display = 'flex';
+            loadThumbnails();
+        }
+
+        function closeThumbnailManager() {
+            $('thumbnail-manager').style.display = 'none';
+        }
+
+        async function loadThumbnails() {
+            try {
+                const response = await fetch(`${WORKER_URL}/thumbnails`);
+                const data = await response.json();
+                if (data.status === 'success' && data.data?.thumbnails) {
+                    renderThumbnails(data.data.thumbnails);
+                }
+            } catch (error) {
+                console.error('Failed to load thumbnails:', error);
+                showStatusMessage('Không thể tải danh sách thumbnails', 'error');
+            }
+        }
+
+        function renderThumbnails(thumbnails) {
+            const container = $('thumbnail-list');
+            if (!container) return;
+            
+            if (thumbnails.length === 0) {
+                container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Chưa có thumbnail nào</p>';
+                return;
+            }
+            
+            container.innerHTML = thumbnails.map(thumb => `
+                <div class="thumbnail-item">
+                    ${thumb.file_format === 'webp' 
+                        ? `<img src="${thumb.file_url}" alt="${thumb.filename}" loading="lazy">`
+                        : `<div style="height: 120px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: 4px; margin-bottom: 8px;">
+                            <span style="font-size: 24px;">🎬</span>
+                        </div>`
+                    }
+                    <div class="thumbnail-item-info">
+                        <div><strong>${thumb.type}</strong></div>
+                        <div>${thumb.sub_category}</div>
+                        <div>${thumb.gender} - ${thumb.resolution}</div>
+                        <div style="font-size: 10px; color: var(--text-muted);">${thumb.file_format}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function handleThumbnailFolderSelect(event) {
+            const files = Array.from(event.target.files || []);
+            if (files.length === 0) return;
+
+            const progressContainer = $('thumbnail-upload-progress');
+            const progressFill = $('thumbnail-progress-fill');
+            const statusText = $('thumbnail-upload-status');
+            
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '0%';
+            statusText.textContent = `Đang tải lên ${files.length} file...`;
+
+            const formData = new FormData();
+            files.forEach((file) => {
+                formData.append('files', file);
+                // Extract folder path from file's webkitRelativePath to determine resolution
+                if (file.webkitRelativePath) {
+                    // Store path with filename as key for backend to match
+                    formData.append(`path_${file.name}`, file.webkitRelativePath);
+                }
+            });
+
+            try {
+                const response = await fetch(`${WORKER_URL}/upload-thumbnails`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    progressFill.style.width = '100%';
+                    statusText.textContent = `Hoàn thành: ${data.data.successful}/${data.data.total} file thành công`;
+                    
+                    if (data.data.failed > 0) {
+                        const failedFiles = data.data.results.filter(r => !r.success);
+                        console.warn('Failed files:', failedFiles);
+                        showStatusMessage(`${data.data.failed} file thất bại. Kiểm tra console để xem chi tiết.`, 'error');
+                    } else {
+                        showStatusMessage('Tải lên thành công!', 'success');
+                    }
+                    
+                    // Reload thumbnails
+                    await loadThumbnails();
+                    
+                    // Reset input
+                    event.target.value = '';
+                    
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                    }, 3000);
+                } else {
+                    throw new Error(data.message || 'Upload failed');
+                }
+            } catch (error) {
+                progressFill.style.width = '100%';
+                progressFill.style.background = 'var(--danger)';
+                statusText.textContent = `Lỗi: ${error.message}`;
+                showStatusMessage(`Tải lên thất bại: ${error.message}`, 'error');
+            }
+        }
+
+        window.openThumbnailManager = openThumbnailManager;
+        window.closeThumbnailManager = closeThumbnailManager;
+        window.handleThumbnailFolderSelect = handleThumbnailFolderSelect;
 
         // UI Helpers
         function showLoading(text = 'Đang tải dữ liệu') {

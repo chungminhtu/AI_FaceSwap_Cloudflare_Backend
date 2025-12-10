@@ -19,8 +19,14 @@ CREATE TABLE IF NOT EXISTS presets (
   preset_name TEXT, -- Optional name for the preset
   prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
   gender TEXT CHECK(gender IN ('male', 'female')), -- Optional gender classification
+  type TEXT, -- filters, face-swap, packs (for thumbnail linking)
+  sub_category TEXT, -- e.g., wedding, portrait, autumn (for thumbnail linking)
+  position INTEGER, -- Position number (for thumbnail linking)
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- Index for thumbnail linking
+CREATE INDEX IF NOT EXISTS idx_presets_lookup ON presets(type, sub_category, gender, position);
 
 -- Selfies table: Store uploaded selfie images
 CREATE TABLE IF NOT EXISTS selfies (

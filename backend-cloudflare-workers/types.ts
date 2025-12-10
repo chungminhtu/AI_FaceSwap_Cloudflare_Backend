@@ -120,8 +120,22 @@ export interface UploadUrlRequest {
 }
 
 export interface UploadUrlResponse {
-  uploadUrl: string;
-  publicUrl: string;
+  data: {
+    results: Array<{
+      id: string;
+      url: string;
+      filename: string;
+      hasPrompt?: boolean;
+      prompt_json?: any;
+      vertex_info?: any;
+    }>;
+    count: number;
+    successful: number;
+    failed: number;
+  };
+  status: 'success' | 'error';
+  message: string;
+  code: number;
 }
 
 export interface Profile {

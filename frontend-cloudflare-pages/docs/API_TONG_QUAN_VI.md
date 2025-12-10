@@ -451,43 +451,48 @@ formData.append('gender', 'female');
 - `enableVisionScan` (string, tùy chọn): `"true"` để bật Vision API safety scan.
 - `gender` (string, tùy chọn): `"male"` hoặc `"female"`.
 
-### Phản hồi thành công (preset)
+### Phản hồi thành công
 
 ```json
 {
-  "success": true,
-  "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-  "id": "image_...",
-  "filename": "example.jpg",
-  "hasPrompt": true,
-  "prompt_json": { "...": "..." },
-  "vertex_info": {
-    "success": true,
-    "promptKeys": ["prompt", "style", "..."],
-    "debug": {
-      "endpoint": "https://.../generateContent",
-      "status": 200,
-      "responseTimeMs": 4200
-    }
+  "data": {
+    "results": [
+      {
+        "id": "image_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+        "filename": "example.jpg",
+        "hasPrompt": true,
+        "prompt_json": {
+          "prompt": "...",
+          "style": "...",
+          "lighting": "..."
+        },
+        "vertex_info": {
+          "success": true,
+          "promptKeys": ["prompt", "style", "lighting"],
+          "debug": {
+            "endpoint": "https://.../generateContent",
+            "status": 200,
+            "responseTimeMs": 4200
+          }
+        }
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
   },
-  "vision_scan": {
-    "success": true,
-    "isSafe": true,
-    "rawResponse": { "...": "..." }
-  }
+  "status": "success",
+  "message": "Successfully uploaded 1 file",
+  "code": 200
 }
 ```
 
-### Phản hồi thành công (selfie)
-
-```json
-{
-  "success": true,
-  "url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
-  "id": "selfie_...",
-  "filename": "example.jpg"
-}
-```
+**Lưu ý:**
+- Khi upload nhiều file, mảng `results` sẽ chứa nhiều phần tử
+- Mỗi phần tử trong `results` có `id`, `url`, `filename`
+- Với preset: có thêm `hasPrompt`, `prompt_json`, `vertex_info` (nếu bật `enableVertexPrompt`)
+- Với selfie: chỉ có `id`, `url`, `filename`
 
 ## 7. GET `/presets`
 
