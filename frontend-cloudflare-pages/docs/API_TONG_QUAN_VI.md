@@ -428,14 +428,13 @@ curl -X POST https://api.d.shotpix.app/upload-url \
   -F "enableVertexPrompt=true"
 ```
 
-**Ví dụ với JavaScript (FormData):**
+**Ví dụ với JavaScript (FormData) - Upload selfie với action:**
 ```javascript
 const formData = new FormData();
 formData.append('files', fileInput.files[0]);
-formData.append('files', fileInput.files[1]); // Hỗ trợ nhiều file
-formData.append('type', 'preset');
+formData.append('type', 'selfie');
 formData.append('profile_id', 'profile_1234567890');
-formData.append('enableVertexPrompt', 'true');
+formData.append('action', 'faceswap'); // Tùy chọn: 'faceswap' hoặc action khác
 ```
 
 **Ví dụ với JSON (image_url):**
@@ -448,12 +447,25 @@ formData.append('enableVertexPrompt', 'true');
 }
 ```
 
+**Ví dụ với JSON - Upload selfie với action:**
+```json
+{
+  "image_url": "https://example.com/selfie.jpg",
+  "type": "selfie",
+  "profile_id": "profile_1234567890",
+  "action": "faceswap"
+}
+```
+
 **Các trường:**
 - `files` (file[], bắt buộc nếu dùng multipart): Mảng file ảnh cần upload (hỗ trợ nhiều file).
 - `image_url` hoặc `image_urls` (string/string[], bắt buộc nếu dùng JSON): URL ảnh trực tiếp.
 - `type` (string, bắt buộc): `preset` hoặc `selfie`.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `enableVertexPrompt` (boolean/string, tùy chọn): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset.
+- `action` (string, tùy chọn, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"default"`. 
+  - `"faceswap"`: Tối đa 4 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 3 ảnh mới nhất).
+  - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới.
 
 ### Phản hồi thành công
 
@@ -497,6 +509,33 @@ formData.append('enableVertexPrompt', 'true');
   }
 }
 ```
+
+**Phản hồi khi upload selfie:**
+```json
+{
+  "data": {
+    "results": [
+      {
+        "id": "selfie_1234567890_xyz789",
+        "url": "https://resources.d.shotpix.app/selfie/example.jpg",
+        "filename": "example.jpg",
+        "action": "faceswap"
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200
+}
+```
+
+**Lưu ý về auto-delete:**
+- Khi upload selfie với `action="faceswap"`: Hệ thống tự động xóa ảnh cũ nếu đã có 4 ảnh, giữ lại 3 ảnh mới nhất.
+- Khi upload selfie với action khác: Hệ thống tự động xóa ảnh cũ nếu đã có 1 ảnh, chỉ giữ ảnh mới nhất.
+- Việc xóa được thực hiện tự động trước khi insert ảnh mới vào database.
 
 ### Phản hồi lỗi
 
@@ -599,12 +638,23 @@ GET https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
   "selfies": [
     {
       "id": "selfie_1234567890_xyz789",
-      "image_url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
+      "selfie_url": "https://resources.d.shotpix.app/selfie/example.jpg",
+      "action": "faceswap",
       "created_at": "2024-01-01T00:00:00.000Z"
     }
   ]
 }
 ```
+
+**Các trường:**
+- `id` (string): ID của selfie.
+- `selfie_url` (string): URL đầy đủ của ảnh selfie (tự động được assemble từ bucket key và CUSTOM_DOMAIN).
+- `action` (string | null): Loại action của selfie (ví dụ: `"faceswap"`, `"default"`, hoặc `null` nếu chưa được set).
+- `created_at` (string): Thời gian tạo selfie (ISO 8601 format).
+
+**Lưu ý:**
+- `selfie_url` trong database chỉ lưu bucket key (ví dụ: `"selfie/filename.jpg"`), không lưu full URL.
+- API tự động assemble full URL từ `CUSTOM_DOMAIN` environment variable khi trả về response.
 
 ## 10. DELETE `/selfies/{id}`
 

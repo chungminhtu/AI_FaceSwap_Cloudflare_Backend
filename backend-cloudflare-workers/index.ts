@@ -52,9 +52,10 @@ const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
 
 const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string | null> => {
   try {
+    const key = extractR2KeyFromUrl(imageUrl) || imageUrl;
     const selfieResult = await DB.prepare(
       'SELECT id FROM selfies WHERE selfie_url = ? AND profile_id = ? LIMIT 1'
-    ).bind(imageUrl, profileId).first();
+    ).bind(key, profileId).first();
     
     if (selfieResult) {
       return (selfieResult as any).id;
@@ -62,8 +63,8 @@ const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: s
     
     const systemSelfieId = `system_selfie_${profileId}_${Date.now()}`;
     const insertResult = await DB.prepare(
-      'INSERT OR IGNORE INTO selfies (id, selfie_url, profile_id, created_at) VALUES (?, ?, ?, ?)'
-    ).bind(systemSelfieId, imageUrl, profileId, Math.floor(Date.now() / 1000)).run();
+      'INSERT OR IGNORE INTO selfies (id, selfie_url, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(systemSelfieId, key, profileId, 'default', Math.floor(Date.now() / 1000)).run();
     
     if (insertResult.success) {
       return systemSelfieId;
@@ -76,28 +77,22 @@ const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: s
 
 const saveResultToDatabase = async (
   DB: D1Database,
-  resultId: string,
   resultUrl: string,
-  profileId: string,
-  imageUrl: string,
-  presetName: string
-): Promise<boolean> => {
+  profileId: string
+): Promise<number | null> => {
   try {
+    const resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
     const insertResult = await DB.prepare(
-      'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(resultId, presetName, resultUrl, profileId, Math.floor(Date.now() / 1000)).run();
+      'INSERT INTO results (result_url, profile_id, created_at) VALUES (?, ?, ?)'
+    ).bind(resultKey, profileId, Math.floor(Date.now() / 1000)).run();
     
-    if (insertResult.success) {
-      if ((insertResult.meta?.changes || 0) > 0) {
-        return true;
-      }
-      const checkExisting = await DB.prepare('SELECT id FROM results WHERE id = ?').bind(resultId).first();
-      return !!checkExisting;
+    if (insertResult.success && insertResult.meta?.last_row_id) {
+      return insertResult.meta.last_row_id;
     }
     
-    return false;
+    return null;
   } catch (dbError) {
-    return false;
+    return null;
   }
 };
 
@@ -120,6 +115,44 @@ const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string 
     return `${trimTrailingSlash(fallbackOrigin)}/r2/${bucketName}/${key}`;
   }
   throw new Error('Unable to determine R2 public URL. Configure CUSTOM_DOMAIN environment variable.');
+};
+
+const extractR2KeyFromUrl = (url: string): string | null => {
+  if (!url) return null;
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(p => p);
+    
+    if (urlObj.pathname.startsWith('/r2/')) {
+      if (pathParts.length >= 3 && pathParts[0] === 'r2') {
+        return pathParts.slice(2).join('/');
+      }
+    }
+    
+    if (pathParts.length > 0) {
+      const bucketName = pathParts[0];
+      if (pathParts.length >= 2) {
+        return pathParts.slice(1).join('/');
+      }
+      return pathParts[0];
+    }
+    
+    return pathParts.join('/') || null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const buildSelfieUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
+  return getR2PublicUrl(env, key, fallbackOrigin);
+};
+
+const buildPresetUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
+  return getR2PublicUrl(env, key, fallbackOrigin);
+};
+
+const buildResultUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
+  return getR2PublicUrl(env, key, fallbackOrigin);
 };
 
 const convertLegacyUrl = (url: string, env: Env): string => {
@@ -328,6 +361,7 @@ export default {
         let presetName: string = '';
         let enableVertexPrompt: boolean = false;
         let gender: 'male' | 'female' | null = null;
+        let action: string | null = null;
 
         // Support both multipart/form-data (file upload) and application/json (URL upload)
         if (contentType.toLowerCase().includes('multipart/form-data')) {
@@ -359,6 +393,7 @@ export default {
           presetName = formData.get('presetName') as string;
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
           gender = (formData.get('gender') as 'male' | 'female') || null;
+          action = formData.get('action') as string | null;
         } else if (contentType.toLowerCase().includes('application/json')) {
           const body = await request.json() as { 
             image_urls?: string[];
@@ -367,7 +402,8 @@ export default {
             profile_id?: string; 
             presetName?: string; 
             enableVertexPrompt?: boolean; 
-            gender?: 'male' | 'female' 
+            gender?: 'male' | 'female';
+            action?: string;
           };
           imageUrls = body.image_urls || (body.image_url ? [body.image_url] : []);
           type = body.type || '';
@@ -375,6 +411,7 @@ export default {
           presetName = body.presetName || '';
           enableVertexPrompt = body.enableVertexPrompt === true;
           gender = body.gender || null;
+          action = body.action || null;
         } else {
           return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400);
         }
@@ -509,10 +546,10 @@ export default {
 
             const imageId = `preset_${timestamp}_${randomSuffix}`;
 
-            // Save to database
+            // Save to database (store only key, not full URL)
             const result = await DB.prepare(
               'INSERT INTO presets (id, preset_url, prompt_json, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(imageId, publicUrl, promptJson, createdAt).run();
+            ).bind(imageId, key, promptJson, createdAt).run();
 
             if (!result.success) {
               return {
@@ -533,10 +570,50 @@ export default {
             };
           } else if (type === 'selfie') {
             const selfieId = `selfie_${timestamp}_${randomSuffix}`;
+            const actionValue = action || 'default';
+
+            if (actionValue === 'faceswap') {
+              const existingSelfies = await DB.prepare(
+                'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
+              ).bind(profileId, actionValue).all();
+
+              if (existingSelfies.results && existingSelfies.results.length >= 4) {
+                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - 3);
+                for (const oldSelfie of toDelete) {
+                  const oldKey = (oldSelfie as any).selfie_url;
+                  if (oldKey) {
+                    try {
+                      await R2_BUCKET.delete(oldKey);
+                    } catch (r2Error) {
+                      console.warn('Failed to delete old selfie from R2:', r2Error);
+                    }
+                  }
+                  await DB.prepare('DELETE FROM selfies WHERE id = ?').bind((oldSelfie as any).id).run();
+                }
+              }
+            } else {
+              const existingSelfies = await DB.prepare(
+                'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
+              ).bind(profileId, actionValue).all();
+
+              if (existingSelfies.results && existingSelfies.results.length >= 1) {
+                for (const oldSelfie of existingSelfies.results) {
+                  const oldKey = (oldSelfie as any).selfie_url;
+                  if (oldKey) {
+                    try {
+                      await R2_BUCKET.delete(oldKey);
+                    } catch (r2Error) {
+                      console.warn('Failed to delete old selfie from R2:', r2Error);
+                    }
+                  }
+                  await DB.prepare('DELETE FROM selfies WHERE id = ?').bind((oldSelfie as any).id).run();
+                }
+              }
+            }
 
             const result = await DB.prepare(
-              'INSERT INTO selfies (id, selfie_url, profile_id, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(selfieId, publicUrl, profileId, createdAt).run();
+              'INSERT INTO selfies (id, selfie_url, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(selfieId, key, profileId, actionValue, createdAt).run();
 
             if (!result.success) {
               return {
@@ -550,7 +627,8 @@ export default {
               success: true,
               url: publicUrl,
               id: selfieId,
-              filename: uniqueFilename
+              filename: uniqueFilename,
+              action: actionValue
             };
           }
 
@@ -752,7 +830,7 @@ export default {
                 
                 await DB.prepare(
                   'INSERT INTO presets (id, preset_url, created_at) VALUES (?, ?, ?)'
-                ).bind(presetId, publicUrl, createdAt).run();
+                ).bind(presetId, r2Key, createdAt).run();
                 
                 presetMap.set(r2Key, presetId);
               }
@@ -840,26 +918,28 @@ export default {
             
             // UPDATE preset row with thumbnail fields (multiple resolutions)
             // Update the specific resolution column based on resolution value
+            // Store only keys, not full URLs
+            const thumbnailKey = extractR2KeyFromUrl(publicUrl) || publicUrl;
             let updateQuery = '';
             if (resolution === '1x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ?, thumbnail_url = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(publicUrl, publicUrl, presetId).run();
+              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
             } else if (resolution === '1.5x') {
               updateQuery = 'UPDATE presets SET thumbnail_url_1_5x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
             } else if (resolution === '2x') {
               updateQuery = 'UPDATE presets SET thumbnail_url_2x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
             } else if (resolution === '3x') {
               updateQuery = 'UPDATE presets SET thumbnail_url_3x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
             } else if (resolution === '4x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url_4x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(publicUrl, presetId).run();
+              updateQuery = 'UPDATE presets SET thumbnail_url = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
             } else {
               // Default to 1x if resolution not recognized
-              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ?, thumbnail_url = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(publicUrl, publicUrl, presetId).run();
+              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ? WHERE id = ?';
+              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
             }
 
             results.push({
@@ -1113,10 +1193,9 @@ export default {
             thumbnail_url_1_5x,
             thumbnail_url_2x,
             thumbnail_url_3x,
-            thumbnail_url_4x,
             created_at
           FROM presets
-          WHERE ${includeThumbnails ? '1=1' : '(thumbnail_url IS NULL AND thumbnail_url_1x IS NULL AND thumbnail_url_1_5x IS NULL AND thumbnail_url_2x IS NULL AND thumbnail_url_3x IS NULL AND thumbnail_url_4x IS NULL)'}
+          WHERE ${includeThumbnails ? '1=1' : '(thumbnail_url IS NULL AND thumbnail_url_1x IS NULL AND thumbnail_url_1_5x IS NULL AND thumbnail_url_2x IS NULL AND thumbnail_url_3x IS NULL)'}
         `;
 
         const params: any[] = [];
@@ -1134,9 +1213,17 @@ export default {
           // Use new columns if available, fallback to legacy thumbnail_url
           const thumbnailUrl = row.thumbnail_url_1x || row.thumbnail_url || null;
           
+          const storedKey = row.preset_url || '';
+          let fullUrl = storedKey;
+          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+            fullUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+          } else {
+            fullUrl = convertLegacyUrl(storedKey, env);
+          }
+          
           return {
             id: row.id || '',
-            preset_url: convertLegacyUrl(row.preset_url || '', env),
+            preset_url: fullUrl,
             hasPrompt: row.prompt_json ? true : false,
             prompt_json: row.prompt_json || null,
             thumbnail_url: thumbnailUrl,
@@ -1144,7 +1231,6 @@ export default {
             thumbnail_url_1_5x: row.thumbnail_url_1_5x || null,
             thumbnail_url_2x: row.thumbnail_url_2x || null,
             thumbnail_url_3x: row.thumbnail_url_3x || null,
-            thumbnail_url_4x: row.thumbnail_url_4x || null,
             created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
           };
         });
@@ -1175,7 +1261,11 @@ export default {
           return errorResponse('Preset not found', 404);
         }
 
-        const imageUrl = (checkResult as any).preset_url;
+        const storedKey = (checkResult as any).preset_url;
+        let r2Key = storedKey;
+        if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
+          r2Key = extractR2KeyFromUrl(storedKey);
+        }
 
         // Delete preset from database
         // NOTE: Results are NOT deleted when preset is deleted - they belong to profiles and should be preserved
@@ -1189,13 +1279,9 @@ export default {
 
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
-        let r2Key = null;
         let r2Error = null;
-        if (imageUrl) {
+        if (r2Key) {
           try {
-            const urlParts = imageUrl.split('/');
-            r2Key = urlParts.slice(-2).join('/');
-            
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
           } catch (r2DeleteError) {
@@ -1241,7 +1327,7 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        let query = 'SELECT id, selfie_url, profile_id, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+        let query = 'SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
 
         const result = await DB.prepare(query).bind(profileId).all();
 
@@ -1249,11 +1335,21 @@ export default {
           return jsonResponse({ selfies: [] });
         }
 
-        const selfies = result.results.map((row: any) => ({
-          id: row.id || '',
-          selfie_url: convertLegacyUrl(row.selfie_url || '', env),
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
+        const selfies = result.results.map((row: any) => {
+          const storedKey = row.selfie_url || '';
+          let fullUrl = storedKey;
+          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+            fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+          } else {
+            fullUrl = convertLegacyUrl(storedKey, env);
+          }
+          return {
+            id: row.id || '',
+            selfie_url: fullUrl,
+            action: row.action || null,
+            created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+          };
+        });
 
         return jsonResponse({ selfies });
       } catch (error) {
@@ -1280,7 +1376,11 @@ export default {
           return errorResponse('Selfie not found', 404);
         }
 
-        const imageUrl = (checkResult as any).selfie_url;
+        const storedKey = (checkResult as any).selfie_url;
+        let r2Key = storedKey;
+        if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
+          r2Key = extractR2KeyFromUrl(storedKey);
+        }
 
         // Delete selfie from database
         // NOTE: Results are NOT deleted when selfie is deleted - they belong to profiles and should be preserved
@@ -1294,13 +1394,9 @@ export default {
 
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
-        let r2Key = null;
         let r2Error = null;
-        if (imageUrl) {
+        if (r2Key) {
           try {
-            const urlParts = imageUrl.split('/');
-            r2Key = urlParts.slice(-2).join('/');
-            
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
           } catch (r2DeleteError) {
@@ -1373,15 +1469,13 @@ export default {
           thumbnail_url_1_5x,
           thumbnail_url_2x,
           thumbnail_url_3x,
-          thumbnail_url_4x,
           created_at 
         FROM presets 
         WHERE thumbnail_url IS NOT NULL 
            OR thumbnail_url_1x IS NOT NULL 
            OR thumbnail_url_1_5x IS NOT NULL 
            OR thumbnail_url_2x IS NOT NULL 
-           OR thumbnail_url_3x IS NOT NULL 
-           OR thumbnail_url_4x IS NOT NULL`;
+           OR thumbnail_url_3x IS NOT NULL`;
         const bindings: any[] = [];
         
         query += ' ORDER BY created_at DESC';
@@ -1426,7 +1520,7 @@ export default {
         }
         }
 
-        let query = 'SELECT id, preset_name, result_url, profile_id, created_at FROM results';
+        let query = 'SELECT id, result_url, profile_id, created_at FROM results';
         const params: any[] = [];
 
         if (profileId) {
@@ -1449,12 +1543,17 @@ export default {
         }
 
         const results = result.results.map((row: any) => {
-          const resultUrl = convertLegacyUrl(row.result_url || '', env);
+          const storedKey = row.result_url || '';
+          let fullUrl = storedKey;
+          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+            fullUrl = buildResultUrl(storedKey, env, requestUrl.origin);
+          } else {
+            fullUrl = convertLegacyUrl(storedKey, env);
+          }
           return {
-            id: row.id || '',
-            preset_name: row.preset_name || 'Unnamed',
-            result_url: resultUrl,
-            image_url: resultUrl,
+            id: String(row.id || ''),
+            result_url: fullUrl,
+            image_url: fullUrl,
             profile_id: row.profile_id || '',
             created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
           };
@@ -1484,7 +1583,13 @@ export default {
           return errorResponse('Result not found', 404);
         }
 
-        const resultUrl = (checkResult as any).result_url || '';
+        const storedKey = (checkResult as any).result_url || '';
+        let r2Key = storedKey;
+        if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
+          r2Key = extractR2KeyFromUrl(storedKey);
+        } else if (storedKey && storedKey.startsWith('r2://')) {
+          r2Key = storedKey.replace('r2://', '');
+        }
 
         // Delete from database
         const deleteResult = await DB.prepare(
@@ -1497,24 +1602,11 @@ export default {
 
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
-        let r2Key = null;
         let r2Error = null;
-        if (resultUrl) {
+        if (r2Key) {
           try {
-            // Extract R2 key from URL (format: r2://key or https://.../key)
-            if (resultUrl.startsWith('r2://')) {
-              r2Key = resultUrl.replace('r2://', '');
-            } else if (resultUrl.includes('/results/')) {
-              r2Key = resultUrl.split('/results/')[1];
-              if (!r2Key.startsWith('results/')) {
-                r2Key = `results/${r2Key}`;
-              }
-            }
-
-            if (r2Key) {
-              await R2_BUCKET.delete(r2Key);
-              r2Deleted = true;
-            }
+            await R2_BUCKET.delete(r2Key);
+            r2Deleted = true;
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
           }
@@ -1614,8 +1706,13 @@ export default {
           if (!presetResult) {
             return errorResponse('Preset image not found', 404);
           }
-          targetUrl = presetResult.preset_url;
-          presetName = presetResult.preset_name || 'Unnamed Preset';
+          const storedKey = (presetResult as any).preset_url;
+          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+            targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+          } else {
+            targetUrl = convertLegacyUrl(storedKey, env);
+          }
+          presetName = 'Unnamed Preset';
           presetImageId = body.preset_image_id || null;
         } else if (hasPresetUrl) {
           targetUrl = body.preset_image_url!;
@@ -1637,7 +1734,14 @@ export default {
             if (!selfieResult) {
               return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404);
             }
-            selfieUrls.push(selfieResult.selfie_url);
+            const storedKey = (selfieResult as any).selfie_url;
+            let fullUrl = storedKey;
+            if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+              fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+            } else {
+              fullUrl = convertLegacyUrl(storedKey, env);
+            }
+            selfieUrls.push(fullUrl);
             selfieIds.push(body.selfie_ids[i]);
           }
         } else if (hasSelfieUrls) {
@@ -1918,19 +2022,15 @@ export default {
           lookupError: null,
         };
 
-        let savedResultId: string | null = null;
+        let savedResultId: number | null = null;
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-            const insertResult = await DB.prepare(
-              'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(resultId, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
             
-            if (insertResult.success && (insertResult.meta?.changes || 0) > 0) {
+            if (savedResultId !== null) {
               databaseDebug.success = true;
-              databaseDebug.resultId = resultId;
-              savedResultId = resultId;
+              databaseDebug.resultId = String(savedResultId);
               databaseDebug.error = null;
             } else {
               databaseDebug.error = 'Database insert failed';
@@ -1957,7 +2057,7 @@ export default {
 
         return jsonResponse({
           data: {
-            id: savedResultId,
+            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -2026,7 +2126,12 @@ export default {
             return errorResponse('Preset image not found', 404);
           }
 
-          targetUrl = (presetResult as any).preset_url;
+          const storedKey = (presetResult as any).preset_url;
+          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+            targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+          } else {
+            targetUrl = convertLegacyUrl(storedKey, env);
+          }
           presetName = 'Preset';
           presetImageId = body.preset_image_id || null;
         } else {
@@ -2045,7 +2150,12 @@ export default {
             return errorResponse(`Selfie with ID ${body.selfie_id} not found`, 404);
           }
 
-          selfieUrl = (selfieResult as any).selfie_url;
+          const storedKey = (selfieResult as any).selfie_url;
+          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+            selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+          } else {
+            selfieUrl = convertLegacyUrl(storedKey, env);
+          }
         } else {
           selfieUrl = body.selfie_image_url!;
         }
@@ -2262,19 +2372,15 @@ Remove the background completely and create a clean transparent image with the p
           lookupError: null,
         };
 
-        let savedResultId: string | null = null;
+        let savedResultId: number | null = null;
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-            const insertResult = await DB.prepare(
-              'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(resultId, presetName, resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
             
-            if (insertResult.success && (insertResult.meta?.changes || 0) > 0) {
+            if (savedResultId !== null) {
               databaseDebug.success = true;
-              databaseDebug.resultId = resultId;
-              savedResultId = resultId;
+              databaseDebug.resultId = String(savedResultId);
               databaseDebug.error = null;
             } else {
               databaseDebug.error = 'Database insert failed';
@@ -2299,7 +2405,7 @@ Remove the background completely and create a clean transparent image with the p
 
         return jsonResponse({
           data: {
-            id: savedResultId,
+            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -2431,16 +2537,7 @@ Remove the background completely and create a clean transparent image with the p
           }
         }
 
-        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-        const savedResultId: string = resultId;
-        
-        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, '4K Upscale');
-        if (!saved) {
-          const directInsert = await DB.prepare(
-            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-          ).bind(resultId, '4K Upscale', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          saved = directInsert.success === true;
-        }
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult, resultUrl) : undefined;
@@ -2454,7 +2551,7 @@ Remove the background completely and create a clean transparent image with the p
 
         return jsonResponse({
           data: {
-            id: savedResultId,
+            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           ...(debugPayload ? { debug: debugPayload } : {}),
@@ -2528,16 +2625,7 @@ Remove the background completely and create a clean transparent image with the p
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-        const savedResultId: string = resultId;
-        
-        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Enhance');
-        if (!saved) {
-          const directInsert = await DB.prepare(
-            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-          ).bind(resultId, 'Enhance', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          saved = directInsert.success === true;
-        }
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(enhancedResult, resultUrl) : undefined;
@@ -2545,7 +2633,7 @@ Remove the background completely and create a clean transparent image with the p
 
         return jsonResponse({
           data: {
-            id: savedResultId,
+            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -2621,16 +2709,7 @@ Remove the background completely and create a clean transparent image with the p
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-        const savedResultId: string = resultId;
-        
-        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Colorize');
-        if (!saved) {
-          const directInsert = await DB.prepare(
-            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-          ).bind(resultId, 'Colorize', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          saved = directInsert.success === true;
-        }
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(colorizedResult, resultUrl) : undefined;
@@ -2638,7 +2717,7 @@ Remove the background completely and create a clean transparent image with the p
 
         return jsonResponse({
           data: {
-            id: savedResultId,
+            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -2717,16 +2796,7 @@ Remove the background completely and create a clean transparent image with the p
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const resultId = `result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-        const savedResultId: string = resultId;
-        
-        let saved = await saveResultToDatabase(DB, resultId, resultUrl, body.profile_id, body.image_url, 'Aging');
-        if (!saved) {
-          const directInsert = await DB.prepare(
-            'INSERT INTO results (id, preset_name, result_url, profile_id, created_at) VALUES (?, ?, ?, ?, ?)'
-          ).bind(resultId, 'Aging', resultUrl, body.profile_id, Math.floor(Date.now() / 1000)).run();
-          saved = directInsert.success === true;
-        }
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(agingResult, resultUrl) : undefined;
@@ -2734,7 +2804,7 @@ Remove the background completely and create a clean transparent image with the p
 
         return jsonResponse({
           data: {
-            id: savedResultId,
+            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           status: 'success',

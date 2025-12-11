@@ -154,16 +154,21 @@ export interface Profile {
 
 export interface PresetImage {
   id: string;
-  preset_url: string;
+  preset_url: string; // Full URL (assembled from stored key)
   prompt_json?: string;
-  thumbnail_url?: string;
+  thumbnail_url?: string; // 4x resolution thumbnail (full URL assembled from stored key)
+  thumbnail_url_1x?: string;
+  thumbnail_url_1_5x?: string;
+  thumbnail_url_2x?: string;
+  thumbnail_url_3x?: string;
   created_at: string;
 }
 
 export interface Selfie {
   id: string;
-  selfie_url: string;
+  selfie_url: string; // Full URL (assembled from stored key in database)
   profile_id: string;
+  action?: string | null; // Action type (e.g., "faceswap", "default", etc.)
   created_at: string;
 }
 
@@ -180,9 +185,8 @@ export interface ProfileListResponse {
 }
 
 export interface Result {
-  id: string;
-  preset_name: string;
-  result_url: string;
+  id: string; // INTEGER from database, returned as string
+  result_url: string; // Full URL (assembled from stored key)
   profile_id: string;
   created_at: string;
 }

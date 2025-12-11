@@ -550,9 +550,10 @@ A minimal web application for face swapping that allows users to upload preset i
 
 #### GET `/selfies`
 - Returns: `{ selfies: [...] }`
-- Each selfie contains: `id`, `image_url`, `created_at`
+- Each selfie contains: `id`, `selfie_url` (full URL), `action`, `created_at`
 - Selfies are stored as individual entries
 - Backend queries database and returns all selfies
+- **Lưu ý**: `selfie_url` trong database chỉ lưu bucket key, API tự động assemble full URL từ `CUSTOM_DOMAIN` khi trả về
 
 #### DELETE `/presets/:id`
 - Path parameter: `id` (preset ID)
@@ -574,14 +575,19 @@ A minimal web application for face swapping that allows users to upload preset i
 
 #### POST `/upload-url`
 - Content-Type: `multipart/form-data` hoặc `application/json`
-- Body (multipart): `files` (file[]), `type`, `profile_id`, `enableVertexPrompt` (optional)
-- Body (JSON): `image_url` hoặc `image_urls` (string[]), `type`, `profile_id`, `enableVertexPrompt` (optional)
+- Body (multipart): `files` (file[]), `type`, `profile_id`, `enableVertexPrompt` (optional), `action` (optional, chỉ cho selfie)
+- Body (JSON): `image_url` hoặc `image_urls` (string[]), `type`, `profile_id`, `enableVertexPrompt` (optional), `action` (optional, chỉ cho selfie)
 - Backend logic:
   1. Upload file(s) to R2 storage
-  2. Insert record(s) into database (`presets` hoặc `selfies` table) với `image_url`
-  3. Với preset: tự động generate Vertex prompt nếu `enableVertexPrompt=true`
+  2. Với selfie: Tự động xóa ảnh cũ dựa trên action:
+     - `action="faceswap"`: Tối đa 4 ảnh, xóa ảnh cũ nhất khi có >= 4 ảnh
+     - Action khác: Tối đa 1 ảnh, xóa ảnh cũ khi có >= 1 ảnh
+  3. Insert record(s) vào database (`presets` hoặc `selfies` table) với bucket key (không phải full URL)
+  4. Với preset: tự động generate Vertex prompt nếu `enableVertexPrompt=true`
 - Response format: `{ data: { results: [...], count, successful, failed }, status, message, code, debug? }`
+  - Với selfie: mỗi result có thêm field `action`
 - Hỗ trợ upload nhiều file cùng lúc
+- **Lưu ý**: `selfie_url` trong database chỉ lưu bucket key (ví dụ: `"selfie/filename.jpg"`), API tự động assemble full URL khi trả về
 
 #### POST `/faceswap`
 - Body:

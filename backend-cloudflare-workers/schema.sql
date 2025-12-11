@@ -15,14 +15,13 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Metadata (type, sub_category, gender, position) is stored in R2 bucket path, not in DB
 CREATE TABLE IF NOT EXISTS presets (
   id TEXT PRIMARY KEY,
-  preset_url TEXT NOT NULL, -- Original preset image URL
+  preset_url TEXT NOT NULL, -- R2 bucket key (e.g., "preset/filename.jpg"), not full URL
   prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
-  thumbnail_url TEXT, -- Thumbnail file URL (webp or lottie) - deprecated, use thumbnail_url_1x
+  thumbnail_url TEXT, -- Thumbnail file URL for 4x resolution (webp or lottie)
   thumbnail_url_1x TEXT, -- Thumbnail URL for 1x resolution
   thumbnail_url_1_5x TEXT, -- Thumbnail URL for 1.5x resolution
   thumbnail_url_2x TEXT, -- Thumbnail URL for 2x resolution
   thumbnail_url_3x TEXT, -- Thumbnail URL for 3x resolution
-  thumbnail_url_4x TEXT, -- Thumbnail URL for 4x resolution
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
@@ -33,8 +32,9 @@ CREATE INDEX IF NOT EXISTS idx_presets_has_thumbnail ON presets(thumbnail_url);
 -- Selfies table: Store uploaded selfie images
 CREATE TABLE IF NOT EXISTS selfies (
   id TEXT PRIMARY KEY,
-  selfie_url TEXT NOT NULL,
+  selfie_url TEXT NOT NULL, -- R2 bucket key (e.g., "selfie/filename.jpg"), not full URL
   profile_id TEXT NOT NULL, -- Profile that owns this selfie
+  action TEXT, -- Action type (e.g., "faceswap", "default", etc.) - determines retention policy
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
@@ -43,12 +43,13 @@ CREATE TABLE IF NOT EXISTS selfies (
 CREATE INDEX IF NOT EXISTS idx_profiles_created_at ON profiles(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_selfies_created_at ON selfies(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_selfies_profile_id ON selfies(profile_id);
+CREATE INDEX IF NOT EXISTS idx_selfies_action ON selfies(action);
+CREATE INDEX IF NOT EXISTS idx_selfies_action_profile_id ON selfies(action, profile_id);
 
 -- Results table: Store face swap results
 CREATE TABLE IF NOT EXISTS results (
-  id TEXT PRIMARY KEY,
-  preset_name TEXT NOT NULL,
-  result_url TEXT NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  result_url TEXT NOT NULL, -- R2 bucket key (e.g., "results/filename.jpg"), not full URL
   profile_id TEXT NOT NULL, -- Profile that owns this result
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );

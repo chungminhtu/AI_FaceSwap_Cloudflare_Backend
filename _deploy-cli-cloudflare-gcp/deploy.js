@@ -1072,23 +1072,8 @@ const utils = {
       let schemaApplied = false;
       if (exists && fs.existsSync(schemaPath)) {
         try {
-          const migrations = [
-            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE selfies ADD COLUMN profile_id TEXT;"`,
-            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN profile_id TEXT;"`,
-            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN preset_id TEXT;"`,
-            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN preset_name TEXT;"`,
-            `wrangler d1 execute ${databaseName} --remote --command="ALTER TABLE results ADD COLUMN selfie_id TEXT;"`
-          ];
-          for (const migrationCmd of migrations) {
-            try {
-              await runCommandWithRetry(migrationCmd, cwd, 2, 1000);
-            } catch (migError) {
-              const migMsg = migError.message || migError.error || '';
-              if (!migMsg.includes('duplicate column name') && !migMsg.includes('already exists') && !migMsg.includes('no such table')) {
-                logWarn(`Migration warning: ${migMsg}`);
-              }
-            }
-          }
+          // Old migrations removed - now handled by migration files
+          // Migration files in migrations/ folder will be executed separately
           
           const execResult = await runCommandWithRetry(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd, 2, 2000);
           if (execResult.success) {

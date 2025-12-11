@@ -248,17 +248,18 @@
         .log-clear-btn { background: var(--danger); color: #fff; }
         .log-clear-btn:hover { background: #dc2626; }
 
-        .api-log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .api-log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
         .api-log-entry {
-            border: 1px solid var(--border); padding: 10px; background: var(--bg-primary); font-size: 13px;
+            border: 1px solid var(--border); padding: 8px; background: var(--bg-primary); font-size: 12px;
         }
         .api-log-entry.log-error { border-left: 3px solid var(--danger); }
         .api-log-entry.log-success { border-left: 3px solid var(--success); }
         .api-log-entry.log-info { border-left: 3px solid var(--accent); }
-        .api-log-entry-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-        .api-log-action { font-weight: 600; color: var(--text-primary); }
-        .api-log-detail { font-size: 12px; color: var(--text-secondary); }
-        .api-log-payload { margin-top: 6px; font-size: 11px; background: rgba(0,0,0,0.03); padding: 8px; overflow-x: auto; white-space: pre-wrap; }
+        .api-log-main { font-size: 12px; color: var(--text-primary); line-height: 1.4; }
+        .api-log-method { font-weight: 600; color: var(--accent); }
+        .api-log-url { color: var(--text-secondary); word-break: break-all; }
+        .api-log-timing { color: #666; font-size: 11px; margin-left: 6px; }
+        .api-log-payload { margin-top: 6px; font-size: 11px; background: rgba(0,0,0,0.03); padding: 8px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
 
         /* Gallery Items */
         .gallery-item {
@@ -670,6 +671,13 @@
                         <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
                         <input type="file" class="file-input" id="selfie-input" accept="image/*" multiple>
                     </div>
+                    <div style="padding: 8px 12px; border-bottom: 1px solid var(--border-color);">
+                        <label for="selfie-action-select" style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">Action:</label>
+                        <select id="selfie-action-select" style="width: 100%; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;">
+                            <option value="faceswap">Faceswap (Max 4)</option>
+                            <option value="default" selected>Default (Max 1)</option>
+                        </select>
+                    </div>
                     <div class="sidebar-content" id="selfie-sidebar-content">
                         <div class="gallery-drop-zone" id="selfie-drop-zone">
                             <div id="selfie-gallery" class="sidebar-gallery"></div>
@@ -920,6 +928,11 @@
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
+        
+        // Vertex AI Configuration
+        // Note: Vertex AI region is configured via GOOGLE_VERTEX_LOCATION environment variable
+        // Supported regions: us-central1 (default), us-east1, us-west1, europe-west1, asia-southeast1, etc.
+        // Set GOOGLE_VERTEX_LOCATION in Cloudflare Workers environment variables or deployment config
 
         // DOM Elements
         const $ = id => document.getElementById(id);
@@ -1553,6 +1566,10 @@
                 
                 if (type === 'preset') {
                     formData.append('enableVertexPrompt', 'true');
+                } else if (type === 'selfie') {
+                    const actionSelect = document.getElementById('selfie-action-select');
+                    const action = actionSelect?.value || 'default';
+                    formData.append('action', action);
                 }
 
                 const uploadUrl = `${WORKER_URL}/upload-url`;
@@ -2156,6 +2173,12 @@
                     presetName: type === 'preset' ? `Preset ${Date.now()}` : undefined,
                     enableVertexPrompt: type === 'preset',
                 };
+                
+                if (type === 'selfie') {
+                    const actionSelect = document.getElementById('selfie-action-select');
+                    const action = actionSelect?.value || 'default';
+                    requestBody.action = action;
+                }
 
                 const uploadUrl = `${WORKER_URL}/upload-url`;
                 const startTime = Date.now();
@@ -2642,12 +2665,7 @@
             showLoading('Đang tải dữ liệu');
             try {
                 await loadGallery('preset');
-                // Profile should already be initialized at this point, but double-check
-                if (window.profileManager?.currentProfile) {
-                    await Promise.all([loadGallery('selfie'), loadGallery('results')]);
-                } else {
-                    console.warn('[Init] Profile not initialized yet, skipping selfie and results load');
-                }
+                // Selfie and results are already loaded by initializeProfile(), no need to load again
                 updateResultsCount();
                 updateGenerateButton();
                 updateImageOperationButtons();

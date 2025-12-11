@@ -1,5 +1,5 @@
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { isUnsafe, getWorstViolation, getAccessToken } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint } from './utils';
 
 // Efficient sanitization function - only sanitizes specific fields instead of full object traversal
 const sanitizeObject = (obj: any, maxStringLength = 100): any => {
@@ -136,7 +136,7 @@ export const callNanoBanana = async (
 
   try {
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
-    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    const location = getVertexAILocation(env);
     
     // Use Vertex AI Gemini API with image generation (Nano Banana)
     // IMPORTANT: Must use gemini-2.5-flash-image (not gemini-2.5-flash) for image generation
@@ -144,7 +144,7 @@ export const callNanoBanana = async (
     // gemini-2.5-flash only outputs text, so multimodal (image) output isn't supported
     // Cost: $30 per million output tokens for images (~$0.039 per image) vs $2.50 for text-only
     const geminiModel = 'gemini-2.5-flash-image';
-    const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
+    const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
     // Convert prompt_json to text string for Vertex AI
     // Enhance prompt with strong facial preservation instruction
@@ -490,10 +490,10 @@ export const callNanoBananaMerge = async (
 
   try {
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
-    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    const location = getVertexAILocation(env);
     
     const geminiModel = 'gemini-2.5-flash-image';
-    const geminiEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
+    const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
     let promptText = '';
     if (prompt && typeof prompt === 'object') {
@@ -967,11 +967,11 @@ export const generateVertexPrompt = async (
     // We only need text output (JSON prompt), so text-only model is more cost-effective
     const geminiModel = 'gemini-2.5-flash';
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
-    const location = env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+    const location = getVertexAILocation(env);
 
     // Vertex AI endpoint format
     // Format: https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent
-    const vertexEndpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${geminiModel}:generateContent`;
+    const vertexEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
     debugInfo.endpoint = vertexEndpoint;
     debugInfo.model = geminiModel;

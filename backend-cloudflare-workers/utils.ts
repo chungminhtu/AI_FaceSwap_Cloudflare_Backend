@@ -37,6 +37,30 @@ export const CORS_HEADERS = {
   'Access-Control-Allow-Credentials': 'true',
 };
 
+// Vertex AI Configuration
+// Supported regions: us-central1, us-east1, us-west1, europe-west1, asia-southeast1, etc.
+// Use 'global' for global endpoint (higher availability, no region prefix in URL)
+export const VERTEX_AI_DEFAULT_LOCATION = 'us-central1';
+
+export const getVertexAILocation = (env: Env): string => {
+  const location = env.GOOGLE_VERTEX_LOCATION || VERTEX_AI_DEFAULT_LOCATION;
+  return location;
+};
+
+export const getVertexAIEndpoint = (
+  projectId: string,
+  location: string,
+  model: string
+): string => {
+  // Global endpoint uses different URL format (no region prefix in domain)
+  if (location.toLowerCase() === 'global') {
+    return `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model}:generateContent`;
+  }
+  
+  // Regional endpoint format: https://{location}-aiplatform.googleapis.com/...
+  return `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+};
+
 export const jsonResponse = (data: any, status = 200): Response => {
   const jsonString = JSON.stringify(data);
   
