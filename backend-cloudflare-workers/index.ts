@@ -708,12 +708,13 @@ export default {
             const actionValue = action || 'default';
 
             if (actionValue === 'faceswap') {
+              const maxFaceswap = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
               const existingSelfies = await DB.prepare(
                 'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
               ).bind(profileId, actionValue).all();
 
-              if (existingSelfies.results && existingSelfies.results.length >= 4) {
-                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - 3);
+              if (existingSelfies.results && existingSelfies.results.length >= maxFaceswap) {
+                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxFaceswap - 1));
                 for (const oldSelfie of toDelete) {
                   const oldKey = (oldSelfie as any).selfie_url;
                   if (oldKey) {
@@ -727,12 +728,14 @@ export default {
                 }
               }
             } else {
+              const maxOther = parseInt(env.SELFIE_MAX_OTHER || '1', 10);
               const existingSelfies = await DB.prepare(
-                'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
-              ).bind(profileId, actionValue).all();
+                'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND (action != ? OR action IS NULL) ORDER BY created_at ASC'
+              ).bind(profileId, 'faceswap').all();
 
-              if (existingSelfies.results && existingSelfies.results.length >= 1) {
-                for (const oldSelfie of existingSelfies.results) {
+              if (existingSelfies.results && existingSelfies.results.length >= maxOther) {
+                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxOther - 1));
+                for (const oldSelfie of toDelete) {
                   const oldKey = (oldSelfie as any).selfie_url;
                   if (oldKey) {
                     try {

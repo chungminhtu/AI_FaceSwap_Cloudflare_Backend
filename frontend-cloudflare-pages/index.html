@@ -825,10 +825,18 @@
                                     Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code><br>
                                     Zip file sẽ được tự động giải nén và tải lên.
                                 </p>
-                                <div id="thumbnail-drop-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; background: var(--bg-primary); cursor: pointer; transition: all 0.2s; margin-bottom: 16px;" onclick="event.stopPropagation(); $('thumbnail-folder-input').click();">
+                                <div id="thumbnail-drop-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; background: var(--bg-primary); transition: all 0.2s; margin-bottom: 16px;">
                                     <div style="font-size: 48px; margin-bottom: 12px;">📁</div>
-                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip vào đây</div>
-                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">hoặc click để chọn thư mục/zip</div>
+                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip hoặc thư mục vào đây</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">hoặc chọn bằng nút bên dưới</div>
+                                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                                        <button class="action-btn" onclick="event.stopPropagation(); $('thumbnail-folder-input').click();" style="padding: 8px 16px; font-size: 13px;">
+                                            📂 Chọn Thư Mục
+                                        </button>
+                                        <button class="action-btn" onclick="event.stopPropagation(); $('thumbnail-zip-input').click();" style="padding: 8px 16px; font-size: 13px;">
+                                            📦 Chọn File Zip
+                                        </button>
+                                    </div>
                                 </div>
                                 <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json,.zip" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
                                 <input type="file" id="thumbnail-zip-input" accept=".zip" style="display: none;" onchange="handleThumbnailZipSelect(event)">
