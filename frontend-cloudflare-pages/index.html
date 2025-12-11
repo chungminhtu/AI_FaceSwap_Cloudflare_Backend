@@ -1151,9 +1151,25 @@
             const entry = document.createElement('div');
             entry.className = `api-log-entry log-${status}`;
             const durationText = duration ? formatDuration(duration) : '';
-            const durationHtml = durationText ? ` <span style="color:#666;font-size:11px;font-weight:600;">⏱️ ${durationText}</span>` : '';
+            const durationHtml = durationText ? `<span class="api-log-timing">⏱️ ${durationText}</span>` : '';
             
             const displayUrl = fullUrl || (url.startsWith('http') ? url : `${WORKER_URL}${url.startsWith('/') ? url : '/' + url}`);
+            // Extract just the path without query params
+            let displayPath = url;
+            if (fullUrl) {
+                try {
+                    const urlObj = new URL(fullUrl);
+                    displayPath = urlObj.pathname;
+                } catch (e) {
+                    // If URL parsing fails, try to remove query string manually
+                    displayPath = url.split('?')[0];
+                }
+            } else {
+                displayPath = url.split('?')[0];
+            }
+            
+            const statusText = status === 'success' ? 'SUCCESS' : status === 'error' ? 'ERROR' : status.toUpperCase();
+            const statusColor = status === 'success' ? 'var(--success)' : status === 'error' ? 'var(--danger)' : 'var(--text-secondary)';
             
             let payloadHtml = '';
             if (payload) {
@@ -1163,13 +1179,13 @@
             let curlHtml = '';
             if (method && displayUrl) {
                 const curlCommand = generateCurlCommand(method, displayUrl, headers, body);
-                curlHtml = `<div class="api-log-payload" style="margin-top: 8px;"><strong>CURL:</strong><pre style="background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 11px;">${escapeHtml(curlCommand)}</pre></div>`;
+                curlHtml = `<div class="api-log-payload" style="margin-top: 8px;"><strong>CURL:</strong><pre style="background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; word-break: break-all;">${escapeHtml(curlCommand)}</pre></div>`;
             }
             
             entry.innerHTML = `
-                <div class="api-log-entry-header"><span>${new Date().toLocaleTimeString()}</span><span>${status}</span></div>
-                <div class="api-log-action">${label}${durationHtml}</div>
-                <div class="api-log-detail">${method} ${displayUrl}</div>
+                <div class="api-log-main">
+                    <span class="api-log-method">${method}</span> <span class="api-log-url">${displayPath}</span> <span style="color: ${statusColor}; font-weight: 600;">${statusText}</span>${durationHtml}
+                </div>
                 ${payloadHtml}
                 ${curlHtml}
             `;
@@ -1178,12 +1194,8 @@
         }
 
         function formatDuration(ms) {
-            if (ms < 1000) return `${ms}ms`;
             const seconds = (ms / 1000).toFixed(1);
-            if (seconds < 60) return `${seconds}s`;
-            const minutes = Math.floor(ms / 60000);
-            const secs = ((ms % 60000) / 1000).toFixed(0);
-            return `${minutes}m ${secs}s`;
+            return `${seconds}s`;
         }
 
         function clearApiLogs() { if (apiLogList) apiLogList.innerHTML = ''; }
