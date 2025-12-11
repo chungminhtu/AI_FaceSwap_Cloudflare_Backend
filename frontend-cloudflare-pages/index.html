@@ -936,7 +936,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // Config
-        let WORKER_URL = 'https://api.d.shotpix.app';
+        let WORKER_URL = 'https://ai-faceswap-backend.Chungminhtu03.workers.dev'; // Injected during deployment
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
@@ -1018,11 +1018,18 @@
             async createProfile() {
                 const startTime = Date.now();
                 const createProfileUrl = `${WORKER_URL}/profiles`;
-                const response = await fetch(createProfileUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                // Get or generate device_id
+                let deviceId = localStorage.getItem('deviceId');
+                if (!deviceId) {
+                    deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+                    localStorage.setItem('deviceId', deviceId);
+                }
+                const requestBody = { device_id: deviceId };
+                const response = await fetch(createProfileUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
                 const duration = Date.now() - startTime;
                 if (!response.ok) throw new Error('Không thể tạo hồ sơ');
                 const data = await response.json();
-                logApiCall({ label: 'Tạo Hồ Sơ', method: 'POST', url: '/profiles', fullUrl: createProfileUrl, status: 'success', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: {} });
+                logApiCall({ label: 'Tạo Hồ Sơ', method: 'POST', url: '/profiles', fullUrl: createProfileUrl, status: 'success', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
                 return data.data || data;
             },
             updateProfileDisplay() {

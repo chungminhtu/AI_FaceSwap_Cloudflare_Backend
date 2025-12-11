@@ -150,6 +150,7 @@ export interface UploadUrlResponse {
 
 export interface Profile {
   id: string;
+  device_id?: string;
   name?: string;
   email?: string;
   avatar_url?: string;
@@ -161,12 +162,7 @@ export interface Profile {
 export interface PresetImage {
   id: string;
   preset_url: string; // Full URL (assembled from stored key)
-  prompt_json?: string;
-  thumbnail_url?: string; // 4x resolution thumbnail (full URL assembled from stored key)
-  thumbnail_url_1x?: string;
-  thumbnail_url_1_5x?: string;
-  thumbnail_url_2x?: string;
-  thumbnail_url_3x?: string;
+  thumbnail_url?: string; // Thumbnail URL (reconstructed from thumbnail_r2 R2 key)
   created_at: string;
 }
 

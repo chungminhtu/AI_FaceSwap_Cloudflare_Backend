@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid';
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId } from './utils';
 
@@ -399,7 +400,9 @@ export const callNanoBanana = async (
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      const resultKey = `results/vertex_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'jpg'}`;
+      const ext = mimeType.split('/')[1] || 'jpg';
+      const id = nanoid(16);
+      const resultKey = `results/${id}.${ext}`;
       
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
@@ -707,7 +710,9 @@ export const callNanoBananaMerge = async (
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      const resultKey = `results/merge_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'jpg'}`;
+      const ext = mimeType.split('/')[1] || 'jpg';
+      const id = nanoid(16);
+      const resultKey = `results/${id}.${ext}`;
       
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
@@ -1391,7 +1396,9 @@ export const callUpscaler4k = async (
         contentType = imageResponse.headers.get('content-type') || 'image/png';
       }
       
-      const resultKey = `results/upscaler4k_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${contentType.split('/')[1] || 'png'}`;
+      const ext = contentType.split('/')[1] || 'png';
+      const id = nanoid(16);
+      const resultKey = `results/${id}.${ext}`;
       
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, imageBytes, {

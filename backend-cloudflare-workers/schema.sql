@@ -3,6 +3,7 @@
 -- Profiles table: Store user profiles
 CREATE TABLE IF NOT EXISTS profiles (
   id TEXT PRIMARY KEY,
+  device_id TEXT, -- Device identifier for searchable indexing
   name TEXT,
   email TEXT,
   avatar_url TEXT,
@@ -11,28 +12,25 @@ CREATE TABLE IF NOT EXISTS profiles (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
--- Presets table: Store preset images with optional thumbnails (same row)
+-- Presets table: Store preset images with optional thumbnails
 -- Metadata (type, sub_category, gender, position) is stored in R2 bucket path, not in DB
+-- prompt_json is stored in R2 object metadata, not in D1
 CREATE TABLE IF NOT EXISTS presets (
   id TEXT PRIMARY KEY,
-  preset_url TEXT NOT NULL, -- R2 bucket key (e.g., "preset/filename.jpg"), not full URL
-  prompt_json TEXT, -- JSON prompt for nano banana mode (optional)
-  thumbnail_url TEXT, -- Thumbnail file URL for 4x resolution (webp or lottie)
-  thumbnail_url_1x TEXT, -- Thumbnail URL for 1x resolution
-  thumbnail_url_1_5x TEXT, -- Thumbnail URL for 1.5x resolution
-  thumbnail_url_2x TEXT, -- Thumbnail URL for 2x resolution
-  thumbnail_url_3x TEXT, -- Thumbnail URL for 3x resolution
+  ext TEXT NOT NULL, -- File extension (e.g., 'jpg', 'png', etc.)
+  thumbnail_r2 TEXT, -- R2 key for thumbnail (e.g., 'webp_1x/face-swap/portrait_female_1.webp')
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_presets_created_at ON presets(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_presets_has_thumbnail ON presets(thumbnail_url);
+CREATE INDEX IF NOT EXISTS idx_presets_thumbnail_r2 ON presets(thumbnail_r2);
+CREATE INDEX IF NOT EXISTS idx_profiles_device_id ON profiles(device_id);
 
 -- Selfies table: Store uploaded selfie images
 CREATE TABLE IF NOT EXISTS selfies (
   id TEXT PRIMARY KEY,
-  selfie_url TEXT NOT NULL, -- R2 bucket key (e.g., "selfie/filename.jpg"), not full URL
+  ext TEXT NOT NULL, -- File extension (e.g., 'jpg', 'png', etc.)
   profile_id TEXT NOT NULL, -- Profile that owns this selfie
   action TEXT, -- Action type (e.g., "faceswap", "default", etc.) - determines retention policy
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -48,8 +46,8 @@ CREATE INDEX IF NOT EXISTS idx_selfies_action_profile_id ON selfies(action, prof
 
 -- Results table: Store face swap results
 CREATE TABLE IF NOT EXISTS results (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  result_url TEXT NOT NULL, -- R2 bucket key (e.g., "results/filename.jpg"), not full URL
+  id TEXT PRIMARY KEY,
+  ext TEXT NOT NULL, -- File extension (e.g., 'jpg', 'png', etc.)
   profile_id TEXT NOT NULL, -- Profile that owns this result
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );

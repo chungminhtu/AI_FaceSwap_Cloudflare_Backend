@@ -458,6 +458,26 @@ function parseConfig(config) {
     throw new Error('Invalid GCP configuration');
   }
 
+  const accountId = config.cloudflare.accountId || '';
+  const workerName = config.workerName;
+  
+  const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
+  const hasWorkerCustomDomain = config.workerCustomDomain && config.workerCustomDomain.trim() !== '';
+  
+  let r2DevDomain = null;
+  let workerDevUrl = null;
+  
+  if (accountId && !hasWorkerCustomDomain) {
+    try {
+      const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
+      const match = whoami.match(/([^\s]+)@/);
+      if (match) {
+        workerDevUrl = `https://${workerName}.${match[1]}.workers.dev`;
+      }
+    } catch {
+    }
+  }
+
   return {
     name: config.name || 'default',
     workerName: config.workerName,
@@ -467,7 +487,7 @@ function parseConfig(config) {
     deployPages: config.deployPages || process.env.DEPLOY_PAGES === 'true',
     workerCustomDomain: config.workerCustomDomain,
     cloudflare: {
-      accountId: config.cloudflare.accountId || '',
+      accountId: accountId,
       apiToken: config.cloudflare.apiToken || ''
     },
     gcp: config.gcp,
@@ -485,17 +505,31 @@ function parseConfig(config) {
           R2_BUCKET_BINDING: config.bucketName,
           D1_DATABASE_BINDING: config.databaseName
         };
-        if (config.CUSTOM_DOMAIN) secrets.CUSTOM_DOMAIN = config.CUSTOM_DOMAIN;
-        if (config.workerCustomDomain) secrets.WORKER_CUSTOM_DOMAIN = `https://${config.workerCustomDomain}`;
+        
+        if (hasCustomDomain) {
+          secrets.CUSTOM_DOMAIN = config.CUSTOM_DOMAIN.trim();
+        }
+        
+        if (hasWorkerCustomDomain) {
+          const domain = config.workerCustomDomain.trim();
+          secrets.WORKER_CUSTOM_DOMAIN = domain.startsWith('http') 
+            ? domain 
+            : `https://${domain}`;
+        } else if (workerDevUrl) {
+          secrets.WORKER_CUSTOM_DOMAIN = workerDevUrl;
+        }
+        
         if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
         return secrets;
       })(),
     _needsCloudflareSetup: config._needsCloudflareSetup,
-    _environment: config._environment
+    _environment: config._environment,
+    _r2DevDomain: r2DevDomain,
+    _workerDevUrl: workerDevUrl
   };
 }
 
-function generateWranglerConfig(config, skipD1 = false) {
+function generateWranglerConfig(config, skipD1 = false, databaseId = null) {
   const wranglerConfig = {
     name: config.workerName,
     main: 'backend-cloudflare-workers/index.ts',
@@ -521,7 +555,11 @@ function generateWranglerConfig(config, skipD1 = false) {
   };
 
   if (!skipD1) {
-    wranglerConfig.d1_databases = [{ binding: config.databaseName, database_name: config.databaseName }];
+    if (databaseId) {
+      wranglerConfig.d1_databases = [{ binding: config.databaseName, database_id: databaseId }];
+    } else {
+      wranglerConfig.d1_databases = [{ binding: config.databaseName, database_name: config.databaseName }];
+    }
   }
 
   // Note: Custom domains for Workers are configured separately in Cloudflare dashboard
@@ -1028,43 +1066,150 @@ const utils = {
       const result = await runCommand('wrangler r2 bucket list', cwd);
       if (!result.stdout.includes(bucketName)) {
         await runCommand(`wrangler r2 bucket create ${bucketName}`, cwd);
-        return { exists: false, created: true };
+        return { exists: false, created: true, publicDevDomain: null };
       }
-      return { exists: true, created: false };
+      
+      let publicDevDomain = null;
+      const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
+      const apiToken = process.env.CLOUDFLARE_API_TOKEN || '';
+      
+      if (accountId && apiToken) {
+        try {
+          const https = require('https');
+          const domainInfo = await new Promise((resolve, reject) => {
+            const req = https.request({
+              hostname: 'api.cloudflare.com',
+              path: `/client/v4/accounts/${accountId}/r2/buckets/${bucketName}/domains/managed`,
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${apiToken}`,
+                'Content-Type': 'application/json'
+              },
+              timeout: 10000
+            }, (res) => {
+              let data = '';
+              res.on('data', (chunk) => data += chunk);
+              res.on('end', () => {
+                try {
+                  const json = JSON.parse(data);
+                  if (json.success && json.result) {
+                    resolve(json.result);
+                  } else {
+                    reject(new Error(json.errors?.[0]?.message || 'Failed to get bucket domain'));
+                  }
+                } catch (e) {
+                  reject(e);
+                }
+              });
+            });
+            req.on('error', reject);
+            req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
+            req.end();
+          });
+          
+          if (domainInfo && domainInfo.enabled && domainInfo.domain) {
+            publicDevDomain = domainInfo.domain.startsWith('http') 
+              ? domainInfo.domain 
+              : `https://${domainInfo.domain}`;
+          }
+        } catch (e) {
+        }
+      }
+      
+      if (!publicDevDomain) {
+        try {
+          const bucketInfo = await runCommand(`wrangler r2 bucket info ${bucketName}`, cwd);
+          if (bucketInfo.stdout) {
+            const domainMatch = bucketInfo.stdout.match(/pub-([a-f0-9-]+)\.r2\.dev/i);
+            if (domainMatch) {
+              publicDevDomain = `https://pub-${domainMatch[1]}.r2.dev`;
+            }
+          }
+        } catch (e) {
+        }
+      }
+      
+      return { exists: true, created: false, publicDevDomain };
     } catch (error) {
       if (!error.message.includes('already exists')) throw error;
-      return { exists: true, created: false };
+      return { exists: true, created: false, publicDevDomain: null };
     }
   },
 
   async ensureD1Database(cwd, databaseName) {
     try {
       const env = { ...process.env };
-      const output = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+      const output = execSync('wrangler d1 list --json', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
       
       if (output && (output.includes('Authentication error') || output.includes('code: 10000'))) {
         logWarn('API token does not have D1 permissions. Skipping D1 database operations.');
-        return { exists: false, created: false, schemaApplied: false, skipped: true };
+        return { exists: false, created: false, schemaApplied: false, skipped: true, databaseId: null };
       }
       
-      let exists = output && output.includes(databaseName);
+      let exists = false;
+      let databaseId = null;
       let created = false;
+
+      try {
+        const parsed = JSON.parse(output);
+        const databases = Array.isArray(parsed) ? parsed : (parsed.result || parsed);
+        const dbList = Array.isArray(databases) ? databases : [];
+        const db = dbList.find(d => d.name === databaseName);
+        if (db) {
+          exists = true;
+          databaseId = db.uuid || db.id || null;
+        }
+      } catch (e) {
+        const textOutput = execSync('wrangler d1 list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+        exists = textOutput && textOutput.includes(databaseName);
+        if (exists) {
+          const lines = textOutput.split('\n');
+          for (const line of lines) {
+            if (line.includes(databaseName)) {
+              const idMatch = line.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+              if (idMatch) {
+                databaseId = idMatch[1];
+                break;
+              }
+            }
+          }
+        }
+      }
 
       if (!exists) {
         let createResult;
         try {
           createResult = await runCommandWithRetry(`wrangler d1 create ${databaseName}`, cwd, 2, 2000);
+          if (createResult && createResult.success) {
+            const output = createResult.output || createResult.stdout || '';
+            const idMatch = output.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+            if (idMatch) {
+              databaseId = idMatch[1];
+            }
+            created = true;
+            exists = true;
+          }
         } catch (error) {
           const errorMsg = error.message || error.error || '';
           if (errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) {
             logWarn('API token does not have D1 permissions. Skipping D1 database creation.');
-            return { exists: false, created: false, schemaApplied: false, skipped: true };
+            return { exists: false, created: false, schemaApplied: false, skipped: true, databaseId: null };
           }
           createResult = { success: false, error: errorMsg };
         }
-        if (createResult && createResult.success) {
-          created = true;
-          exists = true;
+      }
+      
+      if (exists && !databaseId) {
+        const listOutput = execSync('wrangler d1 list --json', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+        try {
+          const parsed = JSON.parse(listOutput);
+          const databases = Array.isArray(parsed) ? parsed : (parsed.result || parsed);
+          const dbList = Array.isArray(databases) ? databases : [];
+          const db = dbList.find(d => d.name === databaseName);
+          if (db) {
+            databaseId = db.uuid || db.id || null;
+          }
+        } catch (e) {
         }
       }
 
@@ -1091,15 +1236,15 @@ const utils = {
         }
       }
 
-      return { exists, created, schemaApplied };
+      return { exists, created, schemaApplied, databaseId };
     } catch (error) {
       const errorMsg = error.message || error.error || '';
       if (errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) {
         logWarn('API token does not have D1 permissions. Skipping D1 database operations.');
-        return { exists: false, created: false, schemaApplied: false, skipped: true };
+        return { exists: false, created: false, schemaApplied: false, skipped: true, databaseId: null };
       }
       if (errorMsg.includes('already exists') || errorMsg.includes('name is already in use')) {
-        return { exists: true, created: false, schemaApplied: false };
+        return { exists: true, created: false, schemaApplied: false, databaseId: null };
       }
       throw error;
     }
@@ -1146,7 +1291,7 @@ const utils = {
     return { success: true, deployed: successCount, total: keys.length };
   },
 
-  async deployWorker(cwd, workerName, config, skipD1 = false) {
+  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null) {
     const wranglerConfigFiles = [
       path.join(cwd, 'wrangler.json'),
       path.join(cwd, 'wrangler.jsonc'),
@@ -1166,7 +1311,7 @@ const utils = {
     let createdConfig = false;
 
     try {
-      const wranglerConfig = generateWranglerConfig(config, skipD1);
+      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId);
       fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
       createdConfig = true;
 
@@ -1179,7 +1324,7 @@ const utils = {
           result = await runCommandWithRetry('wrangler deploy', cwd, 2, 3000);
         } else if ((errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) && !skipD1) {
           logWarn('Worker deployment failed due to D1 permissions. Retrying without D1 binding...');
-          const wranglerConfigNoD1 = generateWranglerConfig(config, true);
+          const wranglerConfigNoD1 = generateWranglerConfig(config, true, null);
           fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfigNoD1, null, 2));
           result = await runCommandWithRetry('wrangler deploy', cwd, 2, 3000);
         } else {
@@ -1322,6 +1467,25 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       config.cloudflare.apiToken = cfToken;
       config.cloudflare.accountId = cfAccountId;
     }
+    
+    if (cfAccountId) {
+      const hasWorkerCustomDomain = config.workerCustomDomain && config.workerCustomDomain.trim() !== '';
+
+      if (!hasWorkerCustomDomain && !config.secrets.WORKER_CUSTOM_DOMAIN) {
+        try {
+          const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
+          const match = whoami.match(/([^\s]+)@/);
+          if (match) {
+            const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
+            config.secrets.WORKER_CUSTOM_DOMAIN = workerDevUrl;
+            config._workerDevUrl = workerDevUrl;
+            console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+          }
+        } catch {
+        }
+      }
+    }
+    
     report('Setting up Cloudflare credentials...', 'completed', 'Cloudflare ready');
 
     const origToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -1330,13 +1494,25 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
 
     try {
+      let r2Result = null;
       if (DEPLOY_R2) {
         report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'running', 'Checking bucket existence');
-        const r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
+        r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
         if (r2Result.created) {
           report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket created successfully');
         } else {
           report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket already exists');
+        }
+        
+        const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
+        if (!hasCustomDomain && !config.secrets.CUSTOM_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+          config.secrets.CUSTOM_DOMAIN = r2Result.publicDevDomain;
+        }
+      } else {
+        r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
+        const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
+        if (!hasCustomDomain && !config.secrets.CUSTOM_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+          config.secrets.CUSTOM_DOMAIN = r2Result.publicDevDomain;
         }
       }
       
@@ -1387,7 +1563,18 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
         }
         const skipD1 = dbResult.skipped || false;
-        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1);
+        const databaseId = dbResult.databaseId || null;
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId);
+        
+        if (!workerUrl) {
+          workerUrl = config._workerDevUrl || getWorkerUrl(cwd, config.workerName);
+        }
+        
+        if (config.workerCustomDomain && config.workerCustomDomain.trim() !== '') {
+          const domain = config.workerCustomDomain.trim();
+          workerUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+        }
+        
         report('Deploying worker...', 'completed', 'Worker deployed');
       }
 
@@ -1611,6 +1798,24 @@ async function main() {
       config.cloudflare.accountId = cfAccountId;
     }
     
+    if (cfAccountId) {
+      const hasWorkerCustomDomain = config.workerCustomDomain && config.workerCustomDomain.trim() !== '';
+
+      if (!hasWorkerCustomDomain && !config.secrets.WORKER_CUSTOM_DOMAIN) {
+        try {
+          const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
+          const match = whoami.match(/([^\s]+)@/);
+          if (match) {
+            const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
+            config.secrets.WORKER_CUSTOM_DOMAIN = workerDevUrl;
+            config._workerDevUrl = workerDevUrl;
+            console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+          }
+        } catch {
+        }
+      }
+    }
+    
     process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
     logger.completeStep('Setting up Cloudflare credentials', 'Cloudflare ready');
 
@@ -1626,6 +1831,11 @@ async function main() {
         logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket created successfully');
       } else {
         logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket already exists');
+      }
+      
+      const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
+      if (!hasCustomDomain && !config.secrets.CUSTOM_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+        config.secrets.CUSTOM_DOMAIN = r2Result.publicDevDomain;
       }
 
       logger.startStep(`[Cloudflare] D1 Database: ${config.databaseName}`);
@@ -1662,7 +1872,19 @@ async function main() {
 
       logger.startStep('Deploying worker');
       const skipD1 = dbResult.skipped || false;
-      const workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1);
+      const databaseId = dbResult.databaseId || null;
+      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId);
+      
+      if (!workerUrl) {
+        workerUrl = config._workerDevUrl || getWorkerUrl(process.cwd(), config.workerName);
+      }
+      
+      if (config.workerCustomDomain) {
+        workerUrl = config.workerCustomDomain.startsWith('http') 
+          ? config.workerCustomDomain 
+          : `https://${config.workerCustomDomain}`;
+      }
+      
       logger.completeStep('Deploying worker', 'Worker deployed');
 
       let pagesUrl = '';

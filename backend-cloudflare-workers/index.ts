@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
+import { nanoid } from 'nanoid';
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, RemoveBackgroundRequest } from './types';
 import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
@@ -44,52 +45,47 @@ const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
   const existing = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(systemPresetId).first();
   if (!existing) {
     await DB.prepare(
-      'INSERT OR IGNORE INTO presets (id, preset_url, created_at) VALUES (?, ?, ?)'
-    ).bind(systemPresetId, '', Math.floor(Date.now() / 1000)).run();
+      'INSERT OR IGNORE INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+    ).bind(systemPresetId, 'jpg', Math.floor(Date.now() / 1000)).run();
   }
   return systemPresetId;
 };
 
-const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string | null> => {
+const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string, R2_BUCKET: R2Bucket): Promise<string | null> => {
   try {
     let key = extractR2KeyFromUrl(imageUrl) || imageUrl;
-    const originalKey = key;
     
-    // Ensure selfie key has selfie/ prefix if it's a selfie file
-    if (key && !key.startsWith('selfie/') && !key.startsWith('selfies/')) {
-      // Check if it looks like a selfie file (starts with selfie_)
-      if (key.startsWith('selfie_')) {
-        key = `selfie/${key}`;
+    // Extract id and ext from key if it's in new format (selfie/{id}.{ext})
+    let id: string | null = null;
+    let ext: string = 'jpg';
+    
+    if (key.startsWith('selfie/')) {
+      const keyParts = key.replace('selfie/', '').split('.');
+      if (keyParts.length >= 2) {
+        ext = keyParts[keyParts.length - 1];
+        id = keyParts.slice(0, -1).join('.');
       }
     }
     
-    // Try to find with prefixed key first
-    let selfieResult = await DB.prepare(
-      'SELECT id FROM selfies WHERE selfie_url = ? AND profile_id = ? LIMIT 1'
-    ).bind(key, profileId).first();
-    
-    // If not found and key was modified, try with original unprefixed key (backward compatibility)
-    if (!selfieResult && key !== originalKey) {
-      selfieResult = await DB.prepare(
-        'SELECT id FROM selfies WHERE selfie_url = ? AND profile_id = ? LIMIT 1'
-      ).bind(originalKey, profileId).first();
+    // If we extracted an id, check if it exists
+    if (id) {
+      const selfieResult = await DB.prepare(
+        'SELECT id FROM selfies WHERE id = ? AND profile_id = ? LIMIT 1'
+      ).bind(id, profileId).first();
       
-      // If found with unprefixed key, update it to use prefixed key for consistency
       if (selfieResult) {
-        await DB.prepare(
-          'UPDATE selfies SET selfie_url = ? WHERE id = ?'
-        ).bind(key, (selfieResult as any).id).run();
+        return (selfieResult as any).id;
       }
     }
     
-    if (selfieResult) {
-      return (selfieResult as any).id;
-    }
+    // Create new system selfie with nanoid
+    const systemSelfieId = nanoid(16);
+    ext = key.includes('.') ? key.split('.').pop() || 'jpg' : 'jpg';
+    const newKey = reconstructR2Key(systemSelfieId, ext, 'selfie');
     
-    const systemSelfieId = `system_selfie_${profileId}_${Date.now()}`;
     const insertResult = await DB.prepare(
-      'INSERT OR IGNORE INTO selfies (id, selfie_url, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).bind(systemSelfieId, key, profileId, 'default', Math.floor(Date.now() / 1000)).run();
+      'INSERT OR IGNORE INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(systemSelfieId, ext, profileId, 'default', Math.floor(Date.now() / 1000)).run();
     
     if (insertResult.success) {
       return systemSelfieId;
@@ -106,10 +102,9 @@ const saveResultToDatabase = async (
   profileId: string,
   env: Env,
   R2_BUCKET: R2Bucket
-): Promise<number | null> => {
+): Promise<string | null> => {
   try {
     let resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
-    const originalKey = resultKey;
     
     // Ensure result key has results/ prefix if it's a result file
     if (resultKey && !resultKey.startsWith('results/')) {
@@ -119,25 +114,18 @@ const saveResultToDatabase = async (
       }
     }
     
-    // Check if result already exists with prefixed key (backward compatibility)
-    let existingResult = await DB.prepare(
-      'SELECT id FROM results WHERE result_url = ? AND profile_id = ? LIMIT 1'
-    ).bind(resultKey, profileId).first<{ id: number }>();
-    
-    // If not found and key was modified, try with original unprefixed key (backward compatibility)
-    if (!existingResult && resultKey !== originalKey) {
-      existingResult = await DB.prepare(
-        'SELECT id FROM results WHERE result_url = ? AND profile_id = ? LIMIT 1'
-      ).bind(originalKey, profileId).first<{ id: number }>();
-      
-      // If found with unprefixed key, update it to use prefixed key for consistency
-      if (existingResult) {
-        await DB.prepare(
-          'UPDATE results SET result_url = ? WHERE id = ?'
-        ).bind(resultKey, existingResult.id).run();
-        return existingResult.id;
-      }
+    // Extract id and ext from resultKey (format: results/{id}.{ext})
+    const keyParts = resultKey.replace('results/', '').split('.');
+    if (keyParts.length < 2) {
+      return null;
     }
+    const ext = keyParts[keyParts.length - 1];
+    const id = keyParts.slice(0, -1).join('.');
+    
+    // Check if result already exists
+    const existingResult = await DB.prepare(
+      'SELECT id FROM results WHERE id = ? AND profile_id = ? LIMIT 1'
+    ).bind(id, profileId).first<{ id: string }>();
     
     // If result already exists, return its ID
     if (existingResult) {
@@ -160,18 +148,19 @@ const saveResultToDatabase = async (
       
       // Get oldest results to delete
       const oldResults = await DB.prepare(
-        'SELECT id, result_url FROM results WHERE profile_id = ? ORDER BY created_at ASC LIMIT ?'
-      ).bind(profileId, excessCount).all<{ id: number; result_url: string }>();
+        'SELECT id, ext FROM results WHERE profile_id = ? ORDER BY created_at ASC LIMIT ?'
+      ).bind(profileId, excessCount).all<{ id: string; ext: string }>();
       
       if (oldResults.results && oldResults.results.length > 0) {
-        // Delete from database and R2
-        for (const oldResult of oldResults.results) {
-          // Delete from database
-          await DB.prepare('DELETE FROM results WHERE id = ?').bind(oldResult.id).run();
+        // Batch delete from database
+        const idsToDelete = oldResults.results.map(r => r.id);
+        if (idsToDelete.length > 0) {
+          const placeholders = idsToDelete.map(() => '?').join(',');
+          await DB.prepare(`DELETE FROM results WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
           
           // Delete from R2 (non-fatal if it fails)
-          const r2Key = oldResult.result_url;
-          if (r2Key) {
+          for (const oldResult of oldResults.results) {
+            const r2Key = reconstructR2Key(oldResult.id, oldResult.ext, 'results');
             try {
               await R2_BUCKET.delete(r2Key);
             } catch (r2Error) {
@@ -184,11 +173,11 @@ const saveResultToDatabase = async (
     
     // Insert new result
     const insertResult = await DB.prepare(
-      'INSERT INTO results (result_url, profile_id, created_at) VALUES (?, ?, ?)'
-    ).bind(resultKey, profileId, Math.floor(Date.now() / 1000)).run();
+      'INSERT INTO results (id, ext, profile_id, created_at) VALUES (?, ?, ?, ?)'
+    ).bind(id, ext, profileId, Math.floor(Date.now() / 1000)).run();
     
-    if (insertResult.success && insertResult.meta?.last_row_id) {
-      return insertResult.meta.last_row_id;
+    if (insertResult.success) {
+      return id;
     }
     
     return null;
@@ -283,6 +272,10 @@ const buildPresetUrl = (key: string, env: Env, fallbackOrigin?: string): string 
 
 const buildResultUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
   return getR2PublicUrl(env, key, fallbackOrigin);
+};
+
+const reconstructR2Key = (id: string, ext: string, prefix: 'selfie' | 'preset' | 'results'): string => {
+  return `${prefix}/${id}.${ext}`;
 };
 
 const convertLegacyUrl = (url: string, env: Env): string => {
@@ -622,10 +615,9 @@ export default {
 
         // Process all files in parallel
         const processFile = async (fileData: FileData, index: number): Promise<any> => {
-          const timestamp = Date.now();
-          const randomSuffix = Math.random().toString(36).substring(2, 15);
-          const uniqueFilename = `${timestamp}_${index}_${randomSuffix}_${fileData.filename}`;
-          const key = `${type}/${uniqueFilename}`;
+          const id = nanoid(16);
+          const ext = fileData.contentType.split('/')[1] || 'jpg';
+          const key = `${type}/${id}.${ext}`;
 
           // Upload to R2
           try {
@@ -679,12 +671,30 @@ export default {
               }
             }
 
-            const imageId = `preset_${timestamp}_${randomSuffix}`;
+            // Store prompt_json in R2 metadata
+            if (promptJson) {
+              try {
+                const existingObject = await R2_BUCKET.head(key);
+                if (existingObject) {
+                  await R2_BUCKET.put(key, fileData.fileData, {
+                    httpMetadata: {
+                      contentType: fileData.contentType,
+                      cacheControl: 'public, max-age=31536000, immutable',
+                    },
+                    customMetadata: {
+                      prompt_json: promptJson
+                    }
+                  });
+                }
+              } catch (metadataError) {
+                console.warn('Failed to store prompt_json in R2 metadata:', metadataError);
+              }
+            }
 
-            // Save to database (store only key, not full URL)
+            // Save to database (store only id and ext, prompt_json in R2 metadata)
             const result = await DB.prepare(
-              'INSERT INTO presets (id, preset_url, prompt_json, created_at) VALUES (?, ?, ?, ?)'
-            ).bind(imageId, key, promptJson, createdAt).run();
+              'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+            ).bind(id, ext, createdAt).run();
 
             if (!result.success) {
               return {
@@ -697,61 +707,68 @@ export default {
             return {
               success: true,
               url: publicUrl,
-              id: imageId,
-              filename: uniqueFilename,
+              id: id,
+              filename: `${id}.${ext}`,
               hasPrompt: !!promptJson,
               prompt_json: promptJson ? JSON.parse(promptJson) : null,
               vertex_info: vertexCallInfo
             };
           } else if (type === 'selfie') {
-            const selfieId = `selfie_${timestamp}_${randomSuffix}`;
             const actionValue = action || 'default';
 
             if (actionValue === 'faceswap') {
               const maxFaceswap = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
               const existingSelfies = await DB.prepare(
-                'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
+                'SELECT id, ext FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
               ).bind(profileId, actionValue).all();
 
               if (existingSelfies.results && existingSelfies.results.length >= maxFaceswap) {
                 const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxFaceswap - 1));
-                for (const oldSelfie of toDelete) {
-                  const oldKey = (oldSelfie as any).selfie_url;
-                  if (oldKey) {
+                const idsToDelete = toDelete.map((s: any) => s.id);
+                if (idsToDelete.length > 0) {
+                  const placeholders = idsToDelete.map(() => '?').join(',');
+                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+                  
+                  // Delete from R2
+                  for (const oldSelfie of toDelete) {
+                    const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
                     try {
                       await R2_BUCKET.delete(oldKey);
                     } catch (r2Error) {
                       console.warn('Failed to delete old selfie from R2:', r2Error);
                     }
                   }
-                  await DB.prepare('DELETE FROM selfies WHERE id = ?').bind((oldSelfie as any).id).run();
                 }
               }
             } else {
               const maxOther = parseInt(env.SELFIE_MAX_OTHER || '1', 10);
               const existingSelfies = await DB.prepare(
-                'SELECT id, selfie_url FROM selfies WHERE profile_id = ? AND (action != ? OR action IS NULL) ORDER BY created_at ASC'
+                'SELECT id, ext FROM selfies WHERE profile_id = ? AND (action != ? OR action IS NULL) ORDER BY created_at ASC'
               ).bind(profileId, 'faceswap').all();
 
               if (existingSelfies.results && existingSelfies.results.length >= maxOther) {
                 const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxOther - 1));
-                for (const oldSelfie of toDelete) {
-                  const oldKey = (oldSelfie as any).selfie_url;
-                  if (oldKey) {
+                const idsToDelete = toDelete.map((s: any) => s.id);
+                if (idsToDelete.length > 0) {
+                  const placeholders = idsToDelete.map(() => '?').join(',');
+                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+                  
+                  // Delete from R2
+                  for (const oldSelfie of toDelete) {
+                    const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
                     try {
                       await R2_BUCKET.delete(oldKey);
                     } catch (r2Error) {
                       console.warn('Failed to delete old selfie from R2:', r2Error);
                     }
                   }
-                  await DB.prepare('DELETE FROM selfies WHERE id = ?').bind((oldSelfie as any).id).run();
                 }
               }
             }
 
             const result = await DB.prepare(
-              'INSERT INTO selfies (id, selfie_url, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(selfieId, key, profileId, actionValue, createdAt).run();
+              'INSERT INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
+            ).bind(id, ext, profileId, actionValue, createdAt).run();
 
             if (!result.success) {
               return {
@@ -764,8 +781,8 @@ export default {
             return {
               success: true,
               url: publicUrl,
-              id: selfieId,
-              filename: uniqueFilename,
+              id: id,
+              filename: `${id}.${ext}`,
               action: actionValue
             };
           }
@@ -928,6 +945,37 @@ export default {
         // Map: R2 key -> preset_id (for linking thumbnails)
         const presetMap = new Map<string, string>();
         
+        // Step 1: Extract all potential IDs and batch check existing presets
+        const potentialIds: string[] = [];
+        const r2KeyToIdMap = new Map<string, string>();
+        
+        for (const { file, path, parsed } of originalPresets) {
+          const r2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
+          const keyParts = r2Key.replace('preset/', '').split('.');
+          if (keyParts.length >= 2) {
+            const extractedId = keyParts.slice(0, -1).join('.');
+            potentialIds.push(extractedId);
+            r2KeyToIdMap.set(r2Key, extractedId);
+          }
+        }
+        
+        // Batch check existing presets
+        const existingPresetsMap = new Map<string, string>();
+        if (potentialIds.length > 0) {
+          const uniqueIds = [...new Set(potentialIds)];
+          const placeholders = uniqueIds.map(() => '?').join(',');
+          const existingPresets = await DB.prepare(
+            `SELECT id FROM presets WHERE id IN (${placeholders})`
+          ).bind(...uniqueIds).all();
+          
+          if (existingPresets.results) {
+            for (const preset of existingPresets.results) {
+              existingPresetsMap.set((preset as any).id, (preset as any).id);
+            }
+          }
+        }
+        
+        // Step 2: Process files and create/use presets
         for (const { file, path, parsed } of originalPresets) {
           try {
             const filename = file.name;
@@ -947,31 +995,30 @@ export default {
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
             
-            // Check if preset already exists by image_url (R2 path is unique)
+            // Check if preset already exists
             let presetId: string | undefined = presetMap.get(r2Key);
             
             if (!presetId) {
-              // Check database for existing preset with same preset_url
-              const existing = await DB.prepare(
-                'SELECT id FROM presets WHERE preset_url = ?'
-              ).bind(publicUrl).first();
-              
-              if (existing) {
-                presetId = (existing as any).id as string;
-                if (presetId) {
-                  presetMap.set(r2Key, presetId);
-                }
-              } else {
-                // Create new preset
-                presetId = `preset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-                const createdAt = Math.floor(Date.now() / 1000);
-                
-                await DB.prepare(
-                  'INSERT INTO presets (id, preset_url, created_at) VALUES (?, ?, ?)'
-                ).bind(presetId, r2Key, createdAt).run();
-                
+              const extractedId = r2KeyToIdMap.get(r2Key);
+              if (extractedId && existingPresetsMap.has(extractedId)) {
+                presetId = extractedId;
                 presetMap.set(r2Key, presetId);
               }
+            }
+            
+            if (!presetId) {
+                // Create new preset
+                const newPresetId = nanoid(16);
+              const keyParts = r2Key.replace('preset/', '').split('.');
+              const ext = keyParts.length >= 2 ? keyParts[keyParts.length - 1] : 'jpg';
+              const createdAt = Math.floor(Date.now() / 1000);
+              
+              await DB.prepare(
+                'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+              ).bind(newPresetId, ext, createdAt).run();
+              
+              presetId = newPresetId;
+              presetMap.set(r2Key, newPresetId);
             }
 
             results.push({
@@ -991,6 +1038,17 @@ export default {
         }
 
         // Process thumbnails (UPDATE preset row with thumbnail fields - same row approach)
+        // Collect all updates first, then batch execute
+        const thumbnailUpdates: Array<{
+          presetId: string;
+          thumbnailKey: string;
+          resolution: string;
+          filename: string;
+          r2Key: string;
+          publicUrl: string;
+          fileFormat: string;
+        }> = [];
+        
         for (const { file, path, parsed } of thumbnails) {
           try {
             const filename = file.name;
@@ -1026,24 +1084,9 @@ export default {
             // Find preset by matching original_preset R2 path
             // Build expected original preset R2 key from thumbnail metadata
             const originalPresetR2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
-            const originalPresetUrl = getR2PublicUrl(env, originalPresetR2Key, requestUrl.origin);
             
             // Find preset by image_url
             let presetId: string | undefined = presetMap.get(originalPresetR2Key);
-            
-            if (!presetId) {
-              // Try to find in database by preset_url
-              const existing = await DB.prepare(
-                'SELECT id FROM presets WHERE preset_url = ?'
-              ).bind(originalPresetUrl).first();
-              
-              if (existing) {
-                presetId = (existing as any).id as string;
-                if (presetId) {
-                  presetMap.set(originalPresetR2Key, presetId);
-                }
-              }
-            }
             
             if (!presetId) {
               results.push({
@@ -1054,48 +1097,69 @@ export default {
               continue;
             }
             
-            // UPDATE preset row with thumbnail fields (multiple resolutions)
-            // Update the specific resolution column based on resolution value
             // Store only keys, not full URLs
             const thumbnailKey = extractR2KeyFromUrl(publicUrl) || publicUrl;
-            let updateQuery = '';
-            if (resolution === '1x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
-            } else if (resolution === '1.5x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url_1_5x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
-            } else if (resolution === '2x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url_2x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
-            } else if (resolution === '3x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url_3x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
-            } else if (resolution === '4x') {
-              updateQuery = 'UPDATE presets SET thumbnail_url = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
-            } else {
-              // Default to 1x if resolution not recognized
-              updateQuery = 'UPDATE presets SET thumbnail_url_1x = ? WHERE id = ?';
-              await DB.prepare(updateQuery).bind(thumbnailKey, presetId).run();
-            }
-
-            results.push({
+            
+            thumbnailUpdates.push({
+              presetId,
+              thumbnailKey,
+              resolution,
               filename,
-              success: true,
-              type: 'thumbnail',
-              preset_id: presetId,
-              url: publicUrl,
-              metadata: {
-                format: fileFormat,
-                resolution
-              }
+              r2Key,
+              publicUrl,
+              fileFormat
             });
           } catch (fileError) {
             results.push({
               filename: file.name || 'unknown',
               success: false,
               error: fileError instanceof Error ? fileError.message : String(fileError)
+            });
+          }
+        }
+        
+        // Batch execute updates grouped by resolution
+        const updatesByResolution = new Map<string, Array<{ presetId: string; thumbnailKey: string; filename: string; r2Key: string; publicUrl: string; fileFormat: string }>>();
+        
+        for (const update of thumbnailUpdates) {
+          const key = update.resolution;
+          if (!updatesByResolution.has(key)) {
+            updatesByResolution.set(key, []);
+          }
+          updatesByResolution.get(key)!.push({
+            presetId: update.presetId,
+            thumbnailKey: update.thumbnailKey,
+            filename: update.filename,
+            r2Key: update.r2Key,
+            publicUrl: update.publicUrl,
+            fileFormat: update.fileFormat
+          });
+        }
+        
+        // Execute updates - store R2 key in thumbnail_r2 (use 1x as primary if multiple resolutions)
+        for (const [resolution, updates] of updatesByResolution.entries()) {
+          // Use 1x resolution as primary thumbnail, or first available
+          const primaryResolution = resolution === '1x' ? resolution : (updatesByResolution.has('1x') ? '1x' : resolution);
+          
+          if (resolution === primaryResolution) {
+            // Execute updates in parallel - store R2 key in thumbnail_r2
+            await Promise.all(updates.map(update => 
+              DB.prepare('UPDATE presets SET thumbnail_r2 = ? WHERE id = ?').bind(update.thumbnailKey, update.presetId).run()
+            ));
+          }
+          
+          // Add successful results
+          for (const update of updates) {
+            results.push({
+              filename: update.filename,
+              success: true,
+              type: 'thumbnail',
+              preset_id: update.presetId,
+              url: update.publicUrl,
+              metadata: {
+                format: update.fileFormat,
+                resolution
+              }
             });
           }
         }
@@ -1124,8 +1188,9 @@ export default {
     // Handle profile creation
     if (path === '/profiles' && request.method === 'POST') {
       try {
-        const body = await request.json() as Partial<Profile & { userID?: string; id?: string }>;
-        const profileId = body.userID || body.id || `profile_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+        const body = await request.json() as Partial<Profile & { userID?: string; id?: string; device_id?: string }>;
+        const deviceId = body.device_id || request.headers.get('x-device-id') || null;
+        const profileId = body.userID || body.id || nanoid(16);
 
         const tableCheck = await DB.prepare(
           "SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"
@@ -1152,9 +1217,10 @@ export default {
         
 
         const result = await DB.prepare(
-          'INSERT INTO profiles (id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO profiles (id, device_id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         ).bind(
           profileId,
+          deviceId,
           body.name || null,
           body.email || null,
           body.avatar_url || null,
@@ -1177,6 +1243,7 @@ export default {
 
         const profile = {
           id: profileId,
+          device_id: deviceId || undefined,
           name: body.name || undefined,
           email: body.email || undefined,
           avatar_url: body.avatar_url || undefined,
@@ -1202,7 +1269,7 @@ export default {
       try {
         const profileId = path.replace('/profiles/', '');
         const result = await DB.prepare(
-          'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
         if (!result) {
@@ -1211,6 +1278,7 @@ export default {
 
         const profile: Profile = {
           id: (result as any).id,
+          device_id: (result as any).device_id || undefined,
           name: (result as any).name || undefined,
           email: (result as any).email || undefined,
           avatar_url: (result as any).avatar_url || undefined,
@@ -1254,7 +1322,7 @@ export default {
 
         // Return updated profile
         const updatedResult = await DB.prepare(
-          'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
         const profile: Profile = {
@@ -1283,11 +1351,12 @@ export default {
     if (path === '/profiles' && request.method === 'GET') {
       try {
         const results = await DB.prepare(
-          'SELECT id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
+          'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
         ).all();
 
         const profiles: Profile[] = results.results?.map((row: any) => ({
           id: row.id,
+          device_id: row.device_id || undefined,
           name: row.name || undefined,
           email: row.email || undefined,
           avatar_url: row.avatar_url || undefined,
@@ -1312,6 +1381,7 @@ export default {
     // Get single preset by ID
     if (path.startsWith('/presets/') && path.split('/').length === 3 && request.method === 'GET') {
       try {
+        const R2_BUCKET = getR2Bucket(env);
         const presetId = path.split('/presets/')[1];
         if (!presetId) {
           return errorResponse('Preset ID required', 400);
@@ -1319,15 +1389,65 @@ export default {
 
         const DB = getD1Database(env);
         const result = await DB.prepare(
-          'SELECT * FROM presets WHERE id = ?'
+          'SELECT id, ext, thumbnail_r2, created_at FROM presets WHERE id = ?'
         ).bind(presetId).first();
 
         if (!result) {
           return errorResponse('Preset not found', 404);
         }
 
+        const storedKey = reconstructR2Key((result as any).id, (result as any).ext, 'preset');
+        const presetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+        
+        // Reconstruct thumbnail URL from thumbnail_r2 if available
+        let thumbnailUrl: string | null = null;
+        let thumbnailFormat: string | null = null;
+        let thumbnailResolution: string | null = null;
+        if ((result as any).thumbnail_r2) {
+          thumbnailUrl = getR2PublicUrl(env, (result as any).thumbnail_r2, requestUrl.origin);
+          // Extract format and resolution from R2 key
+          const r2KeyParts = (result as any).thumbnail_r2.split('/');
+          if (r2KeyParts.length > 0) {
+            const prefix = r2KeyParts[0];
+            const formatMatch = prefix.match(/^(webp|lottie)/i);
+            const resolutionMatch = prefix.match(/([\d.]+x)/i);
+            thumbnailFormat = formatMatch ? formatMatch[1].toLowerCase() : null;
+            thumbnailResolution = resolutionMatch ? resolutionMatch[1] : null;
+          }
+        }
+        
+        // Read prompt_json from R2 metadata
+        let hasPrompt = false;
+        let promptJson: any = null;
+        try {
+          const r2Object = await R2_BUCKET.head(storedKey);
+          if (r2Object?.customMetadata?.prompt_json) {
+            const promptJsonString = r2Object.customMetadata.prompt_json;
+            if (promptJsonString && promptJsonString.trim() !== '') {
+              try {
+                promptJson = JSON.parse(promptJsonString);
+                hasPrompt = true;
+              } catch {
+                // Invalid JSON, ignore
+              }
+            }
+          }
+        } catch {
+          // R2 check failed, assume no prompt
+        }
+
         return jsonResponse({
-          data: result,
+          data: {
+            id: (result as any).id,
+            preset_url: presetUrl,
+            image_url: presetUrl, // Alias for backward compatibility
+            hasPrompt,
+            prompt_json: promptJson,
+            thumbnail_url: thumbnailUrl,
+            thumbnail_format: thumbnailFormat,
+            thumbnail_resolution: thumbnailResolution,
+            created_at: (result as any).created_at
+          },
           status: 'success',
           message: 'Preset retrieved successfully',
           code: 200
@@ -1340,25 +1460,21 @@ export default {
 
     if (path === '/presets' && request.method === 'GET') {
       try {
+        const R2_BUCKET = getR2Bucket(env);
         // Gender filter removed - metadata is in R2 path, not DB
         const url = new URL(request.url);
 
         const includeThumbnails = url.searchParams.get('include_thumbnails') === 'true';
         
-        // By default, exclude presets with thumbnails (check all thumbnail columns)
+        // By default, exclude presets with thumbnails
         let query = `
           SELECT
             id,
-            preset_url,
-            prompt_json,
-            thumbnail_url,
-            thumbnail_url_1x,
-            thumbnail_url_1_5x,
-            thumbnail_url_2x,
-            thumbnail_url_3x,
+            ext,
+            thumbnail_r2,
             created_at
           FROM presets
-          WHERE ${includeThumbnails ? '1=1' : '(thumbnail_url IS NULL AND thumbnail_url_1x IS NULL AND thumbnail_url_1_5x IS NULL AND thumbnail_url_2x IS NULL AND thumbnail_url_3x IS NULL)'}
+          WHERE ${includeThumbnails ? '1=1' : 'thumbnail_r2 IS NULL'}
         `;
 
         const params: any[] = [];
@@ -1377,31 +1493,48 @@ export default {
         }
 
         // Flatten to match frontend expectations
-        const presets = imagesResult.results.map((row: any) => {
-          // Use new columns if available, fallback to legacy thumbnail_url
-          const thumbnailUrl = row.thumbnail_url_1x || row.thumbnail_url || null;
+        const presets = await Promise.all(imagesResult.results.map(async (row: any) => {
+          const storedKey = reconstructR2Key(row.id, row.ext, 'preset');
+          const fullUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
           
-          const storedKey = row.preset_url || '';
-          let fullUrl = storedKey;
-          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-            fullUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
-          } else {
-            fullUrl = convertLegacyUrl(storedKey, env);
+          // Reconstruct thumbnail URL from thumbnail_r2 if available
+          let thumbnailUrl: string | null = null;
+          let thumbnailFormat: string | null = null;
+          let thumbnailResolution: string | null = null;
+          if (row.thumbnail_r2) {
+            thumbnailUrl = getR2PublicUrl(env, row.thumbnail_r2, requestUrl.origin);
+            // Extract format and resolution from R2 key (e.g., "webp_1x/face-swap/portrait.webp")
+            const r2KeyParts = row.thumbnail_r2.split('/');
+            if (r2KeyParts.length > 0) {
+              const prefix = r2KeyParts[0]; // e.g., "webp_1x" or "lottie_2x"
+              const formatMatch = prefix.match(/^(webp|lottie)/i);
+              const resolutionMatch = prefix.match(/([\d.]+x)/i);
+              thumbnailFormat = formatMatch ? formatMatch[1].toLowerCase() : null;
+              thumbnailResolution = resolutionMatch ? resolutionMatch[1] : null;
+            }
+          }
+          
+          // Check if prompt_json exists in R2 metadata (for hasPrompt)
+          let hasPrompt = false;
+          try {
+            const r2Object = await R2_BUCKET.head(storedKey);
+            hasPrompt = !!(r2Object?.customMetadata?.prompt_json);
+          } catch {
+            // If R2 check fails, assume no prompt
           }
           
           return {
             id: row.id || '',
             preset_url: fullUrl,
-            hasPrompt: row.prompt_json ? true : false,
-            prompt_json: row.prompt_json || null,
+            image_url: fullUrl, // Alias for backward compatibility
+            hasPrompt,
+            prompt_json: null, // Not included in list view for performance (read from R2 metadata in detail view)
             thumbnail_url: thumbnailUrl,
-            thumbnail_url_1x: row.thumbnail_url_1x || null,
-            thumbnail_url_1_5x: row.thumbnail_url_1_5x || null,
-            thumbnail_url_2x: row.thumbnail_url_2x || null,
-            thumbnail_url_3x: row.thumbnail_url_3x || null,
+            thumbnail_format: thumbnailFormat,
+            thumbnail_resolution: thumbnailResolution,
             created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
           };
-        });
+        }));
 
         return jsonResponse({
           data: { presets },
@@ -1432,18 +1565,15 @@ export default {
 
         // First, check if preset exists
         const checkResult = await DB.prepare(
-          'SELECT id, preset_url FROM presets WHERE id = ?'
+          'SELECT id, ext FROM presets WHERE id = ?'
         ).bind(presetId).first();
 
         if (!checkResult) {
           return errorResponse('Preset not found', 404);
         }
 
-        const storedKey = (checkResult as any).preset_url;
-        let r2Key = storedKey;
-        if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
-          r2Key = extractR2KeyFromUrl(storedKey);
-        }
+        const storedKey = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'preset');
+        const r2Key = storedKey;
 
         // Delete preset from database
         // NOTE: Results are NOT deleted when preset is deleted - they belong to profiles and should be preserved
@@ -1509,7 +1639,24 @@ export default {
           return errorResponse('Profile not found', 404);
         }
 
-        let query = 'SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+        // Check if new schema (ext column exists) or old schema (selfie_url exists)
+        const schemaCheck = await DB.prepare('PRAGMA table_info(selfies)').all();
+        const hasExt = schemaCheck.results?.some((col: any) => col.name === 'ext');
+        const hasUrl = schemaCheck.results?.some((col: any) => col.name === 'selfie_url');
+        
+        let query: string;
+        if (hasExt) {
+          query = 'SELECT id, ext, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+        } else if (hasUrl) {
+          query = 'SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+        } else {
+          return jsonResponse({
+            data: { selfies: [] },
+            status: 'success',
+            message: 'Selfies retrieved successfully',
+            code: 200
+          });
+        }
 
         const result = await DB.prepare(query).bind(profileId).all();
 
@@ -1523,12 +1670,19 @@ export default {
         }
 
         const selfies = result.results.map((row: any) => {
-          const storedKey = row.selfie_url || '';
-          let fullUrl = storedKey;
-          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+          let fullUrl: string;
+          if (hasExt && row.ext) {
+            const storedKey = reconstructR2Key(row.id, row.ext, 'selfie');
             fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+          } else if (hasUrl && row.selfie_url) {
+            const storedKey = row.selfie_url || '';
+            if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
+              fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+            } else {
+              fullUrl = convertLegacyUrl(storedKey, env);
+            }
           } else {
-            fullUrl = convertLegacyUrl(storedKey, env);
+            fullUrl = '';
           }
           return {
             id: row.id || '',
@@ -1566,18 +1720,14 @@ export default {
 
         // First, check if selfie exists
         const checkResult = await DB.prepare(
-          'SELECT id, selfie_url FROM selfies WHERE id = ?'
+          'SELECT id, ext FROM selfies WHERE id = ?'
         ).bind(selfieId).first();
 
         if (!checkResult) {
           return errorResponse('Selfie not found', 404);
         }
 
-        const storedKey = (checkResult as any).selfie_url;
-        let r2Key = storedKey;
-        if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
-          r2Key = extractR2KeyFromUrl(storedKey);
-        }
+        const r2Key = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'selfie');
 
         // Delete selfie from database
         // NOTE: Results are NOT deleted when selfie is deleted - they belong to profiles and should be preserved
@@ -1638,7 +1788,7 @@ export default {
         const DB = getD1Database(env);
         // Thumbnail is stored in same row as preset, so the ID is the preset ID
         const preset = await DB.prepare(
-          'SELECT id FROM presets WHERE id = ? AND thumbnail_url IS NOT NULL'
+          'SELECT id FROM presets WHERE id = ? AND thumbnail_r2 IS NOT NULL'
         ).bind(thumbnailId).first();
 
         if (!preset) {
@@ -1721,7 +1871,7 @@ export default {
         }
         }
 
-        let query = 'SELECT id, result_url, profile_id, created_at FROM results';
+        let query = 'SELECT id, ext, profile_id, created_at FROM results';
         const params: any[] = [];
 
         if (profileId) {
@@ -1749,13 +1899,8 @@ export default {
         }
 
         const results = result.results.map((row: any) => {
-          const storedKey = row.result_url || '';
-          let fullUrl = storedKey;
-          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-            fullUrl = buildResultUrl(storedKey, env, requestUrl.origin);
-          } else {
-            fullUrl = convertLegacyUrl(storedKey, env);
-          }
+          const storedKey = reconstructR2Key(row.id, row.ext, 'results');
+          const fullUrl = buildResultUrl(storedKey, env, requestUrl.origin);
           return {
             id: String(row.id || ''),
             result_url: fullUrl,
@@ -1792,20 +1937,14 @@ export default {
 
         // First, check if result exists and get the R2 key
         const checkResult = await DB.prepare(
-          'SELECT result_url FROM results WHERE id = ?'
+          'SELECT id, ext FROM results WHERE id = ?'
         ).bind(resultId).first();
 
         if (!checkResult) {
           return errorResponse('Result not found', 404);
         }
 
-        const storedKey = (checkResult as any).result_url || '';
-        let r2Key: string | null = storedKey;
-        if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
-          r2Key = extractR2KeyFromUrl(storedKey) || storedKey;
-        } else if (storedKey && storedKey.startsWith('r2://')) {
-          r2Key = storedKey.replace('r2://', '');
-        }
+        const r2Key = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'results');
 
         // Delete from database
         const deleteResult = await DB.prepare(
@@ -1838,7 +1977,6 @@ export default {
             databaseDeleted: deleteResult.meta?.changes || 0,
             r2Deleted,
             r2Key,
-            storedKey,
             r2Error: r2Error || null
           }
         });
@@ -1894,7 +2032,7 @@ export default {
 
         if (hasPresetId) {
           queries.push(
-            DB.prepare('SELECT id, preset_url FROM presets WHERE id = ?').bind(body.preset_image_id).first()
+            DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first()
           );
         }
 
@@ -1902,7 +2040,7 @@ export default {
           // Add all selfie lookups in parallel
           for (const selfieId of body.selfie_ids) {
             queries.push(
-              DB.prepare('SELECT id, selfie_url FROM selfies WHERE id = ?').bind(selfieId).first()
+              DB.prepare('SELECT id, ext FROM selfies WHERE id = ?').bind(selfieId).first()
             );
           }
         }
@@ -1926,12 +2064,8 @@ export default {
           if (!presetResult) {
             return errorResponse('Preset image not found', 404);
           }
-          const storedKey = (presetResult as any).preset_url;
-          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-            targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
-          } else {
-            targetUrl = convertLegacyUrl(storedKey, env);
-          }
+          const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+          targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
           presetName = 'Unnamed Preset';
           presetImageId = body.preset_image_id || null;
         } else if (hasPresetUrl) {
@@ -1954,13 +2088,8 @@ export default {
             if (!selfieResult) {
               return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404);
             }
-            const storedKey = (selfieResult as any).selfie_url;
-            let fullUrl = storedKey;
-            if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-              fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
-            } else {
-              fullUrl = convertLegacyUrl(storedKey, env);
-            }
+            const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+            const fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
             selfieUrls.push(fullUrl);
             selfieIds.push(body.selfie_ids[i]);
           }
@@ -1987,36 +2116,62 @@ export default {
 
 
         let promptResult: any = null;
+        let storedPromptPayload: any = null;
+        
         if (presetImageId) {
           promptResult = await DB.prepare(
-            'SELECT prompt_json, preset_url FROM presets WHERE id = ?'
+            'SELECT id, ext FROM presets WHERE id = ?'
           ).bind(presetImageId).first();
-        }
-
-        let storedPromptPayload: any = null;
-
-        if (promptResult && (promptResult as any).prompt_json) {
-          const promptJson = (promptResult as any).prompt_json;
-          if (promptJson && promptJson.trim() !== '') {
+          
+          // Read prompt_json from R2 metadata
+          if (promptResult) {
+            const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
             try {
-              storedPromptPayload = JSON.parse(promptJson);
-            } catch (parseError) {
-              console.error('[Vertex] Failed to parse stored prompt_json:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+              const r2Object = await R2_BUCKET.head(r2Key);
+              if (r2Object?.customMetadata?.prompt_json) {
+                const promptJson = r2Object.customMetadata.prompt_json;
+                if (promptJson && promptJson.trim() !== '') {
+                  try {
+                    storedPromptPayload = JSON.parse(promptJson);
+                  } catch (parseError) {
+                    console.error('[Vertex] Failed to parse prompt_json from R2 metadata:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+                  }
+                }
+              }
+            } catch (r2Error) {
+              // prompt_json is only stored in R2 metadata, no D1 fallback
             }
           }
         }
 
         if (!storedPromptPayload) {
-          const presetImageUrl = (promptResult as any)?.preset_url || targetUrl;
+          const presetImageUrl = promptResult ? getR2PublicUrl(env, reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset'), requestUrl.origin) : targetUrl;
           
           const generateResult = await generateVertexPrompt(presetImageUrl, env);
           if (generateResult.success && generateResult.prompt) {
             storedPromptPayload = generateResult.prompt;
-            if (presetImageId) {
+            if (presetImageId && promptResult) {
               const promptJsonString = JSON.stringify(storedPromptPayload);
-              await DB.prepare(
-                'UPDATE presets SET prompt_json = ? WHERE id = ?'
-              ).bind(promptJsonString, presetImageId).run();
+              // Store in R2 metadata
+              const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
+              try {
+                const existingObject = await R2_BUCKET.head(r2Key);
+                if (existingObject) {
+                  const objectBody = await R2_BUCKET.get(r2Key);
+                  if (objectBody) {
+                    await R2_BUCKET.put(r2Key, objectBody.body, {
+                      httpMetadata: existingObject.httpMetadata,
+                      customMetadata: {
+                        ...existingObject.customMetadata,
+                        prompt_json: promptJsonString
+                      }
+                    });
+                  }
+                }
+              } catch (metadataError) {
+                // prompt_json is only stored in R2 metadata, no D1 fallback
+                console.warn('[Vertex] Failed to store prompt_json in R2 metadata:', metadataError instanceof Error ? metadataError.message.substring(0, 200) : String(metadataError).substring(0, 200));
+              }
             }
           } else {
             return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400);
@@ -2211,7 +2366,8 @@ export default {
           storageDebug.downloadStatus = resultImageResponse.status;
           if (resultImageResponse.ok && resultImageResponse.body) {
             // Stream directly to R2 instead of buffering in memory
-            const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+            const id = nanoid(16);
+            const resultKey = `results/${id}.jpg`;
             await R2_BUCKET.put(resultKey, resultImageResponse.body, {
               httpMetadata: {
                 contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
@@ -2243,7 +2399,7 @@ export default {
           lookupError: null,
         };
 
-        let savedResultId: number | null = null;
+        let savedResultId: string | null = null;
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
@@ -2340,19 +2496,15 @@ export default {
 
         if (hasPresetId) {
           const presetResult = await DB.prepare(
-            'SELECT id, preset_url FROM presets WHERE id = ?'
+            'SELECT id, ext FROM presets WHERE id = ?'
           ).bind(body.preset_image_id).first();
 
           if (!presetResult) {
             return errorResponse('Preset image not found', 404);
           }
 
-          const storedKey = (presetResult as any).preset_url;
-          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-            targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
-          } else {
-            targetUrl = convertLegacyUrl(storedKey, env);
-          }
+          const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+          targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
           presetName = 'Preset';
           presetImageId = body.preset_image_id || null;
         } else {
@@ -2364,19 +2516,15 @@ export default {
         let selfieUrl: string;
         if (hasSelfieId) {
           const selfieResult = await DB.prepare(
-            'SELECT id, selfie_url FROM selfies WHERE id = ?'
+            'SELECT id, ext FROM selfies WHERE id = ?'
           ).bind(body.selfie_id!).first();
 
           if (!selfieResult) {
             return errorResponse(`Selfie with ID ${body.selfie_id} not found`, 404);
           }
 
-          const storedKey = (selfieResult as any).selfie_url;
-          if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-            selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
-          } else {
-            selfieUrl = convertLegacyUrl(storedKey, env);
-          }
+          const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
         } else {
           selfieUrl = body.selfie_image_url!;
         }
@@ -2517,7 +2665,8 @@ export default {
           storageDebug.downloadStatus = resultImageResponse.status;
           if (resultImageResponse.ok && resultImageResponse.body) {
             // Stream directly to R2 instead of buffering in memory
-            const resultKey = `results/result_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.jpg`;
+            const id = nanoid(16);
+            const resultKey = `results/${id}.jpg`;
             await R2_BUCKET.put(resultKey, resultImageResponse.body, {
               httpMetadata: {
                 contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
@@ -2549,7 +2698,7 @@ export default {
           lookupError: null,
         };
 
-        let savedResultId: number | null = null;
+        let savedResultId: string | null = null;
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
