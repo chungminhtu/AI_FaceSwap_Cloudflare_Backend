@@ -1,5 +1,5 @@
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId } from './utils';
 
 // Efficient sanitization function - only sanitizes specific fields instead of full object traversal
 const sanitizeObject = (obj: any, maxStringLength = 100): any => {
@@ -120,7 +120,8 @@ export const callNanoBanana = async (
   targetUrl: string,
   sourceUrl: string | string[],
   env: Env,
-  aspectRatio?: string
+  aspectRatio?: string,
+  modelParam?: string | number
 ): Promise<FaceSwapResponse> => {
   // Use Vertex AI Gemini API with image generation support
   // Based on official documentation: responseModalities: ["TEXT", "IMAGE"] is supported
@@ -143,7 +144,7 @@ export const callNanoBanana = async (
     // Only gemini-2.5-flash-image supports image + text output (responseModalities: ["TEXT", "IMAGE"])
     // gemini-2.5-flash only outputs text, so multimodal (image) output isn't supported
     // Cost: $30 per million output tokens for images (~$0.039 per image) vs $2.50 for text-only
-    const geminiModel = 'gemini-2.5-flash-image';
+    const geminiModel = getVertexModelId(modelParam);
     const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
     // Convert prompt_json to text string for Vertex AI
@@ -477,7 +478,8 @@ export const callNanoBananaMerge = async (
   selfieUrl: string,
   presetUrl: string,
   env: Env,
-  aspectRatio?: string
+  aspectRatio?: string,
+  modelParam?: string | number
 ): Promise<FaceSwapResponse> => {
   if (!env.GOOGLE_VERTEX_PROJECT_ID) {
     return {
@@ -493,7 +495,7 @@ export const callNanoBananaMerge = async (
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = getVertexAILocation(env);
     
-    const geminiModel = 'gemini-2.5-flash-image';
+    const geminiModel = getVertexModelId(modelParam);
     const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
     let promptText = '';

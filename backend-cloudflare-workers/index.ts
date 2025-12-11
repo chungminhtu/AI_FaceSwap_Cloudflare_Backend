@@ -1871,7 +1871,8 @@ export default {
         // may not work correctly and may always return 1:1 images regardless of the specified ratio.
         // This is a limitation of the current API version.
         // For now, use the first selfie. In a full implementation, you might want to combine multiple selfies
-        const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env, validAspectRatio);
+        const modelParam = body.model;
+        const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env, validAspectRatio, modelParam);
 
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', faceSwapResult.Message || 'Unknown error');
@@ -2235,8 +2236,9 @@ export default {
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
         const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const modelParam = body.model;
 
-        const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio);
+        const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
           console.error('[RemoveBackground] Merge failed:', mergeResult.Message || 'Unknown error');
@@ -2575,7 +2577,7 @@ export default {
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
+        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -2599,13 +2601,15 @@ export default {
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
         const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const modelParam = body.model;
 
         const enhancedResult = await callNanoBanana(
           'Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance.',
           body.image_url,
           body.image_url,
           env,
-          validAspectRatio
+          validAspectRatio,
+          modelParam
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
@@ -2660,7 +2664,7 @@ export default {
     // Handle colorize endpoint
     if (path === '/colorize' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
+        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -2683,13 +2687,15 @@ export default {
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
         const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const modelParam = body.model;
 
         const colorizedResult = await callNanoBanana(
           'Restore and enhance this damaged photo to a hyper-realistic, ultra-detailed image, 16K DSLR quality. Fix scratches, tears, noise, and blurriness. Enhance colors to vivid, vibrant tones while keeping natural skin tones. Perfectly sharpen details in face, eyes, hair, and clothing. Add realistic lighting, shadows, and depth of field. Photoshop-level professional retouching. High dynamic range, ultra-HD, lifelike textures, cinematic finish, crisp and clean background, fully restored and enhanced version of the original photo.',
           body.image_url,
           body.image_url,
           env,
-          validAspectRatio
+          validAspectRatio,
+          modelParam
         );
 
         if (!colorizedResult.Success || !colorizedResult.ResultImageUrl) {
@@ -2744,7 +2750,7 @@ export default {
     // Handle aging endpoint
     if (path === '/aging' && request.method === 'POST') {
       try {
-        const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string };
+        const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           return errorResponse('image_url is required', 400);
@@ -2768,6 +2774,7 @@ export default {
         const aspectRatio = (body.aspect_ratio as string) || "1:1";
         const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const modelParam = body.model;
 
         // For now, implement aging using existing Nano Banana API
         // This is a placeholder - in production, you'd want a dedicated aging model
@@ -2776,7 +2783,8 @@ export default {
           body.image_url,
           body.image_url, // Use same image as target and source for aging
           env,
-          validAspectRatio
+          validAspectRatio,
+          modelParam
         );
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
