@@ -24,6 +24,7 @@ export interface Env {
   SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
   DEBUG?: string; // Optional: Set to 'true' or '1' to include debug payloads in responses
   DISABLE_DEBUG_RESPONSE?: string; // Optional: Set to 'true' or '1' to completely disable debug payloads in all API responses (overrides DEBUG)
+  RESULT_MAX_HISTORY?: string; // Optional: Maximum number of result history entries per user. Default: 10
 }
 
 export interface FaceSwapRequest {

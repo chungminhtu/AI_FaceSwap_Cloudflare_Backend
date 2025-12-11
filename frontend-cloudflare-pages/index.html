@@ -982,9 +982,9 @@
                         const response = await fetch(profileUrl);
                         const duration = Date.now() - startTime;
                         if (response.ok) {
-                            const data = await response.json();
-                            logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId}`, fullUrl: profileUrl, status: 'success', duration });
-                            this.currentProfile = data;
+                const data = await response.json();
+                logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId}`, fullUrl: profileUrl, status: 'success', duration });
+                this.currentProfile = data.data || data;
                             this.updateProfileDisplay();
                             await Promise.all([loadGallery('selfie'), loadGallery('results')]);
                             updateGenerateButton();
@@ -1015,7 +1015,7 @@
                 if (!response.ok) throw new Error('Không thể tạo hồ sơ');
                 const data = await response.json();
                 logApiCall({ label: 'Tạo Hồ Sơ', method: 'POST', url: '/profiles', fullUrl: createProfileUrl, status: 'success', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: {} });
-                return data;
+                return data.data || data;
             },
             updateProfileDisplay() {
                 const statusDiv = $('profile-status'), infoDiv = $('profile-info'), idSpan = $('profile-id-display');
@@ -1038,7 +1038,7 @@
                     if (!response.ok) throw new Error(response.status === 404 ? 'Không tìm thấy hồ sơ' : `HTTP ${response.status}`);
                     const data = await response.json();
                     logApiCall({ label: 'Lấy Hồ Sơ', method: 'GET', url: `/profiles/${profileId.trim()}`, fullUrl: getProfileUrl, status: 'success', duration });
-                    this.currentProfile = data;
+                    this.currentProfile = data.data || data;
                     localStorage.setItem('userProfileId', this.currentProfile.id);
                     this.updateProfileDisplay();
                     await Promise.all([loadGallery('selfie'), loadGallery('results')]);

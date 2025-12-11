@@ -53,6 +53,7 @@ const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
 const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string | null> => {
   try {
     let key = extractR2KeyFromUrl(imageUrl) || imageUrl;
+    const originalKey = key;
     
     // Ensure selfie key has selfie/ prefix if it's a selfie file
     if (key && !key.startsWith('selfie/') && !key.startsWith('selfies/')) {
@@ -62,9 +63,24 @@ const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: s
       }
     }
     
-    const selfieResult = await DB.prepare(
+    // Try to find with prefixed key first
+    let selfieResult = await DB.prepare(
       'SELECT id FROM selfies WHERE selfie_url = ? AND profile_id = ? LIMIT 1'
     ).bind(key, profileId).first();
+    
+    // If not found and key was modified, try with original unprefixed key (backward compatibility)
+    if (!selfieResult && key !== originalKey) {
+      selfieResult = await DB.prepare(
+        'SELECT id FROM selfies WHERE selfie_url = ? AND profile_id = ? LIMIT 1'
+      ).bind(originalKey, profileId).first();
+      
+      // If found with unprefixed key, update it to use prefixed key for consistency
+      if (selfieResult) {
+        await DB.prepare(
+          'UPDATE selfies SET selfie_url = ? WHERE id = ?'
+        ).bind(key, (selfieResult as any).id).run();
+      }
+    }
     
     if (selfieResult) {
       return (selfieResult as any).id;
@@ -87,10 +103,13 @@ const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: s
 const saveResultToDatabase = async (
   DB: D1Database,
   resultUrl: string,
-  profileId: string
+  profileId: string,
+  env: Env,
+  R2_BUCKET: R2Bucket
 ): Promise<number | null> => {
   try {
     let resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
+    const originalKey = resultKey;
     
     // Ensure result key has results/ prefix if it's a result file
     if (resultKey && !resultKey.startsWith('results/')) {
@@ -100,6 +119,70 @@ const saveResultToDatabase = async (
       }
     }
     
+    // Check if result already exists with prefixed key (backward compatibility)
+    let existingResult = await DB.prepare(
+      'SELECT id FROM results WHERE result_url = ? AND profile_id = ? LIMIT 1'
+    ).bind(resultKey, profileId).first<{ id: number }>();
+    
+    // If not found and key was modified, try with original unprefixed key (backward compatibility)
+    if (!existingResult && resultKey !== originalKey) {
+      existingResult = await DB.prepare(
+        'SELECT id FROM results WHERE result_url = ? AND profile_id = ? LIMIT 1'
+      ).bind(originalKey, profileId).first<{ id: number }>();
+      
+      // If found with unprefixed key, update it to use prefixed key for consistency
+      if (existingResult) {
+        await DB.prepare(
+          'UPDATE results SET result_url = ? WHERE id = ?'
+        ).bind(resultKey, existingResult.id).run();
+        return existingResult.id;
+      }
+    }
+    
+    // If result already exists, return its ID
+    if (existingResult) {
+      return existingResult.id;
+    }
+    
+    // Get max history limit (default 10)
+    const maxHistory = parseInt(env.RESULT_MAX_HISTORY || '10', 10);
+    
+    // Check current count of results for this profile
+    const countResult = await DB.prepare(
+      'SELECT COUNT(*) as count FROM results WHERE profile_id = ?'
+    ).bind(profileId).first<{ count: number }>();
+    
+    const currentCount = countResult?.count || 0;
+    
+    // If we're at or over the limit, delete oldest results
+    if (currentCount >= maxHistory) {
+      const excessCount = currentCount - maxHistory + 1; // +1 because we're about to add one
+      
+      // Get oldest results to delete
+      const oldResults = await DB.prepare(
+        'SELECT id, result_url FROM results WHERE profile_id = ? ORDER BY created_at ASC LIMIT ?'
+      ).bind(profileId, excessCount).all<{ id: number; result_url: string }>();
+      
+      if (oldResults.results && oldResults.results.length > 0) {
+        // Delete from database and R2
+        for (const oldResult of oldResults.results) {
+          // Delete from database
+          await DB.prepare('DELETE FROM results WHERE id = ?').bind(oldResult.id).run();
+          
+          // Delete from R2 (non-fatal if it fails)
+          const r2Key = oldResult.result_url;
+          if (r2Key) {
+            try {
+              await R2_BUCKET.delete(r2Key);
+            } catch (r2Error) {
+              // Ignore R2 deletion errors
+            }
+          }
+        }
+      }
+    }
+    
+    // Insert new result
     const insertResult = await DB.prepare(
       'INSERT INTO results (result_url, profile_id, created_at) VALUES (?, ?, ?)'
     ).bind(resultKey, profileId, Math.floor(Date.now() / 1000)).run();
@@ -1099,7 +1182,12 @@ export default {
           updated_at: new Date().toISOString()
         };
 
-        return jsonResponse(profile);
+        return jsonResponse({
+          data: profile,
+          status: 'success',
+          message: 'Profile created successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('Profile creation error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Profile creation failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
@@ -1128,7 +1216,12 @@ export default {
           updated_at: new Date((result as any).updated_at * 1000).toISOString()
         };
 
-        return jsonResponse(profile);
+        return jsonResponse({
+          data: profile,
+          status: 'success',
+          message: 'Profile retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('Profile retrieval error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Profile retrieval failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
@@ -1171,7 +1264,12 @@ export default {
           updated_at: new Date((updatedResult as any).updated_at * 1000).toISOString()
         };
 
-        return jsonResponse(profile);
+        return jsonResponse({
+          data: profile,
+          status: 'success',
+          message: 'Profile updated successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('Profile update error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Profile update failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
@@ -1195,7 +1293,12 @@ export default {
           updated_at: new Date(row.updated_at * 1000).toISOString()
         })) || [];
 
-        return jsonResponse({ profiles });
+        return jsonResponse({
+          data: { profiles },
+          status: 'success',
+          message: 'Profiles retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('Profile listing error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Profile listing failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
@@ -1220,7 +1323,12 @@ export default {
           return errorResponse('Preset not found', 404);
         }
 
-        return jsonResponse(result);
+        return jsonResponse({
+          data: result,
+          status: 'success',
+          message: 'Preset retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('Get preset error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return errorResponse(`Failed to retrieve preset: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
@@ -1257,7 +1365,12 @@ export default {
         const imagesResult = await DB.prepare(query).bind(...params).all();
 
         if (!imagesResult || !imagesResult.results) {
-          return jsonResponse({ presets: [] });
+          return jsonResponse({
+            data: { presets: [] },
+            status: 'success',
+            message: 'Presets retrieved successfully',
+            code: 200
+          });
         }
 
         // Flatten to match frontend expectations
@@ -1287,11 +1400,21 @@ export default {
           };
         });
 
-        return jsonResponse({ presets });
+        return jsonResponse({
+          data: { presets },
+          status: 'success',
+          message: 'Presets retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('List presets error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
-        return jsonResponse({ presets: [] });
+        return jsonResponse({
+          data: { presets: [] },
+          status: 'success',
+          message: 'Presets retrieved successfully',
+          code: 200
+        });
       }
     }
 
@@ -1342,16 +1465,20 @@ export default {
           }
         }
 
-        return jsonResponse({ 
-          success: true, 
-          message: 'Preset deleted successfully'
+        return jsonResponse({
+          data: null,
+          status: 'success',
+          message: 'Preset deleted successfully',
+          code: 200
         });
       } catch (error) {
         console.error('[DELETE] Delete preset exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return jsonResponse({ 
-          success: false, 
+        return jsonResponse({
+          data: null,
+          status: 'error',
           message: `Failed to delete preset: ${errorMessage}`,
+          code: 500,
           debug: {
             presetId: path.replace('/presets/', ''),
             error: errorMessage,
@@ -1384,7 +1511,12 @@ export default {
         const result = await DB.prepare(query).bind(profileId).all();
 
         if (!result || !result.results) {
-          return jsonResponse({ selfies: [] });
+          return jsonResponse({
+            data: { selfies: [] },
+            status: 'success',
+            message: 'Selfies retrieved successfully',
+            code: 200
+          });
         }
 
         const selfies = result.results.map((row: any) => {
@@ -1403,11 +1535,21 @@ export default {
           };
         });
 
-        return jsonResponse({ selfies });
+        return jsonResponse({
+          data: { selfies },
+          status: 'success',
+          message: 'Selfies retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('List selfies error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
-        return jsonResponse({ selfies: [] });
+        return jsonResponse({
+          data: { selfies: [] },
+          status: 'success',
+          message: 'Selfies retrieved successfully',
+          code: 200
+        });
       }
     }
 
@@ -1457,16 +1599,20 @@ export default {
           }
         }
 
-        return jsonResponse({ 
-          success: true, 
-          message: 'Selfie deleted successfully'
+        return jsonResponse({
+          data: null,
+          status: 'success',
+          message: 'Selfie deleted successfully',
+          code: 200
         });
       } catch (error) {
         console.error('[DELETE] Delete selfie exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return jsonResponse({ 
-          success: false, 
+        return jsonResponse({
+          data: null,
+          status: 'error',
           message: `Failed to delete selfie: ${errorMessage}`,
+          code: 500,
           debug: {
             selfieId: path.replace('/selfies/', ''),
             error: errorMessage,
@@ -1591,7 +1737,12 @@ export default {
         const result = await DB.prepare(query).bind(...params).all();
 
         if (!result || !result.results) {
-          return jsonResponse({ results: [] });
+          return jsonResponse({
+            data: { results: [] },
+            status: 'success',
+            message: 'Results retrieved successfully',
+            code: 200
+          });
         }
 
         const results = result.results.map((row: any) => {
@@ -1611,10 +1762,20 @@ export default {
           };
         });
 
-        return jsonResponse({ results });
+        return jsonResponse({
+          data: { results },
+          status: 'success',
+          message: 'Results retrieved successfully',
+          code: 200
+        });
       } catch (error) {
         console.error('[Results] List results error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return jsonResponse({ results: [] });
+        return jsonResponse({
+          data: { results: [] },
+          status: 'success',
+          message: 'Results retrieved successfully',
+          code: 200
+        });
       }
     }
 
@@ -1665,8 +1826,10 @@ export default {
         }
 
         return jsonResponse({
-          success: true,
+          data: null,
+          status: 'success',
           message: 'Result deleted successfully',
+          code: 200,
           debug: {
             resultId,
             databaseDeleted: deleteResult.meta?.changes || 0,
@@ -1679,9 +1842,11 @@ export default {
       } catch (error) {
         console.error('[DELETE] Delete result exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return jsonResponse({ 
-          success: false, 
+        return jsonResponse({
+          data: null,
+          status: 'error',
           message: `Failed to delete result: ${errorMessage}`,
+          code: 500,
           debug: {
             resultId: path.replace('/results/', ''),
             error: errorMessage,
@@ -2079,7 +2244,7 @@ export default {
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
             
             if (savedResultId !== null) {
               databaseDebug.success = true;
@@ -2385,7 +2550,7 @@ export default {
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
             
             if (savedResultId !== null) {
               databaseDebug.success = true;
@@ -2476,10 +2641,10 @@ export default {
             }) : undefined;
             return jsonResponse({
               data: null,
-              ...(debugPayload ? { debug: debugPayload } : {}),
               status: 'error',
               message: `Input image failed safety check: ${inputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
               code: 400,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, 400);
           }
         }
@@ -2497,10 +2662,10 @@ export default {
           }) : undefined;
           return jsonResponse({
             data: null,
-            ...(debugPayload ? { debug: debugPayload } : {}),
             status: 'error',
             message: upscalerResult.Message || 'Upscaler4K provider error',
             code: failureCode,
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
         }
 
@@ -2538,15 +2703,15 @@ export default {
             }) : undefined;
             return jsonResponse({
               data: null,
-              ...(debugPayload ? { debug: debugPayload } : {}),
               status: 'error',
               message: `Upscaled image failed safety check: ${outputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
               code: 400,
+              ...(debugPayload ? { debug: debugPayload } : {}),
             }, 400);
           }
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult, resultUrl) : undefined;
@@ -2563,10 +2728,10 @@ export default {
             id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
-          ...(debugPayload ? { debug: debugPayload } : {}),
           status: 'success',
           message: upscalerResult.Message || 'Upscaling completed',
           code: 200,
+          ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
         console.error('Upscaler4K unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
@@ -2636,7 +2801,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(enhancedResult, resultUrl) : undefined;
@@ -2722,7 +2887,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(colorizedResult, resultUrl) : undefined;
@@ -2811,7 +2976,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(agingResult, resultUrl) : undefined;
@@ -2842,8 +3007,13 @@ export default {
       const customDomain = env.CUSTOM_DOMAIN;
 
       return jsonResponse({
-        workerCustomDomain: workerCustomDomain || null,
-        customDomain: customDomain || null,
+        data: {
+          workerCustomDomain: workerCustomDomain || null,
+          customDomain: customDomain || null,
+        },
+        status: 'success',
+        message: 'Configuration retrieved successfully',
+        code: 200
       });
     }
 
