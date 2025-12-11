@@ -243,6 +243,11 @@ const compact = <T extends Record<string, any>>(input: T): Record<string, any> =
 };
 
 const isDebugEnabled = (env: Env): boolean => {
+  // If DISABLE_DEBUG_RESPONSE is explicitly set to 'true' or '1', always disable debug
+  if (env.DISABLE_DEBUG_RESPONSE === 'true' || env.DISABLE_DEBUG_RESPONSE === '1') {
+    return false;
+  }
+  // Otherwise, check DEBUG flag (backward compatible)
   return env.DEBUG === 'true' || env.DEBUG === '1';
 };
 

@@ -23,6 +23,7 @@ export interface Env {
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
   SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
   DEBUG?: string; // Optional: Set to 'true' or '1' to include debug payloads in responses
+  DISABLE_DEBUG_RESPONSE?: string; // Optional: Set to 'true' or '1' to completely disable debug payloads in all API responses (overrides DEBUG)
 }
 
 export interface FaceSwapRequest {
