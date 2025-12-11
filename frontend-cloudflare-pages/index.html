@@ -1291,11 +1291,18 @@
                 const status = (response.ok && data !== null && typeof data === 'object') ? 'success' : 'error';
                 logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status, duration, payload: data });
                 
-                // Normalize field names: map selfie_url/preset_url to image_url for backward compatibility
-                config.state.items = items.map((item) => ({
-                    ...item,
-                    image_url: item.selfie_url || item.preset_url || item.image_url
-                }));
+                // Normalize field names: map selfie_url/preset_url/result_url to image_url for backward compatibility
+                config.state.items = items.map((item) => {
+                    const normalized = {
+                        ...item,
+                        image_url: item.selfie_url || item.preset_url || item.result_url || item.image_url
+                    };
+                    // Ensure result_url is preserved for results type
+                    if (type === 'results' && item.result_url && !normalized.result_url) {
+                        normalized.result_url = item.result_url;
+                    }
+                    return normalized;
+                });
                 config.state.page = 1;
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);

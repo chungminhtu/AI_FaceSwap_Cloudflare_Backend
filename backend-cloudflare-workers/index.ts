@@ -52,7 +52,16 @@ const ensureSystemPreset = async (DB: D1Database): Promise<string> => {
 
 const ensureSystemSelfie = async (DB: D1Database, profileId: string, imageUrl: string): Promise<string | null> => {
   try {
-    const key = extractR2KeyFromUrl(imageUrl) || imageUrl;
+    let key = extractR2KeyFromUrl(imageUrl) || imageUrl;
+    
+    // Ensure selfie key has selfie/ prefix if it's a selfie file
+    if (key && !key.startsWith('selfie/') && !key.startsWith('selfies/')) {
+      // Check if it looks like a selfie file (starts with selfie_)
+      if (key.startsWith('selfie_')) {
+        key = `selfie/${key}`;
+      }
+    }
+    
     const selfieResult = await DB.prepare(
       'SELECT id FROM selfies WHERE selfie_url = ? AND profile_id = ? LIMIT 1'
     ).bind(key, profileId).first();
@@ -81,7 +90,16 @@ const saveResultToDatabase = async (
   profileId: string
 ): Promise<number | null> => {
   try {
-    const resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
+    let resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
+    
+    // Ensure result key has results/ prefix if it's a result file
+    if (resultKey && !resultKey.startsWith('results/')) {
+      // Check if it looks like a result file (starts with result_, vertex_, merge_, upscaler4k_)
+      if (resultKey.startsWith('result_') || resultKey.startsWith('vertex_') || resultKey.startsWith('merge_') || resultKey.startsWith('upscaler4k_')) {
+        resultKey = `results/${resultKey}`;
+      }
+    }
+    
     const insertResult = await DB.prepare(
       'INSERT INTO results (result_url, profile_id, created_at) VALUES (?, ?, ?)'
     ).bind(resultKey, profileId, Math.floor(Date.now() / 1000)).run();
@@ -120,21 +138,50 @@ const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string 
 const extractR2KeyFromUrl = (url: string): string | null => {
   if (!url) return null;
   try {
+    // Handle r2:// protocol
+    if (url.startsWith('r2://')) {
+      return url.replace('r2://', '');
+    }
+    
     const urlObj = new URL(url);
     const pathParts = urlObj.pathname.split('/').filter(p => p);
     
+    // Handle /r2/bucket/key format
     if (urlObj.pathname.startsWith('/r2/')) {
       if (pathParts.length >= 3 && pathParts[0] === 'r2') {
         return pathParts.slice(2).join('/');
       }
     }
     
+    // For custom domain URLs, extract the full path
     if (pathParts.length > 0) {
-      const bucketName = pathParts[0];
-      if (pathParts.length >= 2) {
-        return pathParts.slice(1).join('/');
+      const fullPath = pathParts.join('/');
+      
+      // If path already has a bucket prefix (preset/, selfie/, results/), return as-is
+      if (fullPath.startsWith('preset/') || fullPath.startsWith('selfie/') || fullPath.startsWith('selfies/') || fullPath.startsWith('presets/') || fullPath.startsWith('results/')) {
+        return fullPath;
       }
-      return pathParts[0];
+      
+      // Otherwise, infer bucket prefix from filename pattern
+      const filename = pathParts[pathParts.length - 1];
+      
+      // Results: result_, vertex_, merge_, upscaler4k_
+      if (filename.startsWith('result_') || filename.startsWith('vertex_') || filename.startsWith('merge_') || filename.startsWith('upscaler4k_')) {
+        return `results/${fullPath}`;
+      }
+      
+      // Selfies: selfie_
+      if (filename.startsWith('selfie_')) {
+        return `selfie/${fullPath}`;
+      }
+      
+      // Presets: preset_
+      if (filename.startsWith('preset_')) {
+        return `preset/${fullPath}`;
+      }
+      
+      // Default: return as-is (might be a legacy format)
+      return fullPath;
     }
     
     return pathParts.join('/') || null;
@@ -1584,9 +1631,9 @@ export default {
         }
 
         const storedKey = (checkResult as any).result_url || '';
-        let r2Key = storedKey;
+        let r2Key: string | null = storedKey;
         if (storedKey && (storedKey.startsWith('http://') || storedKey.startsWith('https://'))) {
-          r2Key = extractR2KeyFromUrl(storedKey);
+          r2Key = extractR2KeyFromUrl(storedKey) || storedKey;
         } else if (storedKey && storedKey.startsWith('r2://')) {
           r2Key = storedKey.replace('r2://', '');
         }
@@ -1620,8 +1667,8 @@ export default {
             databaseDeleted: deleteResult.meta?.changes || 0,
             r2Deleted,
             r2Key,
-            r2Error: r2Error || null,
-            resultUrl
+            storedKey,
+            r2Error: r2Error || null
           }
         });
       } catch (error) {
@@ -2173,52 +2220,7 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        const defaultMergePrompt = `You are a professional background removal specialist. Your task is to remove the background from the person in the image, creating a clean transparent background while preserving the person perfectly.
-
-CRITICAL REQUIREMENTS:
-1. PERFECT BACKGROUND REMOVAL:
-   - Remove ALL background elements completely - walls, furniture, objects, scenery, everything behind the person
-   - Create a 100% transparent background with no visible artifacts or remnants
-   - Ensure clean, precise edges around the person with no halos, fringes, or color bleeding
-   - Remove shadows cast on the background (but preserve shadows on the person's body/clothing if they are part of the person)
-
-2. PRESERVE THE PERSON COMPLETELY:
-   - Keep the person EXACTLY as they appear - same facial features, same body, same clothing, same pose
-   - Do NOT alter, modify, or enhance the person's appearance in any way
-   - Maintain 100% of the original person's details, colors, lighting, and visual quality
-   - Preserve all fine details including hair strands, clothing textures, accessories, and facial features
-
-3. PRECISE EDGE DETECTION:
-   - Use advanced edge detection to identify the exact boundary between person and background
-   - Handle complex edges like hair, transparent clothing, and fine details with precision
-   - Remove background elements that may appear between fingers, arms, or other body parts
-   - Ensure smooth, natural edges without jagged or pixelated borders
-
-4. HANDLE COMPLEX AREAS:
-   - For hair: Remove background between individual hair strands while keeping all hair visible
-   - For clothing: Remove background visible through mesh, lace, or semi-transparent materials
-   - For accessories: Remove background around glasses, jewelry, and other items while keeping them intact
-   - For overlapping elements: Remove background from areas where body parts overlap (e.g., crossed arms)
-
-5. MAINTAIN ORIGINAL QUALITY:
-   - Preserve the original image resolution and quality
-   - Keep all fine details, textures, and sharpness of the person
-   - Maintain original colors, lighting, and contrast exactly as in the source image
-   - Do NOT apply any filters, enhancements, or modifications to the person
-
-6. TRANSPARENT BACKGROUND:
-   - The final image must have a completely transparent background (alpha channel)
-   - No white, black, or colored background - only transparency
-   - The person should appear to float on a transparent canvas
-   - Output format must support transparency (PNG with alpha channel)
-
-7. NO ARTIFACTS OR RESIDUES:
-   - Remove all background color spill or color contamination on edges
-   - Eliminate any halos, fringes, or color bleeding from the removed background
-   - Clean up any partial background elements that may remain
-   - Ensure professional, studio-quality background removal
-
-Remove the background completely and create a clean transparent image with the person perfectly preserved.`;
+        const defaultMergePrompt = `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`;
 
         let mergePrompt = defaultMergePrompt;
         if (body.additional_prompt) {

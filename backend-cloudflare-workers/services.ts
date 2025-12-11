@@ -257,7 +257,7 @@ export const callNanoBanana = async (
           imageSize: "1K",
           imageOutputOptions: {
             mimeType: "image/jpeg",
-            compressionQuality: 60
+            compressionQuality: 75
           },
           personGeneration: "ALLOW_ALL"
         },
@@ -505,52 +505,7 @@ export const callNanoBananaMerge = async (
       promptText = JSON.stringify(prompt);
     }
 
-    const mergePrompt = promptText || `You are a professional background removal specialist. Your task is to remove the background from the person in the image, creating a clean transparent background while preserving the person perfectly.
-
-CRITICAL REQUIREMENTS:
-1. PERFECT BACKGROUND REMOVAL:
-   - Remove ALL background elements completely - walls, furniture, objects, scenery, everything behind the person
-   - Create a 100% transparent background with no visible artifacts or remnants
-   - Ensure clean, precise edges around the person with no halos, fringes, or color bleeding
-   - Remove shadows cast on the background (but preserve shadows on the person's body/clothing if they are part of the person)
-
-2. PRESERVE THE PERSON COMPLETELY:
-   - Keep the person EXACTLY as they appear - same facial features, same body, same clothing, same pose
-   - Do NOT alter, modify, or enhance the person's appearance in any way
-   - Maintain 100% of the original person's details, colors, lighting, and visual quality
-   - Preserve all fine details including hair strands, clothing textures, accessories, and facial features
-
-3. PRECISE EDGE DETECTION:
-   - Use advanced edge detection to identify the exact boundary between person and background
-   - Handle complex edges like hair, transparent clothing, and fine details with precision
-   - Remove background elements that may appear between fingers, arms, or other body parts
-   - Ensure smooth, natural edges without jagged or pixelated borders
-
-4. HANDLE COMPLEX AREAS:
-   - For hair: Remove background between individual hair strands while keeping all hair visible
-   - For clothing: Remove background visible through mesh, lace, or semi-transparent materials
-   - For accessories: Remove background around glasses, jewelry, and other items while keeping them intact
-   - For overlapping elements: Remove background from areas where body parts overlap (e.g., crossed arms)
-
-5. MAINTAIN ORIGINAL QUALITY:
-   - Preserve the original image resolution and quality
-   - Keep all fine details, textures, and sharpness of the person
-   - Maintain original colors, lighting, and contrast exactly as in the source image
-   - Do NOT apply any filters, enhancements, or modifications to the person
-
-6. TRANSPARENT BACKGROUND:
-   - The final image must have a completely transparent background (alpha channel)
-   - No white, black, or colored background - only transparency
-   - The person should appear to float on a transparent canvas
-   - Output format must support transparency (PNG with alpha channel)
-
-7. NO ARTIFACTS OR RESIDUES:
-   - Remove all background color spill or color contamination on edges
-   - Eliminate any halos, fringes, or color bleeding from the removed background
-   - Clean up any partial background elements that may remain
-   - Ensure professional, studio-quality background removal
-
-Remove the background completely and create a clean transparent image with the person perfectly preserved.`;
+    const mergePrompt = promptText || `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`;
 
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBananaMerge] Missing service account credentials');
@@ -613,7 +568,7 @@ Remove the background completely and create a clean transparent image with the p
           imageSize: "1K",
           imageOutputOptions: {
             mimeType: "image/jpeg",
-            compressionQuality: 60
+            compressionQuality: 75
           },
           personGeneration: "ALLOW_ALL"
         },
