@@ -1251,18 +1251,20 @@
             const config = galleries[type];
             const loadKey = `${type}-${genderFilter}`;
             
-            // Prevent duplicate simultaneous calls
+            // Prevent duplicate simultaneous calls - check and add atomically
             if (loadingGalleries.has(loadKey)) {
                 return;
             }
+            loadingGalleries.add(loadKey);
             
             let startTime = null;
+            let errorLogged = false;
             const params = new URLSearchParams();
             try {
-                loadingGalleries.add(loadKey);
-                
                 if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
-                    config.state.items = []; config.state.page = 1; renderGallery(type); return;
+                    config.state.items = []; config.state.page = 1; renderGallery(type);
+                    loadingGalleries.delete(loadKey);
+                    return;
                 }
                 let url = `${WORKER_URL}${config.endpoints.list}`;
                 if ((type === 'selfie' || type === 'results') && window.profileManager.currentProfile) {
@@ -1277,6 +1279,7 @@
                 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
+                    errorLogged = true;
                     logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status: 'error', duration, payload: errorData });
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -1297,9 +1300,12 @@
                 config.state.genderFilter = genderFilter;
                 renderGallery(type);
             } catch (error) {
-                const duration = startTime ? Date.now() - startTime : 0;
-                const errorUrl = `${WORKER_URL}${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`;
-                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: config.endpoints.list, fullUrl: errorUrl, status: 'error', duration });
+                // Only log error if it wasn't already logged (e.g., network errors, JSON parse errors)
+                if (!errorLogged) {
+                    const duration = startTime ? Date.now() - startTime : 0;
+                    const errorUrl = `${WORKER_URL}${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`;
+                    logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: config.endpoints.list, fullUrl: errorUrl, status: 'error', duration });
+                }
                 config.state.items = []; config.state.page = 1; renderGallery(type);
             } finally {
                 loadingGalleries.delete(loadKey);
