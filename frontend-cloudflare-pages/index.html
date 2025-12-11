@@ -260,6 +260,10 @@
         .api-log-url { color: var(--text-secondary); word-break: break-all; }
         .api-log-timing { color: #666; font-size: 11px; margin-left: 6px; }
         .api-log-payload { margin-top: 6px; font-size: 11px; background: rgba(0,0,0,0.03); padding: 8px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .api-log-curl-wrapper { margin-top: 8px; position: relative; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; }
+        .api-log-curl-pre { overflow-x: auto; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; margin: 0; padding-right: 60px; }
+        .api-log-copy-btn { position: absolute; top: 8px; right: 8px; background: var(--accent); color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; opacity: 0.8; }
+        .api-log-copy-btn:hover { opacity: 1; }
 
         /* Gallery Items */
         .gallery-item {
@@ -1171,24 +1175,48 @@
             const statusText = status === 'success' ? 'SUCCESS' : status === 'error' ? 'ERROR' : status.toUpperCase();
             const statusColor = status === 'success' ? 'var(--success)' : status === 'error' ? 'var(--danger)' : 'var(--text-secondary)';
             
-            let payloadHtml = '';
-            if (payload) {
-                payloadHtml = `<div class="api-log-payload"><strong>Response:</strong><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></div>`;
+            let htmlParts = [
+                `<span class="api-log-method">${method}</span> <span class="api-log-url">${displayPath}</span> <span style="color: ${statusColor}; font-weight: 600;">${statusText}</span>${durationHtml}`
+            ];
+            
+            // Only show response payload for non-GET requests
+            if (payload && method.toUpperCase() !== 'GET') {
+                htmlParts.push(`<div style="margin-top: 6px; font-size: 11px; background: rgba(0,0,0,0.03); padding: 8px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;"><strong>Response:</strong><pre style="margin: 0; padding: 0;">${escapeHtml(JSON.stringify(payload, null, 2))}</pre></div>`);
             }
             
-            let curlHtml = '';
             if (method && displayUrl) {
                 const curlCommand = generateCurlCommand(method, displayUrl, headers, body);
-                curlHtml = `<div class="api-log-payload" style="margin-top: 8px;"><strong>CURL:</strong><pre style="background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; word-break: break-all;">${escapeHtml(curlCommand)}</pre></div>`;
+                const curlEscaped = escapeHtml(curlCommand);
+                htmlParts.push(`<div style="margin-top: 8px; position: relative; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 4px;">
+                    <button class="api-log-copy-btn" data-curl="${curlEscaped.replace(/"/g, '&quot;')}">Copy</button>
+                    <pre style="overflow-x: auto; font-size: 11px; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; margin: 0; padding-right: 60px;">${curlEscaped}</pre>
+                </div>`);
             }
             
-            entry.innerHTML = `
-                <div class="api-log-main">
-                    <span class="api-log-method">${method}</span> <span class="api-log-url">${displayPath}</span> <span style="color: ${statusColor}; font-weight: 600;">${statusText}</span>${durationHtml}
-                </div>
-                ${payloadHtml}
-                ${curlHtml}
-            `;
+            entry.innerHTML = htmlParts.join('');
+            
+            // Attach copy button handler after DOM is created
+            const copyBtn = entry.querySelector('.api-log-copy-btn');
+            if (copyBtn) {
+                const curlText = copyBtn.getAttribute('data-curl');
+                copyBtn.onclick = function() {
+                    navigator.clipboard.writeText(curlText).then(() => {
+                        copyBtn.textContent = 'Copied!';
+                        copyBtn.style.background = 'var(--success)';
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy';
+                            copyBtn.style.background = 'var(--accent)';
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        copyBtn.textContent = 'Error';
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy';
+                        }, 2000);
+                    });
+                };
+            }
+            
             apiLogList.prepend(entry);
             while (apiLogList.childElementCount > MAX_LOG_ENTRIES) apiLogList.removeChild(apiLogList.lastElementChild);
         }
@@ -1218,11 +1246,21 @@
         }
 
         // Gallery Functions
+        const loadingGalleries = new Set();
         async function loadGallery(type, genderFilter = '') {
             const config = galleries[type];
+            const loadKey = `${type}-${genderFilter}`;
+            
+            // Prevent duplicate simultaneous calls
+            if (loadingGalleries.has(loadKey)) {
+                return;
+            }
+            
             let startTime = null;
             const params = new URLSearchParams();
             try {
+                loadingGalleries.add(loadKey);
+                
                 if ((type === 'selfie' || type === 'results') && !window.profileManager?.currentProfile) {
                     config.state.items = []; config.state.page = 1; renderGallery(type); return;
                 }
@@ -1236,10 +1274,20 @@
                 startTime = Date.now();
                 const response = await fetch(url);
                 const duration = Date.now() - startTime;
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status: 'error', duration, payload: errorData });
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const data = await response.json();
-                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status: 'success', duration });
-                const items = data[config.responseKey] || [];
+                const items = data[config.responseKey] || data.data?.[config.responseKey] || [];
+                
+                // Only log success if we actually got data or it's a valid empty response
+                const status = (response.ok && data !== null && typeof data === 'object') ? 'success' : 'error';
+                logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status, duration, payload: data });
+                
                 // Normalize field names: map selfie_url/preset_url to image_url for backward compatibility
                 config.state.items = items.map((item) => ({
                     ...item,
@@ -1253,6 +1301,8 @@
                 const errorUrl = `${WORKER_URL}${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`;
                 logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: config.endpoints.list, fullUrl: errorUrl, status: 'error', duration });
                 config.state.items = []; config.state.page = 1; renderGallery(type);
+            } finally {
+                loadingGalleries.delete(loadKey);
             }
         }
 

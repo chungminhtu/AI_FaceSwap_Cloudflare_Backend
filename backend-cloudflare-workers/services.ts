@@ -256,7 +256,8 @@ export const callNanoBanana = async (
           aspectRatio: normalizedAspectRatio,  // Aspect ratio in format like "16:9", "4:3", "9:16", etc.
           imageSize: "1K",
           imageOutputOptions: {
-            mimeType: "image/png"
+            mimeType: "image/jpeg",
+            compressionQuality: 60
           },
           personGeneration: "ALLOW_ALL"
         },
@@ -359,7 +360,7 @@ export const callNanoBanana = async (
 
       const parts = candidates[0].content?.parts || [];
       let base64Image: string | null = null;
-      let mimeType = 'image/png';
+      let mimeType = 'image/jpeg';
 
       // Extract image from parts array - look for inline_data (snake_case) or inlineData (camelCase)
       // Vertex AI API may return either format
@@ -367,13 +368,13 @@ export const callNanoBanana = async (
         // Check for camelCase format (inlineData) - this is what the API actually returns
         if (part.inlineData) {
           base64Image = part.inlineData.data;
-          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/png';
+          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/jpeg';
           break;
         }
         // Check for snake_case format (inline_data) - fallback
         if (part.inline_data) {
           base64Image = part.inline_data.data;
-          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/png';
+          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/jpeg';
           break;
         }
       }
@@ -397,7 +398,7 @@ export const callNanoBanana = async (
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      const resultKey = `results/vertex_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'png'}`;
+      const resultKey = `results/vertex_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'jpg'}`;
       
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
@@ -611,7 +612,8 @@ Remove the background completely and create a clean transparent image with the p
           aspectRatio: normalizedAspectRatio,
           imageSize: "1K",
           imageOutputOptions: {
-            mimeType: "image/png"
+            mimeType: "image/jpeg",
+            compressionQuality: 60
           },
           personGeneration: "ALLOW_ALL"
         },
@@ -716,17 +718,17 @@ Remove the background completely and create a clean transparent image with the p
 
       const parts = candidates[0].content?.parts || [];
       let base64Image: string | null = null;
-      let mimeType = 'image/png';
+      let mimeType = 'image/jpeg';
 
       for (const part of parts) {
         if (part.inlineData) {
           base64Image = part.inlineData.data;
-          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/png';
+          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/jpeg';
           break;
         }
         if (part.inline_data) {
           base64Image = part.inline_data.data;
-          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/png';
+          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/jpeg';
           break;
         }
       }
@@ -748,7 +750,7 @@ Remove the background completely and create a clean transparent image with the p
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      const resultKey = `results/merge_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'png'}`;
+      const resultKey = `results/merge_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${mimeType.split('/')[1] || 'jpg'}`;
       
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
