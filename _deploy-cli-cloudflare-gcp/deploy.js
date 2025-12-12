@@ -951,7 +951,7 @@ async function findMigrationFiles(migrationsDir) {
 }
 
 async function runSqlMigration(migrationFile, databaseName, accountId, apiToken) {
-  const { rename } = require('fs/promises');
+  const { readFileSync, rename } = require('fs/promises');
   const env = { ...process.env };
   if (accountId) env.CLOUDFLARE_ACCOUNT_ID = accountId;
   if (apiToken) env.CLOUDFLARE_API_TOKEN = apiToken;
@@ -1028,7 +1028,7 @@ async function runMigrations(config, cwd, accountId, apiToken) {
       }
     }
     
-    return { success: true, count: migrationFiles.length };
+    return { success: true, count: migrationFiles.length, message: 'All migrations completed' };
   } catch (error) {
     return { success: false, error: error.message };
   }
