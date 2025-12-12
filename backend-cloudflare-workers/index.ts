@@ -2167,6 +2167,15 @@ export default {
 
     // Handle face swap endpoint
     if (path === '/faceswap' && request.method === 'POST') {
+      const debugEnabled = isDebugEnabled(env);
+      const requestCache = new Map<string, Promise<any>>();
+      const getCachedAsync = async <T>(key: string, compute: () => Promise<T>): Promise<T> => {
+        if (!requestCache.has(key)) {
+          requestCache.set(key, compute());
+        }
+        return requestCache.get(key) as Promise<T>;
+      };
+
       try {
         const body: FaceSwapRequest = await request.json();
 
@@ -2252,7 +2261,6 @@ export default {
           presetImageId = null;
         } else {
           // This should never happen due to earlier validation, but TypeScript needs this
-          const debugEnabled = isDebugEnabled(env);
           return errorResponse('Either preset_image_id or preset_image_url must be provided', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
@@ -2265,7 +2273,6 @@ export default {
           for (let i = 0; i < body.selfie_ids.length; i++) {
             const selfieResult = results[selfieStartIndex + i];
             if (!selfieResult) {
-              const debugEnabled = isDebugEnabled(env);
               return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404, debugEnabled ? { selfieId: body.selfie_ids[i], path } : undefined, request, env);
             }
             const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
@@ -2279,7 +2286,6 @@ export default {
 
         // Support multiple selfies for wedding faceswap (e.g., bride and groom)
         if (selfieUrls.length === 0) {
-          const debugEnabled = isDebugEnabled(env);
           return errorResponse('No valid selfie URLs found', 400, debugEnabled ? { hasSelfieIds, hasSelfieUrls, selfieIdsCount: body.selfie_ids?.length || 0, selfieUrlsCount: body.selfie_image_urls?.length || 0, path } : undefined, request, env);
         }
         const sourceUrl = selfieUrls.length === 1 ? selfieUrls[0] : selfieUrls;
@@ -2300,39 +2306,39 @@ export default {
         let storedPromptPayload: any = null;
         
         if (presetImageId) {
-          promptResult = await DB.prepare(
-            'SELECT id, ext FROM presets WHERE id = ?'
-          ).bind(presetImageId).first();
+          promptResult = presetResult;
           
-          if (promptResult && !storedPromptPayload) {
+            if (promptResult && !storedPromptPayload) {
             const cacheKey = `prompt:${presetImageId}`;
             
             if (env.PROMPT_CACHE_KV) {
               try {
                 const cached = await env.PROMPT_CACHE_KV.get(cacheKey, 'json');
                 if (cached) storedPromptPayload = cached;
-              } catch {
-                // Cache read failed, continue to R2 fallback
+              } catch (error) {
+                console.error(`[KV Cache] Read failed for key ${cacheKey}:`, error);
               }
+            } else {
+              console.warn(`[KV Cache] PROMPT_CACHE_KV not bound - cache disabled`);
             }
             
             if (!storedPromptPayload) {
               const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
               try {
-                const r2Object = await R2_BUCKET.head(r2Key);
+                const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
+                  await R2_BUCKET.head(r2Key)
+                );
                 const promptJson = r2Object?.customMetadata?.prompt_json;
                 if (promptJson?.trim()) {
                   storedPromptPayload = JSON.parse(promptJson);
                   if (env.PROMPT_CACHE_KV) {
-                    try {
-                      await env.PROMPT_CACHE_KV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL });
-                    } catch {
-                      // Cache write failed, continue
-                    }
+                    env.PROMPT_CACHE_KV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch((error) => {
+                      console.error(`[KV Cache] Write failed for key ${cacheKey}:`, error);
+                    });
                   }
                 }
-              } catch {
-                // R2 metadata read failed, continue to generate new prompt
+              } catch (error) {
+                console.error(`[KV Cache] R2 metadata read failed:`, error);
               }
             }
           }
@@ -2346,18 +2352,21 @@ export default {
             storedPromptPayload = generateResult.prompt;
             if (presetImageId && promptResult) {
               const promptJsonString = JSON.stringify(storedPromptPayload);
+              const cacheKey = `prompt:${presetImageId}`;
               
               if (env.PROMPT_CACHE_KV) {
-                try {
-                  await env.PROMPT_CACHE_KV.put(`prompt:${presetImageId}`, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL });
-                } catch {
-                  // Cache write failed, continue
-                }
+                env.PROMPT_CACHE_KV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch((error) => {
+                  console.error(`[KV Cache] Write failed for key ${cacheKey} after prompt generation:`, error);
+                });
+              } else {
+                console.warn(`[KV Cache] PROMPT_CACHE_KV not bound - skipping cache write for ${cacheKey}`);
               }
               
               const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
               try {
-                const existingObject = await R2_BUCKET.head(r2Key);
+                const existingObject = await getCachedAsync(`r2head:${r2Key}`, async () =>
+                  await R2_BUCKET.head(r2Key)
+                );
                 if (existingObject) {
                   const objectBody = await R2_BUCKET.get(r2Key);
                   if (objectBody) {
@@ -2367,8 +2376,8 @@ export default {
                     });
                   }
                 }
-              } catch {
-                // R2 metadata write failed, continue
+              } catch (error) {
+                console.error(`[R2 Metadata] Write failed for preset ${presetImageId}:`, error);
               }
             }
           } else {
@@ -2404,16 +2413,16 @@ export default {
               try {
                 const parsedResponse = typeof fullResponse === 'string' ? JSON.parse(fullResponse) : fullResponse;
                 // Efficient sanitization - only sanitize 'data' field if it's a long string
-                sanitizedVertexFailure = typeof parsedResponse === 'object' && parsedResponse !== null
-                  ? Object.fromEntries(
-                      Object.entries(parsedResponse).map(([key, value]) => 
-                        key === 'data' && typeof value === 'string' && value.length > 100 
-                          ? [key, '...'] 
-                          : [key, value]
-                      )
-                    )
-                  : parsedResponse;
+                if (typeof parsedResponse === 'object' && parsedResponse !== null) {
+                  sanitizedVertexFailure = { ...parsedResponse };
+                  if (sanitizedVertexFailure.data && typeof sanitizedVertexFailure.data === 'string' && sanitizedVertexFailure.data.length > 100) {
+                    sanitizedVertexFailure.data = '...';
+                  }
+                } else {
+                  sanitizedVertexFailure = parsedResponse;
+                }
               } catch (parseErr) {
+                console.warn('[FaceSwap] Failed to parse/sanitize vertex failure response:', parseErr instanceof Error ? parseErr.message.substring(0, 200) : String(parseErr).substring(0, 200));
                 if (typeof fullResponse === 'string') {
                   sanitizedVertexFailure = fullResponse.substring(0, 500) + (fullResponse.length > 500 ? '...' : '');
                 } else {
@@ -2447,7 +2456,6 @@ export default {
               error: (faceSwapResult as any).Error,
             });
 
-            const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -2467,14 +2475,12 @@ export default {
 
           if (faceSwapResult.ResultImageUrl?.startsWith('r2://')) {
             const r2Key = faceSwapResult.ResultImageUrl.replace('r2://', '');
-            const requestUrl = new URL(request.url);
             faceSwapResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
           }
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           console.error('FaceSwap failed:', faceSwapResult.Message || 'Unknown error');
           const failureCode = faceSwapResult.StatusCode || 500;
-          const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
             request: requestDebug,
             provider: buildProviderDebug(faceSwapResult),
@@ -2517,7 +2523,6 @@ export default {
 
           if (safeSearchResult.error) {
             console.error('[FaceSwap] Safe search error:', safeSearchResult.error?.substring(0, 200));
-            const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -2537,7 +2542,6 @@ export default {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
             console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel);
-            const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -2577,28 +2581,38 @@ export default {
         };
 
         let resultUrl = faceSwapResult.ResultImageUrl;
-        try {
-          storageDebug.attemptedDownload = true;
-          const resultImageResponse = await fetchWithTimeout(faceSwapResult.ResultImageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
-          storageDebug.downloadStatus = resultImageResponse.status;
-          if (resultImageResponse.ok && resultImageResponse.body) {
-            const id = nanoid(16);
-            const resultKey = `results/${id}.jpg`;
-            await R2_BUCKET.put(resultKey, resultImageResponse.body, {
-              httpMetadata: {
-                contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
-                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-              },
-            });
-            storageDebug.savedToR2 = true;
-            storageDebug.r2Key = resultKey;
-            resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
-            storageDebug.publicUrl = resultUrl;
-          } else {
-            storageDebug.error = `Download failed with status ${resultImageResponse.status}`;
+
+        if (resultUrl?.startsWith('r2://')) {
+          const r2Key = resultUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          storageDebug.attemptedDownload = false;
+          storageDebug.savedToR2 = true;
+          storageDebug.r2Key = r2Key;
+          storageDebug.publicUrl = resultUrl;
+        } else {
+          try {
+            storageDebug.attemptedDownload = true;
+            const resultImageResponse = await fetchWithTimeout(resultUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
+            storageDebug.downloadStatus = resultImageResponse.status;
+            if (resultImageResponse.ok && resultImageResponse.body) {
+              const id = nanoid(16);
+              const resultKey = `results/${id}.jpg`;
+              await R2_BUCKET.put(resultKey, resultImageResponse.body, {
+                httpMetadata: {
+                  contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+              storageDebug.savedToR2 = true;
+              storageDebug.r2Key = resultKey;
+              resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
+              storageDebug.publicUrl = resultUrl;
+            } else {
+              storageDebug.error = `Download failed with status ${resultImageResponse.status}`;
+            }
+          } catch (r2Error) {
+            storageDebug.error = r2Error instanceof Error ? r2Error.message : String(r2Error);
           }
-        } catch (r2Error) {
-          storageDebug.error = r2Error instanceof Error ? r2Error.message : String(r2Error);
         }
 
         const databaseDebug: {
@@ -2633,7 +2647,6 @@ export default {
           }
         }
 
-        const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(faceSwapResult, resultUrl) : undefined;
         const vertexDebug = debugEnabled ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined;
         const visionDebug = debugEnabled ? buildVisionDebug(safetyDebug) : undefined;
@@ -2660,7 +2673,6 @@ export default {
         });
       } catch (error) {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
@@ -3426,16 +3438,32 @@ export default {
       const backendDomain = env.BACKEND_DOMAIN;
       const r2Domain = env.R2_DOMAIN;
       const debugEnabled = isDebugEnabled(env);
+      const kvCacheAvailable = !!env.PROMPT_CACHE_KV;
+
+      let kvCacheTest = null;
+      if (kvCacheAvailable) {
+        try {
+          await env.PROMPT_CACHE_KV.put('__test__', 'test', { expirationTtl: 1 });
+          await env.PROMPT_CACHE_KV.delete('__test__');
+          kvCacheTest = 'working';
+        } catch (error) {
+          kvCacheTest = `error: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
 
       return jsonResponse({
         data: {
           backendDomain: backendDomain || null,
           r2Domain: r2Domain || null,
+          kvCache: {
+            available: kvCacheAvailable,
+            test: kvCacheTest
+          }
         },
         status: 'success',
         message: 'Configuration retrieved successfully',
         code: 200,
-        ...(debugEnabled ? { debug: { path, backendDomain: !!backendDomain, r2Domain: !!r2Domain } } : {})
+        ...(debugEnabled ? { debug: { path, backendDomain: !!backendDomain, r2Domain: !!r2Domain, kvCacheAvailable } } : {})
       }, 200, request, env);
     }
 

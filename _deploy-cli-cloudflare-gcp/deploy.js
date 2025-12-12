@@ -522,6 +522,13 @@ function parseConfig(config) {
         }
         
         if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
+        if (config.ALLOWED_ORIGINS) secrets.ALLOWED_ORIGINS = config.ALLOWED_ORIGINS;
+        if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
+        if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
+        if (config.SELFIE_MAX_FACESWAP) secrets.SELFIE_MAX_FACESWAP = config.SELFIE_MAX_FACESWAP;
+        if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
+        if (config.DISABLE_SAFE_SEARCH) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
+        if (config.SAFETY_STRICTNESS) secrets.SAFETY_STRICTNESS = config.SAFETY_STRICTNESS;
         return secrets;
       })(),
     _needsCloudflareSetup: config._needsCloudflareSetup,

@@ -166,7 +166,9 @@ export const validateImageUrl = (url: string, env: any): boolean => {
       try {
         const r2DomainUrl = new URL(env.R2_DOMAIN);
         allowedDomains.push(r2DomainUrl.hostname.toLowerCase());
-      } catch {}
+      } catch (error) {
+        console.warn(`[URL Validation] Invalid R2_DOMAIN format: ${env.R2_DOMAIN}`, error);
+      }
     }
     
     allowedDomains.push('.r2.cloudflarestorage.com');

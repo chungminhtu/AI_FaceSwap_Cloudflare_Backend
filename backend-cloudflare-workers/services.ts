@@ -1,3 +1,4 @@
+// backend-cloudflare-workers/services.ts
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
@@ -5,6 +6,16 @@ import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVe
 import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
+
+const base64ToUint8Array = (base64: string): Uint8Array => {
+  const binaryString = atob(base64);
+  return Uint8Array.from(binaryString, c => c.charCodeAt(0));
+};
+
+const getMimeExt = (mimeType: string): string => {
+  const idx = mimeType.indexOf('/');
+  return idx > 0 ? mimeType.substring(idx + 1) : 'jpg';
+};
 
 const sanitizeObject = (obj: any, maxStringLength = 100): any => {
   if (obj === null || obj === undefined) return obj;
@@ -380,13 +391,9 @@ export const callNanoBanana = async (
       
 
       // Convert base64 to Uint8Array and upload to R2
-      const binaryString = atob(base64Image);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      const bytes = base64ToUint8Array(base64Image);
       
-      const ext = mimeType.split('/')[1] || 'jpg';
+      const ext = getMimeExt(mimeType);
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
       
@@ -683,13 +690,9 @@ export const callNanoBananaMerge = async (
         };
       }
 
-      const binaryString = atob(base64Image);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      const bytes = base64ToUint8Array(base64Image);
       
-      const ext = mimeType.split('/')[1] || 'jpg';
+      const ext = getMimeExt(mimeType);
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
       
@@ -1022,6 +1025,7 @@ export const generateVertexPrompt = async (
           break;
         } catch (e) {
           // If parse fails, try extracting from markdown code blocks
+          console.debug('[Vertex] Initial JSON parse failed, attempting markdown extraction');
           let jsonText = part.text;
           if (jsonText.includes('```json')) {
             const jsonMatch = jsonText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
@@ -1095,7 +1099,9 @@ const fetchImageAsBase64 = async (imageUrl: string, env: Env): Promise<string> =
   const arrayBuffer = await response.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
   let binary = '';
-  uint8Array.forEach(byte => binary += String.fromCharCode(byte));
+  for (let i = 0; i < uint8Array.length; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
+  }
   return btoa(binary);
 };
 
@@ -1341,11 +1347,7 @@ export const callUpscaler4k = async (
         if (base64Match) {
           contentType = base64Match[1] || DEFAULT_VALUES.UPSCALER_MIME_TYPE;
           const base64String = base64Match[2];
-          const binaryString = atob(base64String);
-          const imageBytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            imageBytes[i] = binaryString.charCodeAt(i);
-          }
+          const imageBytes = base64ToUint8Array(base64String);
           
           const R2_BUCKET = getR2Bucket(env);
           await R2_BUCKET.put(resultKey, imageBytes, {
