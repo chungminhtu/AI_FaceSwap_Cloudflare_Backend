@@ -266,16 +266,16 @@ export const callNanoBanana = async (
       },
       safetySettings: [{
         category: "HARM_CATEGORY_HATE_SPEECH",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }, {
         category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }, {
         category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }, {
         category: "HARM_CATEGORY_HARASSMENT",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }]
     };
 
@@ -580,16 +580,16 @@ export const callNanoBananaMerge = async (
       },
       safetySettings: [{
         category: "HARM_CATEGORY_HATE_SPEECH",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }, {
         category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }, {
         category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }, {
         category: "HARM_CATEGORY_HARASSMENT",
-        threshold: "OFF"
+        threshold: "BLOCK_MEDIUM_AND_ABOVE"
       }]
     };
 

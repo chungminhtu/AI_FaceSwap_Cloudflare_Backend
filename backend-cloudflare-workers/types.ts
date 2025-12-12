@@ -22,8 +22,7 @@ export interface Env {
   WAVESPEED_API_KEY?: string; // WaveSpeed.ai API key
   DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
   SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
-  DEBUG?: string; // Optional: Set to 'true' or '1' to include debug payloads in responses
-  DISABLE_DEBUG_RESPONSE?: string; // Optional: Set to 'true' or '1' to completely disable debug payloads in all API responses (overrides DEBUG)
+  ENABLE_DEBUG_RESPONSE?: string; // Optional: Set to 'true' to enable debug payloads in responses, 'false' to disable. Default: disabled (when not set or null)
   RESULT_MAX_HISTORY?: string; // Optional: Maximum number of result history entries per user. Default: 10
   SELFIE_MAX_FACESWAP?: string; // Optional: Maximum number of faceswap selfies to keep per user. Default: 5
   SELFIE_MAX_OTHER?: string; // Optional: Maximum number of non-faceswap selfies (all other actions combined) to keep per user. Default: 1
