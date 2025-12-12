@@ -13,16 +13,6 @@
     "db:migrate": "node scripts/run-migrations.js",
     "docs:build": "node frontend-cloudflare-pages/docs/build-static.js"
   },
-  "keywords": [
-    "cloudflare",
-    "worker",
-    "pages",
-    "faceswap",
-    "api",
-    "gcp",
-    "vertex-ai"
-  ],
-  "license": "MIT",
   "dependencies": {
     "nanoid": "^5.0.0"
   },
