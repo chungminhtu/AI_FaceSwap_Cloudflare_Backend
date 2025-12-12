@@ -820,8 +820,8 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
   }
 
   const config = envConfig.cloudflare;
-  let token = origToken || config.apiToken;
-  let accountId = preferredAccountId || origAccountId || config.accountId;
+  let token = config.apiToken || origToken;
+  let accountId = config.accountId || preferredAccountId || origAccountId;
 
   if (!accountId) {
     restoreEnv(origToken, origAccountId);
@@ -833,15 +833,20 @@ async function setupCloudflare(env = null, preferredAccountId = null) {
     throw new Error(`No API token found for environment: ${targetEnv}. Please add apiToken to deployments-secrets.json`);
   }
 
+  if (config.accountId && accountId !== config.accountId) {
+    logWarn(`Account ID mismatch: using ${config.accountId} from config (was: ${accountId})`);
+    accountId = config.accountId;
+  }
+
+  if (config.apiToken && token !== config.apiToken) {
+    logWarn(`API token mismatch: using token from config for environment: ${targetEnv}`);
+    token = config.apiToken;
+  }
+
   const isValid = await validateCloudflareToken(token);
   if (!isValid) {
     restoreEnv(origToken, origAccountId);
     throw new Error(`API token validation failed for environment: ${targetEnv}. Please check your API token in deployments-secrets.json`);
-  }
-
-  if (preferredAccountId && accountId !== preferredAccountId) {
-    logWarn(`Using account ID from config: ${preferredAccountId} (config has: ${accountId})`);
-    accountId = preferredAccountId;
   }
 
   logStep('Updating API token with all edit permissions...');
@@ -918,31 +923,47 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config) {
   
   let content = fs.readFileSync(htmlPath, 'utf8');
   
-  // Determine the actual worker URL to use (custom domain if available, otherwise workers.dev)
+  // Determine the actual worker URL to use from config (BACKEND_DOMAIN takes priority)
   let finalWorkerUrl = workerUrl;
   if (config?.BACKEND_DOMAIN) {
     finalWorkerUrl = config.BACKEND_DOMAIN.startsWith('http')
       ? config.BACKEND_DOMAIN
       : `https://${config.BACKEND_DOMAIN}`;
-    console.log(`[Deploy] Using custom domain from config: ${finalWorkerUrl}`);
+    console.log(`[Deploy] Using BACKEND_DOMAIN from config: ${finalWorkerUrl}`);
+  } else if (workerUrl) {
+    finalWorkerUrl = workerUrl;
+    console.log(`[Deploy] Using worker URL: ${finalWorkerUrl}`);
   } else {
-    console.log(`[Deploy] No custom domain in config, using workers.dev: ${finalWorkerUrl}`);
+    throw new Error('No backend URL available. Please set BACKEND_DOMAIN in deployments-secrets.json or ensure worker deployment succeeds.');
   }
   
-  // Replace the WORKER_URL initialization
-  const workerUrlPattern = /let WORKER_URL = ['"](.*?)['"]; \/\/ Fallback/g;
-  if (workerUrlPattern.test(content)) {
-    content = content.replace(workerUrlPattern, `let WORKER_URL = '${finalWorkerUrl}'; // Injected during deployment`);
+  // Replace the placeholder {{BACKEND_URL}} or any existing WORKER_URL value
+  const placeholderPattern = /let WORKER_URL\s*=\s*['"]\{\{BACKEND_URL\}\}['"];?\s*\/\/.*/g;
+  const existingPattern = /let WORKER_URL\s*=\s*['"](.*?)['"];?\s*\/\/.*/g;
+  const simplePattern = /let WORKER_URL\s*=\s*['"](.*?)['"];?/g;
+  
+  if (placeholderPattern.test(content)) {
+    content = content.replace(placeholderPattern, `let WORKER_URL = '${finalWorkerUrl}'; // Injected during deployment - DO NOT MODIFY MANUALLY`);
+    console.log(`[Deploy] ✓ Replaced {{BACKEND_URL}} placeholder with: ${finalWorkerUrl}`);
+  } else if (existingPattern.test(content)) {
+    content = content.replace(existingPattern, `let WORKER_URL = '${finalWorkerUrl}'; // Injected during deployment - DO NOT MODIFY MANUALLY`);
+    console.log(`[Deploy] ✓ Updated WORKER_URL in HTML to: ${finalWorkerUrl}`);
+  } else if (simplePattern.test(content)) {
+    content = content.replace(simplePattern, `let WORKER_URL = '${finalWorkerUrl}'; // Injected during deployment - DO NOT MODIFY MANUALLY`);
+    console.log(`[Deploy] ✓ Updated WORKER_URL in HTML to: ${finalWorkerUrl}`);
+  } else {
+    console.log(`[Deploy] ⚠ Could not find WORKER_URL pattern in HTML to update`);
   }
   
-  // Also replace the fallbackUrl constant
-  const fallbackUrlPattern = /const fallbackUrl = ['"](.*?)['"];/g;
+  // Also replace fallbackUrl constant if it exists
+  const fallbackUrlPattern = /const fallbackUrl\s*=\s*['"](.*?)['"];?/g;
   if (fallbackUrlPattern.test(content)) {
     content = content.replace(fallbackUrlPattern, `const fallbackUrl = '${finalWorkerUrl}';`);
+    console.log(`[Deploy] ✓ Updated fallbackUrl in HTML to: ${finalWorkerUrl}`);
   }
   
   fs.writeFileSync(htmlPath, content);
-  console.log(`[Deploy] ✓ Updated frontend HTML with worker URL: ${finalWorkerUrl}`);
+  console.log(`[Deploy] ✓ Updated frontend HTML with backend URL: ${finalWorkerUrl}`);
 }
 
 // Migration functions (integrated from scripts/run-migrations.js)
@@ -2033,6 +2054,11 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       let pagesUrl = '';
       if (DEPLOY_PAGES) {
         report('Deploying frontend...', 'running', 'Deploying Cloudflare Pages');
+        // Update HTML with correct backend URL before deploying Pages
+        const backendUrl = config.BACKEND_DOMAIN 
+          ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
+          : (workerUrl || config._workerDevUrl || `https://${config.workerName}.workers.dev`);
+        updateWorkerUrlInHtml(cwd, backendUrl, config);
         pagesUrl = await utils.deployPages(cwd, config.pagesProjectName);
         report('Deploying frontend...', 'completed', 'Frontend deployed');
       }
@@ -2314,6 +2340,11 @@ async function main() {
       let pagesUrl = '';
       if (config.deployPages) {
         logger.startStep('Deploying frontend');
+        // Update HTML with correct backend URL before deploying Pages
+        const backendUrl = config.BACKEND_DOMAIN 
+          ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
+          : (workerUrl || config._workerDevUrl || `https://${config.workerName}.workers.dev`);
+        updateWorkerUrlInHtml(process.cwd(), backendUrl, config);
         pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName);
         logger.completeStep('Deploying frontend', 'Frontend deployed');
       } else {

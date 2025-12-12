@@ -204,8 +204,8 @@ flowchart LR
     A2 -.->|Config| B1
     A3 -.->|Config| C1
     
-    B5 --> D1[Worker: Chungminhtu03.workers.dev]
-    C5 --> D2[Worker: Thanhlx273.workers.dev]
+    B5 --> D1[Worker:  .workers.dev]
+    C5 --> D2[Worker:  .workers.dev]
     
     style B5 fill:#87CEEB
     style C5 fill:#87CEEB

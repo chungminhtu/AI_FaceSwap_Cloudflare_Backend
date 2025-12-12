@@ -527,8 +527,6 @@ A minimal web application for face swapping that allows users to upload preset i
 
 ## Backend API Endpoints
 
-### Base URL
-- Production: `https://ai-faceswap-backend.chungminhtu03.workers.dev`
 
 ### Backend Database Schema
 - `presets` table: `id`, `image_url`, `prompt_json`, `thumbnail_url`, `thumbnail_format`, `thumbnail_resolution`, `thumbnail_r2_key`, `created_at`

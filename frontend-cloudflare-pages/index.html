@@ -935,8 +935,8 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
-        // Config
-        let WORKER_URL = 'https://ai-faceswap-backend.Chungminhtu03.workers.dev'; // Injected during deployment
+        // Config - Backend URL injected during deployment from deployments-secrets.json
+        let WORKER_URL = '{{BACKEND_URL}}'; // Injected during deployment - DO NOT MODIFY MANUALLY
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
