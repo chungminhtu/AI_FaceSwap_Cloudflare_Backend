@@ -529,7 +529,7 @@ function parseConfig(config) {
   };
 }
 
-function generateWranglerConfig(config, skipD1 = false, databaseId = null) {
+function generateWranglerConfig(config, skipD1 = false, databaseId = null, kvNamespaceId = null, kvPreviewId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
   const wranglerConfig = {
     name: config.workerName,
     main: 'backend-cloudflare-workers/index.ts',
@@ -560,6 +560,34 @@ function generateWranglerConfig(config, skipD1 = false, databaseId = null) {
     } else {
       wranglerConfig.d1_databases = [{ binding: config.databaseName, database_name: config.databaseName }];
     }
+  }
+
+  const kvNamespaces = [];
+  
+  if (kvNamespaceId) {
+    const kvBinding = {
+      binding: 'RATE_LIMIT_KV',
+      id: kvNamespaceId
+    };
+    if (kvPreviewId) {
+      kvBinding.preview_id = kvPreviewId;
+    }
+    kvNamespaces.push(kvBinding);
+  }
+  
+  if (promptCacheNamespaceId) {
+    const cacheBinding = {
+      binding: 'PROMPT_CACHE_KV',
+      id: promptCacheNamespaceId
+    };
+    if (promptCachePreviewId) {
+      cacheBinding.preview_id = promptCachePreviewId;
+    }
+    kvNamespaces.push(cacheBinding);
+  }
+  
+  if (kvNamespaces.length > 0) {
+    wranglerConfig.kv_namespaces = kvNamespaces;
   }
 
   // Note: Custom domains for Workers are configured separately in Cloudflare dashboard
@@ -1249,6 +1277,98 @@ const utils = {
     }
   },
 
+  async ensureKVNamespace(cwd, namespaceName = 'RATE_LIMIT_KV') {
+    try {
+      const env = { ...process.env };
+      const output = execSync('wrangler kv:namespace list --json', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+      
+      if (output && (output.includes('Authentication error') || output.includes('code: 10000'))) {
+        logWarn('API token does not have KV permissions. Skipping KV namespace operations.');
+        return { exists: false, created: false, skipped: true, namespaceId: null, previewId: null };
+      }
+      
+      let exists = false;
+      let namespaceId = null;
+      let previewId = null;
+      let created = false;
+
+      try {
+        const parsed = JSON.parse(output);
+        const namespaces = Array.isArray(parsed) ? parsed : (parsed.result || parsed);
+        const nsList = Array.isArray(namespaces) ? namespaces : [];
+        const ns = nsList.find(n => n.title === namespaceName || n.name === namespaceName);
+        if (ns) {
+          exists = true;
+          namespaceId = ns.id || null;
+          previewId = ns.preview_id || null;
+        }
+      } catch (e) {
+        const textOutput = execSync('wrangler kv:namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+        if (textOutput && textOutput.includes(namespaceName)) {
+          const lines = textOutput.split('\n');
+          for (const line of lines) {
+            if (line.includes(namespaceName)) {
+              const idMatch = line.match(/([a-f0-9]{32})/i);
+              if (idMatch) {
+                exists = true;
+                namespaceId = idMatch[1];
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (!exists) {
+        try {
+          const createOutput = execSync(`wrangler kv:namespace create "${namespaceName}" --json`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+          try {
+            const createResult = JSON.parse(createOutput);
+            if (createResult.id) {
+              namespaceId = createResult.id;
+              created = true;
+            }
+          } catch (e) {
+            const idMatch = createOutput.match(/id[:\s]+([a-f0-9]{32})/i);
+            if (idMatch) {
+              namespaceId = idMatch[1];
+              created = true;
+            }
+          }
+          
+          try {
+            const previewOutput = execSync(`wrangler kv:namespace create "${namespaceName}" --preview --json`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+            try {
+              const previewResult = JSON.parse(previewOutput);
+              if (previewResult.id) {
+                previewId = previewResult.id;
+              }
+            } catch (e) {
+              const previewMatch = previewOutput.match(/id[:\s]+([a-f0-9]{32})/i);
+              if (previewMatch) {
+                previewId = previewMatch[1];
+              }
+            }
+          } catch (previewError) {
+            // Preview namespace creation is optional
+          }
+        } catch (createError) {
+          if (!createError.message.includes('already exists')) {
+            throw createError;
+          }
+          exists = true;
+        }
+      }
+
+      return { exists, created, skipped: false, namespaceId, previewId };
+    } catch (error) {
+      if (error.message && error.message.includes('Authentication error')) {
+        return { exists: false, created: false, skipped: true, namespaceId: null, previewId: null };
+      }
+      throw error;
+    }
+  },
+
   async ensureD1Database(cwd, databaseName) {
     try {
       const env = { ...process.env };
@@ -1404,7 +1524,7 @@ const utils = {
     return { success: true, deployed: successCount, total: keys.length };
   },
 
-  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null) {
+  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, kvNamespaceId = null, kvPreviewId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
     const wranglerConfigFiles = [
       path.join(cwd, 'wrangler.json'),
       path.join(cwd, 'wrangler.jsonc'),
@@ -1424,7 +1544,7 @@ const utils = {
     let createdConfig = false;
 
     try {
-      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId);
+      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, kvNamespaceId, kvPreviewId, promptCacheNamespaceId, promptCachePreviewId);
       fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
       createdConfig = true;
 
@@ -1510,6 +1630,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
         logger.addStep('Running database migrations', 'Executing pending migrations');
       }
+      logger.addStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Checking/creating KV namespace');
+      logger.addStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Checking/creating KV namespace');
       if (DEPLOY_SECRETS) {
         logger.addStep('Deploying secrets', 'Configuring environment secrets');
       }
@@ -1654,6 +1776,30 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         dbResult = await utils.ensureD1Database(cwd, config.databaseName);
       }
 
+      // Ensure KV namespace for rate limiting
+      let kvResult = null;
+      report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'running', 'Checking namespace existence');
+      kvResult = await utils.ensureKVNamespace(cwd, 'RATE_LIMIT_KV');
+      if (kvResult.skipped) {
+        report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'warning', 'Skipped (API token lacks KV permissions)');
+      } else if (kvResult.created) {
+        report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'completed', 'Namespace created successfully');
+      } else {
+        report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'completed', 'Namespace already exists');
+      }
+
+      // Ensure KV namespace for prompt_json caching
+      let promptCacheResult = null;
+      report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'running', 'Checking namespace existence');
+      promptCacheResult = await utils.ensureKVNamespace(cwd, 'PROMPT_CACHE_KV');
+      if (promptCacheResult.skipped) {
+        report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'warning', 'Skipped (API token lacks KV permissions)');
+      } else if (promptCacheResult.created) {
+        report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'completed', 'Namespace created successfully');
+      } else {
+        report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'completed', 'Namespace already exists');
+      }
+
       // Run database migrations after database is set up
       if (dbResult && !dbResult.skipped) {
         report('Running database migrations', 'running', 'Executing pending migrations');
@@ -1699,9 +1845,19 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         if (!dbResult) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
         }
+        if (!kvResult) {
+          kvResult = await utils.ensureKVNamespace(cwd, 'RATE_LIMIT_KV');
+        }
+        if (!promptCacheResult) {
+          promptCacheResult = await utils.ensureKVNamespace(cwd, 'PROMPT_CACHE_KV');
+        }
         const skipD1 = dbResult.skipped || false;
         const databaseId = dbResult.databaseId || null;
-        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId);
+        const kvNamespaceId = kvResult?.namespaceId || null;
+        const kvPreviewId = kvResult?.previewId || null;
+        const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
+        const promptCachePreviewId = promptCacheResult?.previewId || null;
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, kvNamespaceId, kvPreviewId, promptCacheNamespaceId, promptCachePreviewId);
         
         if (!workerUrl) {
           workerUrl = config._workerDevUrl || getWorkerUrl(cwd, config.workerName);
@@ -1993,6 +2149,26 @@ async function main() {
         }
       }
 
+      logger.startStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`);
+      const kvResult = await utils.ensureKVNamespace(process.cwd(), 'RATE_LIMIT_KV');
+      if (kvResult.skipped) {
+        logger.warnStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Skipped (API token lacks KV permissions)');
+      } else if (kvResult.created) {
+        logger.completeStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Namespace created successfully');
+      } else {
+        logger.completeStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Namespace already exists');
+      }
+
+      logger.startStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`);
+      const promptCacheResult = await utils.ensureKVNamespace(process.cwd(), 'PROMPT_CACHE_KV');
+      if (promptCacheResult.skipped) {
+        logger.warnStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Skipped (API token lacks KV permissions)');
+      } else if (promptCacheResult.created) {
+        logger.completeStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Namespace created successfully');
+      } else {
+        logger.completeStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Namespace already exists');
+      }
+
       logger.startStep('Deploying secrets');
       if (Object.keys(config.secrets).length > 0) {
         await utils.deploySecrets(config.secrets, process.cwd(), config.workerName);
@@ -2010,7 +2186,14 @@ async function main() {
       logger.startStep('Deploying worker');
       const skipD1 = dbResult.skipped || false;
       const databaseId = dbResult.databaseId || null;
-      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId);
+      
+      // kvResult and promptCacheResult are already created above
+      const kvNamespaceId = kvResult?.namespaceId || null;
+      const kvPreviewId = kvResult?.previewId || null;
+      const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
+      const promptCachePreviewId = promptCacheResult?.previewId || null;
+      
+      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, kvNamespaceId, kvPreviewId, promptCacheNamespaceId, promptCachePreviewId);
       
       if (!workerUrl) {
         workerUrl = config._workerDevUrl || getWorkerUrl(process.cwd(), config.workerName);

@@ -203,7 +203,7 @@ const saveResultToDatabase = async (
       
       if (oldResults.results && oldResults.results.length > 0) {
         // Batch delete from database
-        const idsToDelete = oldResults.results.map(r => r.id);
+        let idsToDelete = oldResults.results.map(r => r.id);
         if (idsToDelete.length > 0) {
           if (idsToDelete.length > 100) {
             idsToDelete = idsToDelete.slice(0, 100);
@@ -2244,9 +2244,11 @@ export default {
           if (promptResult) {
             const cacheKey = `prompt:${presetImageId}`;
             
-            if (env.RATE_LIMIT_KV) {
+            // Use PROMPT_CACHE_KV if available, fallback to RATE_LIMIT_KV for backward compatibility
+            const cacheKV = env.PROMPT_CACHE_KV || env.RATE_LIMIT_KV;
+            if (cacheKV) {
               try {
-                const cached = await env.RATE_LIMIT_KV.get(cacheKey, 'json');
+                const cached = await cacheKV.get(cacheKey, 'json');
                 if (cached) {
                   storedPromptPayload = cached;
                 }
@@ -2264,9 +2266,10 @@ export default {
                   if (promptJson && promptJson.trim() !== '') {
                     try {
                       storedPromptPayload = JSON.parse(promptJson);
-                      if (env.RATE_LIMIT_KV) {
+                      const cacheKV = env.PROMPT_CACHE_KV || env.RATE_LIMIT_KV;
+                      if (cacheKV) {
                         try {
-                          await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
+                          await cacheKV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
                         } catch (cacheError) {
                           console.warn('[Vertex] KV cache write failed:', cacheError);
                         }
@@ -2293,9 +2296,10 @@ export default {
               const promptJsonString = JSON.stringify(storedPromptPayload);
               const cacheKey = `prompt:${presetImageId}`;
               
-              if (env.RATE_LIMIT_KV) {
+              const cacheKV = env.PROMPT_CACHE_KV || env.RATE_LIMIT_KV;
+              if (cacheKV) {
                 try {
-                  await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
+                  await cacheKV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
                 } catch (cacheError) {
                   console.warn('[Vertex] KV cache write failed:', cacheError);
                 }

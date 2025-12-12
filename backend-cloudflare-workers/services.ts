@@ -1449,20 +1449,6 @@ export const callUpscaler4k = async (
         StatusCode: response.status,
         Debug: debugInfo,
       };
-      if (debugInfo) {
-        debugInfo.r2Key = resultKey;
-        debugInfo.mimeType = contentType;
-      }
-      
-      const finalResultUrl = `r2://${resultKey}`;
-
-      return {
-        Success: true,
-        ResultImageUrl: finalResultUrl,
-        Message: 'Upscaler4K image upscaling completed',
-        StatusCode: response.status,
-        Debug: debugInfo,
-      };
     } catch (parseError) {
       console.error('[Upscaler4K] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {

@@ -28,6 +28,7 @@ export interface Env {
   SELFIE_MAX_OTHER?: string; // Optional: Maximum number of non-faceswap selfies (all other actions combined) to keep per user. Default: 1
   ALLOWED_ORIGINS?: string; // Optional: Comma-separated list of allowed CORS origins. Default: '*' (allows all)
   RATE_LIMIT_KV?: KVNamespace; // Optional: KV namespace for rate limiting
+  PROMPT_CACHE_KV?: KVNamespace; // Optional: KV namespace for prompt_json caching
 }
 
 export interface FaceSwapRequest {

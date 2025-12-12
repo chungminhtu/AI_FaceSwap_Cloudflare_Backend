@@ -30,12 +30,12 @@ export const getUnsafeLevels = (strictness: 'strict' | 'lenient'): string[] => {
   return ['VERY_LIKELY'];
 };
 
-export const getCorsHeaders = (request: Request, env: Env): Record<string, string> => {
+export const getCorsHeaders = (request: Request, env: any): Record<string, string> => {
   const origin = request.headers.get('Origin');
   const userAgent = request.headers.get('User-Agent') || '';
   const isMobileApp = userAgent.includes('okhttp') || userAgent.includes('Android') || userAgent.includes('Dart') || !origin;
   
-  const allowedOrigins = env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
+  const allowedOrigins = env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map((o: any) => o.trim()) : [];
   
   let allowOrigin = '*';
   
@@ -73,7 +73,7 @@ export const CORS_HEADERS = {
 // Use 'global' for global endpoint (higher availability, no region prefix in URL)
 export const VERTEX_AI_DEFAULT_LOCATION = 'us-central1';
 
-export const getVertexAILocation = (env: Env): string => {
+export const getVertexAILocation = (env: any): string => {
   const location = env.GOOGLE_VERTEX_LOCATION || VERTEX_AI_DEFAULT_LOCATION;
   return location;
 };
@@ -104,7 +104,7 @@ export const getVertexAIEndpoint = (
   return `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
 };
 
-export const jsonResponse = (data: any, status = 200, request?: Request, env?: Env): Response => {
+export const jsonResponse = (data: any, status = 200, request?: Request, env?: any): Response => {
   const jsonString = JSON.stringify(data);
   const corsHeaders = (request && env) ? getCorsHeaders(request, env) : CORS_HEADERS;
   
@@ -114,7 +114,7 @@ export const jsonResponse = (data: any, status = 200, request?: Request, env?: E
   });
 };
 
-export const errorResponse = (message: string, status = 500, debug?: Record<string, any>, request?: Request, env?: Env): Response =>
+export const errorResponse = (message: string, status = 500, debug?: Record<string, any>, request?: Request, env?: any): Response =>
   jsonResponse({ 
     data: null,
     status: 'error', 
@@ -137,7 +137,7 @@ export const isUnsafe = (
 
 // Find the worst violation and return status code
 // Returns { code: number, category: string, level: string } or null if safe
-export const validateImageUrl = (url: string, env: Env): boolean => {
+export const validateImageUrl = (url: string, env: any): boolean => {
   try {
     const urlObj = new URL(url);
     
@@ -297,7 +297,7 @@ class LRUCache<K, V extends TokenCacheEntry> {
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxSize) {
-      const firstKey = this.cache.keys().next().value;
+      const firstKey: any = this.cache.keys().next().value;
       this.cache.delete(firstKey);
     }
     value.lastAccessed = Date.now();
