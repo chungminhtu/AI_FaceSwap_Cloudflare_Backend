@@ -162,10 +162,10 @@ export const validateImageUrl = (url: string, env: any): boolean => {
     }
     
     const allowedDomains: string[] = [];
-    if (env.CUSTOM_DOMAIN) {
+    if (env.R2_DOMAIN) {
       try {
-        const customDomainUrl = new URL(env.CUSTOM_DOMAIN);
-        allowedDomains.push(customDomainUrl.hostname.toLowerCase());
+        const r2DomainUrl = new URL(env.R2_DOMAIN);
+        allowedDomains.push(r2DomainUrl.hostname.toLowerCase());
       } catch {}
     }
     

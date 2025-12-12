@@ -1953,7 +1953,8 @@ This is a step-by-step guide for someone starting from scratch with no prior set
          },
          "gcp": {
            "projectId": "your-gcp-project-id",
-           "serviceAccountKeyJson": {}
+           "private_key": "",
+           "client_email": ""
          },
          "RAPIDAPI_KEY": "your-rapidapi-key",
          "RAPIDAPI_HOST": "api.example.com",
@@ -1962,8 +1963,11 @@ This is a step-by-step guide for someone starting from scratch with no prior set
          "GOOGLE_VERTEX_PROJECT_ID": "your-vertex-project-id",
          "GOOGLE_VERTEX_LOCATION": "us-central1",
          "GOOGLE_VISION_ENDPOINT": "https://vision.googleapis.com/v1/images:annotate",
-         "GOOGLE_SERVICE_ACCOUNT_EMAIL": "your-service-account@project.iam.gserviceaccount.com",
-         "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+         "gcp": {
+           "projectId": "your-project-id",
+           "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+           "client_email": "your-service-account@project.iam.gserviceaccount.com"
+         }
        }
      }
    }

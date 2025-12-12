@@ -438,7 +438,7 @@ function parseConfig(config) {
     'workerName', 'pagesProjectName', 'databaseName', 'bucketName', 'gcp',
     'RAPIDAPI_KEY', 'RAPIDAPI_HOST', 'RAPIDAPI_ENDPOINT',
     'GOOGLE_VISION_API_KEY', 'GOOGLE_VERTEX_PROJECT_ID', 'GOOGLE_VERTEX_LOCATION',
-    'GOOGLE_VISION_ENDPOINT', 'GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'
+    'GOOGLE_VISION_ENDPOINT'
   ];
 
   const missing = required.filter(field => !config[field]);
@@ -454,20 +454,20 @@ function parseConfig(config) {
     config._environment = env;
   }
 
-  if (!config.gcp?.projectId || !config.gcp?.serviceAccountKeyJson) {
+  if (!config.gcp?.projectId || !config.gcp?.private_key || !config.gcp?.client_email) {
     throw new Error('Invalid GCP configuration');
   }
 
   const accountId = config.cloudflare.accountId || '';
   const workerName = config.workerName;
   
-  const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
-  const hasWorkerCustomDomain = config.workerCustomDomain && config.workerCustomDomain.trim() !== '';
+  const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+  const hasBackendDomain = config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '';
   
   let r2DevDomain = null;
   let workerDevUrl = null;
   
-  if (accountId && !hasWorkerCustomDomain) {
+  if (accountId && !hasBackendDomain) {
     try {
       const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
       const match = whoami.match(/([^\s]+)@/);
@@ -485,13 +485,14 @@ function parseConfig(config) {
     databaseName: config.databaseName,
     bucketName: config.bucketName,
     deployPages: config.deployPages || process.env.DEPLOY_PAGES === 'true',
-    workerCustomDomain: config.workerCustomDomain,
+    BACKEND_DOMAIN: config.BACKEND_DOMAIN,
     cloudflare: {
       accountId: accountId,
       apiToken: config.cloudflare.apiToken || ''
     },
     gcp: config.gcp,
-    rateLimiter: config.rateLimiter || { limit: 100, period: 60, namespaceId: 1 },
+    rateLimiter: config.rateLimiter || { limit: 100, period_second: 60, namespaceId: 1 },
+    promptCacheKV: config.promptCacheKV || { namespaceName: 'PROMPT_CACHE_KV', ttl_in_ms: 31536000 },
       secrets: (() => {
         const secrets = {
           RAPIDAPI_KEY: config.RAPIDAPI_KEY,
@@ -501,23 +502,23 @@ function parseConfig(config) {
           GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
           GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
           GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
-          GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL || config.gcp?.client_email,
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || config.gcp?.private_key,
           R2_BUCKET_BINDING: config.bucketName,
           D1_DATABASE_BINDING: config.databaseName
         };
         
-        if (hasCustomDomain) {
-          secrets.CUSTOM_DOMAIN = config.CUSTOM_DOMAIN.trim();
+        if (hasR2Domain) {
+          secrets.R2_DOMAIN = config.R2_DOMAIN.trim();
         }
         
-        if (hasWorkerCustomDomain) {
-          const domain = config.workerCustomDomain.trim();
-          secrets.WORKER_CUSTOM_DOMAIN = domain.startsWith('http') 
+        if (hasBackendDomain) {
+          const domain = config.BACKEND_DOMAIN.trim();
+          secrets.BACKEND_DOMAIN = domain.startsWith('http') 
             ? domain 
             : `https://${domain}`;
         } else if (workerDevUrl) {
-          secrets.WORKER_CUSTOM_DOMAIN = workerDevUrl;
+          secrets.BACKEND_DOMAIN = workerDevUrl;
         }
         
         if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
@@ -564,13 +565,13 @@ function generateWranglerConfig(config, skipD1 = false, databaseId = null, promp
   }
 
   // Add Cloudflare built-in rate limiter from config
-  const rateLimiterConfig = config.rateLimiter || { limit: 100, period: 60, namespaceId: 1 };
+  const rateLimiterConfig = config.rateLimiter || { limit: 100, period_second: 60, namespaceId: 1 };
   wranglerConfig.ratelimits = [{
     name: 'RATE_LIMITER',
-    namespace_id: rateLimiterConfig.namespaceId || 1,
+    namespace_id: String(rateLimiterConfig.namespaceId || 1),
     simple: {
       limit: rateLimiterConfig.limit || 100,
-      period: rateLimiterConfig.period || 60
+      period: rateLimiterConfig.period_second || 60
     }
   }];
 
@@ -919,10 +920,10 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config) {
   
   // Determine the actual worker URL to use (custom domain if available, otherwise workers.dev)
   let finalWorkerUrl = workerUrl;
-  if (config?.workerCustomDomain) {
-    finalWorkerUrl = config.workerCustomDomain.startsWith('http')
-      ? config.workerCustomDomain
-      : `https://${config.workerCustomDomain}`;
+  if (config?.BACKEND_DOMAIN) {
+    finalWorkerUrl = config.BACKEND_DOMAIN.startsWith('http')
+      ? config.BACKEND_DOMAIN
+      : `https://${config.BACKEND_DOMAIN}`;
     console.log(`[Deploy] Using custom domain from config: ${finalWorkerUrl}`);
   } else {
     console.log(`[Deploy] No custom domain in config, using workers.dev: ${finalWorkerUrl}`);
@@ -1076,16 +1077,21 @@ const utils = {
     }
   },
 
-  async authenticateGCP(serviceAccountKeyJson, projectId) {
+  async authenticateGCP(gcpConfig) {
     const keyFile = path.join(os.tmpdir(), `gcp-key-${Date.now()}.json`);
-    const serviceAccountEmail = serviceAccountKeyJson.client_email;
+    const serviceAccountEmail = gcpConfig.client_email;
+    const projectId = gcpConfig.projectId;
     
     try {
-      if (serviceAccountKeyJson.project_id && serviceAccountKeyJson.project_id !== projectId) {
-        throw new Error(`Service account project (${serviceAccountKeyJson.project_id}) does not match config project (${projectId})`);
-      }
+      // Build complete service account JSON for gcloud (adds required fields)
+      const completeKeyJson = {
+        type: 'service_account',
+        project_id: projectId,
+        private_key: gcpConfig.private_key,
+        client_email: gcpConfig.client_email
+      };
 
-      fs.writeFileSync(keyFile, JSON.stringify(serviceAccountKeyJson, null, 2));
+      fs.writeFileSync(keyFile, JSON.stringify(completeKeyJson, null, 2));
 
       const allAccounts = execCommand('gcloud auth list --format="value(account)"', { silent: true, throwOnError: false });
       if (allAccounts) {
@@ -1275,9 +1281,9 @@ const utils = {
   async ensureKVNamespace(cwd, namespaceName = 'RATE_LIMIT_KV') {
     try {
       const env = { ...process.env };
-      const output = execSync('wrangler kv:namespace list --json', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+      const textOutput = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
       
-      if (output && (output.includes('Authentication error') || output.includes('code: 10000'))) {
+      if (textOutput && (textOutput.includes('Authentication error') || textOutput.includes('code: 10000'))) {
         logWarn('API token does not have KV permissions. Skipping KV namespace operations.');
         return { exists: false, created: false, skipped: true, namespaceId: null, previewId: null };
       }
@@ -1287,28 +1293,15 @@ const utils = {
       let previewId = null;
       let created = false;
 
-      try {
-        const parsed = JSON.parse(output);
-        const namespaces = Array.isArray(parsed) ? parsed : (parsed.result || parsed);
-        const nsList = Array.isArray(namespaces) ? namespaces : [];
-        const ns = nsList.find(n => n.title === namespaceName || n.name === namespaceName);
-        if (ns) {
-          exists = true;
-          namespaceId = ns.id || null;
-          previewId = ns.preview_id || null;
-        }
-      } catch (e) {
-        const textOutput = execSync('wrangler kv:namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
-        if (textOutput && textOutput.includes(namespaceName)) {
-          const lines = textOutput.split('\n');
-          for (const line of lines) {
-            if (line.includes(namespaceName)) {
-              const idMatch = line.match(/([a-f0-9]{32})/i);
-              if (idMatch) {
-                exists = true;
-                namespaceId = idMatch[1];
-                break;
-              }
+      if (textOutput && textOutput.includes(namespaceName)) {
+        const lines = textOutput.split('\n');
+        for (const line of lines) {
+          if (line.includes(namespaceName)) {
+            const idMatch = line.match(/([a-f0-9]{32})/i);
+            if (idMatch) {
+              exists = true;
+              namespaceId = idMatch[1];
+              break;
             }
           }
         }
@@ -1316,33 +1309,18 @@ const utils = {
 
       if (!exists) {
         try {
-          const createOutput = execSync(`wrangler kv:namespace create "${namespaceName}" --json`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
-          try {
-            const createResult = JSON.parse(createOutput);
-            if (createResult.id) {
-              namespaceId = createResult.id;
-              created = true;
-            }
-          } catch (e) {
-            const idMatch = createOutput.match(/id[:\s]+([a-f0-9]{32})/i);
-            if (idMatch) {
-              namespaceId = idMatch[1];
-              created = true;
-            }
+          const createOutput = execSync(`wrangler kv namespace create "${namespaceName}"`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+          const idMatch = createOutput.match(/id[:\s]+([a-f0-9]{32})/i);
+          if (idMatch) {
+            namespaceId = idMatch[1];
+            created = true;
           }
           
           try {
-            const previewOutput = execSync(`wrangler kv:namespace create "${namespaceName}" --preview --json`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
-            try {
-              const previewResult = JSON.parse(previewOutput);
-              if (previewResult.id) {
-                previewId = previewResult.id;
-              }
-            } catch (e) {
-              const previewMatch = previewOutput.match(/id[:\s]+([a-f0-9]{32})/i);
-              if (previewMatch) {
-                previewId = previewMatch[1];
-              }
+            const previewOutput = execSync(`wrangler kv namespace create "${namespaceName}" --preview`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+            const previewMatch = previewOutput.match(/id[:\s]+([a-f0-9]{32})/i);
+            if (previewMatch) {
+              previewId = previewMatch[1];
             }
           } catch (previewError) {
             // Preview namespace creation is optional
@@ -1625,7 +1603,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
         logger.addStep('Running database migrations', 'Executing pending migrations');
       }
-      logger.addStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Checking/creating KV namespace');
+      logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV'}`, 'Checking/creating KV namespace');
       if (DEPLOY_SECRETS) {
         logger.addStep('Deploying secrets', 'Configuring environment secrets');
       }
@@ -1668,7 +1646,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 
   if (needsGCP) {
     report('Authenticating with GCP...', 'running', 'Connecting to Google Cloud');
-    if (!await utils.authenticateGCP(config.gcp.serviceAccountKeyJson, config.gcp.projectId)) {
+    if (!await utils.authenticateGCP(config.gcp)) {
       throw new Error('GCP authentication failed');
     }
     report('Authenticating with GCP...', 'completed', 'GCP authenticated');
@@ -1699,15 +1677,15 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     }
     
     if (cfAccountId) {
-      const hasWorkerCustomDomain = config.workerCustomDomain && config.workerCustomDomain.trim() !== '';
+      const hasBackendDomain = config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '';
 
-      if (!hasWorkerCustomDomain && !config.secrets.WORKER_CUSTOM_DOMAIN) {
+      if (!hasBackendDomain && !config.secrets.BACKEND_DOMAIN) {
         try {
           const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
           const match = whoami.match(/([^\s]+)@/);
           if (match) {
             const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
-            config.secrets.WORKER_CUSTOM_DOMAIN = workerDevUrl;
+            config.secrets.BACKEND_DOMAIN = workerDevUrl;
             config._workerDevUrl = workerDevUrl;
             console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
           }
@@ -1734,15 +1712,15 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket already exists');
         }
         
-        const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
-        if (!hasCustomDomain && !config.secrets.CUSTOM_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
-          config.secrets.CUSTOM_DOMAIN = r2Result.publicDevDomain;
+        const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+        if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+          config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
         }
       } else {
         r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
-        const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
-        if (!hasCustomDomain && !config.secrets.CUSTOM_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
-          config.secrets.CUSTOM_DOMAIN = r2Result.publicDevDomain;
+        const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+        if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+          config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
         }
       }
       
@@ -1772,14 +1750,15 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 
       // Ensure KV namespace for prompt_json caching
       let promptCacheResult = null;
-      report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'running', 'Checking namespace existence');
-      promptCacheResult = await utils.ensureKVNamespace(cwd, 'PROMPT_CACHE_KV');
+      const promptCacheKVName = config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV';
+      report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'running', 'Checking namespace existence');
+      promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
       if (promptCacheResult.skipped) {
-        report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'warning', 'Skipped (API token lacks KV permissions)');
+        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'warning', 'Skipped (API token lacks KV permissions)');
       } else if (promptCacheResult.created) {
-        report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'completed', 'Namespace created successfully');
+        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'completed', 'Namespace created successfully');
       } else {
-        report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'completed', 'Namespace already exists');
+        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'completed', 'Namespace already exists');
       }
 
       // Run database migrations after database is set up
@@ -1828,7 +1807,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
         }
         if (!promptCacheResult) {
-          promptCacheResult = await utils.ensureKVNamespace(cwd, 'PROMPT_CACHE_KV');
+          const promptCacheKVName = config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV';
+          promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
         }
         const skipD1 = dbResult.skipped || false;
         const databaseId = dbResult.databaseId || null;
@@ -1840,8 +1820,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           workerUrl = config._workerDevUrl || getWorkerUrl(cwd, config.workerName);
         }
         
-        if (config.workerCustomDomain && config.workerCustomDomain.trim() !== '') {
-          const domain = config.workerCustomDomain.trim();
+        if (config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '') {
+          const domain = config.BACKEND_DOMAIN.trim();
           workerUrl = domain.startsWith('http') ? domain : `https://${domain}`;
         }
         
@@ -2039,7 +2019,7 @@ async function main() {
     logger.completeStep('Checking prerequisites', 'Tools validated');
 
     logger.startStep('Authenticating with GCP');
-    if (!await utils.authenticateGCP(config.gcp.serviceAccountKeyJson, config.gcp.projectId)) {
+    if (!await utils.authenticateGCP(config.gcp)) {
       logger.failStep('Authenticating with GCP', 'GCP authentication failed');
       process.exit(1);
     }
@@ -2069,15 +2049,15 @@ async function main() {
     }
     
     if (cfAccountId) {
-      const hasWorkerCustomDomain = config.workerCustomDomain && config.workerCustomDomain.trim() !== '';
+      const hasBackendDomain = config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '';
 
-      if (!hasWorkerCustomDomain && !config.secrets.WORKER_CUSTOM_DOMAIN) {
+      if (!hasBackendDomain && !config.secrets.BACKEND_DOMAIN) {
         try {
           const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
           const match = whoami.match(/([^\s]+)@/);
           if (match) {
             const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
-            config.secrets.WORKER_CUSTOM_DOMAIN = workerDevUrl;
+            config.secrets.BACKEND_DOMAIN = workerDevUrl;
             config._workerDevUrl = workerDevUrl;
             console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
           }
@@ -2103,9 +2083,9 @@ async function main() {
         logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket already exists');
       }
       
-      const hasCustomDomain = config.CUSTOM_DOMAIN && config.CUSTOM_DOMAIN.trim() !== '';
-      if (!hasCustomDomain && !config.secrets.CUSTOM_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
-        config.secrets.CUSTOM_DOMAIN = r2Result.publicDevDomain;
+      const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+      if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+        config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
       }
 
       logger.startStep(`[Cloudflare] D1 Database: ${config.databaseName}`);
@@ -2126,14 +2106,15 @@ async function main() {
         }
       }
 
-      logger.startStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`);
-      const promptCacheResult = await utils.ensureKVNamespace(process.cwd(), 'PROMPT_CACHE_KV');
+      const promptCacheKVName = config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV';
+      logger.startStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`);
+      const promptCacheResult = await utils.ensureKVNamespace(process.cwd(), promptCacheKVName);
       if (promptCacheResult.skipped) {
-        logger.warnStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Skipped (API token lacks KV permissions)');
+        logger.warnStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Skipped (API token lacks KV permissions)');
       } else if (promptCacheResult.created) {
-        logger.completeStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Namespace created successfully');
+        logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace created successfully');
       } else {
-        logger.completeStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Namespace already exists');
+        logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace already exists');
       }
 
       logger.startStep('Deploying secrets');
@@ -2164,10 +2145,10 @@ async function main() {
         workerUrl = config._workerDevUrl || getWorkerUrl(process.cwd(), config.workerName);
       }
       
-      if (config.workerCustomDomain) {
-        workerUrl = config.workerCustomDomain.startsWith('http') 
-          ? config.workerCustomDomain 
-          : `https://${config.workerCustomDomain}`;
+      if (config.BACKEND_DOMAIN) {
+        workerUrl = config.BACKEND_DOMAIN.startsWith('http') 
+          ? config.BACKEND_DOMAIN 
+          : `https://${config.BACKEND_DOMAIN}`;
       }
       
       logger.completeStep('Deploying worker', 'Worker deployed');

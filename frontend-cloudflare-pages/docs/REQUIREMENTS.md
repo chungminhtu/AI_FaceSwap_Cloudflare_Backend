@@ -553,7 +553,7 @@ A minimal web application for face swapping that allows users to upload preset i
 - Each selfie contains: `id`, `selfie_url` (full URL), `action`, `created_at`
 - Selfies are stored as individual entries
 - Backend queries database and returns all selfies
-- **Lưu ý**: `selfie_url` trong database chỉ lưu bucket key, API tự động assemble full URL từ `CUSTOM_DOMAIN` khi trả về
+- **Lưu ý**: `selfie_url` trong database chỉ lưu bucket key, API tự động assemble full URL từ `R2_DOMAIN` khi trả về
 
 #### DELETE `/presets/:id`
 - Path parameter: `id` (preset ID)

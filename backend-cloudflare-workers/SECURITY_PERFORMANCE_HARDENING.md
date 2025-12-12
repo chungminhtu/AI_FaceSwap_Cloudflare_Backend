@@ -92,7 +92,7 @@ fetch('https://api.d.shotpix.app/presets', {
 - Blocks private IP ranges: `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`, `127.x.x.x`
 - Blocks `localhost` and `::1`
 - Requires HTTPS protocol
-- Whitelists R2 domains and `CUSTOM_DOMAIN`
+- Whitelists R2 domains and `R2_DOMAIN`
 - Applied to all image fetching operations
 
 **Files Changed:**
@@ -111,7 +111,7 @@ const imageData = await fetchImageAsBase64(imageUrl, env); // Validates URL inte
 
 **Allowed Domains:**
 - R2 public URLs (`.r2.cloudflarestorage.com`, `.r2.dev`)
-- `CUSTOM_DOMAIN` environment variable value
+- `R2_DOMAIN` environment variable value
 - HTTPS protocol required
 
 **Blocked:**
@@ -526,7 +526,7 @@ curl "https://api.d.shotpix.app/presets?limit=25"
 **Implementation:**
 - Uses `RATE_LIMIT_KV` binding (same as rate limiting)
 - Key format: `prompt:${presetImageId}`
-- TTL: 86400 seconds (24 hours)
+- TTL: 31536000 seconds (1 year)
 - Falls back to R2 metadata on cache miss
 - Updates cache when prompt is generated
 
@@ -865,7 +865,7 @@ curl -v https://api.d.shotpix.app/presets 2>&1 | grep -i "retry-after"
 
 **Solutions:**
 1. Ensure URLs use HTTPS protocol
-2. Add domain to `CUSTOM_DOMAIN` env var if using custom R2 domain
+2. Add domain to `R2_DOMAIN` env var if using custom R2 domain
 3. Check URL is not a private IP address
 4. Verify domain is in allowed list (R2 domains are auto-allowed)
 

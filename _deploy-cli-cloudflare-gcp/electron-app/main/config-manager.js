@@ -49,9 +49,9 @@ class ConfigManager {
       if (secretsData.environments) {
         for (const [envName, envConfig] of Object.entries(secretsData.environments)) {
           const serviceAccountEmail = envConfig.GOOGLE_SERVICE_ACCOUNT_EMAIL || 
-                                     envConfig.gcp?.serviceAccountKeyJson?.client_email || '';
+                                     envConfig.gcp?.client_email || '';
           const serviceAccountKey = envConfig.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || 
-                                   envConfig.gcp?.serviceAccountKeyJson?.private_key || '';
+                                   envConfig.gcp?.private_key || '';
 
           const deployment = {
             id: envName,
@@ -64,7 +64,8 @@ class ConfigManager {
             gcp: {
               projectId: envConfig.gcp?.projectId || '',
               accountEmail: envConfig.gcp?.accountEmail || '',
-              serviceAccountKeyJson: envConfig.gcp?.serviceAccountKeyJson || null
+              private_key: envConfig.gcp?.private_key || '',
+              client_email: envConfig.gcp?.client_email || ''
             },
             cloudflare: {
               accountId: envConfig.cloudflare?.accountId || '',
@@ -127,10 +128,8 @@ class ConfigManager {
           const envName = deployment.id;
           const existingEnv = existingSecrets.environments?.[envName];
           
-          let serviceAccountKeyJson = deployment.gcp?.serviceAccountKeyJson;
-          if (!serviceAccountKeyJson && existingEnv?.gcp?.serviceAccountKeyJson) {
-            serviceAccountKeyJson = existingEnv.gcp.serviceAccountKeyJson;
-          }
+          const privateKey = deployment.gcp?.private_key || existingEnv?.gcp?.private_key || '';
+          const clientEmail = deployment.gcp?.client_email || existingEnv?.gcp?.client_email || '';
           
           secretsData.environments[envName] = {
             name: deployment.name,
@@ -146,7 +145,8 @@ class ConfigManager {
             gcp: {
               projectId: deployment.gcp?.projectId || '',
               accountEmail: deployment.gcp?.accountEmail || '',
-              serviceAccountKeyJson: serviceAccountKeyJson || null
+              private_key: privateKey,
+              client_email: clientEmail
             },
             RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY || '',
             RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST || '',
@@ -179,10 +179,8 @@ class ConfigManager {
       const envName = deployment.id || deployment.name;
       const existingEnv = secretsData.environments?.[envName];
       
-      let serviceAccountKeyJson = deployment.gcp?.serviceAccountKeyJson;
-      if (!serviceAccountKeyJson && existingEnv?.gcp?.serviceAccountKeyJson) {
-        serviceAccountKeyJson = existingEnv.gcp.serviceAccountKeyJson;
-      }
+      const privateKey = deployment.gcp?.private_key || existingEnv?.gcp?.private_key || '';
+      const clientEmail = deployment.gcp?.client_email || existingEnv?.gcp?.client_email || '';
 
       secretsData.environments[envName] = {
         name: deployment.name,
@@ -198,7 +196,8 @@ class ConfigManager {
         gcp: {
           projectId: deployment.gcp?.projectId || '',
           accountEmail: deployment.gcp?.accountEmail || '',
-          serviceAccountKeyJson: serviceAccountKeyJson || null
+          private_key: privateKey,
+          client_email: clientEmail
         },
         RAPIDAPI_KEY: deployment.RAPIDAPI_KEY || deployment.secrets?.RAPIDAPI_KEY || '',
         RAPIDAPI_HOST: deployment.RAPIDAPI_HOST || deployment.secrets?.RAPIDAPI_HOST || '',

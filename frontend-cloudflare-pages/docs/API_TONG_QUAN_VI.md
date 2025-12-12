@@ -659,13 +659,13 @@ GET https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
 
 **Các trường:**
 - `id` (string): ID của selfie.
-- `selfie_url` (string): URL đầy đủ của ảnh selfie (tự động được assemble từ bucket key và CUSTOM_DOMAIN).
+- `selfie_url` (string): URL đầy đủ của ảnh selfie (tự động được assemble từ bucket key và R2_DOMAIN).
 - `action` (string | null): Loại action của selfie (ví dụ: `"faceswap"`, `"default"`, hoặc `null` nếu chưa được set).
 - `created_at` (string): Thời gian tạo selfie (ISO 8601 format).
 
 **Lưu ý:**
 - `selfie_url` trong database chỉ lưu bucket key (ví dụ: `"selfie/filename.jpg"`), không lưu full URL.
-- API tự động assemble full URL từ `CUSTOM_DOMAIN` environment variable khi trả về response.
+- API tự động assemble full URL từ `R2_DOMAIN` environment variable khi trả về response.
 
 ## 10. DELETE `/selfies/{id}`
 
@@ -885,8 +885,8 @@ GET https://api.d.shotpix.app/config
 
 ```json
 {
-  "workerCustomDomain": "https://api.d.shotpix.app",
-  "customDomain": "https://resources.d.shotpix.app"
+  "BACKEND_DOMAIN": "https://api.d.shotpix.app",
+  "R2_DOMAIN": "https://resources.d.shotpix.app"
 }
 ```
 

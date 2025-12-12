@@ -177,7 +177,8 @@ ipcMain.handle('deployment:start', async (event, deploymentId) => {
       },
       gcp: {
         projectId: deployment.gcp?.projectId || '',
-        serviceAccountKeyJson: deployment.gcp?.serviceAccountKeyJson || null
+        private_key: deployment.gcp?.private_key || '',
+        client_email: deployment.gcp?.client_email || ''
       },
       deployPages: deployment.deployPages !== false,
       secrets: {

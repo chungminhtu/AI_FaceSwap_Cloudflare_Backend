@@ -81,7 +81,7 @@ export const MODEL_CONFIG = {
 
 export const ASPECT_RATIO_CONFIG = {
   SUPPORTED: ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
-  DEFAULT: '1:1',
+  DEFAULT: '3:4',
 };
 
 export const API_ENDPOINTS = {
@@ -106,10 +106,11 @@ export const CACHE_CONFIG = {
   TOKEN_EXPIRY_BUFFER: 3300,
   TOKEN_VALIDITY: 3600,
   R2_CACHE_CONTROL: 'public, max-age=31536000, immutable',
+  PROMPT_CACHE_TTL: 31536000, // 1 year in seconds (365 days)
 };
 
 export const DEFAULT_VALUES = {
-  ASPECT_RATIO: '1:1',
+  ASPECT_RATIO: '3:4',
   MODEL: '2.5',
   IMAGE_MIME_TYPE: 'image/jpeg',
   RESULT_EXT: 'jpg',

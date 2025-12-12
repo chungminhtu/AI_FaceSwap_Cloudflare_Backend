@@ -220,14 +220,14 @@ const resolveAccountId = (env: Env): string | undefined =>
 const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
 
 const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
-  if (env.CUSTOM_DOMAIN) {
-    return `${trimTrailingSlash(env.CUSTOM_DOMAIN)}/${key}`;
+  if (env.R2_DOMAIN) {
+    return `${trimTrailingSlash(env.R2_DOMAIN)}/${key}`;
   }
   if (fallbackOrigin) {
     const bucketName = resolveBucketName(env);
     return `${trimTrailingSlash(fallbackOrigin)}/r2/${bucketName}/${key}`;
   }
-  throw new Error('Unable to determine R2 public URL. Configure CUSTOM_DOMAIN environment variable.');
+  throw new Error('Unable to determine R2 public URL. Configure R2_DOMAIN environment variable.');
 };
 
 const extractR2KeyFromUrl = (url: string): string | null => {
@@ -316,7 +316,7 @@ const convertLegacyUrl = (url: string, env: Env): string => {
       }
     }
     
-    if (env.CUSTOM_DOMAIN && urlObj.hostname === new URL(env.CUSTOM_DOMAIN).hostname) {
+    if (env.R2_DOMAIN && urlObj.hostname === new URL(env.R2_DOMAIN).hostname) {
       const bucketName = resolveBucketName(env);
       if (pathParts.length >= 2 && pathParts[0] === bucketName) {
         const key = pathParts.slice(1).join('/');
@@ -2227,7 +2227,7 @@ export default {
                   storedPromptPayload = JSON.parse(promptJson);
                   if (env.PROMPT_CACHE_KV) {
                     try {
-                      await env.PROMPT_CACHE_KV.put(cacheKey, promptJson, { expirationTtl: 86400 });
+                      await env.PROMPT_CACHE_KV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL });
                     } catch {
                       // Cache write failed, continue
                     }
@@ -2251,7 +2251,7 @@ export default {
               
               if (env.PROMPT_CACHE_KV) {
                 try {
-                  await env.PROMPT_CACHE_KV.put(`prompt:${presetImageId}`, promptJsonString, { expirationTtl: 86400 });
+                  await env.PROMPT_CACHE_KV.put(`prompt:${presetImageId}`, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL });
                 } catch {
                   // Cache write failed, continue
                 }
@@ -2284,7 +2284,7 @@ export default {
         );
         const vertexPromptPayload = augmentedPromptPayload;
 
-        // Extract aspect ratio from request body, default to "1:1" if not provided
+        // Extract aspect ratio from request body, default to "3:4" if not provided
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
         // Validate aspect ratio is one of the supported values for Vertex AI
         // Supported: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
@@ -3253,13 +3253,13 @@ export default {
 
     // Handle config endpoint - returns public configuration
     if (path === '/config' && request.method === 'GET') {
-      const workerCustomDomain = env.WORKER_CUSTOM_DOMAIN;
-      const customDomain = env.CUSTOM_DOMAIN;
+      const backendDomain = env.BACKEND_DOMAIN;
+      const r2Domain = env.R2_DOMAIN;
 
       return jsonResponse({
         data: {
-          workerCustomDomain: workerCustomDomain || null,
-          customDomain: customDomain || null,
+          backendDomain: backendDomain || null,
+          r2Domain: r2Domain || null,
         },
         status: 'success',
         message: 'Configuration retrieved successfully',

@@ -771,7 +771,7 @@
                                 <option value="1:1">1:1 (Square)</option>
                                 <option value="3:2">3:2 (Landscape)</option>
                                 <option value="2:3">2:3 (Portrait)</option>
-                                <option value="3:4">3:4 (Portrait)</option>
+                                <option value="3:4" selected>3:4 (Portrait)</option>
                                 <option value="4:3">4:3 (Landscape)</option>
                                 <option value="4:5">4:5 (Portrait)</option>
                                 <option value="5:4">5:4 (Landscape)</option>
@@ -1741,7 +1741,7 @@
                 if (!aspectRatioSelect) {
                     console.error('[Frontend] Aspect ratio select element not found!');
                 }
-                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '16:9';
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 console.log('[Frontend] Aspect ratio select value:', aspectRatioSelect?.value);
                 console.log('[Frontend] Selected aspect ratio:', selectedAspectRatio);
                 const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
@@ -1825,7 +1825,7 @@
 
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
-                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '16:9';
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
                 const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
                 const requestBody = {
@@ -1879,7 +1879,7 @@
             showLoading(label);
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
-                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '1:1';
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 console.log(`[${label}] Aspect ratio select value:`, aspectRatioSelect?.value);
                 console.log(`[${label}] Selected aspect ratio:`, selectedAspectRatio);
 
@@ -2774,7 +2774,7 @@
             $('profile-id-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); switchProfile(); } });
 
             // Load saved aspect ratio from localStorage
-            const savedRatio = localStorage.getItem('faceswap:aspectRatio') || '16:9';
+            const savedRatio = localStorage.getItem('faceswap:aspectRatio') || '3:4';
             const aspectRatioSelect = document.getElementById('aspect-ratio');
             if (aspectRatioSelect) {
                 aspectRatioSelect.value = savedRatio;
