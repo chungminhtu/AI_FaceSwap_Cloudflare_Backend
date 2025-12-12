@@ -27,7 +27,9 @@ export interface Env {
   SELFIE_MAX_FACESWAP?: string; // Optional: Maximum number of faceswap selfies to keep per user. Default: 5
   SELFIE_MAX_OTHER?: string; // Optional: Maximum number of non-faceswap selfies (all other actions combined) to keep per user. Default: 1
   ALLOWED_ORIGINS?: string; // Optional: Comma-separated list of allowed CORS origins. Default: '*' (allows all)
-  RATE_LIMIT_KV?: KVNamespace; // Optional: KV namespace for rate limiting
+  RATE_LIMITER?: {
+    limit(options: { key: string }): Promise<{ success: boolean }>;
+  }; // Optional: Cloudflare built-in rate limiter (100 requests per 60 seconds, configured in wrangler.toml)
   PROMPT_CACHE_KV?: KVNamespace; // Optional: KV namespace for prompt_json caching
 }
 

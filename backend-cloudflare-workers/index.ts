@@ -6,43 +6,12 @@ import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImag
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
 
-const getClientIP = (request: Request): string => {
-  const cfConnectingIP = request.headers.get('CF-Connecting-IP');
-  if (cfConnectingIP) return cfConnectingIP;
-  const xForwardedFor = request.headers.get('X-Forwarded-For');
-  if (xForwardedFor) return xForwardedFor.split(',')[0].trim();
-  return 'unknown';
-};
-
-const checkRateLimit = async (env: Env, ip: string, path: string): Promise<{ allowed: boolean; retryAfter?: number }> => {
-  if (!env.RATE_LIMIT_KV) {
-    return { allowed: true };
-  }
+const checkRateLimit = async (env: Env, request: Request, path: string): Promise<boolean> => {
+  if (!env.RATE_LIMITER) return true;
   
-  const key = `rate_limit:${ip}:${path}`;
-  const now = Date.now();
-  const windowMs = 60000;
-  const maxRequests = 100;
-  
-  try {
-    const data = await env.RATE_LIMIT_KV.get(key, 'json') as { count: number; resetAt: number } | null;
-    
-    if (!data || now >= data.resetAt) {
-      await env.RATE_LIMIT_KV.put(key, JSON.stringify({ count: 1, resetAt: now + windowMs }), { expirationTtl: Math.ceil(windowMs / 1000) });
-      return { allowed: true };
-    }
-    
-    if (data.count >= maxRequests) {
-      const retryAfter = Math.ceil((data.resetAt - now) / 1000);
-      return { allowed: false, retryAfter };
-    }
-    
-    await env.RATE_LIMIT_KV.put(key, JSON.stringify({ count: data.count + 1, resetAt: data.resetAt }), { expirationTtl: Math.ceil((data.resetAt - now) / 1000) });
-    return { allowed: true };
-  } catch (error) {
-    console.error('Rate limit check failed:', error);
-    return { allowed: true };
-  }
+  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0].trim() || 'unknown';
+  const result = await env.RATE_LIMITER.limit({ key: `${ip}:${path}` });
+  return result.success;
 };
 
 const checkRequestSize = (request: Request, maxSizeBytes: number): { valid: boolean; error?: string } => {
@@ -525,9 +494,7 @@ export default {
       return new Response(null, { status: 204, headers: { ...corsHeaders, 'Access-Control-Max-Age': '86400' } });
     }
 
-    const clientIP = getClientIP(request);
-    const rateLimitCheck = await checkRateLimit(env, clientIP, path);
-    if (!rateLimitCheck.allowed) {
+    if (!(await checkRateLimit(env, request, path))) {
       return new Response(JSON.stringify({
         data: null,
         status: 'error',
@@ -538,7 +505,7 @@ export default {
         headers: {
           'Content-Type': 'application/json',
           ...corsHeaders,
-          'Retry-After': String(rateLimitCheck.retryAfter || 60)
+          'Retry-After': '60'
         }
       });
     }
@@ -2241,19 +2208,15 @@ export default {
             'SELECT id, ext FROM presets WHERE id = ?'
           ).bind(presetImageId).first();
           
-          if (promptResult) {
+          if (promptResult && !storedPromptPayload) {
             const cacheKey = `prompt:${presetImageId}`;
             
-            // Use PROMPT_CACHE_KV if available, fallback to RATE_LIMIT_KV for backward compatibility
-            const cacheKV = env.PROMPT_CACHE_KV || env.RATE_LIMIT_KV;
-            if (cacheKV) {
+            if (env.PROMPT_CACHE_KV) {
               try {
-                const cached = await cacheKV.get(cacheKey, 'json');
-                if (cached) {
-                  storedPromptPayload = cached;
-                }
-              } catch (cacheError) {
-                console.warn('[Vertex] KV cache read failed:', cacheError);
+                const cached = await env.PROMPT_CACHE_KV.get(cacheKey, 'json');
+                if (cached) storedPromptPayload = cached;
+              } catch {
+                // Cache read failed, continue to R2 fallback
               }
             }
             
@@ -2261,26 +2224,19 @@ export default {
               const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
               try {
                 const r2Object = await R2_BUCKET.head(r2Key);
-                if (r2Object?.customMetadata?.prompt_json) {
-                  const promptJson = r2Object.customMetadata.prompt_json;
-                  if (promptJson && promptJson.trim() !== '') {
+                const promptJson = r2Object?.customMetadata?.prompt_json;
+                if (promptJson?.trim()) {
+                  storedPromptPayload = JSON.parse(promptJson);
+                  if (env.PROMPT_CACHE_KV) {
                     try {
-                      storedPromptPayload = JSON.parse(promptJson);
-                      const cacheKV = env.PROMPT_CACHE_KV || env.RATE_LIMIT_KV;
-                      if (cacheKV) {
-                        try {
-                          await cacheKV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
-                        } catch (cacheError) {
-                          console.warn('[Vertex] KV cache write failed:', cacheError);
-                        }
-                      }
-                    } catch (parseError) {
-                      console.error('[Vertex] Failed to parse prompt_json from R2 metadata:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+                      await env.PROMPT_CACHE_KV.put(cacheKey, promptJson, { expirationTtl: 86400 });
+                    } catch {
+                      // Cache write failed, continue
                     }
                   }
                 }
-              } catch (r2Error) {
-                console.warn('[Vertex] R2 metadata read failed:', r2Error);
+              } catch {
+                // R2 metadata read failed, continue to generate new prompt
               }
             }
           }
@@ -2294,14 +2250,12 @@ export default {
             storedPromptPayload = generateResult.prompt;
             if (presetImageId && promptResult) {
               const promptJsonString = JSON.stringify(storedPromptPayload);
-              const cacheKey = `prompt:${presetImageId}`;
               
-              const cacheKV = env.PROMPT_CACHE_KV || env.RATE_LIMIT_KV;
-              if (cacheKV) {
+              if (env.PROMPT_CACHE_KV) {
                 try {
-                  await cacheKV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
-                } catch (cacheError) {
-                  console.warn('[Vertex] KV cache write failed:', cacheError);
+                  await env.PROMPT_CACHE_KV.put(`prompt:${presetImageId}`, promptJsonString, { expirationTtl: 86400 });
+                } catch {
+                  // Cache write failed, continue
                 }
               }
               
@@ -2313,15 +2267,12 @@ export default {
                   if (objectBody) {
                     await R2_BUCKET.put(r2Key, objectBody.body, {
                       httpMetadata: existingObject.httpMetadata,
-                      customMetadata: {
-                        ...existingObject.customMetadata,
-                        prompt_json: promptJsonString
-                      }
+                      customMetadata: { ...existingObject.customMetadata, prompt_json: promptJsonString }
                     });
                   }
                 }
-              } catch (metadataError) {
-                console.warn('[Vertex] Failed to store prompt_json in R2 metadata:', metadataError instanceof Error ? metadataError.message.substring(0, 200) : String(metadataError).substring(0, 200));
+              } catch {
+                // R2 metadata write failed, continue
               }
             }
           } else {

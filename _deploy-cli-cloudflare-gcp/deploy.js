@@ -491,6 +491,7 @@ function parseConfig(config) {
       apiToken: config.cloudflare.apiToken || ''
     },
     gcp: config.gcp,
+    rateLimiter: config.rateLimiter || { limit: 100, period: 60, namespaceId: 1 },
       secrets: (() => {
         const secrets = {
           RAPIDAPI_KEY: config.RAPIDAPI_KEY,
@@ -529,7 +530,7 @@ function parseConfig(config) {
   };
 }
 
-function generateWranglerConfig(config, skipD1 = false, databaseId = null, kvNamespaceId = null, kvPreviewId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
+function generateWranglerConfig(config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
   const wranglerConfig = {
     name: config.workerName,
     main: 'backend-cloudflare-workers/index.ts',
@@ -562,32 +563,26 @@ function generateWranglerConfig(config, skipD1 = false, databaseId = null, kvNam
     }
   }
 
-  const kvNamespaces = [];
-  
-  if (kvNamespaceId) {
-    const kvBinding = {
-      binding: 'RATE_LIMIT_KV',
-      id: kvNamespaceId
-    };
-    if (kvPreviewId) {
-      kvBinding.preview_id = kvPreviewId;
+  // Add Cloudflare built-in rate limiter from config
+  const rateLimiterConfig = config.rateLimiter || { limit: 100, period: 60, namespaceId: 1 };
+  wranglerConfig.ratelimits = [{
+    name: 'RATE_LIMITER',
+    namespace_id: rateLimiterConfig.namespaceId || 1,
+    simple: {
+      limit: rateLimiterConfig.limit || 100,
+      period: rateLimiterConfig.period || 60
     }
-    kvNamespaces.push(kvBinding);
-  }
-  
+  }];
+
+  // Add KV namespace for prompt caching only
   if (promptCacheNamespaceId) {
-    const cacheBinding = {
+    wranglerConfig.kv_namespaces = [{
       binding: 'PROMPT_CACHE_KV',
       id: promptCacheNamespaceId
-    };
+    }];
     if (promptCachePreviewId) {
-      cacheBinding.preview_id = promptCachePreviewId;
+      wranglerConfig.kv_namespaces[0].preview_id = promptCachePreviewId;
     }
-    kvNamespaces.push(cacheBinding);
-  }
-  
-  if (kvNamespaces.length > 0) {
-    wranglerConfig.kv_namespaces = kvNamespaces;
   }
 
   // Note: Custom domains for Workers are configured separately in Cloudflare dashboard
@@ -1524,7 +1519,7 @@ const utils = {
     return { success: true, deployed: successCount, total: keys.length };
   },
 
-  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, kvNamespaceId = null, kvPreviewId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
+  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
     const wranglerConfigFiles = [
       path.join(cwd, 'wrangler.json'),
       path.join(cwd, 'wrangler.jsonc'),
@@ -1544,7 +1539,7 @@ const utils = {
     let createdConfig = false;
 
     try {
-      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, kvNamespaceId, kvPreviewId, promptCacheNamespaceId, promptCachePreviewId);
+      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, promptCacheNamespaceId, promptCachePreviewId);
       fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
       createdConfig = true;
 
@@ -1630,7 +1625,6 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
         logger.addStep('Running database migrations', 'Executing pending migrations');
       }
-      logger.addStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Checking/creating KV namespace');
       logger.addStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'Checking/creating KV namespace');
       if (DEPLOY_SECRETS) {
         logger.addStep('Deploying secrets', 'Configuring environment secrets');
@@ -1776,18 +1770,6 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         dbResult = await utils.ensureD1Database(cwd, config.databaseName);
       }
 
-      // Ensure KV namespace for rate limiting
-      let kvResult = null;
-      report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'running', 'Checking namespace existence');
-      kvResult = await utils.ensureKVNamespace(cwd, 'RATE_LIMIT_KV');
-      if (kvResult.skipped) {
-        report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'warning', 'Skipped (API token lacks KV permissions)');
-      } else if (kvResult.created) {
-        report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'completed', 'Namespace created successfully');
-      } else {
-        report(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'completed', 'Namespace already exists');
-      }
-
       // Ensure KV namespace for prompt_json caching
       let promptCacheResult = null;
       report(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`, 'running', 'Checking namespace existence');
@@ -1845,19 +1827,14 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         if (!dbResult) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
         }
-        if (!kvResult) {
-          kvResult = await utils.ensureKVNamespace(cwd, 'RATE_LIMIT_KV');
-        }
         if (!promptCacheResult) {
           promptCacheResult = await utils.ensureKVNamespace(cwd, 'PROMPT_CACHE_KV');
         }
         const skipD1 = dbResult.skipped || false;
         const databaseId = dbResult.databaseId || null;
-        const kvNamespaceId = kvResult?.namespaceId || null;
-        const kvPreviewId = kvResult?.previewId || null;
         const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
         const promptCachePreviewId = promptCacheResult?.previewId || null;
-        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, kvNamespaceId, kvPreviewId, promptCacheNamespaceId, promptCachePreviewId);
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, promptCachePreviewId);
         
         if (!workerUrl) {
           workerUrl = config._workerDevUrl || getWorkerUrl(cwd, config.workerName);
@@ -2149,16 +2126,6 @@ async function main() {
         }
       }
 
-      logger.startStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`);
-      const kvResult = await utils.ensureKVNamespace(process.cwd(), 'RATE_LIMIT_KV');
-      if (kvResult.skipped) {
-        logger.warnStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Skipped (API token lacks KV permissions)');
-      } else if (kvResult.created) {
-        logger.completeStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Namespace created successfully');
-      } else {
-        logger.completeStep(`[Cloudflare] KV Namespace: RATE_LIMIT_KV`, 'Namespace already exists');
-      }
-
       logger.startStep(`[Cloudflare] KV Namespace: PROMPT_CACHE_KV`);
       const promptCacheResult = await utils.ensureKVNamespace(process.cwd(), 'PROMPT_CACHE_KV');
       if (promptCacheResult.skipped) {
@@ -2187,13 +2154,11 @@ async function main() {
       const skipD1 = dbResult.skipped || false;
       const databaseId = dbResult.databaseId || null;
       
-      // kvResult and promptCacheResult are already created above
-      const kvNamespaceId = kvResult?.namespaceId || null;
-      const kvPreviewId = kvResult?.previewId || null;
+      // promptCacheResult is already created above
       const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
       const promptCachePreviewId = promptCacheResult?.previewId || null;
       
-      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, kvNamespaceId, kvPreviewId, promptCacheNamespaceId, promptCachePreviewId);
+      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, promptCachePreviewId);
       
       if (!workerUrl) {
         workerUrl = config._workerDevUrl || getWorkerUrl(process.cwd(), config.workerName);
