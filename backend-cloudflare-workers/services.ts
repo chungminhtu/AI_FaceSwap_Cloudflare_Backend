@@ -1,8 +1,9 @@
 import { nanoid } from 'nanoid';
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout } from './utils';
 
-// Efficient sanitization function - only sanitizes specific fields instead of full object traversal
+const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
+
 const sanitizeObject = (obj: any, maxStringLength = 100): any => {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj !== 'object') return obj;
@@ -12,7 +13,12 @@ const sanitizeObject = (obj: any, maxStringLength = 100): any => {
   
   const sanitized: any = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (key === 'data' && typeof value === 'string' && value.length > maxStringLength) {
+    const lowerKey = key.toLowerCase();
+    const isSensitive = SENSITIVE_KEYS.some(sk => lowerKey.includes(sk));
+    
+    if (isSensitive && typeof value === 'string') {
+      sanitized[key] = '***REDACTED***';
+    } else if (key === 'data' && typeof value === 'string' && value.length > maxStringLength) {
       sanitized[key] = '...';
     } else if (typeof value === 'object' && value !== null) {
       sanitized[key] = sanitizeObject(value, maxStringLength);
@@ -43,16 +49,15 @@ export const callFaceSwap = async (
   formData.append('source_url', sourceUrl);
 
   const startTime = Date.now();
-  const response = await fetch(env.RAPIDAPI_ENDPOINT, {
+  const response = await fetchWithTimeout(env.RAPIDAPI_ENDPOINT, {
     method: 'POST',
     headers: {
       'accept': 'application/json',
       'x-rapidapi-host': env.RAPIDAPI_HOST,
       'x-rapidapi-key': env.RAPIDAPI_KEY,
-      // Don't set Content-Type - browser/worker will set it with boundary for FormData
     },
     body: formData,
-  });
+  }, 60000);
 
   const durationMs = Date.now() - startTime;
   const responseText = await response.text();
@@ -215,12 +220,9 @@ export const callNanoBanana = async (
     // The preset image style is described in the prompt_json text
     // Support multiple selfies for wedding faceswap (e.g., bride and groom)
     const sourceUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
-    const selfieImageDataArray: string[] = [];
-    
-    for (const url of sourceUrls) {
-      const imageData = await fetchImageAsBase64(url);
-      selfieImageDataArray.push(imageData);
-    }
+    const selfieImageDataArray: string[] = await Promise.all(
+      sourceUrls.map(url => fetchImageAsBase64(url, env))
+    );
 
     // Validate and normalize aspect ratio
     // Supported values: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
@@ -302,16 +304,15 @@ export const callNanoBanana = async (
       normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
     };
 
-    // Call Vertex AI Gemini API
     const startTime = Date.now();
-    const response = await fetch(geminiEndpoint, {
+    const response = await fetchWithTimeout(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
-    });
+    }, 60000);
 
     const rawResponse = await response.text();
     const durationMs = Date.now() - startTime;
@@ -537,8 +538,10 @@ export const callNanoBananaMerge = async (
       };
     }
 
-    const selfieImageData = await fetchImageAsBase64(selfieUrl);
-    const presetImageData = await fetchImageAsBase64(presetUrl);
+    const [selfieImageData, presetImageData] = await Promise.all([
+      fetchImageAsBase64(selfieUrl, env),
+      fetchImageAsBase64(presetUrl, env)
+    ]);
 
     const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
     const providedRatio = aspectRatio || "1:1";
@@ -621,14 +624,14 @@ export const callNanoBananaMerge = async (
     };
 
     const startTime = Date.now();
-    const response = await fetch(geminiEndpoint, {
+    const response = await fetchWithTimeout(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
-    });
+    }, 60000);
 
     const rawResponse = await response.text();
     const durationMs = Date.now() - startTime;
@@ -808,13 +811,13 @@ export const checkSafeSearch = async (
     };
 
     const startTime = Date.now();
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    });
+    }, 60000);
 
     const durationMs = Date.now() - startTime;
     const debugInfo: Record<string, any> = {
@@ -944,7 +947,7 @@ export const generateVertexPrompt = async (
     const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
 
     // Fetch image as base64
-    const imageData = await fetchImageAsBase64(imageUrl);
+    const imageData = await fetchImageAsBase64(imageUrl, env);
 
     // Build request body following Vertex AI API format
     // Note: contents array items must include a "role" field set to "user" or "model"
@@ -1032,14 +1035,14 @@ export const generateVertexPrompt = async (
         };
     }
     
-    const response = await fetch(vertexEndpoint, {
+    const response = await fetchWithTimeout(vertexEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
-    });
+    }, 60000);
     
     const responseTime = Date.now() - startTime;
     debugInfo.httpStatus = response.status;
@@ -1146,9 +1149,12 @@ export const generateVertexPrompt = async (
   }
 };
 
-// Helper function to fetch image and convert to base64
-const fetchImageAsBase64 = async (imageUrl: string): Promise<string> => {
-  const response = await fetch(imageUrl);
+const fetchImageAsBase64 = async (imageUrl: string, env: Env): Promise<string> => {
+  if (!validateImageUrl(imageUrl, env)) {
+    throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
+  }
+  
+  const response = await fetchWithTimeout(imageUrl, {}, 60000);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }
@@ -1158,6 +1164,36 @@ const fetchImageAsBase64 = async (imageUrl: string): Promise<string> => {
   let binary = '';
   uint8Array.forEach(byte => binary += String.fromCharCode(byte));
   return btoa(binary);
+};
+
+export const streamImageToR2 = async (
+  imageUrl: string,
+  r2Key: string,
+  env: Env,
+  contentType?: string
+): Promise<void> => {
+  if (!validateImageUrl(imageUrl, env)) {
+    throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
+  }
+  
+  const response = await fetchWithTimeout(imageUrl, {}, 60000);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status}`);
+  }
+
+  const detectedContentType = contentType || response.headers.get('content-type') || 'image/jpeg';
+  const R2_BUCKET = getR2Bucket(env);
+  
+  if (!response.body) {
+    throw new Error('Response body is null');
+  }
+  
+  await R2_BUCKET.put(r2Key, response.body, {
+    httpMetadata: {
+      contentType: detectedContentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+  });
 };
 
 // generateVertexPrompt is already defined above
@@ -1195,14 +1231,14 @@ export const callUpscaler4k = async (
     };
 
     const startTime = Date.now();
-    const response = await fetch(apiEndpoint, {
+    const response = await fetchWithTimeout(apiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(requestBody),
-    });
+    }, 60000);
 
     const rawResponse = await response.text();
     const durationMs = Date.now() - startTime;
@@ -1268,11 +1304,11 @@ export const callUpscaler4k = async (
           await new Promise(resolve => setTimeout(resolve, delay));
         }
         
-        const resultResponse = await fetch(resultEndpoint, {
+        const resultResponse = await fetchWithTimeout(resultEndpoint, {
           headers: {
             'Authorization': `Bearer ${apiKey}`
           }
-        });
+        }, 60000);
         
         if (!resultResponse.ok) {
           console.warn('[Upscaler4K] Poll request failed:', resultResponse.status, resultResponse.statusText);
@@ -1368,8 +1404,9 @@ export const callUpscaler4k = async (
         throw new Error(`Upscaling timed out - no result after ${maxAttempts} polling attempts`);
       }
 
-
-      let imageBytes: Uint8Array;
+      const ext = 'png';
+      const id = nanoid(16);
+      const resultKey = `results/${id}.${ext}`;
       let contentType = 'image/png';
       
       if (resultImageUrl.startsWith('data:')) {
@@ -1378,35 +1415,40 @@ export const callUpscaler4k = async (
           contentType = base64Match[1] || 'image/png';
           const base64String = base64Match[2];
           const binaryString = atob(base64String);
-          imageBytes = new Uint8Array(binaryString.length);
+          const imageBytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             imageBytes[i] = binaryString.charCodeAt(i);
           }
+          
+          const R2_BUCKET = getR2Bucket(env);
+          await R2_BUCKET.put(resultKey, imageBytes, {
+            httpMetadata: {
+              contentType,
+              cacheControl: 'public, max-age=31536000, immutable',
+            },
+          });
         } else {
           throw new Error('Invalid base64 data URL format');
         }
       } else {
-        const imageResponse = await fetch(resultImageUrl);
-        if (!imageResponse.ok) {
-          throw new Error(`Failed to fetch upscaled image: ${imageResponse.status}`);
-        }
-
-        const imageData = await imageResponse.arrayBuffer();
-        imageBytes = new Uint8Array(imageData);
-        contentType = imageResponse.headers.get('content-type') || 'image/png';
+        await streamImageToR2(resultImageUrl, resultKey, env, 'image/png');
+        contentType = 'image/png';
       }
       
-      const ext = contentType.split('/')[1] || 'png';
-      const id = nanoid(16);
-      const resultKey = `results/${id}.${ext}`;
+      if (debugInfo) {
+        debugInfo.r2Key = resultKey;
+        debugInfo.mimeType = contentType;
+      }
       
-      const R2_BUCKET = getR2Bucket(env);
-      await R2_BUCKET.put(resultKey, imageBytes, {
-        httpMetadata: {
-          contentType,
-          cacheControl: 'public, max-age=31536000, immutable',
-        },
-      });
+      const finalResultUrl = `r2://${resultKey}`;
+
+      return {
+        Success: true,
+        ResultImageUrl: finalResultUrl,
+        Message: 'Upscaler4K image upscaling completed',
+        StatusCode: response.status,
+        Debug: debugInfo,
+      };
       if (debugInfo) {
         debugInfo.r2Key = resultKey;
         debugInfo.mimeType = contentType;
