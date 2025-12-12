@@ -248,10 +248,6 @@ export const callNanoBanana = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-          imageOutputOptions: {
-            mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
-            compressionQuality: API_CONFIG.IMAGE_GENERATION.imageConfig.compressionQuality,
-          },
         },
       },
       safetySettings: API_CONFIG.IMAGE_GENERATION.safetySettings,
@@ -546,10 +542,6 @@ export const callNanoBananaMerge = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-          imageOutputOptions: {
-            mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
-            compressionQuality: API_CONFIG.IMAGE_GENERATION.imageConfig.compressionQuality,
-          },
         },
       },
       safetySettings: API_CONFIG.IMAGE_GENERATION.safetySettings,

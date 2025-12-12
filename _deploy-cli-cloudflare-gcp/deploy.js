@@ -1021,13 +1021,161 @@ async function runSqlMigration(migrationFile, databaseName, accountId, apiToken)
   }
 }
 
-async function runTsMigration(migrationFile, databaseName, accountId, apiToken) {
+async function runTsMigration(migrationFile, databaseName, accountId, apiToken, config) {
   const { rename } = require('fs/promises');
-  console.log(`[Migration] Skipping TypeScript migration: ${migrationFile.name}`);
-  console.log(`[Migration] TypeScript migrations should be converted to SQL or run manually`);
-  const executedPath = migrationFile.fullPath.replace('.ts', '.executed.ts');
-  await rename(migrationFile.fullPath, executedPath);
-  return { success: true, skipped: true, reason: 'TypeScript migrations require manual execution' };
+  const fs = require('fs');
+  const { join } = require('path');
+  const os = require('os');
+  const https = require('https');
+  
+  console.log(`[Migration] Executing TypeScript migration: ${migrationFile.name}`);
+  
+  try {
+    // Read the migration file to extract function name
+    const migrationCode = fs.readFileSync(migrationFile.fullPath, 'utf8');
+    const functionMatch = migrationCode.match(/export\s+async\s+function\s+(\w+)/);
+    if (!functionMatch) {
+      throw new Error('Could not find exported async function in migration file');
+    }
+    const functionName = functionMatch[1];
+    
+    // Create temporary migration runner worker
+    const tempDir = join(os.tmpdir(), `migration-${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+    
+    // Use absolute path for import
+    const absoluteMigrationPath = path.resolve(migrationFile.fullPath).replace(/\\/g, '/');
+    const runnerCode = `// Temporary migration runner
+import { ${functionName} } from '${absoluteMigrationPath}';
+
+export default {
+  async fetch(request: Request, env: any): Promise<Response> {
+    try {
+      console.log('[Migration Runner] Starting migration execution...');
+      await ${functionName}({
+        DB: env.${databaseName},
+        R2_BUCKET: env.${config.bucketName},
+        env: env
+      });
+      console.log('[Migration Runner] Migration completed successfully');
+      return new Response(JSON.stringify({ success: true, message: 'Migration completed' }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error: any) {
+      console.error('[Migration Runner] Migration failed:', error);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: error.message,
+        stack: error.stack 
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+};
+`;
+    
+    const runnerPath = join(tempDir, 'index.ts');
+    fs.writeFileSync(runnerPath, runnerCode);
+    
+    // Create temporary wrangler config
+    const wranglerConfig = {
+      name: `migration-runner-${Date.now()}`,
+      main: 'index.ts',
+      compatibility_date: '2024-01-01',
+      account_id: accountId,
+      d1_databases: [{ binding: databaseName, database_name: databaseName }],
+      r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }]
+    };
+    
+    const wranglerPath = join(tempDir, 'wrangler.json');
+    fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
+    
+    // Execute migration via wrangler dev with remote
+    const env = { ...process.env };
+    if (accountId) env.CLOUDFLARE_ACCOUNT_ID = accountId;
+    if (apiToken) env.CLOUDFLARE_API_TOKEN = apiToken;
+    
+    console.log(`[Migration] Deploying temporary migration runner...`);
+    
+    // Deploy the runner worker
+    const deployResult = await runCommandWithRetry(
+      `wrangler deploy --config "${wranglerPath}" --remote`,
+      tempDir,
+      2,
+      3000
+    );
+    
+    if (!deployResult.success) {
+      throw new Error(`Failed to deploy migration runner: ${deployResult.error}`);
+    }
+    
+    // Extract worker URL from deploy output
+    const workerUrlMatch = deployResult.stdout?.match(/https:\/\/([^\s]+)\.workers\.dev/);
+    if (!workerUrlMatch) {
+      throw new Error('Could not determine worker URL from deployment');
+    }
+    const workerUrl = `https://${workerUrlMatch[1]}.workers.dev`;
+    
+    console.log(`[Migration] Executing migration via worker: ${workerUrl}`);
+    
+    // Call the worker to execute migration
+    const executionResult = await new Promise((resolve, reject) => {
+      const req = https.request(workerUrl, {
+        method: 'GET',
+        timeout: 300000 // 5 minutes for long migrations
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            if (result.success) {
+              resolve(result);
+            } else {
+              reject(new Error(result.error || 'Migration execution failed'));
+            }
+          } catch (e) {
+            reject(new Error(`Invalid response: ${data}`));
+          }
+        });
+      });
+      
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Migration execution timeout'));
+      });
+      
+      req.end();
+    });
+    
+    // Clean up: delete the temporary worker
+    try {
+      await runCommand(`wrangler delete ${wranglerConfig.name} --config "${wranglerPath}"`, tempDir);
+    } catch (e) {
+      console.warn(`[Migration] Could not delete temporary worker: ${e.message}`);
+    }
+    
+    // Clean up temp files
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    
+    // Mark as executed
+    const executedPath = migrationFile.fullPath.replace('.ts', '.executed.ts');
+    await rename(migrationFile.fullPath, executedPath);
+    
+    console.log(`[Migration] ✓ TS migration executed successfully: ${migrationFile.name}`);
+    return { success: true };
+    
+  } catch (error) {
+    console.error(`[Migration] ✗ TS migration failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
 }
 
 async function runMigrations(config, cwd, accountId, apiToken) {
@@ -1038,21 +1186,63 @@ async function runMigrations(config, cwd, accountId, apiToken) {
     const migrationFiles = await findMigrationFiles(migrationsDir);
     
     if (migrationFiles.length === 0) {
-      return { success: true, count: 0, message: 'No pending migrations found' };
+      return { success: true, count: 0, executed: 0, skipped: 0, message: 'No pending migrations found' };
     }
     
     console.log(`[Migration] Found ${migrationFiles.length} pending migration(s):`);
     migrationFiles.forEach(f => console.log(`  - ${f.name} (${f.type})`));
     
+    let executedCount = 0;
+    let skippedCount = 0;
+    const skippedFiles = [];
+    
     for (const migrationFile of migrationFiles) {
       if (migrationFile.type === 'sql') {
-        await runSqlMigration(migrationFile, config.databaseName, accountId, apiToken);
+        const result = await runSqlMigration(migrationFile, config.databaseName, accountId, apiToken);
+        if (result.success && !result.skipped) {
+          executedCount++;
+          console.log(`[Migration] ✓ Executed: ${migrationFile.name}`);
+        } else if (result.skipped) {
+          skippedCount++;
+          console.log(`[Migration] ⚠ Skipped: ${migrationFile.name} (${result.reason})`);
+        }
       } else if (migrationFile.type === 'ts') {
-        await runTsMigration(migrationFile, config.databaseName, accountId, apiToken);
+        const result = await runTsMigration(migrationFile, config.databaseName, accountId, apiToken, config);
+        if (result.success) {
+          if (result.skipped) {
+            // Marked as executed (SQL version exists or already executed)
+            executedCount++;
+            console.log(`[Migration] ✓ Marked as executed: ${migrationFile.name} (${result.reason || 'already executed'})`);
+          } else {
+            // Successfully executed
+            executedCount++;
+            console.log(`[Migration] ✓ Executed: ${migrationFile.name}`);
+          }
+        } else {
+          skippedCount++;
+          skippedFiles.push(migrationFile.name);
+          console.log(`[Migration] ⚠ Skipped: ${migrationFile.name} (${result.error || result.reason})`);
+        }
       }
     }
     
-    return { success: true, count: migrationFiles.length, message: 'All migrations completed' };
+    let message = '';
+    if (executedCount > 0 && skippedCount > 0) {
+      message = `${executedCount} executed, ${skippedCount} skipped (TS migrations require manual execution)`;
+    } else if (executedCount > 0) {
+      message = `${executedCount} migration(s) executed`;
+    } else if (skippedCount > 0) {
+      message = `${skippedCount} migration(s) skipped (TS migrations require manual execution via Worker /migrate endpoint)`;
+    }
+    
+    return { 
+      success: true, 
+      count: migrationFiles.length, 
+      executed: executedCount, 
+      skipped: skippedCount,
+      skippedFiles,
+      message: message || 'All migrations completed' 
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -1770,7 +1960,19 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
             if (migrationResult.count === 0) {
               report('Running database migrations', 'completed', 'No pending migrations');
             } else {
-              report('Running database migrations', 'completed', `${migrationResult.count} migration(s) executed`);
+              const details = migrationResult.executed > 0 && migrationResult.skipped > 0
+                ? `${migrationResult.executed} executed, ${migrationResult.skipped} skipped`
+                : migrationResult.executed > 0
+                ? `${migrationResult.executed} executed`
+                : `${migrationResult.skipped} skipped (TS requires manual execution)`;
+              report('Running database migrations', 'completed', details);
+              
+              if (migrationResult.skippedFiles && migrationResult.skippedFiles.length > 0) {
+                console.log(`\n${colors.yellow}⚠ TypeScript migrations skipped:${colors.reset}`);
+                migrationResult.skippedFiles.forEach(file => {
+                  console.log(`  - ${file} (run manually via Worker /migrate endpoint)`);
+                });
+              }
             }
           } else {
             report('Running database migrations', 'failed', migrationResult.error || 'Migration failed');
@@ -1903,75 +2105,31 @@ async function main() {
 
       try {
         logger.startStep(`[Cloudflare] D1 Database Migration`);
-        const migrationsDir = path.join(process.cwd(), 'backend-cloudflare-workers', 'migrations');
+        const migrationResult = await runMigrations(config, process.cwd(), cfAccountId, cfToken);
         
-        if (!fs.existsSync(migrationsDir)) {
-          logger.completeStep(`[Cloudflare] D1 Database Migration`, 'No migrations folder found');
-          logger.renderSummary({ workerUrl: '', pagesUrl: '' });
-          return;
-        }
-
-        const files = fs.readdirSync(migrationsDir)
-          .filter(file => file.endsWith('.sql') && !file.includes('.executed.'))
-          .map(file => ({
-            name: file,
-            path: path.join(migrationsDir, file),
-            order: parseInt(file.match(/^(\d+)_/)?.[1] || '999999', 10)
-          }))
-          .sort((a, b) => a.order - b.order);
-
-        if (files.length === 0) {
-          logger.completeStep(`[Cloudflare] D1 Database Migration`, 'No migration files found');
-          logger.renderSummary({ workerUrl: '', pagesUrl: '' });
-          return;
-        }
-
-        console.log(`\n${colors.cyan}Found ${files.length} migration file(s) to execute${colors.reset}`);
-        
-        const executedFiles = [];
-        for (const file of files) {
-          console.log(`\n${colors.blue}→${colors.reset} Executing: ${file.name}`);
-          
-          try {
-            const execResult = await runCommandWithRetry(
-              `wrangler d1 execute ${config.databaseName} --remote --file=${file.path}`,
-              process.cwd(),
-              2,
-              2000
-            );
-
-            if (execResult.success) {
-              executedFiles.push(file);
-              console.log(`${colors.green}✓${colors.reset} Migration completed: ${file.name}`);
-              
-              try {
-                const executedPath = file.path.replace(/\.sql$/, '.executed.sql');
-                fs.renameSync(file.path, executedPath);
-                console.log(`${colors.green}✓${colors.reset} Migration file renamed: ${file.name} → ${path.basename(executedPath)}`);
-              } catch (renameError) {
-                console.warn(`${colors.yellow}⚠${colors.reset} Could not rename migration file: ${renameError.message}`);
-              }
-            }
-          } catch (error) {
-            const errorMsg = error.message || error.stderr || error.stdout || String(error);
-            // Ignore "duplicate column name" errors - column already exists
-            if (errorMsg.includes('duplicate column name') || errorMsg.includes('already exists')) {
-              console.log(`${colors.yellow}⚠${colors.reset} Column already exists, skipping: ${file.name}`);
-              executedFiles.push(file);
-              try {
-                const executedPath = file.path.replace(/\.sql$/, '.executed.sql');
-                fs.renameSync(file.path, executedPath);
-                console.log(`${colors.green}✓${colors.reset} Migration file renamed: ${file.name} → ${path.basename(executedPath)}`);
-              } catch (renameError) {
-                console.warn(`${colors.yellow}⚠${colors.reset} Could not rename migration file: ${renameError.message}`);
-              }
-            } else {
-              throw new Error(`Migration failed for ${file.name}: ${errorMsg}`);
+        if (migrationResult.success) {
+          if (migrationResult.count === 0) {
+            logger.completeStep(`[Cloudflare] D1 Database Migration`, 'No pending migrations found');
+          } else {
+            const details = migrationResult.executed > 0 && migrationResult.skipped > 0
+              ? `${migrationResult.executed} executed, ${migrationResult.skipped} skipped`
+              : migrationResult.executed > 0
+              ? `${migrationResult.executed} executed`
+              : `${migrationResult.skipped} skipped (TS requires manual execution)`;
+            logger.completeStep(`[Cloudflare] D1 Database Migration`, details);
+            
+            if (migrationResult.skippedFiles && migrationResult.skippedFiles.length > 0) {
+              console.log(`\n${colors.yellow}⚠ TypeScript migrations skipped:${colors.reset}`);
+              migrationResult.skippedFiles.forEach(file => {
+                console.log(`  - ${file} (run manually via Worker /migrate endpoint)`);
+              });
             }
           }
+        } else {
+          logger.failStep(`[Cloudflare] D1 Database Migration`, migrationResult.error || 'Migration failed');
+          throw new Error(`Migration failed: ${migrationResult.error}`);
         }
-
-        logger.completeStep(`[Cloudflare] D1 Database Migration`, `Successfully executed ${executedFiles.length} migration(s)`);
+        
         logger.renderSummary({ workerUrl: '', pagesUrl: '' });
       } finally {
         restoreEnv(origToken, origAccountId);

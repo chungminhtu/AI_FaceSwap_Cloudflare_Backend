@@ -493,26 +493,22 @@ export default {
     }
 
     if (!(await checkRateLimit(env, request, path))) {
-      return new Response(JSON.stringify({
+      const debugEnabled = isDebugEnabled(env);
+      return jsonResponse({
         data: null,
         status: 'error',
         message: 'Rate limit exceeded',
-        code: 429
-      }), {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-          'Retry-After': '60'
-        }
-      });
+        code: 429,
+        ...(debugEnabled ? { debug: { path, method: request.method } } : {})
+      }, 429, request, env);
     }
 
     if (request.method === 'POST' || request.method === 'PUT') {
       const maxSize = path === '/upload-url' || path === '/upload-thumbnails' ? 10 * 1024 * 1024 : 1024 * 1024;
       const sizeCheck = checkRequestSize(request, maxSize);
       if (!sizeCheck.valid) {
-        return errorResponse(sizeCheck.error || 'Request too large', 413, undefined, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse(sizeCheck.error || 'Request too large', 413, debugEnabled ? { path, method: request.method, maxSize } : undefined, request, env);
       }
     }
 
@@ -579,23 +575,27 @@ export default {
           gender = body.gender || null;
           action = body.action || null;
         } else {
-          return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400, undefined, request, env);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400, debugEnabled ? { contentType, path } : undefined, request, env);
         }
 
         if (imageUrls.length > 0) {
           for (const url of imageUrls) {
             if (!validateImageUrl(url, env)) {
-              return errorResponse(`Invalid or unsafe image URL: ${url}`, 400, undefined, request, env);
+              const debugEnabled = isDebugEnabled(env);
+              return errorResponse(`Invalid or unsafe image URL: ${url}`, 400, debugEnabled ? { url, path } : undefined, request, env);
             }
           }
         }
 
         if (!type || !profileId) {
-          return errorResponse('Missing required fields: type and profile_id', 400, undefined, request, env);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required fields: type and profile_id', 400, debugEnabled ? { type, profileId, path } : undefined, request, env);
         }
 
         if (type !== 'preset' && type !== 'selfie') {
-          return errorResponse('Type must be either "preset" or "selfie"', 400, undefined, request, env);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Type must be either "preset" or "selfie"', 400, debugEnabled ? { type, path } : undefined, request, env);
         }
 
         // Validate that profile exists
@@ -603,7 +603,8 @@ export default {
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
         if (!profileResult) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
         // Prepare all file data (from files and URLs)
@@ -654,7 +655,8 @@ export default {
         }
 
         if (allFileData.length === 0) {
-          return errorResponse('No valid files or image URLs provided', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('No valid files or image URLs provided', 400, debugEnabled ? { filesCount: files.length, imageUrlsCount: imageUrls.length, path } : undefined, request, env);
         }
 
         // Process all files in parallel
@@ -884,13 +886,17 @@ export default {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         console.error('Upload error:', errorMsg);
+        const debugEnabled = isDebugEnabled(env);
         return errorResponse(
           `Upload failed: ${errorMsg}`, 
           500,
-          { 
+          debugEnabled ? { 
             error: errorMsg,
+            path,
             ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {})
-          }
+          } : undefined,
+          request,
+          env
         );
       }
     }
@@ -933,7 +939,8 @@ export default {
       try {
         const contentType = request.headers.get('Content-Type') || '';
         if (!contentType.toLowerCase().includes('multipart/form-data')) {
-          return errorResponse('Content-Type must be multipart/form-data', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Content-Type must be multipart/form-data', 400, debugEnabled ? { contentType, path } : undefined, request, env);
         }
 
         const formData = await request.formData();
@@ -951,7 +958,8 @@ export default {
         }
 
         if (files.length === 0) {
-          return errorResponse('No files provided', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('No files provided', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -1208,6 +1216,7 @@ export default {
           }
         }
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: {
             total: files.length,
@@ -1219,11 +1228,14 @@ export default {
           },
           status: 'success',
           message: `Processed ${results.filter(r => r.success).length} of ${files.length} files`,
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { filesProcessed: files.length, resultsCount: results.length } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Thumbnail upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Thumbnail upload failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Thumbnail upload failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1243,7 +1255,8 @@ export default {
         if (!tableCheck) {
           console.error('ERROR: profiles table does not exist in database!');
           console.error('Database schema needs to be initialized. Run: wrangler d1 execute faceswap-db --remote --file=schema.sql');
-          return errorResponse('Database schema not initialized. Please run database migration.', 500);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Database schema not initialized. Please run database migration.', 500, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (body.userID || body.id) {
@@ -1252,7 +1265,8 @@ export default {
           ).bind(profileId).first();
           
           if (existingProfile) {
-            return errorResponse(`Profile with ID "${profileId}" already exists`, 409);
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse(`Profile with ID "${profileId}" already exists`, 409, debugEnabled ? { profileId, path } : undefined, request, env);
           }
         }
 
@@ -1277,12 +1291,14 @@ export default {
         if (!result.success) {
           console.error('[DB] Profile insert failed');
           const errorDetails = result.meta?.error || (result as any).error || 'Unknown database error';
-          return errorResponse(`Failed to create profile: ${errorDetails.substring(0, 200)}`, 500);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Failed to create profile: ${errorDetails.substring(0, 200)}`, 500, debugEnabled ? { error: errorDetails, profileId, path } : undefined, request, env);
         }
 
         if (result.meta?.changes === 0) {
           console.error('[DB] Profile insert returned 0 changes');
-          return errorResponse('Failed to create profile: No rows inserted', 500);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Failed to create profile: No rows inserted', 500, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
         const profile = {
@@ -1296,15 +1312,19 @@ export default {
           updated_at: new Date().toISOString()
         };
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: profile,
           status: 'success',
           message: 'Profile created successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { profileId, deviceId } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Profile creation error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Profile creation failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Profile creation failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1317,7 +1337,8 @@ export default {
         ).bind(profileId).first();
 
         if (!result) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
         const profile: Profile = {
@@ -1331,15 +1352,19 @@ export default {
           updated_at: new Date((result as any).updated_at * 1000).toISOString()
         };
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: profile,
           status: 'success',
           message: 'Profile retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { profileId } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Profile retrieval error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Profile retrieval failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Profile retrieval failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1361,7 +1386,8 @@ export default {
         ).run();
 
         if (!result.success || result.meta?.changes === 0) {
-          return errorResponse('Profile not found or update failed', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found or update failed', 404, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
         // Return updated profile
@@ -1379,15 +1405,19 @@ export default {
           updated_at: new Date((updatedResult as any).updated_at * 1000).toISOString()
         };
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: profile,
           status: 'success',
           message: 'Profile updated successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { profileId } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Profile update error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Profile update failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Profile update failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1409,15 +1439,19 @@ export default {
           updated_at: new Date(row.updated_at * 1000).toISOString()
         })) || [];
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { profiles },
           status: 'success',
           message: 'Profiles retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { count: profiles.length } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Profile listing error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Profile listing failed: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Profile listing failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1428,7 +1462,8 @@ export default {
         const R2_BUCKET = getR2Bucket(env);
         const presetId = path.split('/presets/')[1];
         if (!presetId) {
-          return errorResponse('Preset ID required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset ID required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -1437,7 +1472,8 @@ export default {
         ).bind(presetId).first();
 
         if (!result) {
-          return errorResponse('Preset not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset not found', 404, debugEnabled ? { presetId, path } : undefined, request, env);
         }
 
         const storedKey = reconstructR2Key((result as any).id, (result as any).ext, 'preset');
@@ -1480,6 +1516,7 @@ export default {
           // R2 check failed, assume no prompt
         }
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: {
             id: (result as any).id,
@@ -1494,11 +1531,14 @@ export default {
           },
           status: 'success',
           message: 'Preset retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { presetId, hasPrompt } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Get preset error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Failed to retrieve preset: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Failed to retrieve preset: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1537,12 +1577,14 @@ export default {
         const imagesResult = await DB.prepare(query).bind(...params).all();
 
         if (!imagesResult || !imagesResult.results) {
+          const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
             data: { presets: [] },
             status: 'success',
             message: 'Presets retrieved successfully',
-            code: 200
-          });
+            code: 200,
+            ...(debugEnabled ? { debug: { count: 0 } } : {})
+          }, 200, request, env);
         }
 
         // Flatten to match frontend expectations
@@ -1589,21 +1631,25 @@ export default {
           };
         }));
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { presets },
           status: 'success',
           message: 'Presets retrieved successfully',
-          code: 200
+          code: 200,
+          ...(debugEnabled ? { debug: { count: presets.length } } : {})
         }, 200, request, env);
       } catch (error) {
         console.error('List presets error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { presets: [] },
           status: 'success',
           message: 'Presets retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200), count: 0 } } : {})
+        }, 200, request, env);
       }
     }
 
@@ -1612,7 +1658,8 @@ export default {
       try {
         const presetId = path.replace('/presets/', '');
         if (!presetId) {
-          return errorResponse('Preset ID is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset ID is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
 
@@ -1622,7 +1669,8 @@ export default {
         ).bind(presetId).first();
 
         if (!checkResult) {
-          return errorResponse('Preset not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset not found', 404, debugEnabled ? { presetId, path } : undefined, request, env);
         }
 
         const storedKey = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'preset');
@@ -1635,7 +1683,8 @@ export default {
         ).bind(presetId).run();
 
         if (!deleteResult.success || deleteResult.meta?.changes === 0) {
-          return errorResponse('Preset not found or already deleted', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset not found or already deleted', 404, debugEnabled ? { presetId, path } : undefined, request, env);
         }
 
         // Try to delete from R2 (non-fatal if it fails)
@@ -1660,17 +1709,20 @@ export default {
       } catch (error) {
         console.error('[DELETE] Delete preset exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: null,
           status: 'error',
           message: `Failed to delete preset: ${errorMessage}`,
           code: 500,
-          debug: {
+          ...(debugEnabled ? { debug: {
             presetId: path.replace('/presets/', ''),
             error: errorMessage,
-            errorType: error instanceof Error ? error.constructor.name : typeof error
-          }
-        }, 500);
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            path,
+            ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {})
+          } } : {})
+        }, 500, request, env);
       }
     }
 
@@ -1681,7 +1733,8 @@ export default {
         const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
         if (!profileId) {
-          return errorResponse('profile_id query parameter is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('profile_id query parameter is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // Validate that profile exists
@@ -1689,7 +1742,8 @@ export default {
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
         // Check if new schema (ext column exists) or old schema (selfie_url exists)
@@ -1712,23 +1766,27 @@ export default {
         } else if (hasUrl) {
           query = `SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT ${limit}`;
         } else {
+          const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
             data: { selfies: [] },
             status: 'success',
             message: 'Selfies retrieved successfully',
-            code: 200
+            code: 200,
+            ...(debugEnabled ? { debug: { count: 0, reason: 'schema_mismatch' } } : {})
           }, 200, request, env);
         }
 
         const result = await DB.prepare(query).bind(profileId).all();
 
         if (!result || !result.results) {
+          const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
             data: { selfies: [] },
             status: 'success',
             message: 'Selfies retrieved successfully',
-            code: 200
-          });
+            code: 200,
+            ...(debugEnabled ? { debug: { count: 0 } } : {})
+          }, 200, request, env);
         }
 
         const selfies = result.results.map((row: any) => {
@@ -1754,21 +1812,25 @@ export default {
           };
         });
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { selfies },
           status: 'success',
           message: 'Selfies retrieved successfully',
-          code: 200
+          code: 200,
+          ...(debugEnabled ? { debug: { count: selfies.length, profileId } } : {})
         }, 200, request, env);
       } catch (error) {
         console.error('List selfies error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { selfies: [] },
           status: 'success',
           message: 'Selfies retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200), count: 0 } } : {})
+        }, 200, request, env);
       }
     }
 
@@ -1777,7 +1839,8 @@ export default {
       try {
         const selfieId = path.replace('/selfies/', '');
         if (!selfieId) {
-          return errorResponse('Selfie ID is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Selfie ID is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // First, check if selfie exists
@@ -1786,7 +1849,8 @@ export default {
         ).bind(selfieId).first();
 
         if (!checkResult) {
-          return errorResponse('Selfie not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Selfie not found', 404, debugEnabled ? { selfieId, path } : undefined, request, env);
         }
 
         const r2Key = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'selfie');
@@ -1798,7 +1862,8 @@ export default {
         ).bind(selfieId).run();
 
         if (!deleteResult.success || deleteResult.meta?.changes === 0) {
-          return errorResponse('Selfie not found or already deleted', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Selfie not found or already deleted', 404, debugEnabled ? { selfieId, path } : undefined, request, env);
         }
 
         // Try to delete from R2 (non-fatal if it fails)
@@ -1814,26 +1879,31 @@ export default {
           }
         }
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: null,
           status: 'success',
           message: 'Selfie deleted successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { selfieId, r2Deleted, r2Error } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('[DELETE] Delete selfie exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: null,
           status: 'error',
           message: `Failed to delete selfie: ${errorMessage}`,
           code: 500,
-          debug: {
+          ...(debugEnabled ? { debug: {
             selfieId: path.replace('/selfies/', ''),
             error: errorMessage,
-            errorType: error instanceof Error ? error.constructor.name : typeof error
-          }
-        }, 500);
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            path,
+            ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {})
+          } } : {})
+        }, 500, request, env);
       }
     }
 
@@ -1844,7 +1914,8 @@ export default {
       try {
         const thumbnailId = path.split('/thumbnails/')[1]?.replace('/preset', '');
         if (!thumbnailId) {
-          return errorResponse('Thumbnail ID required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Thumbnail ID required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -1854,18 +1925,23 @@ export default {
         ).bind(thumbnailId).first();
 
         if (!preset) {
-          return errorResponse('Thumbnail not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Thumbnail not found', 404, debugEnabled ? { thumbnailId, path } : undefined, request, env);
         }
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { preset_id: (preset as any).id },
           status: 'success',
           message: 'Preset ID retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { thumbnailId, presetId: (preset as any).id } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Get preset from thumbnail error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Failed to retrieve preset ID: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Failed to retrieve preset ID: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1905,15 +1981,19 @@ export default {
           thumbnail_url: row.thumbnail_url_1x || row.thumbnail_url || null
         }));
           
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { thumbnails },
           status: 'success',
           message: 'Thumbnails retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { count: thumbnails.length } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('Get thumbnails error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Failed to retrieve thumbnails: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Failed to retrieve thumbnails: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1929,7 +2009,8 @@ export default {
           if (genderParam === 'male' || genderParam === 'female') {
             genderFilter = genderParam;
           } else {
-            return errorResponse(`Invalid gender parameter. Must be 'male' or 'female', received: '${genderParam}'`, 400);
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse(`Invalid gender parameter. Must be 'male' or 'female', received: '${genderParam}'`, 400, debugEnabled ? { genderParam, path } : undefined, request, env);
         }
         }
 
@@ -1961,12 +2042,14 @@ export default {
         const result = await DB.prepare(query).bind(...params).all();
 
         if (!result || !result.results) {
+          const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
             data: { results: [] },
             status: 'success',
             message: 'Results retrieved successfully',
-            code: 200
-          });
+            code: 200,
+            ...(debugEnabled ? { debug: { count: 0, profileId: profileId || null } } : {})
+          }, 200, request, env);
         }
 
         const results = result.results.map((row: any) => {
@@ -1981,20 +2064,24 @@ export default {
           };
         });
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { results },
           status: 'success',
           message: 'Results retrieved successfully',
-          code: 200
+          code: 200,
+          ...(debugEnabled ? { debug: { count: results.length, profileId: profileId || null } } : {})
         }, 200, request, env);
       } catch (error) {
         console.error('[Results] List results error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { results: [] },
           status: 'success',
           message: 'Results retrieved successfully',
-          code: 200
-        });
+          code: 200,
+          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200), count: 0 } } : {})
+        }, 200, request, env);
       }
     }
 
@@ -2003,7 +2090,8 @@ export default {
       try {
         const resultId = path.replace('/results/', '');
         if (!resultId) {
-          return errorResponse('Result ID is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Result ID is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // First, check if result exists and get the R2 key
@@ -2012,7 +2100,8 @@ export default {
         ).bind(resultId).first();
 
         if (!checkResult) {
-          return errorResponse('Result not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Result not found', 404, debugEnabled ? { resultId, path } : undefined, request, env);
         }
 
         const r2Key = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'results');
@@ -2023,7 +2112,8 @@ export default {
         ).bind(resultId).run();
 
         if (!deleteResult.success || deleteResult.meta?.changes === 0) {
-          return errorResponse('Result not found or already deleted', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Result not found or already deleted', 404, debugEnabled ? { resultId, path } : undefined, request, env);
         }
 
         // Try to delete from R2 (non-fatal if it fails)
@@ -2038,32 +2128,36 @@ export default {
           }
         }
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: null,
           status: 'success',
           message: 'Result deleted successfully',
           code: 200,
-          debug: {
+          ...(debugEnabled ? { debug: {
             resultId,
             databaseDeleted: deleteResult.meta?.changes || 0,
             r2Deleted,
             r2Key,
             r2Error: r2Error || null
-          }
-        });
+          } } : {})
+        }, 200, request, env);
       } catch (error) {
         console.error('[DELETE] Delete result exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: null,
           status: 'error',
           message: `Failed to delete result: ${errorMessage}`,
           code: 500,
-          debug: {
+          ...(debugEnabled ? { debug: {
             resultId: path.replace('/results/', ''),
             error: errorMessage,
-          }
-        }, 500);
+            path,
+            ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {})
+          } } : {})
+        }, 500, request, env);
       }
     }
 
@@ -2157,7 +2251,8 @@ export default {
           presetImageId = null;
         } else {
           // This should never happen due to earlier validation, but TypeScript needs this
-          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // Extract selfie results
@@ -2169,7 +2264,8 @@ export default {
           for (let i = 0; i < body.selfie_ids.length; i++) {
             const selfieResult = results[selfieStartIndex + i];
             if (!selfieResult) {
-              return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404);
+              const debugEnabled = isDebugEnabled(env);
+              return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404, debugEnabled ? { selfieId: body.selfie_ids[i], path } : undefined, request, env);
             }
             const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
             const fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
@@ -2182,7 +2278,8 @@ export default {
 
         // Support multiple selfies for wedding faceswap (e.g., bride and groom)
         if (selfieUrls.length === 0) {
-          return errorResponse('No valid selfie URLs found', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('No valid selfie URLs found', 400, debugEnabled ? { hasSelfieIds, hasSelfieUrls, selfieIdsCount: body.selfie_ids?.length || 0, selfieUrlsCount: body.selfie_image_urls?.length || 0, path } : undefined, request, env);
         }
         const sourceUrl = selfieUrls.length === 1 ? selfieUrls[0] : selfieUrls;
 
@@ -2543,7 +2640,9 @@ export default {
         });
       } catch (error) {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2556,26 +2655,31 @@ export default {
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
 
         if (!hasPresetId && !hasPresetUrl) {
-          return errorResponse('Either preset_image_id or preset_image_url is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Either preset_image_id or preset_image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (hasPresetId && hasPresetUrl) {
-          return errorResponse('Cannot provide both preset_image_id and preset_image_url. Please provide only one.', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both preset_image_id and preset_image_url. Please provide only one.', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
-          return errorResponse('profile_id is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
         const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
 
         if (!hasSelfieId && !hasSelfieUrl) {
-          return errorResponse('Either selfie_id or selfie_image_url must be provided', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Either selfie_id or selfie_image_url must be provided', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (hasSelfieId && hasSelfieUrl) {
-          return errorResponse('Cannot provide both selfie_id and selfie_image_url. Please provide only one.', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url. Please provide only one.', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -2586,7 +2690,8 @@ export default {
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
         let targetUrl: string;
@@ -2599,7 +2704,8 @@ export default {
           ).bind(body.preset_image_id).first();
 
           if (!presetResult) {
-            return errorResponse('Preset image not found', 404);
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Preset image not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
           }
 
           const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
@@ -2619,7 +2725,8 @@ export default {
           ).bind(body.selfie_id!).first();
 
           if (!selfieResult) {
-            return errorResponse(`Selfie with ID ${body.selfie_id} not found`, 404);
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse(`Selfie with ID ${body.selfie_id} not found`, 404, debugEnabled ? { selfieId: body.selfie_id, path } : undefined, request, env);
           }
 
           const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
@@ -2639,7 +2746,10 @@ export default {
         });
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
 
         const defaultMergePrompt = API_PROMPTS.MERGE_PROMPT_DEFAULT;
 
@@ -2839,7 +2949,9 @@ export default {
         });
       } catch (error) {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2849,22 +2961,28 @@ export default {
         const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
         
         if (!body.image_url) {
-          return errorResponse('image_url is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
-          return errorResponse('profile_id is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
 
         // Check input image safety before upscaling
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
@@ -2905,18 +3023,24 @@ export default {
           console.error('Upscaler4K failed:', upscalerResult.Message || 'Unknown error');
           const failureCode = upscalerResult.StatusCode || 500;
           const debugEnabled = isDebugEnabled(env);
+          const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult) : undefined;
+          const vertexDebug = debugEnabled ? buildVertexDebug(upscalerResult) : undefined;
+          const inputSafetyDebugInfo = debugEnabled ? buildVisionDebug(inputSafetyDebug) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(upscalerResult),
-            vertex: buildVertexDebug(upscalerResult),
-            inputSafety: buildVisionDebug(inputSafetyDebug),
+            provider: providerDebug,
+            vertex: vertexDebug,
+            inputSafety: inputSafetyDebugInfo,
+            rawError: upscalerResult.Error,
+            fullResponse: (upscalerResult as any).FullResponse,
+            wavespeedDebug: (upscalerResult as any).Debug,
           }) : undefined;
           return jsonResponse({
             data: null,
             status: 'error',
             message: upscalerResult.Message || 'Upscaler4K provider error',
             code: failureCode,
-            ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+            ...(debugEnabled && debugPayload ? { debug: debugPayload } : {}),
+          }, failureCode, request, env);
         }
 
         let resultUrl = upscalerResult.ResultImageUrl;
@@ -2985,7 +3109,9 @@ export default {
         });
       } catch (error) {
         console.error('Upscaler4K unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2995,11 +3121,13 @@ export default {
         const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
-          return errorResponse('image_url is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
-          return errorResponse('profile_id is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
@@ -3007,11 +3135,15 @@ export default {
         ).bind(body.profile_id).first();
 
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
 
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
         const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
@@ -3072,7 +3204,9 @@ export default {
         });
       } catch (error) {
         console.error('Enhance unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3082,22 +3216,28 @@ export default {
         const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
-          return errorResponse('image_url is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
-          return errorResponse('profile_id is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
 
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
         const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
@@ -3158,7 +3298,9 @@ export default {
         });
       } catch (error) {
         console.error('Colorize unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3168,23 +3310,29 @@ export default {
         const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
-          return errorResponse('image_url is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
-          return errorResponse('profile_id is required', 400);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
         const ageYears = body.age_years || 20;
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
 
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
         const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
@@ -3247,7 +3395,9 @@ export default {
         });
       } catch (error) {
         console.error('Aging unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        return errorResponse(`Internal server error: ${error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200)}`, 500);
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3255,6 +3405,7 @@ export default {
     if (path === '/config' && request.method === 'GET') {
       const backendDomain = env.BACKEND_DOMAIN;
       const r2Domain = env.R2_DOMAIN;
+      const debugEnabled = isDebugEnabled(env);
 
       return jsonResponse({
         data: {
@@ -3263,11 +3414,13 @@ export default {
         },
         status: 'success',
         message: 'Configuration retrieved successfully',
-        code: 200
-      });
+        code: 200,
+        ...(debugEnabled ? { debug: { path, backendDomain: !!backendDomain, r2Domain: !!r2Domain } } : {})
+      }, 200, request, env);
     }
 
     // 404 for unmatched routes
-    return errorResponse('Not found', 404);
+    const debugEnabled = isDebugEnabled(env);
+    return errorResponse('Not found', 404, debugEnabled ? { path, method: request.method } : undefined, request, env);
   },
 };
