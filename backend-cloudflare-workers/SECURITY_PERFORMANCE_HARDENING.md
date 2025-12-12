@@ -521,17 +521,20 @@ curl "https://api.d.shotpix.app/presets?limit=25"
 
 **Problem:** Reading prompt_json from R2 metadata on every faceswap request was slow.
 
-**Solution:** KV cache with 24-hour TTL for preset prompts.
+**Solution:** KV cache with 1-year TTL for preset prompts.
 
 **Implementation:**
-- Uses `RATE_LIMIT_KV` binding (same as rate limiting)
+- Uses `PROMPT_CACHE_KV` binding (dedicated KV namespace for prompt caching)
 - Key format: `prompt:${presetImageId}`
 - TTL: 31536000 seconds (1 year)
 - Falls back to R2 metadata on cache miss
 - Updates cache when prompt is generated
+- Non-blocking writes (fire-and-forget) to reduce CPU time
+- Error logging for debugging cache issues
 
 **Files Changed:**
 - `backend-cloudflare-workers/index.ts` - `/faceswap` POST handler
+- `_deploy-cli-cloudflare-gcp/deploy.js` - KV namespace creation and binding
 
 **Code Example:**
 ```typescript
@@ -541,30 +544,39 @@ const promptJson = r2Object?.customMetadata?.prompt_json;
 
 // After (cached in KV)
 const cacheKey = `prompt:${presetImageId}`;
-const cached = await env.RATE_LIMIT_KV.get(cacheKey, 'json');
-if (cached) {
-  storedPromptPayload = cached;
-} else {
+if (env.PROMPT_CACHE_KV) {
+  const cached = await env.PROMPT_CACHE_KV.get(cacheKey, 'json');
+  if (cached) storedPromptPayload = cached;
+}
+if (!storedPromptPayload) {
   // Read from R2 and cache
   const r2Object = await R2_BUCKET.head(r2Key);
-  // ... store in cache
+  // ... store in cache (non-blocking)
+  env.PROMPT_CACHE_KV?.put(cacheKey, promptJson, { expirationTtl: 31536000 }).catch(() => {});
 }
 ```
 
 **Cache Details:**
 - **Key format:** `prompt:${presetImageId}`
-- **TTL:** 86400 seconds (24 hours)
-- **Storage:** Workers KV
+- **TTL:** 31536000 seconds (1 year)
+- **Storage:** Workers KV (dedicated `PROMPT_CACHE_KV` namespace)
 - **Fallback:** R2 metadata if cache miss
+- **Write Strategy:** Non-blocking (fire-and-forget) to reduce CPU time
 
 **Performance Impact:**
 - **Before:** R2 head request (~50-100ms) on every faceswap
 - **After:** KV get request (~5-10ms) on cache hit
 - **Speedup:** 5-10x faster for cached prompts
+- **CPU Time:** Reduced by non-blocking cache writes
 
 **Affected:** `/faceswap` endpoint
 
-**Note:** Cache is optional - if `RATE_LIMIT_KV` not configured, falls back to R2 metadata.
+**Configuration:**
+- KV namespace is created automatically during deployment from `deployments-secrets.json`
+- Namespace name format: `PROMPT_CACHE_KV_${environment}` (e.g., `PROMPT_CACHE_KV_ai-office-dev`)
+- Binding name: `PROMPT_CACHE_KV` (hardcoded in wrangler.toml)
+
+**Note:** Cache is optional - if `PROMPT_CACHE_KV` not configured, falls back to R2 metadata. Check `/config` endpoint to verify KV cache is available.
 
 ---
 
@@ -616,6 +628,54 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 
 ---
 
+### 13. Diagnostic Endpoint
+
+**Problem:** No easy way to check configuration status and KV cache availability.
+
+**Solution:** Added `/config` endpoint for diagnostics.
+
+**Implementation:**
+- `GET /config` - Returns configuration status
+- Checks KV cache availability and tests read/write operations
+- Returns backend and R2 domain configuration
+- Includes debug info if `ENABLE_DEBUG_RESPONSE` is enabled
+
+**Response Format:**
+```json
+{
+  "data": {
+    "backendDomain": "https://api.d.shotpix.app",
+    "r2Domain": "https://resources.d.shotpix.app",
+    "kvCache": {
+      "available": true,
+      "test": "working"
+    }
+  },
+  "status": "success",
+  "message": "Configuration retrieved successfully",
+  "code": 200
+}
+```
+
+**Usage:**
+```bash
+# Check configuration status
+curl https://api.d.shotpix.app/config
+
+# Check KV cache status specifically
+curl https://api.d.shotpix.app/config | jq '.data.kvCache'
+```
+
+**Files Changed:**
+- `backend-cloudflare-workers/index.ts` - Added `/config` GET endpoint
+
+**Benefits:**
+- Quick verification of KV cache binding
+- Debug configuration issues
+- Monitor deployment status
+
+---
+
 ## Centralized Config System
 
 **Overview:** All API prompts, model configurations, timeouts, and constants have been centralized into `config.ts` for easy management.
@@ -657,7 +717,17 @@ import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG } from './config';
 
 ### Environment Variables
 
-Add these to your `wrangler.toml` or Cloudflare Dashboard:
+**All environment variables are configured in `_deploy-cli-cloudflare-gcp/deployments-secrets.json` and automatically deployed.**
+
+The deployment script (`deploy.js`) reads from `deployments-secrets.json` and:
+1. Creates KV namespaces automatically
+2. Deploys all environment variables as secrets
+3. Configures rate limiters
+4. Sets up R2 and D1 bindings
+
+**Legacy Configuration (for reference only):**
+
+If manually configuring via `wrangler.toml`:
 
 ```toml
 [vars]
@@ -675,27 +745,31 @@ preview_id = "your-preview-kv-namespace-id"
 
 ### Required Configuration
 
-**Minimum (for basic security):**
-```toml
-[vars]
-ALLOWED_ORIGINS = "https://yourdomain.com"
+**All configuration is done via `deployments-secrets.json`:**
+
+```json
+{
+  "environments": {
+    "your-env": {
+      "ALLOWED_ORIGINS": "https://yourdomain.com",
+      "promptCacheKV": {
+        "namespaceName": "PROMPT_CACHE_KV_your-env",
+        "ttl_in_ms": 31536000
+      },
+      "rateLimiter": {
+        "limit": 100,
+        "period_second": 60,
+        "namespaceId": 1
+      }
+    }
+  }
+}
 ```
 
-**Recommended (for production):**
-```toml
-[vars]
-ALLOWED_ORIGINS = "https://app.shotpix.app,https://www.shotpix.app"
-
-[[kv_namespaces]]
-binding = "RATE_LIMIT_KV"
-id = "your-kv-namespace-id"
-```
-
-### Creating KV Namespace
-
-1. Go to Cloudflare Dashboard → Workers & Pages → KV
-2. Click "Create a namespace"
-3. Name: `RATE_LIMIT_KV`
+**KV Namespace Creation:**
+- Namespace is created automatically during deployment
+- Name comes from `promptCacheKV.namespaceName` in deployments-secrets.json
+- No manual creation needed - handled by deploy script
 4. Copy the namespace ID
 5. Add to `wrangler.toml` as shown above
 
@@ -848,10 +922,10 @@ fetch('https://api.d.shotpix.app/presets')
 **Problem:** Legitimate requests getting rate limited
 
 **Solutions:**
-1. Check if `RATE_LIMIT_KV` is configured correctly
-2. Verify KV namespace exists and is bound
-3. Check rate limit key format: `rate_limit:${ip}:${path}`
-4. Consider increasing limit (modify `checkRateLimit()` function)
+1. Check rate limiter configuration in deployments-secrets.json (`rateLimiter` object)
+2. Verify rate limiter namespace ID is correct
+3. Check rate limit key format: `${ip}:${path}`
+4. Consider increasing limit (modify `rateLimiter.limit` in deployments-secrets.json)
 
 **Debug:**
 ```bash
@@ -882,19 +956,26 @@ console.log('URL valid:', isValid);
 **Problem:** Slow response times
 
 **Solutions:**
-1. Enable KV cache for preset prompts (configure `RATE_LIMIT_KV`)
+1. Enable KV cache for preset prompts (configure `PROMPT_CACHE_KV` in deployments-secrets.json)
 2. Check if parallel image fetching is working (multiple selfies)
 3. Verify streaming is used for large images
 4. Monitor external API response times
+5. Check KV cache status via `/config` endpoint
 
 **Debug:**
 ```bash
 # Check response times
 time curl https://api.d.shotpix.app/presets
 
+# Check KV cache status
+curl https://api.d.shotpix.app/config
+
 # Check if caching is working (should be faster on second request)
 time curl https://api.d.shotpix.app/faceswap -d '{"profile_id":"test","preset_image_id":"cached-preset","selfie_ids":["test"]}'
 ```
+
+**Diagnostic Endpoint:**
+- `GET /config` - Returns configuration status including KV cache availability and test results
 
 ---
 
@@ -913,12 +994,14 @@ time curl https://api.d.shotpix.app/faceswap -d '{"profile_id":"test","preset_im
 ✅ Parallel image fetches (3x faster for multiple selfies)
 ✅ Stream large images (reduces memory usage)
 ✅ Pagination limits (prevents large responses)
-✅ Preset prompt caching (5-10x faster)
+✅ Preset prompt caching (5-10x faster, non-blocking writes)
 ✅ Request timeouts (prevents hanging requests)
+✅ KV cache error logging and diagnostics
 
 ### Configuration Required
-- `ALLOWED_ORIGINS` - CORS whitelist (required for production)
-- `RATE_LIMIT_KV` - KV namespace for rate limiting and caching (optional but recommended)
+- `ALLOWED_ORIGINS` - CORS whitelist (required for production, set in deployments-secrets.json)
+- `PROMPT_CACHE_KV` - KV namespace for prompt caching (optional but recommended, auto-created from deployments-secrets.json)
+- All environment variables configured in `deployments-secrets.json` and auto-deployed
 
 ### Backward Compatibility
 - All changes are backward compatible
@@ -937,6 +1020,14 @@ For issues or questions:
 
 ---
 
-**Last Updated:** 2024
-**Version:** 1.0.0
+**Last Updated:** December 2024
+**Version:** 1.1.0
+
+**Recent Updates:**
+- KV cache now uses dedicated `PROMPT_CACHE_KV` binding (not `RATE_LIMIT_KV`)
+- Added `/config` diagnostic endpoint for status checks
+- Fixed missing environment variables in deployment (ALLOWED_ORIGINS, ENABLE_DEBUG_RESPONSE, etc.)
+- Added error logging for KV cache operations
+- Simplified TypeScript Env interface (uses index signature)
+- All configuration now via `deployments-secrets.json` (automatic deployment)
 

@@ -3441,7 +3441,7 @@ export default {
       const kvCacheAvailable = !!env.PROMPT_CACHE_KV;
 
       let kvCacheTest = null;
-      if (kvCacheAvailable) {
+      if (kvCacheAvailable && env.PROMPT_CACHE_KV) {
         try {
           await env.PROMPT_CACHE_KV.put('__test__', 'test', { expirationTtl: 1 });
           await env.PROMPT_CACHE_KV.delete('__test__');

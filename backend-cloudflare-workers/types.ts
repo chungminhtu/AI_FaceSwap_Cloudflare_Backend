@@ -1,36 +1,11 @@
+// Environment variables come from deployments-secrets.json via deploy.js
+// Only typing Cloudflare-specific bindings that need type safety
 export interface Env {
-  RAPIDAPI_KEY: string;
-  RAPIDAPI_HOST: string;
-  RAPIDAPI_ENDPOINT: string;
-  GOOGLE_VISION_API_KEY: string;
-  GOOGLE_VERTEX_PROJECT_ID: string;
-  GOOGLE_VERTEX_LOCATION: string;
-  GOOGLE_VISION_ENDPOINT: string;
-  R2_BUCKET_BINDING?: string; // Dynamic R2 bucket binding name (defaults to bucket name)
-  D1_DATABASE_BINDING?: string; // Dynamic D1 database binding name (defaults to database name)
-  [key: string]: any; // Allow dynamic bindings for R2 buckets and D1 databases
-  NANO_BANANA_API_URL?: string;
-  NANO_BANANA_API_KEY?: string;
-  GOOGLE_SERVICE_ACCOUNT_EMAIL?: string; // Optional: Service account email for OAuth token generation
-  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string; // Optional: Service account private key for OAuth token generation
-  R2_ACCOUNT_ID?: string; // Optional: Cloudflare account ID for auto URL generation (e.g., 32 hex characters)
-  CF_ACCOUNT_ID?: string; // Alias for R2_ACCOUNT_ID
-  ACCOUNT_ID?: string; // Fallback alias
-  R2_BUCKET_NAME?: string; // Optional override for the R2 bucket name used to build public URLs
-  R2_DOMAIN?: string; // Custom domain for R2 public URLs (e.g., https://resources.d.shotpix.app)
-  BACKEND_DOMAIN?: string; // Custom domain for Worker API (e.g., https://api.d.shotpix.app)
-  WAVESPEED_API_KEY?: string; // WaveSpeed.ai API key
-  DISABLE_SAFE_SEARCH?: string; // Optional: Set to 'true' to disable safe search validation
-  SAFETY_STRICTNESS?: string; // Optional: 'strict' (blocks LIKELY+VERY_LIKELY) or 'lenient' (blocks only VERY_LIKELY). Default: 'lenient'
-  ENABLE_DEBUG_RESPONSE?: string; // Optional: Set to 'true' to enable debug payloads in responses, 'false' to disable. Default: disabled (when not set or null)
-  RESULT_MAX_HISTORY?: string; // Optional: Maximum number of result history entries per user. Default: 10
-  SELFIE_MAX_FACESWAP?: string; // Optional: Maximum number of faceswap selfies to keep per user. Default: 5
-  SELFIE_MAX_OTHER?: string; // Optional: Maximum number of non-faceswap selfies (all other actions combined) to keep per user. Default: 1
-  ALLOWED_ORIGINS?: string; // Optional: Comma-separated list of allowed CORS origins. Default: '*' (allows all)
+  [key: string]: any; // All env vars from JSON config + dynamic bindings
   RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
-  }; // Optional: Cloudflare built-in rate limiter (100 requests per 60 seconds, configured in wrangler.toml)
-  PROMPT_CACHE_KV?: KVNamespace; // Optional: KV namespace for prompt_json caching
+  }; // Cloudflare built-in rate limiter
+  PROMPT_CACHE_KV?: KVNamespace; // KV namespace for prompt_json caching
 }
 
 export interface FaceSwapRequest {
