@@ -2,6 +2,17 @@
 
 Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp. Base URL: `https://api.d.shotpix.app`
 
+## Cấu hình và Prompts
+
+Tất cả các prompts và cấu hình API đã được tập trung vào file `config.ts` để dễ dàng quản lý và thay đổi. Xem thêm tài liệu chi tiết tại `backend-cloudflare-workers/CONFIG_DOCUMENTATION.md`.
+
+**Các cấu hình chính:**
+- **API Prompts**: Facial preservation, merge prompts, vertex generation prompts
+- **Model Config**: Model mappings và default values
+- **Aspect Ratios**: Danh sách aspect ratios được hỗ trợ
+- **Timeouts**: Cấu hình timeout cho các request
+- **API Config**: Temperature, tokens, safety settings cho image generation
+
 ## 1. POST `/faceswap`
 
 ### Mục đích
@@ -40,7 +51,7 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `additional_prompt` (string, tùy chọn): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, tùy chọn): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
-- `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
+- `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`. (Cấu hình trong `config.ts`: `ASPECT_RATIO_CONFIG`)
 
 **Lưu ý về prompt generation:**
 - Nếu preset đã có `prompt_json` trong database, hệ thống sẽ sử dụng prompt đó.
@@ -174,7 +185,7 @@ Xóa nền của ảnh selfie, giữ lại người với transparent background
 - `selfie_image_url` (string, tùy chọn): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`). Ảnh phải có transparent background sẵn.
 - `profile_id` (string, bắt buộc): ID profile người dùng.
 - `additional_prompt` (string, tùy chọn): Câu mô tả bổ sung cho việc xóa nền (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
-- `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
+- `aspect_ratio` (string, tùy chọn): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`. (Cấu hình trong `config.ts`: `ASPECT_RATIO_CONFIG`)
 
 **Lưu ý về merge:**
 - API sẽ gửi cả 2 ảnh (selfie và preset) trực tiếp đến Vertex AI cùng với prompt hướng dẫn merge.

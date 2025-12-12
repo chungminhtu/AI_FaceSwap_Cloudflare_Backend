@@ -5,6 +5,7 @@ import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile,
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
+import { API_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
 
 const checkRateLimit = async (env: Env, request: Request, path: string): Promise<boolean> => {
   if (!env.RATE_LIMITER) return true;
@@ -432,10 +433,7 @@ const buildVisionDebug = (vision?: SafetyCheckDebug | null): Record<string, any>
   });
 };
 
-const GENDER_PROMPT_HINTS: Record<'male' | 'female', string> = {
-  male: 'Emphasize that the character is male with confident, masculine presence and styling.',
-  female: 'Emphasize that the character is female with graceful, feminine presence and styling.',
-};
+const GENDER_PROMPT_HINTS: Record<'male' | 'female', string> = API_PROMPTS.GENDER_HINTS;
 
 const augmentVertexPrompt = (
   promptPayload: any,
@@ -632,7 +630,7 @@ export default {
 
         for (const imageUrl of imageUrls) {
           try {
-            const imageResponse = await fetchWithTimeout(imageUrl, {}, 60000);
+            const imageResponse = await fetchWithTimeout(imageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
             if (!imageResponse.ok) {
               console.warn(`[Upload] Failed to fetch image from URL: ${imageResponse.status}`);
               continue;
@@ -670,7 +668,7 @@ export default {
             await R2_BUCKET.put(key, fileData.fileData, {
               httpMetadata: {
                 contentType: fileData.contentType,
-                cacheControl: 'public, max-age=31536000, immutable',
+                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
             });
           } catch (r2Error) {
@@ -725,7 +723,7 @@ export default {
                   await R2_BUCKET.put(key, fileData.fileData, {
                     httpMetadata: {
                       contentType: fileData.contentType,
-                      cacheControl: 'public, max-age=31536000, immutable',
+                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
                     },
                     customMetadata: {
                       prompt_json: promptJson
@@ -1035,7 +1033,7 @@ export default {
             await R2_BUCKET.put(r2Key, fileData, {
               httpMetadata: {
                 contentType: 'image/webp',
-                cacheControl: 'public, max-age=31536000, immutable',
+                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
             });
 
@@ -1121,7 +1119,7 @@ export default {
             await R2_BUCKET.put(r2Key, fileData, {
               httpMetadata: {
                 contentType,
-                cacheControl: 'public, max-age=31536000, immutable',
+                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
             });
 
@@ -2287,11 +2285,11 @@ export default {
         const vertexPromptPayload = augmentedPromptPayload;
 
         // Extract aspect ratio from request body, default to "1:1" if not provided
-        const aspectRatio = (body.aspect_ratio as string) || "1:1";
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
         // Validate aspect ratio is one of the supported values for Vertex AI
         // Supported: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
-        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
         // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
         // may not work correctly and may always return 1:1 images regardless of the specified ratio.
         // This is a limitation of the current API version.
@@ -2464,7 +2462,7 @@ export default {
         let resultUrl = faceSwapResult.ResultImageUrl;
         try {
           storageDebug.attemptedDownload = true;
-          const resultImageResponse = await fetchWithTimeout(faceSwapResult.ResultImageUrl, {}, 60000);
+          const resultImageResponse = await fetchWithTimeout(faceSwapResult.ResultImageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
           storageDebug.downloadStatus = resultImageResponse.status;
           if (resultImageResponse.ok && resultImageResponse.body) {
             const id = nanoid(16);
@@ -2472,7 +2470,7 @@ export default {
             await R2_BUCKET.put(resultKey, resultImageResponse.body, {
               httpMetadata: {
                 contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
-                cacheControl: 'public, max-age=31536000, immutable',
+                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
             });
             storageDebug.savedToR2 = true;
@@ -2643,16 +2641,16 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        const defaultMergePrompt = `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`;
+        const defaultMergePrompt = API_PROMPTS.MERGE_PROMPT_DEFAULT;
 
         let mergePrompt = defaultMergePrompt;
         if (body.additional_prompt) {
           mergePrompt = `${defaultMergePrompt} Additional instructions: ${body.additional_prompt}`;
         }
 
-        const aspectRatio = (body.aspect_ratio as string) || "1:1";
-        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
         const modelParam = body.model;
 
         const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
@@ -2762,7 +2760,7 @@ export default {
         let resultUrl = mergeResult.ResultImageUrl;
         try {
           storageDebug.attemptedDownload = true;
-          const resultImageResponse = await fetchWithTimeout(mergeResult.ResultImageUrl, {}, 60000);
+          const resultImageResponse = await fetchWithTimeout(mergeResult.ResultImageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
           storageDebug.downloadStatus = resultImageResponse.status;
           if (resultImageResponse.ok && resultImageResponse.body) {
             const id = nanoid(16);
@@ -2770,7 +2768,7 @@ export default {
             await R2_BUCKET.put(resultKey, resultImageResponse.body, {
               httpMetadata: {
                 contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
-                cacheControl: 'public, max-age=31536000, immutable',
+                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
             });
             storageDebug.savedToR2 = true;
@@ -3015,9 +3013,9 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        const aspectRatio = (body.aspect_ratio as string) || "1:1";
-        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
         const modelParam = body.model;
 
         const enhancedResult = await callNanoBanana(
@@ -3101,9 +3099,9 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        const aspectRatio = (body.aspect_ratio as string) || "1:1";
-        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
         const modelParam = body.model;
 
         const colorizedResult = await callNanoBanana(
@@ -3188,9 +3186,9 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
 
-        const aspectRatio = (body.aspect_ratio as string) || "1:1";
-        const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : "1:1";
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
         const modelParam = body.model;
 
         // For now, implement aging using existing Nano Banana API

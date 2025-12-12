@@ -21,9 +21,10 @@ This document describes all security fixes and performance optimizations impleme
    - [Cache Preset Prompts](#11-cache-preset-prompts)
    - [Request Timeouts](#12-request-timeouts)
 3. [Configuration](#configuration)
-4. [Migration Guide](#migration-guide)
-5. [Testing](#testing)
-6. [Troubleshooting](#troubleshooting)
+4. [Centralized Config System](#centralized-config-system)
+5. [Migration Guide](#migration-guide)
+6. [Testing](#testing)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -612,6 +613,43 @@ const response = await fetchWithTimeout(url, options, 60000);
 curl -X POST https://api.d.shotpix.app/faceswap \
   -d '{"profile_id":"test","preset_image_id":"test","selfie_ids":["test"]}'
 ```
+
+---
+
+## Centralized Config System
+
+**Overview:** All API prompts, model configurations, timeouts, and constants have been centralized into `config.ts` for easy management.
+
+**File:** `backend-cloudflare-workers/config.ts`
+
+**Benefits:**
+- ✅ Single source of truth for all prompts and configs
+- ✅ Easy to update without searching through code
+- ✅ Type-safe configuration
+- ✅ Consistent values across all endpoints
+
+**Key Configuration Sections:**
+- **API_PROMPTS**: Facial preservation, merge prompts, vertex generation prompts, gender hints
+- **API_CONFIG**: Image generation and prompt generation settings (temperature, tokens, safety)
+- **MODEL_CONFIG**: Model name mappings and defaults
+- **ASPECT_RATIO_CONFIG**: Supported aspect ratios and default
+- **TIMEOUT_CONFIG**: Request timeouts and polling settings
+- **CACHE_CONFIG**: Cache size, expiry, and R2 cache control
+- **DEFAULT_VALUES**: Default MIME types, extensions, resolutions
+
+**Usage:**
+All configuration values are imported and used throughout the codebase:
+```typescript
+import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG } from './config';
+```
+
+**Modifying Configuration:**
+1. Open `backend-cloudflare-workers/config.ts`
+2. Locate the relevant section
+3. Modify the value
+4. Save - changes apply immediately
+
+**Documentation:** See `CONFIG_DOCUMENTATION.md` for detailed documentation.
 
 ---
 

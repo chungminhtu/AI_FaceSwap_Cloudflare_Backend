@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout } from './utils';
+import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
 
@@ -160,25 +161,19 @@ export const callNanoBanana = async (
       // Clone the prompt object to avoid mutating the original
       const enhancedPrompt = { ...prompt } as any;
       
-      // Ensure the prompt field includes strong facial preservation instruction
-      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.';
-      
       if (enhancedPrompt.prompt && typeof enhancedPrompt.prompt === 'string') {
-        // Check if the instruction is already present to avoid duplication
         if (!enhancedPrompt.prompt.includes('100% identical facial features')) {
-          enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${facialPreservationInstruction}`;
+          enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
         }
       } else {
-        enhancedPrompt.prompt = facialPreservationInstruction;
+        enhancedPrompt.prompt = API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION;
       }
       
       // Convert the enhanced prompt object to a formatted text string
       promptText = JSON.stringify(enhancedPrompt, null, 2);
     } else if (typeof prompt === 'string') {
-      // For string prompts, append the instruction if not already present
-      const facialPreservationInstruction = 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.';
       if (!prompt.includes('100% identical facial features')) {
-        promptText = `${prompt} ${facialPreservationInstruction}`;
+        promptText = `${prompt} ${API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
       } else {
         promptText = prompt;
       }
@@ -224,11 +219,8 @@ export const callNanoBanana = async (
       sourceUrls.map(url => fetchImageAsBase64(url, env))
     );
 
-    // Validate and normalize aspect ratio
-    // Supported values: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
-    const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-    const providedRatio = aspectRatio || "1:1";
-    const normalizedAspectRatio = supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
+    const providedRatio = aspectRatio || ASPECT_RATIO_CONFIG.DEFAULT;
+    const normalizedAspectRatio = ASPECT_RATIO_CONFIG.SUPPORTED.includes(providedRatio) ? providedRatio : ASPECT_RATIO_CONFIG.DEFAULT;
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
@@ -245,40 +237,24 @@ export const callNanoBanana = async (
     
     const requestBody = {
       contents: [{
-        role: "user",  // Lowercase as per Vertex AI API documentation
+        role: "user",
         parts: [
           ...imageParts,
-          { text: faceSwapPrompt }  // This contains the prompt_json text describing the preset style
+          { text: faceSwapPrompt }
         ]
       }],
       generationConfig: {
-        temperature: 1,
-        maxOutputTokens: 32768,
-        responseModalities: ["TEXT", "IMAGE"],  // Request both text and image output
-        topP: 0.95,
+        ...API_CONFIG.IMAGE_GENERATION,
         imageConfig: {
-          aspectRatio: normalizedAspectRatio,  // Aspect ratio in format like "16:9", "4:3", "9:16", etc.
-          imageSize: "1K",
+          ...API_CONFIG.IMAGE_GENERATION.imageConfig,
+          aspectRatio: normalizedAspectRatio,
           imageOutputOptions: {
-            mimeType: "image/jpeg",
-            compressionQuality: 75
+            mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
+            compressionQuality: API_CONFIG.IMAGE_GENERATION.imageConfig.compressionQuality,
           },
-          personGeneration: "ALLOW_ALL"
         },
       },
-      safetySettings: [{
-        category: "HARM_CATEGORY_HATE_SPEECH",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }, {
-        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }, {
-        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }, {
-        category: "HARM_CATEGORY_HARASSMENT",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }]
+      safetySettings: API_CONFIG.IMAGE_GENERATION.safetySettings,
     };
 
     // Generate curl command for testing (with sanitized base64)
@@ -409,7 +385,7 @@ export const callNanoBanana = async (
       await R2_BUCKET.put(resultKey, bytes, {
         httpMetadata: {
           contentType: mimeType,
-          cacheControl: 'public, max-age=31536000, immutable',
+          cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
         },
       });
       if (debugInfo) {
@@ -511,7 +487,7 @@ export const callNanoBananaMerge = async (
       promptText = JSON.stringify(prompt);
     }
 
-    const mergePrompt = promptText || `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`;
+    const mergePrompt = promptText || API_PROMPTS.MERGE_PROMPT_DEFAULT;
 
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBananaMerge] Missing service account credentials');
@@ -543,9 +519,8 @@ export const callNanoBananaMerge = async (
       fetchImageAsBase64(presetUrl, env)
     ]);
 
-    const supportedRatios = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
-    const providedRatio = aspectRatio || "1:1";
-    const normalizedAspectRatio = supportedRatios.includes(providedRatio) ? providedRatio : "1:1";
+    const providedRatio = aspectRatio || ASPECT_RATIO_CONFIG.DEFAULT;
+    const normalizedAspectRatio = ASPECT_RATIO_CONFIG.SUPPORTED.includes(providedRatio) ? providedRatio : ASPECT_RATIO_CONFIG.DEFAULT;
 
     const requestBody = {
       contents: [{
@@ -553,13 +528,13 @@ export const callNanoBananaMerge = async (
         parts: [
           {
             inline_data: {
-              mime_type: "image/jpeg",
+              mime_type: DEFAULT_VALUES.IMAGE_MIME_TYPE,
               data: selfieImageData
             }
           },
           {
             inline_data: {
-              mime_type: "image/jpeg",
+              mime_type: DEFAULT_VALUES.IMAGE_MIME_TYPE,
               data: presetImageData
             }
           },
@@ -567,33 +542,17 @@ export const callNanoBananaMerge = async (
         ]
       }],
       generationConfig: {
-        temperature: 1,
-        maxOutputTokens: 32768,
-        responseModalities: ["TEXT", "IMAGE"],
-        topP: 0.95,
+        ...API_CONFIG.IMAGE_GENERATION,
         imageConfig: {
+          ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-          imageSize: "1K",
           imageOutputOptions: {
-            mimeType: "image/jpeg",
-            compressionQuality: 75
+            mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
+            compressionQuality: API_CONFIG.IMAGE_GENERATION.imageConfig.compressionQuality,
           },
-          personGeneration: "ALLOW_ALL"
         },
       },
-      safetySettings: [{
-        category: "HARM_CATEGORY_HATE_SPEECH",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }, {
-        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }, {
-        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }, {
-        category: "HARM_CATEGORY_HARASSMENT",
-        threshold: "BLOCK_MEDIUM_AND_ABOVE"
-      }]
+      safetySettings: API_CONFIG.IMAGE_GENERATION.safetySettings,
     };
 
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
@@ -721,7 +680,7 @@ export const callNanoBananaMerge = async (
       await R2_BUCKET.put(resultKey, bytes, {
         httpMetadata: {
           contentType: mimeType,
-          cacheControl: 'public, max-age=31536000, immutable',
+          cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
         },
       });
       if (debugInfo) {
@@ -928,11 +887,7 @@ export const generateVertexPrompt = async (
       };
     }
 
-    // Note: Model name should NOT include "models/" prefix for publishers endpoint
-    // Using gemini-2.5-flash (text-only) for prompt generation - cheaper at $2.50 per million output tokens
-    // vs gemini-2.5-flash-image at $30 per million output tokens for images
-    // We only need text output (JSON prompt), so text-only model is more cost-effective
-    const geminiModel = 'gemini-2.5-flash';
+    const geminiModel = MODEL_CONFIG.PROMPT_GENERATION_MODEL;
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = getVertexAILocation(env);
 
@@ -943,64 +898,25 @@ export const generateVertexPrompt = async (
     debugInfo.endpoint = vertexEndpoint;
     debugInfo.model = geminiModel;
 
-    // Exact prompt text as specified by user
-    const prompt = `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`;
+    const prompt = API_PROMPTS.VERTEX_PROMPT_GENERATION;
 
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(imageUrl, env);
 
-    // Build request body following Vertex AI API format
-    // Note: contents array items must include a "role" field set to "user" or "model"
     const requestBody = {
       contents: [{
-        role: "user",  // Required: must be "user" or "model"
+        role: "user",
         parts: [
           { text: prompt },
           {
             inline_data: {
-              mime_type: "image/jpeg",
+              mime_type: DEFAULT_VALUES.IMAGE_MIME_TYPE,
               data: imageData
             }
           }
         ]
       }],
-      generationConfig: {
-        temperature: 0.1,
-        topK: 1,
-        topP: 1,
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "object",
-          properties: {
-            prompt: {
-              type: "string",
-              description: "Detailed HDR scene description including character pose, outfit, environment, atmosphere, visual mood, and face-swap rule"
-            },
-            style: {
-              type: "string",
-              description: "Visual style description"
-            },
-            lighting: {
-              type: "string",
-              description: "HDR lighting description"
-            },
-            composition: {
-              type: "string",
-              description: "Composition details"
-            },
-            camera: {
-              type: "string",
-              description: "Camera settings and lens information"
-            },
-            background: {
-              type: "string",
-              description: "Background environment description"
-            }
-          },
-          required: ["prompt", "style", "lighting", "composition", "camera", "background"]
-        }
-      }
+      generationConfig: API_CONFIG.PROMPT_GENERATION,
     };
 
     debugInfo.requestSent = true;
@@ -1042,7 +958,7 @@ export const generateVertexPrompt = async (
         'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
-    }, 60000);
+    }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
     
     const responseTime = Date.now() - startTime;
     debugInfo.httpStatus = response.status;
@@ -1154,7 +1070,7 @@ const fetchImageAsBase64 = async (imageUrl: string, env: Env): Promise<string> =
     throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
   }
   
-  const response = await fetchWithTimeout(imageUrl, {}, 60000);
+  const response = await fetchWithTimeout(imageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }
@@ -1176,7 +1092,7 @@ export const streamImageToR2 = async (
     throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
   }
   
-  const response = await fetchWithTimeout(imageUrl, {}, 60000);
+  const response = await fetchWithTimeout(imageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
   }
@@ -1191,7 +1107,7 @@ export const streamImageToR2 = async (
   await R2_BUCKET.put(r2Key, response.body, {
     httpMetadata: {
       contentType: detectedContentType,
-      cacheControl: 'public, max-age=31536000, immutable',
+      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
     },
   });
 };
@@ -1214,7 +1130,7 @@ export const callUpscaler4k = async (
 
   try {
     const apiKey = env.WAVESPEED_API_KEY;
-    const apiEndpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/image-upscaler';
+    const apiEndpoint = API_ENDPOINTS.WAVESPEED_UPSCALER;
     
     debugInfo = {
       endpoint: apiEndpoint,
@@ -1226,8 +1142,8 @@ export const callUpscaler4k = async (
       enable_base64_output: false,
       enable_sync_mode: false,
       image: imageUrl,
-      output_format: 'jpeg',
-      target_resolution: '4k'
+      output_format: DEFAULT_VALUES.UPSCALER_OUTPUT_FORMAT,
+      target_resolution: DEFAULT_VALUES.UPSCALER_TARGET_RESOLUTION
     };
 
     const startTime = Date.now();
@@ -1238,7 +1154,7 @@ export const callUpscaler4k = async (
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(requestBody),
-    }, 60000);
+    }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
 
     const rawResponse = await response.text();
     const durationMs = Date.now() - startTime;
@@ -1290,16 +1206,10 @@ export const callUpscaler4k = async (
         };
       }
       
-      const resultEndpoint = `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`;
+      const resultEndpoint = API_ENDPOINTS.WAVESPEED_RESULT(requestId);
       
-      // Optimized polling with exponential backoff: 2s → 4s → 8s → 16s (max)
-      const maxAttempts = 18; // Reduced from 30
-      const baseDelay = 2000; // 2 seconds
-      const maxDelay = 16000; // 16 seconds max
-      
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        // Exponential backoff: delay = min(2^attempt * baseDelay, maxDelay)
-        const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+      for (let attempt = 0; attempt < TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS; attempt++) {
+        const delay = Math.min(TIMEOUT_CONFIG.POLLING.BASE_DELAY * Math.pow(2, attempt), TIMEOUT_CONFIG.POLLING.MAX_DELAY);
         if (attempt > 0) {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -1308,11 +1218,11 @@ export const callUpscaler4k = async (
           headers: {
             'Authorization': `Bearer ${apiKey}`
           }
-        }, 60000);
+        }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
         
         if (!resultResponse.ok) {
           console.warn('[Upscaler4K] Poll request failed:', resultResponse.status, resultResponse.statusText);
-          if (attempt === maxAttempts - 1) {
+          if (attempt === TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS - 1) {
             throw new Error(`Failed to get result: ${resultResponse.status} ${resultResponse.statusText}`);
           }
           continue;
@@ -1401,18 +1311,18 @@ export const callUpscaler4k = async (
       }
       
       if (!resultImageUrl) {
-        throw new Error(`Upscaling timed out - no result after ${maxAttempts} polling attempts`);
+        throw new Error(`Upscaling timed out - no result after ${TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS} polling attempts`);
       }
 
-      const ext = 'png';
+      const ext = DEFAULT_VALUES.UPSCALER_EXT;
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
-      let contentType = 'image/png';
+      let contentType = DEFAULT_VALUES.UPSCALER_MIME_TYPE;
       
       if (resultImageUrl.startsWith('data:')) {
         const base64Match = resultImageUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (base64Match) {
-          contentType = base64Match[1] || 'image/png';
+          contentType = base64Match[1] || DEFAULT_VALUES.UPSCALER_MIME_TYPE;
           const base64String = base64Match[2];
           const binaryString = atob(base64String);
           const imageBytes = new Uint8Array(binaryString.length);
@@ -1424,15 +1334,15 @@ export const callUpscaler4k = async (
           await R2_BUCKET.put(resultKey, imageBytes, {
             httpMetadata: {
               contentType,
-              cacheControl: 'public, max-age=31536000, immutable',
+              cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
             },
           });
         } else {
           throw new Error('Invalid base64 data URL format');
         }
       } else {
-        await streamImageToR2(resultImageUrl, resultKey, env, 'image/png');
-        contentType = 'image/png';
+        await streamImageToR2(resultImageUrl, resultKey, env, DEFAULT_VALUES.UPSCALER_MIME_TYPE);
+        contentType = DEFAULT_VALUES.UPSCALER_MIME_TYPE;
       }
       
       if (debugInfo) {
