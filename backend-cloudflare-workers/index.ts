@@ -2,9 +2,59 @@
 
 import { nanoid } from 'nanoid';
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, RemoveBackgroundRequest } from './types';
-import { CORS_HEADERS, jsonResponse, errorResponse } from './utils';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
+
+const getClientIP = (request: Request): string => {
+  const cfConnectingIP = request.headers.get('CF-Connecting-IP');
+  if (cfConnectingIP) return cfConnectingIP;
+  const xForwardedFor = request.headers.get('X-Forwarded-For');
+  if (xForwardedFor) return xForwardedFor.split(',')[0].trim();
+  return 'unknown';
+};
+
+const checkRateLimit = async (env: Env, ip: string, path: string): Promise<{ allowed: boolean; retryAfter?: number }> => {
+  if (!env.RATE_LIMIT_KV) {
+    return { allowed: true };
+  }
+  
+  const key = `rate_limit:${ip}:${path}`;
+  const now = Date.now();
+  const windowMs = 60000;
+  const maxRequests = 100;
+  
+  try {
+    const data = await env.RATE_LIMIT_KV.get(key, 'json') as { count: number; resetAt: number } | null;
+    
+    if (!data || now >= data.resetAt) {
+      await env.RATE_LIMIT_KV.put(key, JSON.stringify({ count: 1, resetAt: now + windowMs }), { expirationTtl: Math.ceil(windowMs / 1000) });
+      return { allowed: true };
+    }
+    
+    if (data.count >= maxRequests) {
+      const retryAfter = Math.ceil((data.resetAt - now) / 1000);
+      return { allowed: false, retryAfter };
+    }
+    
+    await env.RATE_LIMIT_KV.put(key, JSON.stringify({ count: data.count + 1, resetAt: data.resetAt }), { expirationTtl: Math.ceil((data.resetAt - now) / 1000) });
+    return { allowed: true };
+  } catch (error) {
+    console.error('Rate limit check failed:', error);
+    return { allowed: true };
+  }
+};
+
+const checkRequestSize = (request: Request, maxSizeBytes: number): { valid: boolean; error?: string } => {
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength) {
+    const size = parseInt(contentLength, 10);
+    if (isNaN(size) || size > maxSizeBytes) {
+      return { valid: false, error: `Request body too large. Maximum size: ${maxSizeBytes / 1024 / 1024}MB` };
+    }
+  }
+  return { valid: true };
+};
 
 const DEFAULT_R2_BUCKET_NAME = '';
 
@@ -155,6 +205,9 @@ const saveResultToDatabase = async (
         // Batch delete from database
         const idsToDelete = oldResults.results.map(r => r.id);
         if (idsToDelete.length > 0) {
+          if (idsToDelete.length > 100) {
+            idsToDelete = idsToDelete.slice(0, 100);
+          }
           const placeholders = idsToDelete.map(() => '?').join(',');
           await DB.prepare(`DELETE FROM results WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
           
@@ -456,22 +509,46 @@ export default {
     const R2_BUCKET = getR2Bucket(env);
     const requestUrl = new URL(request.url);
     const path = requestUrl.pathname;
+    const corsHeaders = getCorsHeaders(request, env);
 
-    // Handle OPTIONS (CORS preflight) - must be before other handlers
     if (request.method === 'OPTIONS') {
-      // For upload-proxy, allow PUT method explicitly
       if (path.startsWith('/upload-proxy/')) {
         return new Response(null, { 
           status: 204, 
           headers: { 
-            ...CORS_HEADERS, 
+            ...corsHeaders, 
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Max-Age': '86400' 
           } 
         });
       }
-      // For all other endpoints
-      return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'Access-Control-Max-Age': '86400' } });
+      return new Response(null, { status: 204, headers: { ...corsHeaders, 'Access-Control-Max-Age': '86400' } });
+    }
+
+    const clientIP = getClientIP(request);
+    const rateLimitCheck = await checkRateLimit(env, clientIP, path);
+    if (!rateLimitCheck.allowed) {
+      return new Response(JSON.stringify({
+        data: null,
+        status: 'error',
+        message: 'Rate limit exceeded',
+        code: 429
+      }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+          'Retry-After': String(rateLimitCheck.retryAfter || 60)
+        }
+      });
+    }
+
+    if (request.method === 'POST' || request.method === 'PUT') {
+      const maxSize = path === '/upload-url' || path === '/upload-thumbnails' ? 10 * 1024 * 1024 : 1024 * 1024;
+      const sizeCheck = checkRequestSize(request, maxSize);
+      if (!sizeCheck.valid) {
+        return errorResponse(sizeCheck.error || 'Request too large', 413, undefined, request, env);
+      }
     }
 
     // Handle direct file upload endpoint - handles both preset and selfie uploads (supports multiple files)
@@ -537,15 +614,23 @@ export default {
           gender = body.gender || null;
           action = body.action || null;
         } else {
-          return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400);
+          return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400, undefined, request, env);
+        }
+
+        if (imageUrls.length > 0) {
+          for (const url of imageUrls) {
+            if (!validateImageUrl(url, env)) {
+              return errorResponse(`Invalid or unsafe image URL: ${url}`, 400, undefined, request, env);
+            }
+          }
         }
 
         if (!type || !profileId) {
-          return errorResponse('Missing required fields: type and profile_id', 400);
+          return errorResponse('Missing required fields: type and profile_id', 400, undefined, request, env);
         }
 
         if (type !== 'preset' && type !== 'selfie') {
-          return errorResponse('Type must be either "preset" or "selfie"', 400);
+          return errorResponse('Type must be either "preset" or "selfie"', 400, undefined, request, env);
         }
 
         // Validate that profile exists
@@ -578,22 +663,21 @@ export default {
           });
         }
 
-        // Process image URLs
         for (const imageUrl of imageUrls) {
           try {
-            const imageResponse = await fetch(imageUrl);
+            const imageResponse = await fetchWithTimeout(imageUrl, {}, 60000);
             if (!imageResponse.ok) {
               console.warn(`[Upload] Failed to fetch image from URL: ${imageResponse.status}`);
-              continue; // Skip failed URLs
+              continue;
             }
             const fileData = await imageResponse.arrayBuffer();
             if (!fileData || fileData.byteLength === 0) {
-              continue; // Skip empty data
+              continue;
             }
             const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
             const urlParts = imageUrl.split('/');
             let filename = urlParts[urlParts.length - 1] || `image_${Date.now()}.${contentType.split('/')[1] || 'jpg'}`;
-            filename = filename.split('?')[0]; // Remove query parameters
+            filename = filename.split('?')[0];
             allFileData.push({
               fileData,
               filename,
@@ -601,7 +685,6 @@ export default {
             });
           } catch (fetchError) {
             console.error('[Upload] Error fetching image from URL:', fetchError instanceof Error ? fetchError.message.substring(0, 200) : String(fetchError).substring(0, 200));
-            // Continue with other files
           }
         }
 
@@ -1474,8 +1557,17 @@ export default {
         `;
 
         const params: any[] = [];
+        
+        const limitParam = url.searchParams.get('limit');
+        let limit = 50;
+        if (limitParam) {
+          const parsedLimit = parseInt(limitParam, 10);
+          if (!isNaN(parsedLimit) && parsedLimit > 0 && parsedLimit <= 50) {
+            limit = parsedLimit;
+          }
+        }
 
-        query += ' ORDER BY created_at DESC';
+        query += ` ORDER BY created_at DESC LIMIT ${limit}`;
 
         const imagesResult = await DB.prepare(query).bind(...params).all();
 
@@ -1537,7 +1629,7 @@ export default {
           status: 'success',
           message: 'Presets retrieved successfully',
           code: 200
-        });
+        }, 200, request, env);
       } catch (error) {
         console.error('List presets error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
@@ -1641,17 +1733,26 @@ export default {
         const hasUrl = schemaCheck.results?.some((col: any) => col.name === 'selfie_url');
         
         let query: string;
+        const limitParam = url.searchParams.get('limit');
+        let limit = 50;
+        if (limitParam) {
+          const parsedLimit = parseInt(limitParam, 10);
+          if (!isNaN(parsedLimit) && parsedLimit > 0 && parsedLimit <= 50) {
+            limit = parsedLimit;
+          }
+        }
+        
         if (hasExt) {
-          query = 'SELECT id, ext, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+          query = `SELECT id, ext, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT ${limit}`;
         } else if (hasUrl) {
-          query = 'SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT 50';
+          query = `SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT ${limit}`;
         } else {
           return jsonResponse({
             data: { selfies: [] },
             status: 'success',
             message: 'Selfies retrieved successfully',
             code: 200
-          });
+          }, 200, request, env);
         }
 
         const result = await DB.prepare(query).bind(profileId).all();
@@ -1693,7 +1794,7 @@ export default {
           status: 'success',
           message: 'Selfies retrieved successfully',
           code: 200
-        });
+        }, 200, request, env);
       } catch (error) {
         console.error('List selfies error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
@@ -1869,19 +1970,28 @@ export default {
 
         let query = 'SELECT id, ext, profile_id, created_at FROM results';
         const params: any[] = [];
+        
+        const limitParam = url.searchParams.get('limit');
+        let limit = 50;
+        if (limitParam) {
+          const parsedLimit = parseInt(limitParam, 10);
+          if (!isNaN(parsedLimit) && parsedLimit > 0 && parsedLimit <= 50) {
+            limit = parsedLimit;
+          }
+        }
 
         if (profileId) {
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(profileId).first();
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          return errorResponse('Profile not found', 404, undefined, request, env);
         }
           query += ' WHERE profile_id = ?';
           params.push(profileId);
         }
 
-        query += ' ORDER BY created_at DESC LIMIT 50';
+        query += ` ORDER BY created_at DESC LIMIT ${limit}`;
 
         const result = await DB.prepare(query).bind(...params).all();
 
@@ -1911,7 +2021,7 @@ export default {
           status: 'success',
           message: 'Results retrieved successfully',
           code: 200
-        });
+        }, 200, request, env);
       } catch (error) {
         console.error('[Results] List results error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         return jsonResponse({
@@ -2001,24 +2111,37 @@ export default {
         const body: FaceSwapRequest = await request.json();
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500);
+        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500, undefined, request, env);
 
         const requestError = validateRequest(body);
-        if (requestError) return errorResponse(requestError, 400);
+        if (requestError) return errorResponse(requestError, 400, undefined, request, env);
 
-        // Validate selfie_ids or selfie_image_urls early
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
         
         if (!hasSelfieIds && !hasSelfieUrls) {
-          return errorResponse('Either selfie_ids or selfie_image_urls must be provided as a non-empty array', 400);
+          return errorResponse('Either selfie_ids or selfie_image_urls must be provided as a non-empty array', 400, undefined, request, env);
         }
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
 
         if (!hasPresetId && !hasPresetUrl) {
-          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400);
+          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400, undefined, request, env);
+        }
+        
+        if (hasSelfieUrls && body.selfie_image_urls) {
+          for (const url of body.selfie_image_urls) {
+            if (!validateImageUrl(url, env)) {
+              return errorResponse(`Invalid or unsafe selfie image URL: ${url}`, 400, undefined, request, env);
+            }
+          }
+        }
+        
+        if (hasPresetUrl && body.preset_image_url) {
+          if (!validateImageUrl(body.preset_image_url, env)) {
+            return errorResponse(`Invalid or unsafe preset image URL: ${body.preset_image_url}`, 400, undefined, request, env);
+          }
         }
 
         // Parallelize all independent database queries
@@ -2044,10 +2167,9 @@ export default {
         // Execute all queries in parallel
         const results = await Promise.all(queries);
 
-        // Extract results
         const profileCheck = results[0];
         if (!profileCheck) {
-          return errorResponse('Profile not found', 404);
+          return errorResponse('Profile not found', 404, undefined, request, env);
         }
 
         let targetUrl: string = '';
@@ -2058,7 +2180,7 @@ export default {
         if (hasPresetId) {
           presetResult = results[1];
           if (!presetResult) {
-            return errorResponse('Preset image not found', 404);
+            return errorResponse('Preset image not found', 404, undefined, request, env);
           }
           const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
           targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
@@ -2119,23 +2241,44 @@ export default {
             'SELECT id, ext FROM presets WHERE id = ?'
           ).bind(presetImageId).first();
           
-          // Read prompt_json from R2 metadata
           if (promptResult) {
-            const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
-            try {
-              const r2Object = await R2_BUCKET.head(r2Key);
-              if (r2Object?.customMetadata?.prompt_json) {
-                const promptJson = r2Object.customMetadata.prompt_json;
-                if (promptJson && promptJson.trim() !== '') {
-                  try {
-                    storedPromptPayload = JSON.parse(promptJson);
-                  } catch (parseError) {
-                    console.error('[Vertex] Failed to parse prompt_json from R2 metadata:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+            const cacheKey = `prompt:${presetImageId}`;
+            
+            if (env.RATE_LIMIT_KV) {
+              try {
+                const cached = await env.RATE_LIMIT_KV.get(cacheKey, 'json');
+                if (cached) {
+                  storedPromptPayload = cached;
+                }
+              } catch (cacheError) {
+                console.warn('[Vertex] KV cache read failed:', cacheError);
+              }
+            }
+            
+            if (!storedPromptPayload) {
+              const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
+              try {
+                const r2Object = await R2_BUCKET.head(r2Key);
+                if (r2Object?.customMetadata?.prompt_json) {
+                  const promptJson = r2Object.customMetadata.prompt_json;
+                  if (promptJson && promptJson.trim() !== '') {
+                    try {
+                      storedPromptPayload = JSON.parse(promptJson);
+                      if (env.RATE_LIMIT_KV) {
+                        try {
+                          await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
+                        } catch (cacheError) {
+                          console.warn('[Vertex] KV cache write failed:', cacheError);
+                        }
+                      }
+                    } catch (parseError) {
+                      console.error('[Vertex] Failed to parse prompt_json from R2 metadata:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+                    }
                   }
                 }
+              } catch (r2Error) {
+                console.warn('[Vertex] R2 metadata read failed:', r2Error);
               }
-            } catch (r2Error) {
-              // prompt_json is only stored in R2 metadata, no D1 fallback
             }
           }
         }
@@ -2148,7 +2291,16 @@ export default {
             storedPromptPayload = generateResult.prompt;
             if (presetImageId && promptResult) {
               const promptJsonString = JSON.stringify(storedPromptPayload);
-              // Store in R2 metadata
+              const cacheKey = `prompt:${presetImageId}`;
+              
+              if (env.RATE_LIMIT_KV) {
+                try {
+                  await env.RATE_LIMIT_KV.put(cacheKey, JSON.stringify(storedPromptPayload), { expirationTtl: 86400 });
+                } catch (cacheError) {
+                  console.warn('[Vertex] KV cache write failed:', cacheError);
+                }
+              }
+              
               const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
               try {
                 const existingObject = await R2_BUCKET.head(r2Key);
@@ -2165,12 +2317,11 @@ export default {
                   }
                 }
               } catch (metadataError) {
-                // prompt_json is only stored in R2 metadata, no D1 fallback
                 console.warn('[Vertex] Failed to store prompt_json in R2 metadata:', metadataError instanceof Error ? metadataError.message.substring(0, 200) : String(metadataError).substring(0, 200));
               }
             }
           } else {
-            return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400);
+            return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400, undefined, request, env);
           }
         }
         const augmentedPromptPayload = augmentVertexPrompt(
@@ -2358,10 +2509,9 @@ export default {
         let resultUrl = faceSwapResult.ResultImageUrl;
         try {
           storageDebug.attemptedDownload = true;
-          const resultImageResponse = await fetch(faceSwapResult.ResultImageUrl);
+          const resultImageResponse = await fetchWithTimeout(faceSwapResult.ResultImageUrl, {}, 60000);
           storageDebug.downloadStatus = resultImageResponse.status;
           if (resultImageResponse.ok && resultImageResponse.body) {
-            // Stream directly to R2 instead of buffering in memory
             const id = nanoid(16);
             const resultKey = `results/${id}.jpg`;
             await R2_BUCKET.put(resultKey, resultImageResponse.body, {
@@ -2657,10 +2807,9 @@ export default {
         let resultUrl = mergeResult.ResultImageUrl;
         try {
           storageDebug.attemptedDownload = true;
-          const resultImageResponse = await fetch(mergeResult.ResultImageUrl);
+          const resultImageResponse = await fetchWithTimeout(mergeResult.ResultImageUrl, {}, 60000);
           storageDebug.downloadStatus = resultImageResponse.status;
           if (resultImageResponse.ok && resultImageResponse.body) {
-            // Stream directly to R2 instead of buffering in memory
             const id = nanoid(16);
             const resultKey = `results/${id}.jpg`;
             await R2_BUCKET.put(resultKey, resultImageResponse.body, {

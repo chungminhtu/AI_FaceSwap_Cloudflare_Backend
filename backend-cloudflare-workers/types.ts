@@ -26,6 +26,8 @@ export interface Env {
   RESULT_MAX_HISTORY?: string; // Optional: Maximum number of result history entries per user. Default: 10
   SELFIE_MAX_FACESWAP?: string; // Optional: Maximum number of faceswap selfies to keep per user. Default: 5
   SELFIE_MAX_OTHER?: string; // Optional: Maximum number of non-faceswap selfies (all other actions combined) to keep per user. Default: 1
+  ALLOWED_ORIGINS?: string; // Optional: Comma-separated list of allowed CORS origins. Default: '*' (allows all)
+  RATE_LIMIT_KV?: KVNamespace; // Optional: KV namespace for rate limiting
 }
 
 export interface FaceSwapRequest {

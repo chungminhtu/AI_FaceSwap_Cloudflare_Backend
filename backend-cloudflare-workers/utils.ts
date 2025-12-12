@@ -30,6 +30,37 @@ export const getUnsafeLevels = (strictness: 'strict' | 'lenient'): string[] => {
   return ['VERY_LIKELY'];
 };
 
+export const getCorsHeaders = (request: Request, env: Env): Record<string, string> => {
+  const origin = request.headers.get('Origin');
+  const userAgent = request.headers.get('User-Agent') || '';
+  const isMobileApp = userAgent.includes('okhttp') || userAgent.includes('Android') || userAgent.includes('Dart') || !origin;
+  
+  const allowedOrigins = env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
+  
+  let allowOrigin = '*';
+  
+  if (isMobileApp) {
+    allowOrigin = '*';
+  } else if (allowedOrigins.length > 0) {
+    if (origin && allowedOrigins.includes(origin)) {
+      allowOrigin = origin;
+    } else if (allowedOrigins.length === 1 && allowedOrigins[0] === '*') {
+      allowOrigin = '*';
+    } else if (origin && allowedOrigins.includes('*')) {
+      allowOrigin = '*';
+    } else if (allowedOrigins.length > 0) {
+      allowOrigin = allowedOrigins[0];
+    }
+  }
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, X-Enable-Gemini-Prompt, X-Enable-Vision-Scan, X-Gender, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+};
+
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -73,23 +104,24 @@ export const getVertexAIEndpoint = (
   return `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
 };
 
-export const jsonResponse = (data: any, status = 200): Response => {
+export const jsonResponse = (data: any, status = 200, request?: Request, env?: Env): Response => {
   const jsonString = JSON.stringify(data);
+  const corsHeaders = (request && env) ? getCorsHeaders(request, env) : CORS_HEADERS;
   
   return new Response(jsonString, {
     status,
-    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders },
   });
 };
 
-export const errorResponse = (message: string, status = 500, debug?: Record<string, any>): Response =>
+export const errorResponse = (message: string, status = 500, debug?: Record<string, any>, request?: Request, env?: Env): Response =>
   jsonResponse({ 
     data: null,
     status: 'error', 
     message, 
     code: status,
     ...(debug ? { debug } : {})
-  }, status);
+  }, status, request, env);
 
 export const isUnsafe = (
   annotation: { adult: string; violence: string; racy: string },
@@ -105,6 +137,75 @@ export const isUnsafe = (
 
 // Find the worst violation and return status code
 // Returns { code: number, category: string, level: string } or null if safe
+export const validateImageUrl = (url: string, env: Env): boolean => {
+  try {
+    const urlObj = new URL(url);
+    
+    if (urlObj.protocol !== 'https:') {
+      return false;
+    }
+    
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return false;
+    }
+    
+    const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+    const match = hostname.match(ipRegex);
+    if (match) {
+      const parts = match.slice(1).map(Number);
+      if (parts[0] === 10) return false;
+      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return false;
+      if (parts[0] === 192 && parts[1] === 168) return false;
+      if (parts[0] === 127) return false;
+    }
+    
+    const allowedDomains: string[] = [];
+    if (env.CUSTOM_DOMAIN) {
+      try {
+        const customDomainUrl = new URL(env.CUSTOM_DOMAIN);
+        allowedDomains.push(customDomainUrl.hostname.toLowerCase());
+      } catch {}
+    }
+    
+    allowedDomains.push('.r2.cloudflarestorage.com');
+    allowedDomains.push('.r2.dev');
+    
+    const isAllowed = allowedDomains.some(domain => 
+      hostname === domain || hostname.endsWith(domain)
+    );
+    
+    return isAllowed;
+  } catch {
+    return false;
+  }
+};
+
+export const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 60000
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+};
+
 export const getWorstViolation = (annotation: {
   adult: string;
   violence: string;
@@ -166,13 +267,61 @@ export const base64Decode = (str: string): string => {
   return atob(str);
 };
 
-// In-memory token cache with expiration
 interface TokenCacheEntry {
   token: string;
   expiresAt: number;
+  lastAccessed: number;
 }
 
-const tokenCache = new Map<string, TokenCacheEntry>();
+class LRUCache<K, V extends TokenCacheEntry> {
+  private cache: Map<K, V>;
+  private maxSize: number;
+
+  constructor(maxSize: number) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    const entry = this.cache.get(key);
+    if (entry) {
+      entry.lastAccessed = Date.now();
+      this.cache.delete(key);
+      this.cache.set(key, entry);
+      return entry;
+    }
+    return undefined;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    value.lastAccessed = Date.now();
+    this.cache.set(key, value);
+  }
+
+  delete(key: K): boolean {
+    return this.cache.delete(key);
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+
+  cleanup(now: number): void {
+    for (const [key, entry] of this.cache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+const tokenCache = new LRUCache<string, TokenCacheEntry>(50);
 
 // Generate cache key from service account credentials
 const getCacheKey = (serviceAccountEmail: string, privateKey: string): string => {
@@ -257,41 +406,46 @@ export const getAccessToken = async (
   // Create final JWT
   const jwt = `${signatureInput}.${encodedSignature}`;
 
-  // Exchange JWT for access token
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
-    }),
-  });
-
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
-    throw new Error(`Failed to get access token: ${tokenResponse.status} ${errorText}`);
-  }
-
-  const tokenData = await tokenResponse.json() as { access_token: string };
-  const accessToken = tokenData.access_token;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
   
-  // Cache token with 55-minute TTL (tokens valid for 1 hour)
-  const expiresAt = now + 3300; // 55 minutes in seconds
-  tokenCache.set(cacheKey, {
-    token: accessToken,
-    expiresAt: expiresAt
-  });
-  
-  // Clean up expired entries periodically (keep cache size manageable)
-  if (tokenCache.size > 100) {
-    for (const [key, entry] of tokenCache.entries()) {
-      if (entry.expiresAt <= now) {
-        tokenCache.delete(key);
-      }
+  try {
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Failed to get access token: ${tokenResponse.status} ${errorText}`);
     }
-  }
+
+    const tokenData = await tokenResponse.json() as { access_token: string };
+    const accessToken = tokenData.access_token;
   
-  return accessToken;
+    const expiresAt = now + 3300;
+    tokenCache.set(cacheKey, {
+      token: accessToken,
+      expiresAt: expiresAt,
+      lastAccessed: Date.now()
+    });
+    
+    tokenCache.cleanup(now);
+    
+    return accessToken;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('OAuth token request timed out after 60 seconds');
+    }
+    throw error;
+  }
 };
