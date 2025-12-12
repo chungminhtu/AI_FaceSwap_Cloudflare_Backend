@@ -2433,19 +2433,8 @@ export default {
               }
             }
 
-            // Build enhanced error message with details
-            let enhancedMessage = faceSwapResult.Message || 'Nano Banana provider failed to generate image';
-            if (errorDetails) {
-              // Try to extract meaningful error message from Vertex AI response
-              if (typeof errorDetails === 'object' && errorDetails !== null) {
-                const errorMessage = errorDetails.error?.message || errorDetails.message || errorDetails.reason;
-                if (errorMessage) {
-                  enhancedMessage = `${enhancedMessage}. Details: ${errorMessage}`;
-                }
-              } else if (typeof errorDetails === 'string' && errorDetails.length < 500) {
-                enhancedMessage = `${enhancedMessage}. Response: ${errorDetails}`;
-              }
-            }
+            // Keep message simple - detailed error is in debug section
+            const enhancedMessage = faceSwapResult.Message || 'Nano Banana provider failed to generate image';
 
             const vertexDebugFailure = compact({
               prompt: vertexPromptPayload,
@@ -2469,7 +2458,7 @@ export default {
             return jsonResponse({
               data: null,
               status: 'error',
-              message: enhancedMessage,
+              message: debugEnabled ? '' : enhancedMessage,
               code: failureCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, failureCode);
@@ -2493,7 +2482,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: faceSwapResult.Message || 'Face swap provider error',
+            message: debugEnabled ? '' : (faceSwapResult.Message || 'Face swap provider error'),
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
@@ -2806,7 +2795,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: mergeResult.Message || 'Merge provider error',
+            message: debugEnabled ? '' : (mergeResult.Message || 'Merge provider error'),
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
@@ -3067,7 +3056,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: upscalerResult.Message || 'Upscaler4K provider error',
+            message: debugEnabled ? '' : (upscalerResult.Message || 'Upscaler4K provider error'),
             code: failureCode,
             ...(debugEnabled && debugPayload ? { debug: debugPayload } : {}),
           }, failureCode, request, env);
@@ -3391,7 +3380,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: agingResult.Message || 'Aging transformation failed',
+            message: debugEnabled ? '' : (agingResult.Message || 'Aging transformation failed'),
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);

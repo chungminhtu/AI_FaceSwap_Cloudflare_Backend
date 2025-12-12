@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout } from './utils';
-import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG } from './config';
+import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
 
@@ -312,14 +312,8 @@ export const callNanoBanana = async (
         }
       }
       
-      // Extract meaningful error message from Vertex AI response
-      let errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-      if (parsedError) {
-        const vertexError = parsedError.error?.message || parsedError.message || parsedError.reason;
-        if (vertexError) {
-          errorMessage = `${errorMessage}. ${vertexError}`;
-        }
-      }
+      // Keep message simple - detailed error is in ParsedError/FullResponse for debug
+      const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
       
       return {
         Success: false,
@@ -628,14 +622,8 @@ export const callNanoBananaMerge = async (
         }
       }
       
-      // Extract meaningful error message from Vertex AI response
-      let errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-      if (parsedError) {
-        const vertexError = parsedError.error?.message || parsedError.message || parsedError.reason;
-        if (vertexError) {
-          errorMessage = `${errorMessage}. ${vertexError}`;
-        }
-      }
+      // Keep message simple - detailed error is in ParsedError/FullResponse for debug
+      const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
       
       return {
         Success: false,
