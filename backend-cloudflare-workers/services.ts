@@ -250,7 +250,7 @@ export const callNanoBanana = async (
           aspectRatio: normalizedAspectRatio,
         },
       },
-      safetySettings: API_CONFIG.IMAGE_GENERATION.safetySettings,
+      safetySettings: SAFETY_SETTINGS,
     };
 
     // Generate curl command for testing (with sanitized base64)
@@ -296,23 +296,41 @@ export const callNanoBanana = async (
 
     if (!response.ok) {
       console.error('[Vertex-NanoBanana] API error:', response.status, response.statusText);
+      let parsedError: any = null;
       if (debugInfo) {
         try {
-          debugInfo.rawResponse = JSON.parse(rawResponse);
+          parsedError = JSON.parse(rawResponse);
+          debugInfo.rawResponse = parsedError;
         } catch {
-          debugInfo.rawResponse = rawResponse.substring(0, 2000);
+          debugInfo.rawResponse = rawResponse; // Include full response, not truncated
+        }
+      } else {
+        try {
+          parsedError = JSON.parse(rawResponse);
+        } catch {
+          // Keep as string
+        }
+      }
+      
+      // Extract meaningful error message from Vertex AI response
+      let errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
+      if (parsedError) {
+        const vertexError = parsedError.error?.message || parsedError.message || parsedError.reason;
+        if (vertexError) {
+          errorMessage = `${errorMessage}. ${vertexError}`;
         }
       }
       
       return {
         Success: false,
-        Message: `Vertex AI Gemini API error: ${response.status} ${response.statusText}`,
+        Message: errorMessage,
         StatusCode: response.status,
         Error: rawResponse, // Include full response text, not truncated
         FullResponse: rawResponse, // Also include in separate field for UI display
+        ParsedError: parsedError, // Include parsed error object for easier debugging
         CurlCommand: curlCommand, // Include curl command for testing
         Debug: debugInfo,
-      };
+      } as any;
     }
 
     try {
@@ -544,7 +562,7 @@ export const callNanoBananaMerge = async (
           aspectRatio: normalizedAspectRatio,
         },
       },
-      safetySettings: API_CONFIG.IMAGE_GENERATION.safetySettings,
+      safetySettings: SAFETY_SETTINGS,
     };
 
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
@@ -594,23 +612,41 @@ export const callNanoBananaMerge = async (
 
     if (!response.ok) {
       console.error('[Vertex-NanoBananaMerge] API error:', response.status, response.statusText);
+      let parsedError: any = null;
       if (debugInfo) {
         try {
-          debugInfo.rawResponse = JSON.parse(rawResponse);
+          parsedError = JSON.parse(rawResponse);
+          debugInfo.rawResponse = parsedError;
         } catch {
-          debugInfo.rawResponse = rawResponse.substring(0, 200);
+          debugInfo.rawResponse = rawResponse; // Include full response, not truncated
+        }
+      } else {
+        try {
+          parsedError = JSON.parse(rawResponse);
+        } catch {
+          // Keep as string
+        }
+      }
+      
+      // Extract meaningful error message from Vertex AI response
+      let errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
+      if (parsedError) {
+        const vertexError = parsedError.error?.message || parsedError.message || parsedError.reason;
+        if (vertexError) {
+          errorMessage = `${errorMessage}. ${vertexError}`;
         }
       }
       
       return {
         Success: false,
-        Message: `Vertex AI Gemini API error: ${response.status} ${response.statusText}`,
+        Message: errorMessage,
         StatusCode: response.status,
-        Error: rawResponse.substring(0, 200),
-        FullResponse: rawResponse.substring(0, 200),
+        Error: rawResponse, // Include full response text, not truncated
+        FullResponse: rawResponse, // Also include in separate field for UI display
+        ParsedError: parsedError, // Include parsed error object for easier debugging
         CurlCommand: curlCommand,
         Debug: debugInfo,
-      };
+      } as any;
     }
 
     try {

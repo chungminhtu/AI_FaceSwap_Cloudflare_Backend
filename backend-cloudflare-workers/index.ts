@@ -2421,10 +2421,40 @@ export default {
               }
             }
 
+            // Extract detailed error information from Vertex AI response
+            let errorDetails: any = null;
+            const fullResponse2 = (faceSwapResult as any).FullResponse || (faceSwapResult as any).Error;
+            if (fullResponse2) {
+              try {
+                const parsedError = typeof fullResponse2 === 'string' ? JSON.parse(fullResponse2) : fullResponse2;
+                errorDetails = parsedError;
+              } catch {
+                errorDetails = typeof fullResponse2 === 'string' ? fullResponse2 : JSON.stringify(fullResponse2);
+              }
+            }
+
+            // Build enhanced error message with details
+            let enhancedMessage = faceSwapResult.Message || 'Nano Banana provider failed to generate image';
+            if (errorDetails) {
+              // Try to extract meaningful error message from Vertex AI response
+              if (typeof errorDetails === 'object' && errorDetails !== null) {
+                const errorMessage = errorDetails.error?.message || errorDetails.message || errorDetails.reason;
+                if (errorMessage) {
+                  enhancedMessage = `${enhancedMessage}. Details: ${errorMessage}`;
+                }
+              } else if (typeof errorDetails === 'string' && errorDetails.length < 500) {
+                enhancedMessage = `${enhancedMessage}. Response: ${errorDetails}`;
+              }
+            }
+
             const vertexDebugFailure = compact({
               prompt: vertexPromptPayload,
               response: sanitizedVertexFailure || (faceSwapResult as any).VertexResponse,
               curlCommand: (faceSwapResult as any).CurlCommand,
+              fullError: errorDetails,
+              parsedError: (faceSwapResult as any).ParsedError,
+              fullResponse: (faceSwapResult as any).FullResponse,
+              error: (faceSwapResult as any).Error,
             });
 
             const debugEnabled = isDebugEnabled(env);
@@ -2439,7 +2469,7 @@ export default {
             return jsonResponse({
               data: null,
               status: 'error',
-              message: faceSwapResult.Message || 'Nano Banana provider failed to generate image',
+              message: enhancedMessage,
               code: failureCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, failureCode);

@@ -19,15 +19,8 @@ export const API_CONFIG = {
     responseModalities: ['TEXT', 'IMAGE'] as const,
     imageConfig: {
       imageSize: '1K' as const,
-      compressionQuality: 75,
       personGeneration: 'ALLOW_ALL' as const,
     },
-    safetySettings: [
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-    ],
   },
   
   PROMPT_GENERATION: {
@@ -68,6 +61,13 @@ export const API_CONFIG = {
     },
   },
 };
+
+export const SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
+];
 
 export const MODEL_CONFIG = {
   IMAGE_GENERATION_MODEL: 'gemini-2.5-flash-image',
