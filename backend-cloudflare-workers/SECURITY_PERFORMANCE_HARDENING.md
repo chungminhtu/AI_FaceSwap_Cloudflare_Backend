@@ -14,6 +14,8 @@ This document describes all security fixes and performance optimizations impleme
    - [SQL Injection Hardening](#5-sql-injection-hardening)
    - [Token Cache Bounds](#6-token-cache-bounds)
    - [Debug Info Sanitization](#7-debug-info-sanitization)
+   - [D1 JSON Object Handling](#8-d1-json-object-handling)
+   - [Error Message Sanitization](#9-error-message-sanitization)
 2. [Performance Optimizations](#performance-optimizations)
    - [Parallel Image Fetches](#8-parallel-image-fetches)
    - [Stream Large Images](#9-stream-large-images)

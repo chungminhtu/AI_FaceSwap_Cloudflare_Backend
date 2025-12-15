@@ -1275,13 +1275,17 @@ export default {
           
           if (existingProfile) {
             const debugEnabled = isDebugEnabled(env);
-            return errorResponse(`Profile with ID "${profileId}" already exists`, 409, debugEnabled ? { profileId, path } : undefined, request, env);
+            return errorResponse('Profile already exists', 409, debugEnabled ? { profileId, path } : undefined, request, env);
           }
         }
 
         const createdAt = Math.floor(Date.now() / 1000);
         const updatedAt = Math.floor(Date.now() / 1000);
         
+        // Convert preferences to JSON string if it's an object
+        const preferencesString = body.preferences 
+          ? (typeof body.preferences === 'string' ? body.preferences : JSON.stringify(body.preferences))
+          : null;
 
         const result = await DB.prepare(
           'INSERT INTO profiles (id, device_id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -1291,7 +1295,7 @@ export default {
           body.name || null,
           body.email || null,
           body.avatar_url || null,
-          body.preferences || null,
+          preferencesString,
           createdAt,
           updatedAt
         ).run();
@@ -1383,13 +1387,18 @@ export default {
         const profileId = path.replace('/profiles/', '');
         const body = await request.json() as Partial<Profile>;
 
+        // Convert preferences to JSON string if it's an object
+        const preferencesString = body.preferences 
+          ? (typeof body.preferences === 'string' ? body.preferences : JSON.stringify(body.preferences))
+          : null;
+
         const result = await DB.prepare(
           'UPDATE profiles SET name = ?, email = ?, avatar_url = ?, preferences = ?, updated_at = ? WHERE id = ?'
         ).bind(
           body.name || null,
           body.email || null,
           body.avatar_url || null,
-          body.preferences || null,
+          preferencesString,
           Math.floor(Date.now() / 1000),
           profileId
         ).run();
