@@ -1541,8 +1541,7 @@ const utils = {
             created = true;
             exists = true;
           } else {
-            console.warn(`[KV] Failed to extract namespace ID from create output: ${createOutput.substring(0, 200)}`);
-            // Try to find it in the list again after creation
+            // Fallback: list namespaces again to find the newly created one
             const listAfterCreate = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
             if (listAfterCreate) {
               try {
@@ -1552,6 +1551,7 @@ const utils = {
                   if (namespace && namespace.id) {
                     namespaceId = namespace.id;
                     exists = true;
+                    created = true;
                   }
                 }
               } catch {
@@ -1562,8 +1562,8 @@ const utils = {
         } catch (createError) {
           const errorMsg = createError.message || createError.stderr || createError.stdout || '';
           if (errorMsg.includes('already exists') || errorMsg.includes('duplicate')) {
+            // Namespace already exists, find it in the list
             exists = true;
-            // Try to find it in the list
             const listAfterError = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
             if (listAfterError) {
               try {
@@ -1575,11 +1575,10 @@ const utils = {
                   }
                 }
               } catch {
-                console.warn(`[KV] Namespace ${namespaceName} already exists but ID not found in list. You may need to manually bind it.`);
+                // Ignore parse errors - namespace exists but ID not found
               }
             }
           } else {
-            console.error(`[KV] Failed to create namespace ${namespaceName}:`, errorMsg);
             throw createError;
           }
         }
@@ -2000,11 +1999,10 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         dbResult = await utils.ensureD1Database(cwd, config.databaseName);
       }
 
-      // Ensure KV namespace for prompt_json caching
-      let promptCacheResult = null;
+      // Ensure KV namespace for prompt caching
       const promptCacheKVName = config.promptCacheKV.namespaceName;
       report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'running', 'Checking namespace existence');
-      promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
+      const promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
       if (promptCacheResult.skipped) {
         report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'warning', 'Skipped (API token lacks KV permissions)');
       } else if (promptCacheResult.created) {
@@ -2069,10 +2067,6 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         report('Deploying worker...', 'running', 'Deploying Cloudflare Worker');
         if (!dbResult) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
-        }
-        if (!promptCacheResult) {
-          const promptCacheKVName = config.promptCacheKV.namespaceName;
-          promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
         }
         const skipD1 = dbResult.skipped || false;
         const databaseId = dbResult.databaseId || null;
@@ -2359,7 +2353,6 @@ async function main() {
       const skipD1 = dbResult.skipped || false;
       const databaseId = dbResult.databaseId || null;
       
-      // promptCacheResult is already created above
       const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
 
       let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, promptCacheNamespaceId);

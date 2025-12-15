@@ -2312,23 +2312,21 @@ export default {
 
         let promptResult: any = null;
         let storedPromptPayload: any = null;
+        const promptCacheKV = getPromptCacheKV(env);
         
         if (presetImageId) {
           promptResult = presetResult;
           
-            if (promptResult && !storedPromptPayload) {
+          if (promptResult && !storedPromptPayload) {
             const cacheKey = `prompt:${presetImageId}`;
             
-            const promptCacheKV = getPromptCacheKV(env);
             if (promptCacheKV) {
               try {
                 const cached = await promptCacheKV.get(cacheKey, 'json');
                 if (cached) storedPromptPayload = cached;
               } catch (error) {
-                console.error(`[KV Cache] Read failed for key ${cacheKey}:`, error);
+                // KV cache read failed, fallback to R2
               }
-            } else {
-              console.warn(`[KV Cache] Prompt cache KV not bound - cache disabled`);
             }
             
             if (!storedPromptPayload) {
@@ -2340,19 +2338,12 @@ export default {
                 const promptJson = r2Object?.customMetadata?.prompt_json;
                 if (promptJson?.trim()) {
                   storedPromptPayload = JSON.parse(promptJson);
-                  const promptCacheKV = getPromptCacheKV(env);
                   if (promptCacheKV) {
-                    promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).then(() => {
-                      console.log(`[KV Cache] Successfully wrote key ${cacheKey}`);
-                    }).catch((error) => {
-                      console.error(`[KV Cache] Write failed for key ${cacheKey}:`, error);
-                    });
-                  } else {
-                    console.warn(`[KV Cache] Prompt cache KV not bound when trying to write ${cacheKey}`);
+                    promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
                   }
                 }
               } catch (error) {
-                console.error(`[KV Cache] R2 metadata read failed:`, error);
+                // R2 metadata read failed, continue without cache
               }
             }
           }
@@ -2368,15 +2359,8 @@ export default {
               const promptJsonString = JSON.stringify(storedPromptPayload);
               const cacheKey = `prompt:${presetImageId}`;
               
-              const promptCacheKV = getPromptCacheKV(env);
               if (promptCacheKV) {
-                promptCacheKV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).then(() => {
-                  console.log(`[KV Cache] Successfully wrote key ${cacheKey} after prompt generation`);
-                }).catch((error) => {
-                  console.error(`[KV Cache] Write failed for key ${cacheKey} after prompt generation:`, error);
-                });
-              } else {
-                console.warn(`[KV Cache] Prompt cache KV not bound - skipping cache write for ${cacheKey}`);
+                promptCacheKV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
               }
               
               const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
