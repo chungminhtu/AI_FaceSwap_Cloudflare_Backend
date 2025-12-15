@@ -75,13 +75,6 @@ export interface SafeSearchResult {
   debug?: Record<string, any>;
 }
 
-export interface GenericApiResponse<T> {
-  data?: T;
-  status: string;
-  message?: string;
-  code: number;
-}
-
 export interface GoogleVisionResponse {
   responses?: Array<{
     safeSearchAnnotation?: {
@@ -104,29 +97,6 @@ export interface UploadUrlRequest {
   gender?: 'male' | 'female'; // Optional: Gender classification for the asset
 }
 
-export interface UploadUrlResponse {
-  data: {
-    results: Array<{
-      id: string;
-      url: string;
-      filename: string;
-    }>;
-    count: number;
-    successful: number;
-    failed: number;
-  };
-  status: 'success' | 'error';
-  message: string;
-  code: number;
-  debug?: {
-    vertex?: Array<{
-      hasPrompt?: boolean;
-      prompt_json?: any;
-      vertex_info?: any;
-    }>;
-  };
-}
-
 export interface Profile {
   id: string;
   device_id?: string;
@@ -138,41 +108,4 @@ export interface Profile {
   updated_at: string;
 }
 
-export interface PresetImage {
-  id: string;
-  preset_url: string; // Full URL (assembled from stored key)
-  thumbnail_url?: string; // Thumbnail URL (reconstructed from thumbnail_r2 R2 key)
-  created_at: string;
-}
-
-export interface Selfie {
-  id: string;
-  selfie_url: string; // Full URL (assembled from stored key in database)
-  profile_id: string;
-  action?: string | null; // Action type (e.g., "faceswap", "default", etc.)
-  created_at: string;
-}
-
-export interface PresetListResponse {
-  presets: PresetImage[];
-}
-
-export interface SelfieListResponse {
-  selfies: Selfie[];
-}
-
-export interface ProfileListResponse {
-  profiles: Profile[];
-}
-
-export interface Result {
-  id: string; // INTEGER from database, returned as string
-  result_url: string; // Full URL (assembled from stored key)
-  profile_id: string;
-  created_at: string;
-}
-
-export interface ResultListResponse {
-  results: Result[];
-}
 
