@@ -458,92 +458,76 @@ function parseConfig(config) {
     throw new Error('Invalid GCP configuration');
   }
 
-  const accountId = config.cloudflare.accountId || '';
-  const workerName = config.workerName;
-  
-  const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
   const hasBackendDomain = config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '';
-  
-  let r2DevDomain = null;
   let workerDevUrl = null;
   
-  if (accountId && !hasBackendDomain) {
+  if (config.cloudflare.accountId && !hasBackendDomain) {
     try {
       const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
       const match = whoami.match(/([^\s]+)@/);
       if (match) {
-        workerDevUrl = `https://${workerName}.${match[1]}.workers.dev`;
+        workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
       }
     } catch {
     }
   }
 
+  const secrets = {
+    RAPIDAPI_KEY: config.RAPIDAPI_KEY,
+    RAPIDAPI_HOST: config.RAPIDAPI_HOST,
+    RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
+    GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
+    GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
+    GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION,
+    GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL || config.gcp?.client_email || (() => { throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL or gcp.client_email is required in deployments-secrets.json'); })(),
+    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || config.gcp?.private_key || (() => { throw new Error('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY or gcp.private_key is required in deployments-secrets.json'); })(),
+    R2_BUCKET_BINDING: config.bucketName,
+    D1_DATABASE_BINDING: config.databaseName
+  };
+  
+  if (config.R2_DOMAIN?.trim()) secrets.R2_DOMAIN = config.R2_DOMAIN.trim();
+  
+  if (hasBackendDomain) {
+    const domain = config.BACKEND_DOMAIN.trim();
+    secrets.BACKEND_DOMAIN = domain.startsWith('http') ? domain : `https://${domain}`;
+  } else if (workerDevUrl) {
+    secrets.BACKEND_DOMAIN = workerDevUrl;
+  }
+  
+  if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
+  if (config.ALLOWED_ORIGINS) secrets.ALLOWED_ORIGINS = config.ALLOWED_ORIGINS;
+  if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
+  if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
+  if (config.SELFIE_MAX_FACESWAP) secrets.SELFIE_MAX_FACESWAP = config.SELFIE_MAX_FACESWAP;
+  if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
+  if (config.DISABLE_SAFE_SEARCH) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
+  if (config.SAFETY_STRICTNESS) secrets.SAFETY_STRICTNESS = config.SAFETY_STRICTNESS;
+  if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
+    throw new Error('promptCacheKV.namespaceName is required in deployments-secrets.json');
+  }
+  secrets.PROMPT_CACHE_KV_BINDING_NAME = config.promptCacheKV.namespaceName;
+
+  if (!config.rateLimiter) {
+    throw new Error('rateLimiter is required in deployments-secrets.json');
+  }
+
   return {
-    name: config.name || 'default',
-    workerName: config.workerName,
-    pagesProjectName: config.pagesProjectName,
-    databaseName: config.databaseName,
-    bucketName: config.bucketName,
+    ...config,
+    secrets,
     deployPages: config.deployPages || process.env.DEPLOY_PAGES === 'true',
-    BACKEND_DOMAIN: config.BACKEND_DOMAIN,
-    cloudflare: {
-      accountId: accountId,
-      apiToken: config.cloudflare.apiToken || ''
-    },
-    gcp: config.gcp,
-    rateLimiter: config.rateLimiter || { limit: 100, period_second: 60, namespaceId: 1 },
-    promptCacheKV: config.promptCacheKV || { namespaceName: 'PROMPT_CACHE_KV', ttl_in_ms: 31536000 },
-      secrets: (() => {
-        const secrets = {
-          RAPIDAPI_KEY: config.RAPIDAPI_KEY,
-          RAPIDAPI_HOST: config.RAPIDAPI_HOST,
-          RAPIDAPI_ENDPOINT: config.RAPIDAPI_ENDPOINT,
-          GOOGLE_VISION_API_KEY: config.GOOGLE_VISION_API_KEY,
-          GOOGLE_VERTEX_PROJECT_ID: config.GOOGLE_VERTEX_PROJECT_ID,
-          GOOGLE_VERTEX_LOCATION: config.GOOGLE_VERTEX_LOCATION || 'us-central1',
-          GOOGLE_VISION_ENDPOINT: config.GOOGLE_VISION_ENDPOINT,
-          GOOGLE_SERVICE_ACCOUNT_EMAIL: config.GOOGLE_SERVICE_ACCOUNT_EMAIL || config.gcp?.client_email,
-          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: config.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || config.gcp?.private_key,
-          R2_BUCKET_BINDING: config.bucketName,
-          D1_DATABASE_BINDING: config.databaseName
-        };
-        
-        if (hasR2Domain) {
-          secrets.R2_DOMAIN = config.R2_DOMAIN.trim();
-        }
-        
-        if (hasBackendDomain) {
-          const domain = config.BACKEND_DOMAIN.trim();
-          secrets.BACKEND_DOMAIN = domain.startsWith('http') 
-            ? domain 
-            : `https://${domain}`;
-        } else if (workerDevUrl) {
-          secrets.BACKEND_DOMAIN = workerDevUrl;
-        }
-        
-        if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
-        if (config.ALLOWED_ORIGINS) secrets.ALLOWED_ORIGINS = config.ALLOWED_ORIGINS;
-        if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
-        if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
-        if (config.SELFIE_MAX_FACESWAP) secrets.SELFIE_MAX_FACESWAP = config.SELFIE_MAX_FACESWAP;
-        if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
-        if (config.DISABLE_SAFE_SEARCH) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
-        if (config.SAFETY_STRICTNESS) secrets.SAFETY_STRICTNESS = config.SAFETY_STRICTNESS;
-        return secrets;
-      })(),
-    _needsCloudflareSetup: config._needsCloudflareSetup,
-    _environment: config._environment,
-    _r2DevDomain: r2DevDomain,
+    rateLimiter: config.rateLimiter,
+    promptCacheKV: config.promptCacheKV,
     _workerDevUrl: workerDevUrl
   };
 }
 
-function generateWranglerConfig(config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
+function generateWranglerConfig(config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null) {
   const wranglerConfig = {
     name: config.workerName,
     main: 'backend-cloudflare-workers/index.ts',
     compatibility_date: '2024-01-01',
-    account_id: config.cloudflare.accountId,
+    account_id: config.cloudflare?.accountId,
     r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }],
     observability: {
       logs: {
@@ -572,25 +556,24 @@ function generateWranglerConfig(config, skipD1 = false, databaseId = null, promp
   }
 
   // Add Cloudflare built-in rate limiter from config
-  const rateLimiterConfig = config.rateLimiter || { limit: 100, period_second: 60, namespaceId: 1 };
+  if (!config.rateLimiter) {
+    throw new Error('rateLimiter is required in deployments-secrets.json');
+  }
   wranglerConfig.ratelimits = [{
     name: 'RATE_LIMITER',
-    namespace_id: String(rateLimiterConfig.namespaceId || 1),
+    namespace_id: String(config.rateLimiter.namespaceId),
     simple: {
-      limit: rateLimiterConfig.limit || 100,
-      period: rateLimiterConfig.period_second || 60
+      limit: config.rateLimiter.limit,
+      period: config.rateLimiter.period_second
     }
   }];
 
-  // Add KV namespace for prompt caching only
+  // Add KV namespace for prompt caching - use namespaceName from config as binding name
   if (promptCacheNamespaceId) {
     wranglerConfig.kv_namespaces = [{
-      binding: 'PROMPT_CACHE_KV',
+      binding: config.promptCacheKV.namespaceName,
       id: promptCacheNamespaceId
     }];
-    if (promptCachePreviewId) {
-      wranglerConfig.kv_namespaces[0].preview_id = promptCachePreviewId;
-    }
   }
 
   // Note: Custom domains for Workers are configured separately in Cloudflare dashboard
@@ -1496,7 +1479,7 @@ const utils = {
     }
   },
 
-  async ensureKVNamespace(cwd, namespaceName = 'RATE_LIMIT_KV') {
+  async ensureKVNamespace(cwd, namespaceName) {
     try {
       const env = { ...process.env };
       const textOutput = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
@@ -1508,13 +1491,12 @@ const utils = {
       
       let exists = false;
       let namespaceId = null;
-      let previewId = null;
       let created = false;
 
-      if (textOutput && textOutput.includes(namespaceName)) {
+      if (textOutput) {
         const lines = textOutput.split('\n');
         for (const line of lines) {
-          if (line.includes(namespaceName)) {
+          if (line.includes(namespaceName) && !line.includes('_preview')) {
             const idMatch = line.match(/([a-f0-9]{32})/i);
             if (idMatch) {
               exists = true;
@@ -1525,33 +1507,29 @@ const utils = {
         }
       }
 
-      if (!exists) {
+      if (!exists || !namespaceId) {
         try {
           const createOutput = execSync(`wrangler kv namespace create "${namespaceName}"`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
           const idMatch = createOutput.match(/id[:\s]+([a-f0-9]{32})/i);
           if (idMatch) {
             namespaceId = idMatch[1];
             created = true;
-          }
-          
-          try {
-            const previewOutput = execSync(`wrangler kv namespace create "${namespaceName}" --preview`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
-            const previewMatch = previewOutput.match(/id[:\s]+([a-f0-9]{32})/i);
-            if (previewMatch) {
-              previewId = previewMatch[1];
-            }
-          } catch (previewError) {
-            // Preview namespace creation is optional
+            exists = true;
+          } else {
+            console.warn(`[KV] Failed to extract namespace ID from create output: ${createOutput.substring(0, 200)}`);
           }
         } catch (createError) {
-          if (!createError.message.includes('already exists')) {
+          if (createError.message && createError.message.includes('already exists')) {
+            exists = true;
+            console.warn(`[KV] Namespace ${namespaceName} already exists but ID not found in list. You may need to manually bind it.`);
+          } else {
+            console.error(`[KV] Failed to create namespace ${namespaceName}:`, createError.message);
             throw createError;
           }
-          exists = true;
         }
       }
-
-      return { exists, created, skipped: false, namespaceId, previewId };
+      
+      return { exists, created, skipped: false, namespaceId, previewId: null };
     } catch (error) {
       if (error.message && error.message.includes('Authentication error')) {
         return { exists: false, created: false, skipped: true, namespaceId: null, previewId: null };
@@ -1715,7 +1693,7 @@ const utils = {
     return { success: true, deployed: successCount, total: keys.length };
   },
 
-  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null, promptCachePreviewId = null) {
+  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null) {
     const wranglerConfigFiles = [
       path.join(cwd, 'wrangler.json'),
       path.join(cwd, 'wrangler.jsonc'),
@@ -1735,7 +1713,7 @@ const utils = {
     let createdConfig = false;
 
     try {
-      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, promptCacheNamespaceId, promptCachePreviewId);
+      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, promptCacheNamespaceId);
       fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
       createdConfig = true;
 
@@ -1821,7 +1799,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
         logger.addStep('Running database migrations', 'Executing pending migrations');
       }
-      logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV'}`, 'Checking/creating KV namespace');
+      logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV.namespaceName}`, 'Checking/creating KV namespace');
       if (DEPLOY_SECRETS) {
         logger.addStep('Deploying secrets', 'Configuring environment secrets');
       }
@@ -1968,7 +1946,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 
       // Ensure KV namespace for prompt_json caching
       let promptCacheResult = null;
-      const promptCacheKVName = config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV';
+      const promptCacheKVName = config.promptCacheKV.namespaceName;
       report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'running', 'Checking namespace existence');
       promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
       if (promptCacheResult.skipped) {
@@ -2037,14 +2015,13 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
         }
         if (!promptCacheResult) {
-          const promptCacheKVName = config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV';
+          const promptCacheKVName = config.promptCacheKV.namespaceName;
           promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
         }
         const skipD1 = dbResult.skipped || false;
         const databaseId = dbResult.databaseId || null;
         const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
-        const promptCachePreviewId = promptCacheResult?.previewId || null;
-        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, promptCachePreviewId);
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, promptCacheNamespaceId);
         
         if (!workerUrl) {
           workerUrl = config._workerDevUrl || getWorkerUrl(cwd, config.workerName);
@@ -2297,7 +2274,7 @@ async function main() {
         }
       }
 
-      const promptCacheKVName = config.promptCacheKV?.namespaceName || 'PROMPT_CACHE_KV';
+      const promptCacheKVName = config.promptCacheKV.namespaceName;
       logger.startStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`);
       const promptCacheResult = await utils.ensureKVNamespace(process.cwd(), promptCacheKVName);
       if (promptCacheResult.skipped) {
@@ -2328,9 +2305,8 @@ async function main() {
       
       // promptCacheResult is already created above
       const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
-      const promptCachePreviewId = promptCacheResult?.previewId || null;
-      
-      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, promptCachePreviewId);
+
+      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, promptCacheNamespaceId);
       
       if (!workerUrl) {
         workerUrl = config._workerDevUrl || getWorkerUrl(process.cwd(), config.workerName);

@@ -49,6 +49,14 @@ const getR2Bucket = (env: Env): R2Bucket => {
   return bucket;
 };
 
+const getPromptCacheKV = (env: Env): KVNamespace | null => {
+  const kvBindingName = env.PROMPT_CACHE_KV_BINDING_NAME;
+  if (!kvBindingName) {
+    return null;
+  }
+  return (env as any)[kvBindingName] as KVNamespace || null;
+};
+
 const getD1Database = (env: Env): D1Database => {
   const bindingName = env.D1_DATABASE_BINDING || env.D1_DATABASE_NAME || 'DB';
   const database = (env as any)[bindingName] as D1Database;
@@ -2311,15 +2319,16 @@ export default {
             if (promptResult && !storedPromptPayload) {
             const cacheKey = `prompt:${presetImageId}`;
             
-            if (env.PROMPT_CACHE_KV) {
+            const promptCacheKV = getPromptCacheKV(env);
+            if (promptCacheKV) {
               try {
-                const cached = await env.PROMPT_CACHE_KV.get(cacheKey, 'json');
+                const cached = await promptCacheKV.get(cacheKey, 'json');
                 if (cached) storedPromptPayload = cached;
               } catch (error) {
                 console.error(`[KV Cache] Read failed for key ${cacheKey}:`, error);
               }
             } else {
-              console.warn(`[KV Cache] PROMPT_CACHE_KV not bound - cache disabled`);
+              console.warn(`[KV Cache] Prompt cache KV not bound - cache disabled`);
             }
             
             if (!storedPromptPayload) {
@@ -2331,10 +2340,15 @@ export default {
                 const promptJson = r2Object?.customMetadata?.prompt_json;
                 if (promptJson?.trim()) {
                   storedPromptPayload = JSON.parse(promptJson);
-                  if (env.PROMPT_CACHE_KV) {
-                    env.PROMPT_CACHE_KV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch((error) => {
+                  const promptCacheKV = getPromptCacheKV(env);
+                  if (promptCacheKV) {
+                    promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).then(() => {
+                      console.log(`[KV Cache] Successfully wrote key ${cacheKey}`);
+                    }).catch((error) => {
                       console.error(`[KV Cache] Write failed for key ${cacheKey}:`, error);
                     });
+                  } else {
+                    console.warn(`[KV Cache] Prompt cache KV not bound when trying to write ${cacheKey}`);
                   }
                 }
               } catch (error) {
@@ -2354,12 +2368,15 @@ export default {
               const promptJsonString = JSON.stringify(storedPromptPayload);
               const cacheKey = `prompt:${presetImageId}`;
               
-              if (env.PROMPT_CACHE_KV) {
-                env.PROMPT_CACHE_KV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch((error) => {
+              const promptCacheKV = getPromptCacheKV(env);
+              if (promptCacheKV) {
+                promptCacheKV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).then(() => {
+                  console.log(`[KV Cache] Successfully wrote key ${cacheKey} after prompt generation`);
+                }).catch((error) => {
                   console.error(`[KV Cache] Write failed for key ${cacheKey} after prompt generation:`, error);
                 });
               } else {
-                console.warn(`[KV Cache] PROMPT_CACHE_KV not bound - skipping cache write for ${cacheKey}`);
+                console.warn(`[KV Cache] Prompt cache KV not bound - skipping cache write for ${cacheKey}`);
               }
               
               const r2Key = reconstructR2Key((promptResult as any).id, (promptResult as any).ext, 'preset');
@@ -3438,17 +3455,48 @@ export default {
       const backendDomain = env.BACKEND_DOMAIN;
       const r2Domain = env.R2_DOMAIN;
       const debugEnabled = isDebugEnabled(env);
-      const kvCacheAvailable = !!env.PROMPT_CACHE_KV;
+      const promptCacheKV = getPromptCacheKV(env);
+      const kvCacheAvailable = !!promptCacheKV;
 
       let kvCacheTest = null;
-      if (kvCacheAvailable && env.PROMPT_CACHE_KV) {
+      let kvCacheDetails = null;
+      if (kvCacheAvailable && promptCacheKV) {
         try {
-          await env.PROMPT_CACHE_KV.put('__test__', 'test', { expirationTtl: 1 });
-          await env.PROMPT_CACHE_KV.delete('__test__');
-          kvCacheTest = 'working';
+          const testKey = `__test__${Date.now()}`;
+          const testValue = JSON.stringify({ test: true, timestamp: Date.now() });
+          
+          await promptCacheKV.put(testKey, testValue, { expirationTtl: 60 });
+          
+          const readBack = await promptCacheKV.get(testKey, 'json');
+          if (readBack && (readBack as any).test) {
+            await promptCacheKV.delete(testKey);
+            kvCacheTest = 'working';
+            kvCacheDetails = {
+              write: 'success',
+              read: 'success',
+              delete: 'success'
+            };
+          } else {
+            kvCacheTest = 'write_success_read_failed';
+            kvCacheDetails = {
+              write: 'success',
+              read: 'failed',
+              readBack: readBack
+            };
+          }
         } catch (error) {
           kvCacheTest = `error: ${error instanceof Error ? error.message : String(error)}`;
+          kvCacheDetails = {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
+          };
         }
+      } else {
+        kvCacheDetails = {
+          reason: 'Prompt cache KV not bound',
+          bindingName: env.PROMPT_CACHE_KV_BINDING_NAME || 'not set',
+          envKeys: Object.keys(env).filter(k => k.includes('KV') || k.includes('CACHE') || k.includes('PROMPT'))
+        };
       }
 
       return jsonResponse({
@@ -3457,13 +3505,14 @@ export default {
           r2Domain: r2Domain || null,
           kvCache: {
             available: kvCacheAvailable,
-            test: kvCacheTest
+            test: kvCacheTest,
+            details: kvCacheDetails
           }
         },
         status: 'success',
         message: 'Configuration retrieved successfully',
         code: 200,
-        ...(debugEnabled ? { debug: { path, backendDomain: !!backendDomain, r2Domain: !!r2Domain, kvCacheAvailable } } : {})
+        ...(debugEnabled ? { debug: { path, backendDomain: !!backendDomain, r2Domain: !!r2Domain, kvCacheAvailable, envKeys: Object.keys(env) } } : {})
       }, 200, request, env);
     }
 

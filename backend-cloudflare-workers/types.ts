@@ -1,11 +1,10 @@
 // Environment variables come from deployments-secrets.json via deploy.js
 // Only typing Cloudflare-specific bindings that need type safety
 export interface Env {
-  [key: string]: any; // All env vars from JSON config + dynamic bindings
+  [key: string]: any; // All env vars from JSON config + dynamic bindings (including KV namespaces with dynamic names)
   RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   }; // Cloudflare built-in rate limiter
-  PROMPT_CACHE_KV?: KVNamespace; // KV namespace for prompt_json caching
 }
 
 export interface FaceSwapRequest {
