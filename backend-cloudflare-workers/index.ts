@@ -585,26 +585,26 @@ export default {
           action = body.action || null;
         } else {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Content-Type must be multipart/form-data or application/json. Received: ${contentType}`, 400, debugEnabled ? { contentType, path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { contentType, path } : undefined, request, env);
         }
 
         if (imageUrls.length > 0) {
           for (const url of imageUrls) {
             if (!validateImageUrl(url, env)) {
               const debugEnabled = isDebugEnabled(env);
-              return errorResponse(`Invalid or unsafe image URL: ${url}`, 400, debugEnabled ? { url, path } : undefined, request, env);
+              return errorResponse('', 400, debugEnabled ? { url, path } : undefined, request, env);
             }
           }
         }
 
         if (!type || !profileId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Missing required fields: type and profile_id', 400, debugEnabled ? { type, profileId, path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { type, profileId, path } : undefined, request, env);
         }
 
         if (type !== 'preset' && type !== 'selfie') {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Type must be either "preset" or "selfie"', 400, debugEnabled ? { type, path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { type, path } : undefined, request, env);
         }
 
         // Validate that profile exists
@@ -665,7 +665,7 @@ export default {
 
         if (allFileData.length === 0) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('No valid files or image URLs provided', 400, debugEnabled ? { filesCount: files.length, imageUrlsCount: imageUrls.length, path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { filesCount: files.length, imageUrlsCount: imageUrls.length, path } : undefined, request, env);
         }
 
         // Process all files in parallel
@@ -949,7 +949,7 @@ export default {
         const contentType = request.headers.get('Content-Type') || '';
         if (!contentType.toLowerCase().includes('multipart/form-data')) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Content-Type must be multipart/form-data', 400, debugEnabled ? { contentType, path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { contentType, path } : undefined, request, env);
         }
 
         const formData = await request.formData();
@@ -968,7 +968,7 @@ export default {
 
         if (files.length === 0) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('No files provided', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -1244,7 +1244,7 @@ export default {
         console.error('Thumbnail upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Thumbnail upload failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1265,7 +1265,7 @@ export default {
           console.error('ERROR: profiles table does not exist in database!');
           console.error('Database schema needs to be initialized. Run: wrangler d1 execute faceswap-db --remote --file=schema.sql');
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Database schema not initialized. Please run database migration.', 500, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (body.userID || body.id) {
@@ -1301,13 +1301,13 @@ export default {
           console.error('[DB] Profile insert failed');
           const errorDetails = result.meta?.error || (result as any).error || 'Unknown database error';
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Failed to create profile: ${errorDetails.substring(0, 200)}`, 500, debugEnabled ? { error: errorDetails, profileId, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { error: errorDetails, profileId, path } : undefined, request, env);
         }
 
         if (result.meta?.changes === 0) {
           console.error('[DB] Profile insert returned 0 changes');
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Failed to create profile: No rows inserted', 500, debugEnabled ? { profileId, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
         const profile = {
@@ -1333,7 +1333,7 @@ export default {
         console.error('Profile creation error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Profile creation failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1373,7 +1373,7 @@ export default {
         console.error('Profile retrieval error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Profile retrieval failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1426,7 +1426,7 @@ export default {
         console.error('Profile update error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Profile update failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1460,7 +1460,7 @@ export default {
         console.error('Profile listing error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Profile listing failed: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1472,7 +1472,7 @@ export default {
         const presetId = path.split('/presets/')[1];
         if (!presetId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Preset ID required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -1547,7 +1547,7 @@ export default {
         console.error('Get preset error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Failed to retrieve preset: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -1668,7 +1668,7 @@ export default {
         const presetId = path.replace('/presets/', '');
         if (!presetId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Preset ID is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
 
@@ -1722,7 +1722,7 @@ export default {
         return jsonResponse({
           data: null,
           status: 'error',
-          message: `Failed to delete preset: ${errorMessage}`,
+          message: '',
           code: 500,
           ...(debugEnabled ? { debug: {
             presetId: path.replace('/presets/', ''),
@@ -1743,7 +1743,7 @@ export default {
         const profileId = url.searchParams.get('profile_id');
         if (!profileId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('profile_id query parameter is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // Validate that profile exists
@@ -1849,7 +1849,7 @@ export default {
         const selfieId = path.replace('/selfies/', '');
         if (!selfieId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Selfie ID is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // First, check if selfie exists
@@ -1903,7 +1903,7 @@ export default {
         return jsonResponse({
           data: null,
           status: 'error',
-          message: `Failed to delete selfie: ${errorMessage}`,
+          message: '',
           code: 500,
           ...(debugEnabled ? { debug: {
             selfieId: path.replace('/selfies/', ''),
@@ -1924,7 +1924,7 @@ export default {
         const thumbnailId = path.split('/thumbnails/')[1]?.replace('/preset', '');
         if (!thumbnailId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Thumbnail ID required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -1950,7 +1950,7 @@ export default {
         console.error('Get preset from thumbnail error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Failed to retrieve preset ID: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2002,7 +2002,7 @@ export default {
         console.error('Get thumbnails error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Failed to retrieve thumbnails: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2019,7 +2019,7 @@ export default {
             genderFilter = genderParam;
           } else {
             const debugEnabled = isDebugEnabled(env);
-            return errorResponse(`Invalid gender parameter. Must be 'male' or 'female', received: '${genderParam}'`, 400, debugEnabled ? { genderParam, path } : undefined, request, env);
+            return errorResponse('', 400, debugEnabled ? { genderParam, path } : undefined, request, env);
         }
         }
 
@@ -2100,7 +2100,7 @@ export default {
         const resultId = path.replace('/results/', '');
         if (!resultId) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Result ID is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // First, check if result exists and get the R2 key
@@ -2158,7 +2158,7 @@ export default {
         return jsonResponse({
           data: null,
           status: 'error',
-          message: `Failed to delete result: ${errorMessage}`,
+          message: '',
           code: 500,
           ...(debugEnabled ? { debug: {
             resultId: path.replace('/results/', ''),
@@ -2188,36 +2188,36 @@ export default {
         const body: FaceSwapRequest = await request.json();
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse(`Server configuration error: ${envError}`, 500, undefined, request, env);
+        if (envError) return errorResponse('', 500, undefined, request, env);
 
         const requestError = validateRequest(body);
-        if (requestError) return errorResponse(requestError, 400, undefined, request, env);
+        if (requestError) return errorResponse('', 400, undefined, request, env);
 
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
         
         if (!hasSelfieIds && !hasSelfieUrls) {
-          return errorResponse('Either selfie_ids or selfie_image_urls must be provided as a non-empty array', 400, undefined, request, env);
+          return errorResponse('', 400, undefined, request, env);
         }
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
 
         if (!hasPresetId && !hasPresetUrl) {
-          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400, undefined, request, env);
+          return errorResponse('', 400, undefined, request, env);
         }
         
         if (hasSelfieUrls && body.selfie_image_urls) {
           for (const url of body.selfie_image_urls) {
             if (!validateImageUrl(url, env)) {
-              return errorResponse(`Invalid or unsafe selfie image URL: ${url}`, 400, undefined, request, env);
+              return errorResponse('', 400, undefined, request, env);
             }
           }
         }
         
         if (hasPresetUrl && body.preset_image_url) {
           if (!validateImageUrl(body.preset_image_url, env)) {
-            return errorResponse(`Invalid or unsafe preset image URL: ${body.preset_image_url}`, 400, undefined, request, env);
+            return errorResponse('', 400, undefined, request, env);
           }
         }
 
@@ -2269,7 +2269,7 @@ export default {
           presetImageId = null;
         } else {
           // This should never happen due to earlier validation, but TypeScript needs this
-          return errorResponse('Either preset_image_id or preset_image_url must be provided', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         // Extract selfie results
@@ -2294,7 +2294,7 @@ export default {
 
         // Support multiple selfies for wedding faceswap (e.g., bride and groom)
         if (selfieUrls.length === 0) {
-          return errorResponse('No valid selfie URLs found', 400, debugEnabled ? { hasSelfieIds, hasSelfieUrls, selfieIdsCount: body.selfie_ids?.length || 0, selfieUrlsCount: body.selfie_image_urls?.length || 0, path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { hasSelfieIds, hasSelfieUrls, selfieIdsCount: body.selfie_ids?.length || 0, selfieUrlsCount: body.selfie_image_urls?.length || 0, path } : undefined, request, env);
         }
         const sourceUrl = selfieUrls.length === 1 ? selfieUrls[0] : selfieUrls;
 
@@ -2382,7 +2382,7 @@ export default {
               }
             }
           } else {
-            return errorResponse(`Failed to generate prompt for preset image. ${generateResult.error || 'Unknown error'}. Please check that your Google Vertex AI credentials are configured correctly.`, 400, undefined, request, env);
+            return errorResponse('', 400, undefined, request, env);
           }
         }
         const augmentedPromptPayload = augmentVertexPrompt(
@@ -2468,7 +2468,7 @@ export default {
             return jsonResponse({
               data: null,
               status: 'error',
-              message: debugEnabled ? '' : enhancedMessage,
+              message: '',
               code: failureCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, failureCode);
@@ -2490,7 +2490,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: debugEnabled ? '' : (faceSwapResult.Message || 'Face swap provider error'),
+            message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
@@ -2675,7 +2675,7 @@ export default {
       } catch (error) {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2689,17 +2689,17 @@ export default {
 
         if (!hasPresetId && !hasPresetUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Either preset_image_id or preset_image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (hasPresetId && hasPresetUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Cannot provide both preset_image_id and preset_image_url. Please provide only one.', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
@@ -2707,12 +2707,12 @@ export default {
 
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Either selfie_id or selfie_image_url must be provided', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (hasSelfieId && hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Cannot provide both selfie_id and selfie_image_url. Please provide only one.', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const DB = getD1Database(env);
@@ -2781,7 +2781,7 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
         const defaultMergePrompt = API_PROMPTS.MERGE_PROMPT_DEFAULT;
@@ -2809,7 +2809,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: debugEnabled ? '' : (mergeResult.Message || 'Merge provider error'),
+            message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
@@ -2858,7 +2858,7 @@ export default {
             return jsonResponse({
               data: null,
               status: 'error',
-              message: `Safe search validation failed: ${safeSearchResult.error}`,
+              message: '',
               code: 500,
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, 500);
@@ -2984,7 +2984,7 @@ export default {
         console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2995,12 +2995,12 @@ export default {
         
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
@@ -3014,7 +3014,7 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
         // Check input image safety before upscaling
@@ -3043,7 +3043,7 @@ export default {
             return jsonResponse({
               data: null,
               status: 'error',
-              message: `Input image failed safety check: ${inputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
+              message: '',
               code: 400,
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, 400);
@@ -3111,7 +3111,7 @@ export default {
             return jsonResponse({
               data: null,
               status: 'error',
-              message: `Upscaled image failed safety check: ${outputSafeSearchResult.violationCategory || 'unsafe content detected'}`,
+              message: '',
               code: 400,
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, 400);
@@ -3144,7 +3144,7 @@ export default {
         console.error('Upscaler4K unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3155,12 +3155,12 @@ export default {
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
@@ -3175,7 +3175,7 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
@@ -3239,7 +3239,7 @@ export default {
         console.error('Enhance unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3250,12 +3250,12 @@ export default {
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
@@ -3269,7 +3269,7 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
@@ -3333,7 +3333,7 @@ export default {
         console.error('Colorize unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3344,12 +3344,12 @@ export default {
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('image_url is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('profile_id is required', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
@@ -3364,7 +3364,7 @@ export default {
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse(`Server configuration error: ${envError}`, 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
         const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
@@ -3430,7 +3430,7 @@ export default {
         console.error('Aging unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse(`Internal server error: ${errorMsg}`, 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 

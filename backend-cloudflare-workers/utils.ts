@@ -105,6 +105,15 @@ export const getVertexAIEndpoint = (
 };
 
 export const jsonResponse = (data: any, status = 200, request?: Request, env?: any): Response => {
+  // For 400 and 500 errors, sanitize message field - detailed info only in debug
+  if (data && typeof data === 'object' && data.status === 'error' && data.message) {
+    if (status === 400) {
+      data.message = 'Bad Request';
+    } else if (status === 500) {
+      data.message = 'Internal Server Error';
+    }
+  }
+  
   const jsonString = JSON.stringify(data);
   const corsHeaders = (request && env) ? getCorsHeaders(request, env) : CORS_HEADERS;
   
@@ -114,14 +123,26 @@ export const jsonResponse = (data: any, status = 200, request?: Request, env?: a
   });
 };
 
-export const errorResponse = (message: string, status = 500, debug?: Record<string, any>, request?: Request, env?: any): Response =>
-  jsonResponse({ 
+export const errorResponse = (message: string, status = 500, debug?: Record<string, any>, request?: Request, env?: any): Response => {
+  // For 400 and 500 errors, always use generic messages - detailed info only in debug
+  // Message parameter is ignored for 400/500, only used for other status codes
+  let sanitizedMessage: string;
+  if (status === 400) {
+    sanitizedMessage = 'Bad Request';
+  } else if (status === 500) {
+    sanitizedMessage = 'Internal Server Error';
+  } else {
+    sanitizedMessage = message;
+  }
+  
+  return jsonResponse({ 
     data: null,
     status: 'error', 
-    message, 
+    message: sanitizedMessage, 
     code: status,
     ...(debug ? { debug } : {})
   }, status, request, env);
+};
 
 export const isUnsafe = (
   annotation: { adult: string; violence: string; racy: string },
