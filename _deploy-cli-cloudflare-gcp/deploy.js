@@ -506,7 +506,8 @@ function parseConfig(config) {
   if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
     throw new Error('promptCacheKV.namespaceName is required in deployments-secrets.json');
   }
-  secrets.PROMPT_CACHE_KV_BINDING_NAME = config.promptCacheKV.namespaceName;
+  // Binding name is a constant identifier used in worker code, not the namespace name
+  secrets.PROMPT_CACHE_KV_BINDING_NAME = 'PROMPT_CACHE_KV';
 
   if (!config.rateLimiter) {
     throw new Error('rateLimiter is required in deployments-secrets.json');
@@ -568,10 +569,10 @@ function generateWranglerConfig(config, skipD1 = false, databaseId = null, promp
     }
   }];
 
-  // Add KV namespace for prompt caching - use namespaceName from config as binding name
+  // Add KV namespace for prompt caching - binding name is constant, namespace name is only for creation
   if (promptCacheNamespaceId) {
     wranglerConfig.kv_namespaces = [{
-      binding: config.promptCacheKV.namespaceName,
+      binding: 'PROMPT_CACHE_KV',
       id: promptCacheNamespaceId
     }];
   }
@@ -1482,9 +1483,9 @@ const utils = {
   async ensureKVNamespace(cwd, namespaceName) {
     try {
       const env = { ...process.env };
-      const textOutput = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+      const listOutput = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
       
-      if (textOutput && (textOutput.includes('Authentication error') || textOutput.includes('code: 10000'))) {
+      if (listOutput && (listOutput.includes('Authentication error') || listOutput.includes('code: 10000'))) {
         logWarn('API token does not have KV permissions. Skipping KV namespace operations.');
         return { exists: false, created: false, skipped: true, namespaceId: null, previewId: null };
       }
@@ -1493,15 +1494,28 @@ const utils = {
       let namespaceId = null;
       let created = false;
 
-      if (textOutput) {
-        const lines = textOutput.split('\n');
-        for (const line of lines) {
-          if (line.includes(namespaceName) && !line.includes('_preview')) {
-            const idMatch = line.match(/([a-f0-9]{32})/i);
-            if (idMatch) {
+      // Parse JSON output from wrangler kv namespace list
+      if (listOutput) {
+        try {
+          const namespaces = JSON.parse(listOutput.trim());
+          if (Array.isArray(namespaces)) {
+            const namespace = namespaces.find(ns => ns.title === namespaceName && !ns.title.includes('_preview'));
+            if (namespace && namespace.id) {
               exists = true;
-              namespaceId = idMatch[1];
-              break;
+              namespaceId = namespace.id;
+            }
+          }
+        } catch (parseError) {
+          // Fallback to text parsing if JSON parse fails
+          const lines = listOutput.split('\n');
+          for (const line of lines) {
+            if (line.includes(namespaceName) && !line.includes('_preview')) {
+              const idMatch = line.match(/([a-f0-9]{32})/i);
+              if (idMatch) {
+                exists = true;
+                namespaceId = idMatch[1];
+                break;
+              }
             }
           }
         }
@@ -1510,20 +1524,62 @@ const utils = {
       if (!exists || !namespaceId) {
         try {
           const createOutput = execSync(`wrangler kv namespace create "${namespaceName}"`, { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
-          const idMatch = createOutput.match(/id[:\s]+([a-f0-9]{32})/i);
-          if (idMatch) {
+          // Try JSON parsing first
+          let idMatch = null;
+          try {
+            const createResult = JSON.parse(createOutput.trim());
+            if (createResult && createResult.id) {
+              idMatch = [null, createResult.id];
+            }
+          } catch {
+            // Fallback to regex if not JSON
+            idMatch = createOutput.match(/id[:\s]+([a-f0-9]{32})/i) || createOutput.match(/"id"\s*:\s*"([a-f0-9]{32})"/i);
+          }
+          
+          if (idMatch && idMatch[1]) {
             namespaceId = idMatch[1];
             created = true;
             exists = true;
           } else {
             console.warn(`[KV] Failed to extract namespace ID from create output: ${createOutput.substring(0, 200)}`);
+            // Try to find it in the list again after creation
+            const listAfterCreate = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+            if (listAfterCreate) {
+              try {
+                const namespaces = JSON.parse(listAfterCreate.trim());
+                if (Array.isArray(namespaces)) {
+                  const namespace = namespaces.find(ns => ns.title === namespaceName && !ns.title.includes('_preview'));
+                  if (namespace && namespace.id) {
+                    namespaceId = namespace.id;
+                    exists = true;
+                  }
+                }
+              } catch {
+                // Ignore parse errors
+              }
+            }
           }
         } catch (createError) {
-          if (createError.message && createError.message.includes('already exists')) {
+          const errorMsg = createError.message || createError.stderr || createError.stdout || '';
+          if (errorMsg.includes('already exists') || errorMsg.includes('duplicate')) {
             exists = true;
-            console.warn(`[KV] Namespace ${namespaceName} already exists but ID not found in list. You may need to manually bind it.`);
+            // Try to find it in the list
+            const listAfterError = execSync('wrangler kv namespace list', { encoding: 'utf8', stdio: 'pipe', timeout: 10000, cwd, throwOnError: false, env: env });
+            if (listAfterError) {
+              try {
+                const namespaces = JSON.parse(listAfterError.trim());
+                if (Array.isArray(namespaces)) {
+                  const namespace = namespaces.find(ns => ns.title === namespaceName && !ns.title.includes('_preview'));
+                  if (namespace && namespace.id) {
+                    namespaceId = namespace.id;
+                  }
+                }
+              } catch {
+                console.warn(`[KV] Namespace ${namespaceName} already exists but ID not found in list. You may need to manually bind it.`);
+              }
+            }
           } else {
-            console.error(`[KV] Failed to create namespace ${namespaceName}:`, createError.message);
+            console.error(`[KV] Failed to create namespace ${namespaceName}:`, errorMsg);
             throw createError;
           }
         }
