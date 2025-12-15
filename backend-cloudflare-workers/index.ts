@@ -37,6 +37,15 @@ const globalScopeWithAccount = globalThis as typeof globalThis & {
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
+// Extract ID from path parameter (e.g., /profiles/{id} -> id)
+const extractPathId = (path: string, prefix: string): string | null => {
+  if (!path.startsWith(prefix)) return null;
+  const parts = path.split(prefix);
+  if (parts.length < 2) return null;
+  const idPart = parts[1].split('/').filter(p => p)[0] || parts[1].split('?')[0];
+  return idPart && idPart.trim() ? idPart.trim() : null;
+};
+
 const getR2Bucket = (env: Env): R2Bucket => {
   const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
   const bucket = (env as any)[bindingName] as R2Bucket;
@@ -1344,7 +1353,11 @@ export default {
     // Handle profile retrieval
     if (path.startsWith('/profiles/') && request.method === 'GET') {
       try {
-        const profileId = path.replace('/profiles/', '');
+        const profileId = extractPathId(path, '/profiles/');
+        if (!profileId) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
         const result = await DB.prepare(
           'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
@@ -1384,7 +1397,11 @@ export default {
     // Handle profile update
     if (path.startsWith('/profiles/') && request.method === 'PUT') {
       try {
-        const profileId = path.replace('/profiles/', '');
+        const profileId = extractPathId(path, '/profiles/');
+        if (!profileId) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
         const body = await request.json() as Partial<Profile>;
 
         // Convert preferences to JSON string if it's an object
@@ -1478,7 +1495,7 @@ export default {
     if (path.startsWith('/presets/') && path.split('/').length === 3 && request.method === 'GET') {
       try {
         const R2_BUCKET = getR2Bucket(env);
-        const presetId = path.split('/presets/')[1];
+        const presetId = extractPathId(path, '/presets/');
         if (!presetId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
@@ -1545,7 +1562,7 @@ export default {
             thumbnail_url: thumbnailUrl,
             thumbnail_format: thumbnailFormat,
             thumbnail_resolution: thumbnailResolution,
-            created_at: (result as any).created_at
+            created_at: (result as any).created_at ? new Date((result as any).created_at * 1000).toISOString() : new Date().toISOString()
           },
           status: 'success',
           message: 'Preset retrieved successfully',
@@ -1674,7 +1691,7 @@ export default {
     // Handle preset deletion
     if (path.startsWith('/presets/') && request.method === 'DELETE') {
       try {
-        const presetId = path.replace('/presets/', '');
+        const presetId = extractPathId(path, '/presets/');
         if (!presetId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
@@ -1855,7 +1872,7 @@ export default {
     // Handle selfie deletion
     if (path.startsWith('/selfies/') && request.method === 'DELETE') {
       try {
-        const selfieId = path.replace('/selfies/', '');
+        const selfieId = extractPathId(path, '/selfies/');
         if (!selfieId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
@@ -1930,7 +1947,8 @@ export default {
     // Get preset_id from thumbnail_id (for mobile app) - thumbnail is in same row as preset
     if (path.startsWith('/thumbnails/') && path.endsWith('/preset') && request.method === 'GET') {
       try {
-        const thumbnailId = path.split('/thumbnails/')[1]?.replace('/preset', '');
+        const pathWithoutSuffix = path.replace('/preset', '');
+        const thumbnailId = extractPathId(pathWithoutSuffix, '/thumbnails/');
         if (!thumbnailId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
@@ -2106,7 +2124,7 @@ export default {
     // Handle results deletion (reuse same pattern as presets/selfies)
     if (path.startsWith('/results/') && request.method === 'DELETE') {
       try {
-        const resultId = path.replace('/results/', '');
+        const resultId = extractPathId(path, '/results/');
         if (!resultId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);

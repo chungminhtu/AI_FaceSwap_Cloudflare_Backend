@@ -1902,9 +1902,8 @@ const utils = {
       createdConfig = true;
 
       let result;
-      const deployCmd = envName 
-        ? `wrangler deploy --config "${absoluteWranglerPath}"`
-        : 'wrangler deploy';
+      // Always use --config flag when we create a config file
+      const deployCmd = `wrangler deploy --config "${absoluteWranglerPath}"`;
       try {
         result = await runCommandWithRetry(deployCmd, cwd, 3, 2000);
       } catch (error) {
@@ -1990,12 +1989,21 @@ async function deploySingleEnvironmentAsChild(envName, cwd, flags = {}) {
       throw new Error(`CRITICAL: Config environment '${config._environment}' does not match requested '${envName}'. Deployment ABORTED.`);
     }
     
-    if (flags.DEPLOY_PAGES !== false) {
+    // Respect deployPages from config, but allow CLI flags to override
+    const shouldDeployPages = config.deployPages !== false && flags.DEPLOY_PAGES !== false;
+    
+    if (shouldDeployPages) {
       tempFrontendDir = createTempFrontendCopy(cwd, envName);
       config._tempFrontendDir = tempFrontendDir;
     }
     
-    const result = await deploy(config, null, cwd, flags);
+    // Override flags with config setting if present
+    const finalFlags = {
+      ...flags,
+      DEPLOY_PAGES: shouldDeployPages
+    };
+    
+    const result = await deploy(config, null, cwd, finalFlags);
     
     const finalResult = {
       envName,
@@ -2198,7 +2206,10 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
     const DEPLOY_DB = flags.DEPLOY_DB !== false;
     const DEPLOY_WORKER = flags.DEPLOY_WORKER !== false;
-    const DEPLOY_PAGES = flags.DEPLOY_PAGES !== false;
+    // Respect config.deployPages if set, otherwise use flag
+    const DEPLOY_PAGES = config.deployPages !== undefined 
+      ? (config.deployPages !== false && flags.DEPLOY_PAGES !== false)
+      : flags.DEPLOY_PAGES !== false;
     const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
     const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;
     const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
@@ -2247,7 +2258,10 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
   const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
   const DEPLOY_DB = flags.DEPLOY_DB !== false;
   const DEPLOY_WORKER = flags.DEPLOY_WORKER !== false;
-  const DEPLOY_PAGES = flags.DEPLOY_PAGES !== false;
+  // Respect config.deployPages if set, otherwise use flag
+  const DEPLOY_PAGES = config.deployPages !== undefined 
+    ? (config.deployPages !== false && flags.DEPLOY_PAGES !== false)
+    : flags.DEPLOY_PAGES !== false;
   const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
 
   const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;

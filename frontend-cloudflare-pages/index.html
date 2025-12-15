@@ -630,6 +630,7 @@
                     </span>
                     <input type="text" id="profile-id-input" placeholder="ID Profile" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: monospace; width: 100px; height: 26px;">
                     <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px;">Chuyển Profile</button>
+                    <button id="edit-profile-btn" onclick="openProfileEditModal()" style="padding: 4px 12px; background: rgba(59, 130, 246, 0.9); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px; display: none;" title="Chỉnh Sửa Hồ Sơ">✏️ Sửa</button>
                 </div>
                 <select class="action-select" id="api-provider" style="height: 26px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 12px;">
                     <option value="google-nano-banana" selected>Google</option>
@@ -638,6 +639,8 @@
                 <button class="log-toggle-btn" onclick="window.open('docs/index.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--accent); color: #fff; transition: all 0.2s;">📖 API Docs</button>
                 <button class="log-toggle-btn" onclick="showComparisonView()" id="comparison-view-btn" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(59, 130, 246, 0.9); color: #fff; transition: all 0.2s;" title="Xem So Sánh">🔍 So Sánh (<span id="comparison-count">0</span>)</button>
                 <button class="log-toggle-btn" onclick="switchMainTab('thumbnails')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(34, 197, 94, 0.9); color: #fff; transition: all 0.2s;" title="Quản Lý Thumbnail">🖼️ Thumbnails</button>
+                <button class="log-toggle-btn" onclick="loadConfig()" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(168, 85, 247, 0.9); color: #fff; transition: all 0.2s;" title="Lấy Cấu Hình Backend">⚙️ Config</button>
+                <button class="log-toggle-btn" onclick="listAllProfiles()" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(251, 146, 60, 0.9); color: #fff; transition: all 0.2s;" title="Liệt Kê Tất Cả Profiles">👥 Profiles</button>
                 <button class="log-toggle-btn" onclick="toggleLogPanel()">Nhật Ký (Log)</button>
             </div>
         </div>
@@ -922,6 +925,41 @@
 
     <div id="toast-container" class="toast-container"></div>
 
+    <!-- Profile Edit Modal -->
+    <div id="profile-edit-modal" class="modal-overlay" style="display: none;" onclick="if(event.target.id === 'profile-edit-modal') closeProfileEditModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>✏️ Chỉnh Sửa Hồ Sơ</h2>
+                <button class="modal-close" onclick="closeProfileEditModal()">×</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <form id="profile-edit-form" onsubmit="saveProfileEdit(event)">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-secondary); font-weight: 500;">Tên (Name):</label>
+                        <input type="text" id="profile-edit-name" placeholder="Nhập tên" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-secondary); font-weight: 500;">Email:</label>
+                        <input type="email" id="profile-edit-email" placeholder="email@example.com" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px;">
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-secondary); font-weight: 500;">URL Avatar:</label>
+                        <input type="url" id="profile-edit-avatar" placeholder="https://example.com/avatar.jpg" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px;">
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-secondary); font-weight: 500;">Preferences (JSON):</label>
+                        <textarea id="profile-edit-preferences" placeholder='{"theme":"dark","language":"vi"}' rows="4" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; font-family: monospace; resize: vertical;"></textarea>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Có thể để trống hoặc nhập JSON hợp lệ</div>
+                    </div>
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button type="button" onclick="closeProfileEditModal()" style="padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 14px; font-weight: 500;">Hủy</button>
+                        <button type="submit" style="padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; font-weight: 600;">💾 Lưu</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="loading-overlay" class="loading-overlay" style="display: none;">
         <div class="loading-content">
             <div class="spinner"></div>
@@ -936,7 +974,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
-        let WORKER_URL = 'https://ai-faceswap-backend.Chungminhtu03.workers.dev'; // Injected during deployment - DO NOT MODIFY MANUALLY
+        let WORKER_URL = 'https://ai-faceswap-backend-office-prod.Thanhlx273.workers.dev'; // Injected during deployment - DO NOT MODIFY MANUALLY
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
@@ -1034,11 +1072,43 @@
             },
             updateProfileDisplay() {
                 const statusDiv = $('profile-status'), infoDiv = $('profile-info'), idSpan = $('profile-id-display');
-                if (!this.currentProfile) { statusDiv.textContent = 'Chưa có hồ sơ'; return; }
+                const editBtn = $('edit-profile-btn');
+                if (!this.currentProfile) { statusDiv.textContent = 'Chưa có hồ sơ'; if (editBtn) editBtn.style.display = 'none'; return; }
                 statusDiv.textContent = '✓ Sẵn sàng';
                 statusDiv.style.color = 'var(--success)';
                 if (idSpan) idSpan.textContent = this.currentProfile.id;
                 if (infoDiv) infoDiv.style.display = 'inline';
+                if (editBtn) editBtn.style.display = 'inline-block';
+            },
+            async updateProfile(updates) {
+                if (!this.currentProfile?.id) throw new Error('Không có hồ sơ để cập nhật');
+                const startTime = Date.now();
+                const updateUrl = `${WORKER_URL}/profiles/${this.currentProfile.id}`;
+                const response = await fetch(updateUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                const duration = Date.now() - startTime;
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || `HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                logApiCall({
+                    label: 'Cập Nhật Hồ Sơ',
+                    method: 'PUT',
+                    url: `/profiles/${this.currentProfile.id}`,
+                    fullUrl: updateUrl,
+                    status: 'success',
+                    payload: data,
+                    duration,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: updates
+                });
+                this.currentProfile = data.data || data;
+                this.updateProfileDisplay();
+                return this.currentProfile;
             },
             async switchToProfile(profileId) {
                 if (!profileId?.trim()) { showStatusMessage('Vui lòng nhập ID hồ sơ', 'error'); return; }
@@ -1076,6 +1146,80 @@
             if (input?.value.trim()) {
                 window.profileManager.switchToProfile(input.value.trim());
                 input.value = '';
+            }
+        }
+
+        function openProfileEditModal() {
+            const profile = window.profileManager?.currentProfile;
+            if (!profile) {
+                showStatusMessage('Không có hồ sơ để chỉnh sửa', 'error');
+                return;
+            }
+            const modal = $('profile-edit-modal');
+            const nameInput = $('profile-edit-name');
+            const emailInput = $('profile-edit-email');
+            const avatarInput = $('profile-edit-avatar');
+            const preferencesInput = $('profile-edit-preferences');
+            
+            if (nameInput) nameInput.value = profile.name || '';
+            if (emailInput) emailInput.value = profile.email || '';
+            if (avatarInput) avatarInput.value = profile.avatar_url || '';
+            if (preferencesInput) {
+                try {
+                    const prefs = typeof profile.preferences === 'string' 
+                        ? JSON.parse(profile.preferences) 
+                        : profile.preferences;
+                    preferencesInput.value = prefs ? JSON.stringify(prefs, null, 2) : '';
+                } catch (e) {
+                    preferencesInput.value = profile.preferences || '';
+                }
+            }
+            
+            if (modal) modal.style.display = 'flex';
+        }
+
+        function closeProfileEditModal() {
+            const modal = $('profile-edit-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function saveProfileEdit(event) {
+            event.preventDefault();
+            const profile = window.profileManager?.currentProfile;
+            if (!profile?.id) {
+                showStatusMessage('Không có hồ sơ để cập nhật', 'error');
+                return;
+            }
+
+            const nameInput = $('profile-edit-name');
+            const emailInput = $('profile-edit-email');
+            const avatarInput = $('profile-edit-avatar');
+            const preferencesInput = $('profile-edit-preferences');
+
+            const updates = {};
+            if (nameInput?.value.trim()) updates.name = nameInput.value.trim();
+            if (emailInput?.value.trim()) updates.email = emailInput.value.trim();
+            if (avatarInput?.value.trim()) updates.avatar_url = avatarInput.value.trim();
+            
+            if (preferencesInput?.value.trim()) {
+                try {
+                    const prefs = JSON.parse(preferencesInput.value.trim());
+                    updates.preferences = prefs;
+                } catch (e) {
+                    showStatusMessage('Preferences phải là JSON hợp lệ', 'error');
+                    return;
+                }
+            }
+
+            showLoading('Đang cập nhật hồ sơ...');
+            try {
+                await window.profileManager.updateProfile(updates);
+                closeProfileEditModal();
+                showStatusMessage('Đã cập nhật hồ sơ thành công', 'success');
+            } catch (error) {
+                showStatusMessage(`Cập nhật hồ sơ thất bại: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
             }
         }
 
@@ -2504,6 +2648,96 @@
                 }
             } catch (error) {
                 showStatusMessage('Không thể tải preset', 'error');
+            }
+        }
+
+        async function getPresetFromThumbnail(thumbnailId) {
+            if (!thumbnailId) {
+                showStatusMessage('Thumbnail ID không hợp lệ', 'error');
+                return;
+            }
+            try {
+                const startTime = Date.now();
+                const url = `${WORKER_URL}/thumbnails/${thumbnailId}/preset`;
+                const response = await fetch(url);
+                const duration = Date.now() - startTime;
+                const data = await response.json();
+                logApiCall({
+                    label: 'Lấy Preset từ Thumbnail',
+                    method: 'GET',
+                    url: `/thumbnails/${thumbnailId}/preset`,
+                    fullUrl: url,
+                    status: response.ok ? 'success' : 'error',
+                    payload: data,
+                    duration
+                });
+                if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+                if (data.data?.preset_id) {
+                    await selectThumbnail(data.data.preset_id);
+                } else {
+                    showStatusMessage('Không tìm thấy preset từ thumbnail', 'error');
+                }
+            } catch (error) {
+                showStatusMessage(`Lỗi khi lấy preset từ thumbnail: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadConfig() {
+            showLoading('Đang tải cấu hình...');
+            try {
+                const startTime = Date.now();
+                const url = `${WORKER_URL}/config`;
+                const response = await fetch(url);
+                const duration = Date.now() - startTime;
+                const data = await response.json();
+                logApiCall({
+                    label: 'Lấy Cấu Hình',
+                    method: 'GET',
+                    url: '/config',
+                    fullUrl: url,
+                    status: response.ok ? 'success' : 'error',
+                    payload: data,
+                    duration
+                });
+                if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+                const configInfo = JSON.stringify(data.data, null, 2);
+                alert(`Cấu hình Backend:\n\n${configInfo}\n\nXem chi tiết trong Nhật Ký API`);
+                showStatusMessage('Đã tải cấu hình thành công', 'success');
+            } catch (error) {
+                showStatusMessage(`Lỗi khi tải cấu hình: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function listAllProfiles() {
+            showLoading('Đang tải danh sách profiles...');
+            try {
+                const startTime = Date.now();
+                const url = `${WORKER_URL}/profiles`;
+                const response = await fetch(url);
+                const duration = Date.now() - startTime;
+                const data = await response.json();
+                logApiCall({
+                    label: 'Liệt Kê Profiles',
+                    method: 'GET',
+                    url: '/profiles',
+                    fullUrl: url,
+                    status: response.ok ? 'success' : 'error',
+                    payload: data,
+                    duration
+                });
+                if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+                const profiles = data.data?.profiles || [];
+                const profilesInfo = profiles.length > 0
+                    ? profiles.map(p => `ID: ${p.id}\nTên: ${p.name || 'N/A'}\nEmail: ${p.email || 'N/A'}\nDevice: ${p.device_id || 'N/A'}\n---`).join('\n')
+                    : 'Chưa có profiles nào';
+                alert(`Tổng số Profiles: ${profiles.length}\n\n${profilesInfo}\n\nXem chi tiết trong Nhật Ký API`);
+                showStatusMessage(`Đã tải ${profiles.length} profiles`, 'success');
+            } catch (error) {
+                showStatusMessage(`Lỗi khi tải danh sách profiles: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
             }
         }
 

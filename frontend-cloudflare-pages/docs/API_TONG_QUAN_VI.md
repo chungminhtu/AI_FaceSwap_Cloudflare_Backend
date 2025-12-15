@@ -651,6 +651,7 @@ curl https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
 
 **Query Parameters:**
 - `profile_id` (required): ID profile.
+- `limit` (optional): Số lượng selfies tối đa trả về (1-50). Mặc định: 50.
 
 ### Response
 
@@ -713,6 +714,8 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 
 **Query Parameters:**
 - `profile_id` (optional): ID profile để lọc kết quả.
+- `limit` (optional): Số lượng results tối đa trả về (1-50). Mặc định: 50.
+- `gender` (optional): Lọc theo giới tính. Giá trị: `male` hoặc `female`.
 
 ### Response
 
@@ -907,6 +910,8 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 - `avatar_url` (string, optional): URL avatar.
 - `preferences` (string hoặc object, optional): preferences dạng JSON string hoặc object. Nếu là object, hệ thống tự động chuyển thành JSON string trước khi lưu vào D1 database (vì D1 không hỗ trợ JSON object trực tiếp).
 
+**Lưu ý:** ID profile phải được cung cấp trong URL path (`/profiles/{id}`), không cần gửi trong body.
+
 ### Response
 
 ```json
@@ -1075,19 +1080,18 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 ## 22. GET `/thumbnails`
 
 ### Mục đích
-Lấy danh sách thumbnails từ database.
+Lấy danh sách thumbnails từ database. Trả về tất cả presets có thumbnail (bất kỳ cột thumbnail nào không null).
 
 ### Request
 
 ```bash
 curl https://api.d.shotpix.app/thumbnails
-curl https://api.d.shotpix.app/thumbnails?thumbnail_format=webp
-curl https://api.d.shotpix.app/thumbnails?thumbnail_resolution=1x
 ```
 
 **Query Parameters:**
-- `thumbnail_format` (optional): `webp` hoặc `lottie`
-- `thumbnail_resolution` (optional): `1x`, `1.5x`, `2x`, `3x`, `4x`
+- Không có query parameters. Endpoint trả về tất cả presets có thumbnail.
+
+**Lưu ý:** Endpoint này query từ bảng `presets` với điều kiện có bất kỳ cột thumbnail nào không null (`thumbnail_url`, `thumbnail_url_1x`, `thumbnail_url_1_5x`, `thumbnail_url_2x`, `thumbnail_url_3x`).
 
 ### Response
 
@@ -1097,12 +1101,13 @@ curl https://api.d.shotpix.app/thumbnails?thumbnail_resolution=1x
     "thumbnails": [
       {
         "id": "preset_1234567890_abc123",
-        "image_url": "https://resources.d.shotpix.app/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp",
+        "preset_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
         "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
-        "thumbnail_format": "webp",
-        "thumbnail_resolution": "1x",
-        "thumbnail_r2_key": "webp_1x/face-swap/wedding_both_1.webp",
-        "created_at": "2024-01-01T00:00:00.000Z"
+        "thumbnail_url_1x": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "thumbnail_url_1_5x": null,
+        "thumbnail_url_2x": null,
+        "thumbnail_url_3x": null,
+        "created_at": 1704067200
       }
     ]
   },
@@ -1111,6 +1116,8 @@ curl https://api.d.shotpix.app/thumbnails?thumbnail_resolution=1x
   "code": 200
 }
 ```
+
+**Lưu ý:** Response trả về tất cả các cột thumbnail resolution (1x, 1.5x, 2x, 3x) từ database. `thumbnail_url` là alias của `thumbnail_url_1x` cho backward compatibility.
 
 ## 23. GET `/thumbnails/{id}/preset`
 
