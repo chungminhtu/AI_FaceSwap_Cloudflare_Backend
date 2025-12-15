@@ -264,36 +264,74 @@ function initLogger() {
   return logger;
 }
 
-function logStep(message) {
+function logStep(message, envName = null) {
+  const prefix = envName ? `[${envName}] ` : '';
   if (logger) {
     const index = logger.addStep(message);
     logger.startStep(index);
   } else {
-    console.log(`${colors.cyan}[STEP]${colors.reset} ${message}`);
+    console.log(`${colors.cyan}[STEP]${colors.reset} ${prefix}${message}`);
   }
 }
 
-function logSuccess(message) {
+function logSuccess(message, envName = null) {
+  const prefix = envName ? `[${envName}] ` : '';
   if (logger && logger.currentStepIndex >= 0) {
     logger.completeStep(logger.currentStepIndex, message);
   } else {
-    console.log(`${colors.green}✓${colors.reset} ${message}`);
+    console.log(`${colors.green}✓${colors.reset} ${prefix}${message}`);
   }
 }
 
-function logError(message) {
+function logError(message, envName = null) {
+  const prefix = envName ? `[${envName}] ` : '';
   if (logger && logger.currentStepIndex >= 0) {
     logger.failStep(logger.currentStepIndex, message);
   } else {
-    console.log(`${colors.red}✗${colors.reset} ${message}`);
+    console.log(`${colors.red}✗${colors.reset} ${prefix}${message}`);
   }
 }
 
-function logWarn(message) {
+function logWarn(message, envName = null) {
+  const prefix = envName ? `[${envName}] ` : '';
   if (logger && logger.currentStepIndex >= 0) {
     logger.warnStep(logger.currentStepIndex, message);
   } else {
-    console.log(`${colors.yellow}⚠${colors.reset} ${message}`);
+    console.log(`${colors.yellow}⚠${colors.reset} ${prefix}${message}`);
+  }
+}
+
+function validateEnvironmentConfig(config, expectedEnvName) {
+  if (!config) {
+    throw new Error(`Environment validation failed: Config is null or undefined. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (config._environment !== expectedEnvName) {
+    throw new Error(`Environment validation failed: Config environment '${config._environment}' does not match expected '${expectedEnvName}'. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (!config.workerName || config.workerName.trim() === '') {
+    throw new Error(`Environment validation failed: workerName is missing or empty. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (!config.pagesProjectName || config.pagesProjectName.trim() === '') {
+    throw new Error(`Environment validation failed: pagesProjectName is missing or empty. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (!config.cloudflare || !config.cloudflare.accountId || config.cloudflare.accountId.trim() === '') {
+    throw new Error(`Environment validation failed: cloudflare.accountId is missing or empty. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (!config.cloudflare.apiToken || config.cloudflare.apiToken.trim() === '') {
+    throw new Error(`Environment validation failed: cloudflare.apiToken is missing or empty. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (!config.databaseName || config.databaseName.trim() === '') {
+    throw new Error(`Environment validation failed: databaseName is missing or empty. Deployment ABORTED to prevent cross-environment deployment.`);
+  }
+  
+  if (!config.bucketName || config.bucketName.trim() === '') {
+    throw new Error(`Environment validation failed: bucketName is missing or empty. Deployment ABORTED to prevent cross-environment deployment.`);
   }
 }
 
@@ -523,10 +561,25 @@ function parseConfig(config) {
   };
 }
 
-function generateWranglerConfig(config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null) {
+function generateWranglerConfig(config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null, expectedWorkerName = null, expectedAccountId = null, cwd = null) {
+  if (expectedWorkerName !== null && config.workerName !== expectedWorkerName) {
+    throw new Error(`CRITICAL: Worker name mismatch. Expected '${expectedWorkerName}', got '${config.workerName}'. Deployment ABORTED.`);
+  }
+  
+  if (expectedAccountId !== null && config.cloudflare?.accountId !== expectedAccountId) {
+    throw new Error(`CRITICAL: Account ID mismatch. Expected '${expectedAccountId}', got '${config.cloudflare?.accountId}'. Deployment ABORTED.`);
+  }
+  
+  let mainPath = 'backend-cloudflare-workers/index.ts';
+  if (cwd) {
+    const configDir = path.join(cwd, '_deploy-cli-cloudflare-gcp', 'wrangler-configs');
+    const entryPoint = path.join(cwd, 'backend-cloudflare-workers', 'index.ts');
+    mainPath = path.relative(configDir, entryPoint);
+  }
+  
   const wranglerConfig = {
     name: config.workerName,
-    main: 'backend-cloudflare-workers/index.ts',
+    main: mainPath,
     compatibility_date: '2024-01-01',
     account_id: config.cloudflare?.accountId,
     r2_buckets: [{ binding: config.bucketName, bucket_name: config.bucketName }],
@@ -908,11 +961,37 @@ function getWorkerUrl(cwd, workerName) {
   return '';
 }
 
-function updateWorkerUrlInHtml(cwd, workerUrl, config) {
-  const htmlPath = path.join(cwd, 'frontend-cloudflare-pages', 'index.html');
-  if (!fs.existsSync(htmlPath)) return;
+function createTempFrontendCopy(cwd, envName) {
+  const sourceDir = path.join(cwd, 'frontend-cloudflare-pages');
+  const tempDir = path.join(cwd, `frontend-cloudflare-pages.${envName}.tmp`);
   
-  let content = fs.readFileSync(htmlPath, 'utf8');
+  if (!fs.existsSync(sourceDir)) {
+    throw new Error(`Source directory ${sourceDir} does not exist`);
+  }
+  
+  if (fs.existsSync(tempDir)) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+  
+  fs.cpSync(sourceDir, tempDir, { recursive: true });
+  return tempDir;
+}
+
+function cleanupTempFrontendCopy(tempDir) {
+  if (tempDir && fs.existsSync(tempDir)) {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`Warning: Could not clean up temp directory ${tempDir}: ${error.message}`);
+    }
+  }
+}
+
+function updateWorkerUrlInHtml(cwd, workerUrl, config, htmlPath = null) {
+  const finalHtmlPath = htmlPath || path.join(cwd, 'frontend-cloudflare-pages', 'index.html');
+  if (!fs.existsSync(finalHtmlPath)) return;
+  
+  let content = fs.readFileSync(finalHtmlPath, 'utf8');
   
   // Determine the actual worker URL to use from config (BACKEND_DOMAIN takes priority)
   let finalWorkerUrl = workerUrl;
@@ -953,7 +1032,7 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config) {
     console.log(`[Deploy] ✓ Updated fallbackUrl in HTML to: ${finalWorkerUrl}`);
   }
   
-  fs.writeFileSync(htmlPath, content);
+  fs.writeFileSync(finalHtmlPath, content);
   console.log(`[Deploy] ✓ Updated frontend HTML with backend URL: ${finalWorkerUrl}`);
 }
 
@@ -961,29 +1040,41 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config) {
 async function findMigrationFiles(migrationsDir) {
   const { readdir, stat } = require('fs/promises');
   const { join } = require('path');
-  const files = await readdir(migrationsDir);
-  const migrationFiles = [];
   
-  for (const file of files) {
-    if ((file.endsWith('.sql') || file.endsWith('.ts')) && 
-        !file.endsWith('.executed.sql') && 
-        !file.endsWith('.executed.ts') && 
-        !file.endsWith('.d.ts') &&
-        !file.includes('_application')) {
-      const fullPath = join(migrationsDir, file);
-      const stats = await stat(fullPath);
-      if (stats.isFile()) {
-        migrationFiles.push({
-          name: file,
-          path: file,
-          fullPath,
-          type: file.endsWith('.sql') ? 'sql' : 'ts'
-        });
-      }
-    }
+  if (!fs.existsSync(migrationsDir)) {
+    return [];
   }
   
-  return migrationFiles.sort((a, b) => a.name.localeCompare(b.name));
+  try {
+    const files = await readdir(migrationsDir);
+    const migrationFiles = [];
+    
+    for (const file of files) {
+      if ((file.endsWith('.sql') || file.endsWith('.ts')) && 
+          !file.endsWith('.executed.sql') && 
+          !file.endsWith('.executed.ts') && 
+          !file.endsWith('.d.ts') &&
+          !file.includes('_application')) {
+        const fullPath = join(migrationsDir, file);
+        const stats = await stat(fullPath);
+        if (stats.isFile()) {
+          migrationFiles.push({
+            name: file,
+            path: file,
+            fullPath,
+            type: file.endsWith('.sql') ? 'sql' : 'ts'
+          });
+        }
+      }
+    }
+    
+    return migrationFiles.sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function runSqlMigration(migrationFile, databaseName, accountId, apiToken) {
@@ -1193,6 +1284,10 @@ export default {
 async function runMigrations(config, cwd, accountId, apiToken) {
   const { join } = require('path');
   const migrationsDir = join(cwd, 'backend-cloudflare-workers', 'migrations');
+  
+  if (!fs.existsSync(migrationsDir)) {
+    return { success: true, count: 0, executed: 0, skipped: 0, message: 'No migrations directory found - skipping migrations' };
+  }
   
   try {
     const migrationFiles = await findMigrationFiles(migrationsDir);
@@ -1707,7 +1802,11 @@ const utils = {
     }
   },
 
-  async deploySecrets(secrets, cwd, workerName) {
+  async deploySecrets(secrets, cwd, workerName, expectedWorkerName = null) {
+    if (expectedWorkerName !== null && workerName !== expectedWorkerName) {
+      throw new Error(`CRITICAL: Worker name mismatch in secrets deployment. Expected '${expectedWorkerName}', got '${workerName}'. ABORTED.`);
+    }
+    
     if (!secrets || !Object.keys(secrets).length) return { success: true, deployed: 0, total: 0 };
 
     const keys = Object.keys(secrets);
@@ -1748,42 +1847,74 @@ const utils = {
     return { success: true, deployed: successCount, total: keys.length };
   },
 
-  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null) {
+  async deployWorker(cwd, workerName, config, skipD1 = false, databaseId = null, promptCacheNamespaceId = null, envName = null, expectedWorkerName = null, expectedAccountId = null) {
+    if (expectedWorkerName !== null && config.workerName !== expectedWorkerName) {
+      throw new Error(`CRITICAL: Worker name mismatch. Expected '${expectedWorkerName}', got '${config.workerName}'. Deployment ABORTED.`);
+    }
+    
+    if (expectedAccountId !== null && config.cloudflare?.accountId !== expectedAccountId) {
+      throw new Error(`CRITICAL: Account ID mismatch. Expected '${expectedAccountId}', got '${config.cloudflare?.accountId}'. Deployment ABORTED.`);
+    }
+    
     const wranglerConfigFiles = [
       path.join(cwd, 'wrangler.json'),
       path.join(cwd, 'wrangler.jsonc'),
       path.join(cwd, 'wrangler.toml')
     ];
 
-    for (const configFile of wranglerConfigFiles) {
-      if (fs.existsSync(configFile)) {
-        try {
-          fs.unlinkSync(configFile);
-        } catch {
+    if (!envName) {
+      for (const configFile of wranglerConfigFiles) {
+        if (fs.existsSync(configFile)) {
+          try {
+            fs.unlinkSync(configFile);
+          } catch {
+          }
         }
       }
     }
 
-    const wranglerPath = path.join(cwd, 'wrangler.jsonc');
+    const wranglerConfigsDir = path.join(cwd, '_deploy-cli-cloudflare-gcp', 'wrangler-configs');
+    if (!fs.existsSync(wranglerConfigsDir)) {
+      fs.mkdirSync(wranglerConfigsDir, { recursive: true });
+    }
+    
+    const wranglerPath = envName 
+      ? path.join(wranglerConfigsDir, `wrangler.${envName}.jsonc`)
+      : path.join(wranglerConfigsDir, 'wrangler.jsonc');
+    const absoluteWranglerPath = path.resolve(wranglerPath);
     let createdConfig = false;
 
     try {
-      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, promptCacheNamespaceId);
+      if (fs.existsSync(wranglerPath) && expectedWorkerName !== null && expectedAccountId !== null) {
+        try {
+          const existingConfig = JSON.parse(fs.readFileSync(wranglerPath, 'utf8'));
+          if (existingConfig.name !== expectedWorkerName || existingConfig.account_id !== expectedAccountId) {
+            throw new Error(`CRITICAL: Existing wrangler config file contains mismatched worker name or account ID. Expected name: '${expectedWorkerName}', account: '${expectedAccountId}'. Got name: '${existingConfig.name}', account: '${existingConfig.account_id}'. Deployment ABORTED.`);
+          }
+        } catch (parseError) {
+          if (parseError.message.includes('CRITICAL')) throw parseError;
+        }
+      }
+      
+      const wranglerConfig = generateWranglerConfig(config, skipD1, databaseId, promptCacheNamespaceId, expectedWorkerName, expectedAccountId, cwd);
       fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfig, null, 2));
       createdConfig = true;
 
       let result;
+      const deployCmd = envName 
+        ? `wrangler deploy --config "${absoluteWranglerPath}"`
+        : 'wrangler deploy';
       try {
-        result = await runCommandWithRetry('wrangler deploy', cwd, 3, 2000);
+        result = await runCommandWithRetry(deployCmd, cwd, 3, 2000);
       } catch (error) {
         const errorMsg = error.message || error.error || '';
         if (errorMsg.includes('code: 10214')) {
-          result = await runCommandWithRetry('wrangler deploy', cwd, 2, 3000);
+          result = await runCommandWithRetry(deployCmd, cwd, 2, 3000);
         } else if ((errorMsg.includes('Authentication error') || errorMsg.includes('code: 10000')) && !skipD1) {
           logWarn('Worker deployment failed due to D1 permissions. Retrying without D1 binding...');
-          const wranglerConfigNoD1 = generateWranglerConfig(config, true, null);
+          const wranglerConfigNoD1 = generateWranglerConfig(config, true, null, null, expectedWorkerName, expectedAccountId, cwd);
           fs.writeFileSync(wranglerPath, JSON.stringify(wranglerConfigNoD1, null, 2));
-          result = await runCommandWithRetry('wrangler deploy', cwd, 2, 3000);
+          result = await runCommandWithRetry(deployCmd, cwd, 2, 3000);
         } else {
           throw error;
         }
@@ -1791,10 +1922,12 @@ const utils = {
       if (!result || !result.success) throw new Error(result?.error || 'Worker deployment failed');
 
       const workerUrl = getWorkerUrl(cwd, workerName);
-      updateWorkerUrlInHtml(cwd, workerUrl, config);
+      if (!envName) {
+        updateWorkerUrlInHtml(cwd, workerUrl, config);
+      }
       return workerUrl;
     } finally {
-      if (createdConfig && fs.existsSync(wranglerPath)) {
+      if (createdConfig && !envName && fs.existsSync(wranglerPath)) {
         try {
           fs.unlinkSync(wranglerPath);
         } catch {
@@ -1804,8 +1937,12 @@ const utils = {
     }
   },
 
-  async deployPages(cwd, pagesProjectName) {
-    const publicDir = path.join(cwd, 'frontend-cloudflare-pages');
+  async deployPages(cwd, pagesProjectName, sourceDir = null, expectedPagesProjectName = null) {
+    if (expectedPagesProjectName !== null && pagesProjectName !== expectedPagesProjectName) {
+      throw new Error(`CRITICAL: Pages project name mismatch. Expected '${expectedPagesProjectName}', got '${pagesProjectName}'. Deployment ABORTED.`);
+    }
+    
+    const publicDir = sourceDir || path.join(cwd, 'frontend-cloudflare-pages');
     if (!fs.existsSync(publicDir)) return `https://${pagesProjectName}.pages.dev/`;
 
     try {
@@ -1825,7 +1962,188 @@ const utils = {
   }
 };
 
+async function deploySingleEnvironmentAsChild(envName, cwd, flags = {}) {
+  let tempFrontendDir = null;
+  
+  try {
+    process.env.DEPLOY_ENV = envName;
+    
+    const config = await loadConfig();
+    config._environment = envName;
+    
+    validateEnvironmentConfig(config, envName);
+    
+    if (config._environment !== envName) {
+      throw new Error(`CRITICAL: Config environment '${config._environment}' does not match requested '${envName}'. Deployment ABORTED.`);
+    }
+    
+    if (flags.DEPLOY_PAGES !== false) {
+      tempFrontendDir = createTempFrontendCopy(cwd, envName);
+      config._tempFrontendDir = tempFrontendDir;
+    }
+    
+    const result = await deploy(config, null, cwd, flags);
+    
+    const finalResult = {
+      envName,
+      success: result.success !== false,
+      workerUrl: result.workerUrl || '',
+      pagesUrl: result.pagesUrl || '',
+      error: result.error || null
+    };
+    
+    console.log(JSON.stringify(finalResult));
+    return finalResult;
+  } catch (error) {
+    const errorResult = {
+      envName,
+      success: false,
+      workerUrl: '',
+      pagesUrl: '',
+      error: error.message || 'Unknown error'
+    };
+    console.log(JSON.stringify(errorResult));
+    return errorResult;
+  } finally {
+    if (tempFrontendDir) {
+      cleanupTempFrontendCopy(tempFrontendDir);
+    }
+  }
+}
+
+async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
+  const secretsPath = path.join(cwd, '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+  if (!fs.existsSync(secretsPath)) {
+    throw new Error('deployments-secrets.json not found');
+  }
+
+  const allConfigs = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+  if (!allConfigs.environments) {
+    throw new Error('No environments found in deployments-secrets.json');
+  }
+
+  const envsToDeploy = envNames.length > 0 
+    ? envNames.filter(env => allConfigs.environments[env])
+    : Object.keys(allConfigs.environments);
+
+  if (envsToDeploy.length === 0) {
+    throw new Error('No valid environments to deploy');
+  }
+
+  console.log(`${colors.cyan}Deploying ${envsToDeploy.length} environment(s) in parallel: ${envsToDeploy.join(', ')}${colors.reset}\n`);
+
+  const deployments = envsToDeploy.map((envName) => {
+    return new Promise((resolve) => {
+      const scriptPath = __filename;
+      const child = spawn('node', [scriptPath, '--child-deploy', envName], {
+        cwd: cwd,
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+      let jsonOutput = '';
+
+      child.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        const lines = output.split('\n');
+        for (const line of lines) {
+          if (line.trim().startsWith('{') && line.includes('"envName"')) {
+            jsonOutput = line.trim();
+          } else {
+            process.stdout.write(`[${envName}] ${line}\n`);
+          }
+        }
+      });
+
+      child.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        process.stderr.write(`[${envName}] ${output}`);
+      });
+
+      child.on('close', (code) => {
+        let result;
+        try {
+          if (jsonOutput) {
+            result = JSON.parse(jsonOutput);
+          } else {
+            const jsonMatch = stdout.match(/\{[\s\S]*"envName"[\s\S]*\}/);
+            if (jsonMatch) {
+              result = JSON.parse(jsonMatch[0]);
+            } else {
+              result = {
+                envName,
+                success: code === 0,
+                workerUrl: '',
+                pagesUrl: '',
+                error: code !== 0 ? (stderr || stdout || 'Unknown error') : null
+              };
+            }
+          }
+        } catch (e) {
+          result = {
+            envName,
+            success: code === 0,
+            workerUrl: '',
+            pagesUrl: '',
+            error: code !== 0 ? (stderr || stdout || 'Unknown error') : null
+          };
+        }
+        resolve(result);
+      });
+
+      child.on('error', (error) => {
+        resolve({
+          envName,
+          success: false,
+          workerUrl: '',
+          pagesUrl: '',
+          error: error.message
+        });
+      });
+    });
+  });
+
+  const results = await Promise.all(deployments);
+  
+  console.log('\n' + '='.repeat(80));
+  console.log(`${colors.bright}Parallel Deployment Summary${colors.reset}\n`);
+  
+  const successful = results.filter(r => r.success);
+  const failed = results.filter(r => !r.success);
+  
+  successful.forEach(({ envName, workerUrl, pagesUrl }) => {
+    console.log(`${colors.green}✓ ${envName}${colors.reset}`);
+    if (workerUrl) console.log(`  Backend: ${workerUrl}`);
+    if (pagesUrl) console.log(`  Frontend: ${pagesUrl}`);
+  });
+  
+  if (failed.length > 0) {
+    console.log('\n' + colors.red + 'Failed:' + colors.reset);
+    failed.forEach(({ envName, error }) => {
+      console.log(`${colors.red}✗ ${envName}: ${error || 'Unknown error'}${colors.reset}`);
+    });
+  }
+  
+  console.log(`\n${colors.bright}Total: ${successful.length}/${results.length} successful${colors.reset}\n`);
+  
+  return {
+    success: failed.length === 0,
+    results: results.reduce((acc, { envName, ...result }) => {
+      acc[envName] = result;
+      return acc;
+    }, {})
+  };
+}
+
 async function deploy(config, progressCallback, cwd, flags = {}) {
+  if (config._environment) {
+    validateEnvironmentConfig(config, config._environment);
+  }
+  
   const useLogger = !progressCallback;
   if (useLogger) {
     logger = new DeploymentLogger();
@@ -1839,14 +2157,14 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
 
     if (needsCloudflare || needsGCP) {
-      logger.addStep('Checking prerequisites', 'Validating required tools');
+      logger.addStep('Checking prerequisites...', 'Validating required tools');
     }
     if (needsGCP) {
-      logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
-      logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
+      logger.addStep('Authenticating with GCP...', 'Connecting to Google Cloud');
+      logger.addStep('Checking GCP APIs...', 'Verifying Vertex AI and Vision APIs');
     }
     if (needsCloudflare) {
-      logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+      logger.addStep('Setting up Cloudflare credentials...', 'Configuring Cloudflare access');
       if (DEPLOY_R2) {
         logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
       }
@@ -1856,13 +2174,13 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       }
       logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV.namespaceName}`, 'Checking/creating KV namespace');
       if (DEPLOY_SECRETS) {
-        logger.addStep('Deploying secrets', 'Configuring environment secrets');
+        logger.addStep('Deploying secrets...', 'Configuring environment secrets');
       }
       if (DEPLOY_WORKER) {
-        logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
+        logger.addStep('Deploying worker...', 'Deploying Cloudflare Worker');
       }
       if (DEPLOY_PAGES) {
-        logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+        logger.addStep('Deploying frontend...', 'Deploying Cloudflare Pages');
       }
     }
     logger.render();
@@ -2049,7 +2367,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       if (DEPLOY_SECRETS) {
         report('Deploying secrets...', 'running', 'Configuring environment secrets');
         if (Object.keys(config.secrets || {}).length > 0) {
-          await utils.deploySecrets(config.secrets, cwd, config.workerName);
+          await utils.deploySecrets(config.secrets, cwd, config.workerName, config.workerName);
           report('Deploying secrets...', 'completed', 'Secrets deployed');
         } else {
           const existing = utils.getExistingSecrets();
@@ -2071,7 +2389,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         const skipD1 = dbResult.skipped || false;
         const databaseId = dbResult.databaseId || null;
         const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
-        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, promptCacheNamespaceId);
+        const envName = config._environment || null;
+        workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, envName, config.workerName, config.cloudflare?.accountId);
         
         if (!workerUrl) {
           workerUrl = config._workerDevUrl || getWorkerUrl(cwd, config.workerName);
@@ -2092,8 +2411,12 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         const backendUrl = config.BACKEND_DOMAIN 
           ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
           : (workerUrl || config._workerDevUrl || `https://${config.workerName}.workers.dev`);
-        updateWorkerUrlInHtml(cwd, backendUrl, config);
-        pagesUrl = await utils.deployPages(cwd, config.pagesProjectName);
+        const htmlPath = config._tempFrontendDir 
+          ? path.join(config._tempFrontendDir, 'index.html')
+          : null;
+        const sourceDir = config._tempFrontendDir || null;
+        updateWorkerUrlInHtml(cwd, backendUrl, config, htmlPath);
+        pagesUrl = await utils.deployPages(cwd, config.pagesProjectName, sourceDir, config.pagesProjectName);
         report('Deploying frontend...', 'completed', 'Frontend deployed');
       }
 
@@ -2121,6 +2444,73 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 async function main() {
   const args = process.argv.slice(2);
   const migrateOnly = args.includes('--migrate-only') || args.includes('--db-migrate');
+  const childDeployIndex = args.findIndex(arg => arg === '--child-deploy');
+  const envsIndex = args.findIndex(arg => arg === '--envs' || arg === '--environments');
+  const allEnvs = args.includes('--all-envs');
+  
+  if (childDeployIndex >= 0 && args[childDeployIndex + 1]) {
+    const envName = args[childDeployIndex + 1];
+    const flags = {
+      DEPLOY_SECRETS: !args.includes('--no-secrets'),
+      DEPLOY_DB: !args.includes('--no-db'),
+      DEPLOY_WORKER: !args.includes('--no-worker'),
+      DEPLOY_PAGES: !args.includes('--no-pages'),
+      DEPLOY_R2: !args.includes('--no-r2')
+    };
+    
+    try {
+      const result = await deploySingleEnvironmentAsChild(envName, process.cwd(), flags);
+      process.exit(result.success ? 0 : 1);
+    } catch (error) {
+      const errorResult = {
+        envName,
+        success: false,
+        workerUrl: '',
+        pagesUrl: '',
+        error: error.message || 'Unknown error'
+      };
+      console.log(JSON.stringify(errorResult));
+      process.exit(1);
+    }
+    return;
+  }
+  
+  if (envsIndex >= 0 || allEnvs) {
+    const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+    if (!fs.existsSync(secretsPath)) {
+      console.error('deployments-secrets.json not found');
+      process.exit(1);
+    }
+    
+    const allConfigs = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+    const envsToDeploy = allEnvs 
+      ? Object.keys(allConfigs.environments || {})
+      : (envsIndex >= 0 && args[envsIndex + 1] 
+          ? args[envsIndex + 1].split(',').map(e => e.trim())
+          : []);
+    
+    if (envsToDeploy.length === 0) {
+      console.error('No environments specified or found');
+      process.exit(1);
+    }
+    
+    const flags = {
+      DEPLOY_SECRETS: !args.includes('--no-secrets'),
+      DEPLOY_DB: !args.includes('--no-db'),
+      DEPLOY_WORKER: !args.includes('--no-worker'),
+      DEPLOY_PAGES: !args.includes('--no-pages'),
+      DEPLOY_R2: !args.includes('--no-r2')
+    };
+    
+    try {
+      const result = await deployMultipleEnvironments(envsToDeploy, process.cwd(), flags);
+      process.exit(result.success ? 0 : 1);
+    } catch (error) {
+      console.error(`${colors.red}Parallel deployment failed: ${error.message}${colors.reset}`);
+      process.exit(1);
+    }
+    return;
+  }
   
   logger = new DeploymentLogger();
   
@@ -2337,7 +2727,7 @@ async function main() {
 
       logger.startStep('Deploying secrets');
       if (Object.keys(config.secrets).length > 0) {
-        await utils.deploySecrets(config.secrets, process.cwd(), config.workerName);
+        await utils.deploySecrets(config.secrets, process.cwd(), config.workerName, config.workerName);
         logger.completeStep('Deploying secrets', 'Secrets deployed');
       } else {
         const existing = utils.getExistingSecrets();
@@ -2354,8 +2744,9 @@ async function main() {
       const databaseId = dbResult.databaseId || null;
       
       const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
+      const envName = config._environment || null;
 
-      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, promptCacheNamespaceId);
+      let workerUrl = await utils.deployWorker(process.cwd(), config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, envName, config.workerName, config.cloudflare?.accountId);
       
       if (!workerUrl) {
         workerUrl = config._workerDevUrl || getWorkerUrl(process.cwd(), config.workerName);
@@ -2376,8 +2767,12 @@ async function main() {
         const backendUrl = config.BACKEND_DOMAIN 
           ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
           : (workerUrl || config._workerDevUrl || `https://${config.workerName}.workers.dev`);
-        updateWorkerUrlInHtml(process.cwd(), backendUrl, config);
-        pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName);
+        const htmlPath = config._tempFrontendDir 
+          ? path.join(config._tempFrontendDir, 'index.html')
+          : null;
+        const sourceDir = config._tempFrontendDir || null;
+        updateWorkerUrlInHtml(process.cwd(), backendUrl, config, htmlPath);
+        pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName, sourceDir, config.pagesProjectName);
         logger.completeStep('Deploying frontend', 'Frontend deployed');
       } else {
         logger.skipStep('Deploying frontend', 'Skipped (deployPages disabled)');

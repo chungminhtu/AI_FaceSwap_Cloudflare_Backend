@@ -11,7 +11,10 @@
     "db:migrate:ai-office-dev": "DEPLOY_ENV=ai-office-dev npm run db:migrate",
     "deploy:ai-office-prod": "DEPLOY_ENV=ai-office-prod node _deploy-cli-cloudflare-gcp/deploy.js",
     "db:migrate": "node _deploy-cli-cloudflare-gcp/deploy.js --migrate-only",
-    "docs:build": "node frontend-cloudflare-pages/docs/build-static.js"
+    "docs:build": "node frontend-cloudflare-pages/docs/build-static.js",
+    "deploy:parallel": "node _deploy-cli-cloudflare-gcp/deploy.js --envs",
+    "deploy:all": "node _deploy-cli-cloudflare-gcp/deploy.js --all-envs",
+    "deploy:parallel:test": "node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office,ai-office-dev"
   },
   "dependencies": {
     "nanoid": "^5.0.0"

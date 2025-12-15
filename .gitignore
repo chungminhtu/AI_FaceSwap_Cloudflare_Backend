@@ -18,3 +18,4 @@ electron-app/*.db
 electron-app/*.db-shm
 electron-app/*.db-wal
 deployments-secrets.json
+wrangler-configs/
