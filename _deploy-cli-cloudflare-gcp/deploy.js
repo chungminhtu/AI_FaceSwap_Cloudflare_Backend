@@ -981,8 +981,9 @@ function cleanupTempFrontendCopy(tempDir) {
   if (tempDir && fs.existsSync(tempDir)) {
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
+      console.log(`${colors.dim}Cleaned up temp directory: ${tempDir}${colors.reset}`);
     } catch (error) {
-      console.warn(`Warning: Could not clean up temp directory ${tempDir}: ${error.message}`);
+      console.warn(`${colors.yellow}Warning: Could not clean up temp directory ${tempDir}: ${error.message}${colors.reset}`);
     }
   }
 }
@@ -1965,6 +1966,18 @@ const utils = {
 async function deploySingleEnvironmentAsChild(envName, cwd, flags = {}) {
   let tempFrontendDir = null;
   
+  const cleanup = () => {
+    if (tempFrontendDir) {
+      cleanupTempFrontendCopy(tempFrontendDir);
+    }
+  };
+  
+  // Register cleanup handlers
+  process.on('exit', cleanup);
+  process.on('SIGINT', () => { cleanup(); process.exit(1); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(1); });
+  process.on('uncaughtException', (err) => { cleanup(); throw err; });
+  
   try {
     process.env.DEPLOY_ENV = envName;
     
@@ -1993,6 +2006,12 @@ async function deploySingleEnvironmentAsChild(envName, cwd, flags = {}) {
     };
     
     console.log(JSON.stringify(finalResult));
+    
+    // Cleanup before returning
+    if (tempFrontendDir) {
+      cleanupTempFrontendCopy(tempFrontendDir);
+    }
+    
     return finalResult;
   } catch (error) {
     const errorResult = {
@@ -2003,10 +2022,21 @@ async function deploySingleEnvironmentAsChild(envName, cwd, flags = {}) {
       error: error.message || 'Unknown error'
     };
     console.log(JSON.stringify(errorResult));
-    return errorResult;
-  } finally {
+    
+    // Cleanup on error too
     if (tempFrontendDir) {
       cleanupTempFrontendCopy(tempFrontendDir);
+    }
+    
+    return errorResult;
+  } finally {
+    // Final cleanup attempt (in case cleanup above failed)
+    if (tempFrontendDir && fs.existsSync(tempFrontendDir)) {
+      try {
+        fs.rmSync(tempFrontendDir, { recursive: true, force: true });
+      } catch (e) {
+        // Ignore final cleanup errors
+      }
     }
   }
 }
@@ -2035,7 +2065,14 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
   const deployments = envsToDeploy.map((envName) => {
     return new Promise((resolve) => {
       const scriptPath = __filename;
-      const child = spawn('node', [scriptPath, '--child-deploy', envName], {
+      const childArgs = [scriptPath, '--child-deploy', envName];
+      if (flags.DEPLOY_SECRETS === false) childArgs.push('--no-secrets');
+      if (flags.DEPLOY_DB === false) childArgs.push('--no-db');
+      if (flags.DEPLOY_WORKER === false) childArgs.push('--no-worker');
+      if (flags.DEPLOY_PAGES === false) childArgs.push('--no-pages');
+      if (flags.DEPLOY_R2 === false) childArgs.push('--no-r2');
+      
+      const child = spawn('node', childArgs, {
         cwd: cwd,
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe']
@@ -2065,6 +2102,16 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
       });
 
       child.on('close', (code) => {
+        // Cleanup temp directory as fallback (in case child process didn't clean up)
+        const tempDir = path.join(cwd, `frontend-cloudflare-pages.${envName}.tmp`);
+        if (fs.existsSync(tempDir)) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        }
+        
         let result;
         try {
           if (jsonOutput) {
