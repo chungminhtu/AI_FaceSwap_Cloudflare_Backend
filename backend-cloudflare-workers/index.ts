@@ -3070,7 +3070,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: debugEnabled ? '' : (upscalerResult.Message || 'Upscaler4K provider error'),
+            message: '',
             code: failureCode,
             ...(debugEnabled && debugPayload ? { debug: debugPayload } : {}),
           }, failureCode, request, env);
@@ -3203,7 +3203,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: enhancedResult.Message || 'Enhancement failed',
+            message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
@@ -3297,7 +3297,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: colorizedResult.Message || 'Colorization failed',
+            message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
@@ -3394,7 +3394,7 @@ export default {
           return jsonResponse({
             data: null,
             status: 'error',
-            message: debugEnabled ? '' : (agingResult.Message || 'Aging transformation failed'),
+            message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
           }, failureCode);
