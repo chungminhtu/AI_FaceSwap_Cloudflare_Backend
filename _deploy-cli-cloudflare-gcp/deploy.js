@@ -24,12 +24,14 @@ const colors = {
 };
 
 class DeploymentLogger {
-  constructor() {
+  constructor(environments = []) {
     this.steps = [];
     this.currentStepIndex = -1;
     this.startTime = Date.now();
     this.lastRenderTime = 0;
     this.renderThrottle = 100;
+    this.environments = environments.length > 0 ? environments : ['default'];
+    this.stepMatrix = {};
   }
 
   addStep(name, description = '') {
@@ -43,57 +45,120 @@ class DeploymentLogger {
       duration: null
     };
     this.steps.push(step);
-    return this.steps.length - 1;
+    const stepIndex = this.steps.length - 1;
+    
+    // Initialize matrix entry for this step
+    this.stepMatrix[stepIndex] = {};
+    this.environments.forEach(env => {
+      this.stepMatrix[stepIndex][env] = {
+        status: 'pending',
+        message: '',
+        startTime: null,
+        endTime: null,
+        duration: null
+      };
+    });
+    
+    return stepIndex;
   }
 
   findStep(name) {
-    return this.steps.findIndex(s => s.name === name);
+    if (!name) return -1;
+    
+    // Exact match first
+    let index = this.steps.findIndex(s => s.name === name);
+    if (index >= 0) return index;
+    
+    // Normalize names (remove everything after colon for matching)
+    const normalize = (str) => {
+      if (!str) return '';
+      // Remove everything after the last colon (e.g., "R2 Bucket: name" -> "R2 Bucket")
+      const parts = str.split(':');
+      return parts[0].trim().toLowerCase();
+    };
+    const nameNormalized = normalize(name);
+    if (!nameNormalized) return -1;
+    
+    // Try prefix match (e.g., "[Cloudflare] R2 Bucket: xxx" matches "[Cloudflare] R2 Bucket")
+    index = this.steps.findIndex(s => {
+      const stepNormalized = normalize(s.name);
+      return stepNormalized === nameNormalized && stepNormalized.length > 0;
+    });
+    if (index >= 0) return index;
+    
+    // Try reverse match - check if step name (without colon) matches the normalized name
+    index = this.steps.findIndex(s => {
+      const stepNormalized = normalize(s.name);
+      return stepNormalized === nameNormalized;
+    });
+    if (index >= 0) return index;
+    
+    // Try contains match (for flexible matching)
+    index = this.steps.findIndex(s => {
+      const stepKey = normalize(s.name);
+      if (!stepKey || !nameNormalized) return false;
+      return nameNormalized.includes(stepKey) || stepKey.includes(nameNormalized);
+    });
+    
+    return index;
   }
 
-  startStep(nameOrIndex, message = '') {
+  startStep(nameOrIndex, message = '', envName = null) {
     const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
     if (index >= 0 && index < this.steps.length) {
-      this.steps[index].status = 'running';
-      this.steps[index].message = message;
-      this.steps[index].startTime = Date.now();
+      const targetEnv = envName || this.environments[0];
+      if (this.stepMatrix[index] && this.stepMatrix[index][targetEnv]) {
+        this.stepMatrix[index][targetEnv].status = 'running';
+        this.stepMatrix[index][targetEnv].message = message;
+        this.stepMatrix[index][targetEnv].startTime = Date.now();
+      }
       this.currentStepIndex = index;
       this.render();
     }
   }
 
-  completeStep(nameOrIndex, message = '') {
+  completeStep(nameOrIndex, message = '', envName = null) {
     const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
     if (index >= 0 && index < this.steps.length) {
-      this.steps[index].status = 'completed';
-      this.steps[index].message = message || this.steps[index].message;
-      this.steps[index].endTime = Date.now();
-      if (this.steps[index].startTime) {
-        this.steps[index].duration = this.steps[index].endTime - this.steps[index].startTime;
+      const targetEnv = envName || this.environments[0];
+      if (this.stepMatrix[index] && this.stepMatrix[index][targetEnv]) {
+        this.stepMatrix[index][targetEnv].status = 'completed';
+        this.stepMatrix[index][targetEnv].message = message || this.stepMatrix[index][targetEnv].message;
+        this.stepMatrix[index][targetEnv].endTime = Date.now();
+        if (this.stepMatrix[index][targetEnv].startTime) {
+          this.stepMatrix[index][targetEnv].duration = this.stepMatrix[index][targetEnv].endTime - this.stepMatrix[index][targetEnv].startTime;
+        }
       }
       this.render();
     }
   }
 
-  failStep(nameOrIndex, message = '') {
+  failStep(nameOrIndex, message = '', envName = null) {
     const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
     if (index >= 0 && index < this.steps.length) {
-      this.steps[index].status = 'failed';
-      this.steps[index].message = message || this.steps[index].message;
-      this.steps[index].endTime = Date.now();
-      if (this.steps[index].startTime) {
-        this.steps[index].duration = this.steps[index].endTime - this.steps[index].startTime;
+      const targetEnv = envName || this.environments[0];
+      if (this.stepMatrix[index] && this.stepMatrix[index][targetEnv]) {
+        this.stepMatrix[index][targetEnv].status = 'failed';
+        this.stepMatrix[index][targetEnv].message = message || this.stepMatrix[index][targetEnv].message;
+        this.stepMatrix[index][targetEnv].endTime = Date.now();
+        if (this.stepMatrix[index][targetEnv].startTime) {
+          this.stepMatrix[index][targetEnv].duration = this.stepMatrix[index][targetEnv].endTime - this.stepMatrix[index][targetEnv].startTime;
+        }
       }
       this.render();
     }
   }
 
-  warnStep(nameOrIndex, message = '') {
+  warnStep(nameOrIndex, message = '', envName = null) {
     const index = typeof nameOrIndex === 'number' ? nameOrIndex : this.findStep(nameOrIndex);
     if (index >= 0 && index < this.steps.length) {
-      if (this.steps[index].status === 'pending') {
-        this.steps[index].status = 'running';
+      const targetEnv = envName || this.environments[0];
+      if (this.stepMatrix[index] && this.stepMatrix[index][targetEnv]) {
+        if (this.stepMatrix[index][targetEnv].status === 'pending') {
+          this.stepMatrix[index][targetEnv].status = 'running';
+        }
+        this.stepMatrix[index][targetEnv].message = message || this.stepMatrix[index][targetEnv].message;
       }
-      this.steps[index].message = message || this.steps[index].message;
       this.render();
     }
   }
@@ -113,7 +178,7 @@ class DeploymentLogger {
       case 'failed': return `${colors.red}${colors.bright}✗${colors.reset}`;
       case 'running': return `${colors.cyan}${colors.bright}⟳${colors.reset}`;
       case 'warning': return `${colors.yellow}${colors.bright}⚠${colors.reset}`;
-      case 'skipped': return `${colors.dim}⊘${colors.reset}`;
+      case 'skipped': return `${colors.green}${colors.bright}⊘${colors.reset}`;
       case 'pending': return `${colors.dim}○${colors.reset}`;
       default: return ' ';
     }
@@ -125,7 +190,7 @@ class DeploymentLogger {
       case 'failed': return `${colors.red}${colors.bright}FAILED${colors.reset}`;
       case 'running': return `${colors.cyan}${colors.bright}RUNNING${colors.reset}`;
       case 'warning': return `${colors.yellow}${colors.bright}WARNING${colors.reset}`;
-      case 'skipped': return `${colors.dim}SKIPPED${colors.reset}`;
+      case 'skipped': return `${colors.green}${colors.bright}SKIPPED${colors.reset}`;
       case 'pending': return `${colors.dim}PENDING${colors.reset}`;
       default: return '';
     }
@@ -139,7 +204,14 @@ class DeploymentLogger {
 
   render() {
     const now = Date.now();
-    if (now - this.lastRenderTime < this.renderThrottle && this.steps.some(s => s.status === 'running')) {
+    // Always render if enough time has passed, or if there are running steps
+    const hasRunning = this.steps.some((step, index) => {
+      if (!this.stepMatrix[index]) return false;
+      return Object.values(this.stepMatrix[index]).some(cell => cell && cell.status === 'running');
+    });
+    
+    // Throttle rendering only if there are running steps and not enough time passed
+    if (hasRunning && now - this.lastRenderTime < this.renderThrottle) {
       return;
     }
     this.lastRenderTime = now;
@@ -155,65 +227,318 @@ class DeploymentLogger {
 
     process.stdout.write(header);
 
-    const tableWidth = 100;
-    const col1Width = 6;
-    const col2Width = 42;
-    const col3Width = 12;
-    const col4Width = 10;
-    const col5Width = 28;
+    this.renderMatrix();
 
-    const separator = `${colors.dim}${'─'.repeat(col1Width)}${'┬'}${'─'.repeat(col2Width)}${'┬'}${'─'.repeat(col3Width)}${'┬'}${'─'.repeat(col4Width)}${'┬'}${'─'.repeat(col5Width)}${colors.reset}\n`;
-    const headerRow = `${colors.bright}${'#'.padEnd(col1Width)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STEP'.padEnd(col2Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'STATUS'.padEnd(col3Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'TIME'.padEnd(col4Width - 1)}${colors.reset}${colors.dim}│${colors.reset} ${colors.bright}${'DETAILS'.padEnd(col5Width - 1)}${colors.reset}\n`;
-
-    process.stdout.write(separator);
-    process.stdout.write(headerRow);
-    process.stdout.write(separator);
-
-    this.steps.forEach((step, index) => {
-      const stepNum = `${(index + 1).toString().padStart(2, '0')}`;
-      const icon = this.getStatusIcon(step.status);
-      const statusText = this.getStatusText(step.status);
-      const duration = step.duration ? this.formatDuration(step.duration) : (step.status === 'running' ? '...' : '');
-      
-      let nameDisplay = step.name;
-      if (nameDisplay.length > col2Width - 3) {
-        nameDisplay = nameDisplay.substring(0, col2Width - 6) + '...';
-      }
-      
-      let messageDisplay = step.message || '';
-      if (messageDisplay.length > col5Width - 1) {
-        messageDisplay = messageDisplay.substring(0, col5Width - 4) + '...';
-      }
-      
-      const row = `${stepNum.padEnd(col1Width)}${colors.dim}│${colors.reset} ${icon} ${nameDisplay.padEnd(col2Width - 3)}${colors.dim}│${colors.reset} ${statusText.padEnd(col3Width - 1)}${colors.dim}│${colors.reset} ${duration.padEnd(col4Width - 1)}${colors.dim}│${colors.reset} ${messageDisplay.padEnd(col5Width - 1)}${colors.reset}\n`;
-      process.stdout.write(row);
-    });
-
-    process.stdout.write(separator);
-
-    const completed = this.steps.filter(s => s.status === 'completed').length;
-    const failed = this.steps.filter(s => s.status === 'failed').length;
-    const running = this.steps.filter(s => s.status === 'running').length;
-    const skipped = this.steps.filter(s => s.status === 'skipped').length;
-    const warning = this.steps.filter(s => s.status === 'warning').length;
-    const total = this.steps.length;
-    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-    const progressBar = this.renderProgressBar(progress);
-    const summary = `${colors.bright}Progress:${colors.reset} ${progressBar} ${colors.bright}${progress}%${colors.reset}\n` +
-                    `${colors.bright}Summary:${colors.reset} ${colors.green}${completed}✓${colors.reset} ` +
-                    `${colors.red}${failed}✗${colors.reset} ` +
-                    `${colors.yellow}${warning}⚠${colors.reset} ` +
-                    `${colors.cyan}${running}⟳${colors.reset} ` +
-                    `${colors.dim}${skipped}⊘${colors.reset} ` +
-                    `| ${total} total\n`;
-    
     const elapsed = Date.now() - this.startTime;
     const elapsedText = `${colors.bright}Elapsed:${colors.reset} ${this.formatDuration(elapsed)}\n`;
-    
-    process.stdout.write(summary);
     process.stdout.write(elapsedText);
     process.stdout.write('\n');
+  }
+
+  renderMatrix() {
+    // Calculate dynamic widths based on actual content
+    let maxStepNameWidth = 4; // Minimum: "STEP" header
+    let maxEnvNameWidth = 0;
+    let maxStatusWidth = 0;
+    let maxMessageWidth = 0;
+    
+    // Find longest step name
+    this.steps.forEach(step => {
+      const cleanStepName = this.stripAnsiCodes(step.name || '');
+      maxStepNameWidth = Math.max(maxStepNameWidth, cleanStepName.length);
+    });
+    
+    // Find longest environment name
+    this.environments.forEach(env => {
+      const cleanEnvName = this.stripAnsiCodes(env || '');
+      maxEnvNameWidth = Math.max(maxEnvNameWidth, cleanEnvName.length);
+    });
+    
+    // Find longest status text and message across all cells
+    this.steps.forEach((step, stepIndex) => {
+      this.environments.forEach(env => {
+        const cellData = this.stepMatrix[stepIndex] && this.stepMatrix[stepIndex][env] 
+          ? this.stepMatrix[stepIndex][env] 
+          : { status: 'pending', message: '' };
+        
+        const statusText = this.getStatusTextShort(cellData.status);
+        const cleanStatusText = this.stripAnsiCodes(statusText);
+        maxStatusWidth = Math.max(maxStatusWidth, cleanStatusText.length);
+        
+        const cleanMessage = this.stripAnsiCodes(cellData.message || '');
+        maxMessageWidth = Math.max(maxMessageWidth, cleanMessage.length);
+      });
+    });
+    
+    // Calculate step number column width (e.g., "#10" = 3 chars)
+    const stepNumColWidth = Math.max(String(this.steps.length).length + 2, 4); // "#" + number + space, minimum 4
+    
+    // Set column widths with padding
+    const stepColWidth = Math.max(maxStepNameWidth + 2, 10); // Add 2 for padding, minimum 10
+    const envColWidth = Math.max(
+      maxEnvNameWidth + 2,
+      maxStatusWidth + 2,
+      maxMessageWidth + 2,
+      10 // Minimum 10
+    );
+    
+    // Header row - wrap environment names if needed
+    const envHeaderLines = this.environments.map(env => {
+      const envLines = this.wrapText(env, envColWidth);
+      // Return first 2 lines for header display (environment names are usually short)
+      return [envLines[0] || '', envLines[1] || ''];
+    });
+    
+    // Top border with proper corners
+    const topBorder = `${colors.dim}╔${'═'.repeat(stepNumColWidth)}╦${'═'.repeat(stepColWidth)}╦${this.environments.map(() => '═'.repeat(envColWidth)).join('╦')}╗${colors.reset}\n`;
+    
+    // Header line 1 - calculate fixed width with ANSI code handling
+    const stepNumHeader = '#';
+    const stepNumHeaderPadded = stepNumHeader + ' '.repeat(Math.max(0, stepNumColWidth - stepNumHeader.length));
+    const stepHeaderText = 'STEP';
+    const stepHeaderPadded = stepHeaderText + ' '.repeat(Math.max(0, stepColWidth - stepHeaderText.length));
+    let headerRow = `${colors.dim}║${colors.reset}${colors.bright}${stepNumHeaderPadded}${colors.reset}${colors.dim}║${colors.reset}${colors.bright}${stepHeaderPadded}${colors.reset}${colors.dim}║${colors.reset}`;
+    envHeaderLines.forEach((lines, idx) => {
+      const cleanEnvLine1 = this.stripAnsiCodes(lines[0] || '');
+      const envLine1Padded = (lines[0] || '') + ' '.repeat(Math.max(0, envColWidth - cleanEnvLine1.length));
+      headerRow += `${colors.bright}${envLine1Padded}${colors.reset}${colors.dim}║${colors.reset}`;
+    });
+    headerRow += '\n';
+    
+    const separator = `${colors.dim}╠${'═'.repeat(stepNumColWidth)}╬${'═'.repeat(stepColWidth)}╬${this.environments.map(() => '═'.repeat(envColWidth)).join('╬')}╣${colors.reset}\n`;
+    const bottomSeparator = `${colors.dim}╚${'═'.repeat(stepNumColWidth)}╩${'═'.repeat(stepColWidth)}╩${this.environments.map(() => '═'.repeat(envColWidth)).join('╩')}╝${colors.reset}\n`;
+    const rowSeparator = `${colors.dim}╟${'─'.repeat(stepNumColWidth)}╫${'─'.repeat(stepColWidth)}╫${this.environments.map(() => '─'.repeat(envColWidth)).join('╫')}╢${colors.reset}\n`;
+    
+    process.stdout.write(topBorder);
+    process.stdout.write(headerRow);
+    // Header line 2 (if any env names wrapped)
+    const hasHeaderLine2 = envHeaderLines.some(lines => lines[1]);
+    if (hasHeaderLine2) {
+      const emptyStepNum = ' '.repeat(stepNumColWidth);
+      const emptyStepHeader = ' '.repeat(stepColWidth);
+      let headerRow2 = `${colors.dim}║${colors.reset}${emptyStepNum}${colors.dim}║${colors.reset}${emptyStepHeader}${colors.dim}║${colors.reset}`;
+      envHeaderLines.forEach((lines, idx) => {
+        const cleanEnvLine2 = this.stripAnsiCodes(lines[1] || '');
+        const envLine2Padded = (lines[1] || '') + ' '.repeat(Math.max(0, envColWidth - cleanEnvLine2.length));
+        headerRow2 += `${envLine2Padded}${colors.dim}║${colors.reset}`;
+      });
+      headerRow2 += '\n';
+      process.stdout.write(headerRow2);
+    }
+    process.stdout.write(separator);
+
+    // Step rows - display full text across multiple lines if needed
+    this.steps.forEach((step, index) => {
+      const stepName = step.name;
+      const stepDesc = step.description || '';
+      const stepNumber = String(index + 1);
+      const stepNumDisplay = `#${stepNumber}`;
+      const stepNumPadded = stepNumDisplay + ' '.repeat(Math.max(0, stepNumColWidth - stepNumDisplay.length));
+      
+      // Wrap step name to multiple lines (full text, no truncation)
+      // Use calculated width - wrap only if text exceeds terminal width
+      const terminalWidth = process.stdout.columns || 200;
+      const availableWidth = terminalWidth - (envColWidth * this.environments.length) - stepNumColWidth - 10; // separators
+      // Use stepColWidth (calculated from content) but don't exceed terminal width
+      const effectiveStepWidth = Math.min(stepColWidth, availableWidth);
+      const nameLines = this.wrapText(stepName, effectiveStepWidth);
+      const maxNameLines = Math.max(nameLines.length, 1);
+      
+      // Render each line of the step name
+      nameLines.forEach((nameLine, nameLineIndex) => {
+        const cleanNameLine = this.stripAnsiCodes(nameLine || '');
+        const nameLinePadded = (nameLine || '') + ' '.repeat(Math.max(0, stepColWidth - cleanNameLine.length));
+        
+        // Show step number only on first line
+        const stepNumCell = nameLineIndex === 0 ? stepNumPadded : ' '.repeat(stepNumColWidth);
+        let outputLine = `${colors.dim}║${colors.reset}${stepNumCell}${colors.dim}║${colors.reset}${nameLinePadded}${colors.dim}║${colors.reset}`;
+        
+        this.environments.forEach(env => {
+          const cellData = this.stepMatrix[index] && this.stepMatrix[index][env] 
+            ? this.stepMatrix[index][env] 
+            : { status: 'pending', message: '' };
+          
+          if (nameLineIndex === 0) {
+            // First line: show status
+            const statusText = this.getStatusTextShort(cellData.status);
+            const cleanText = this.stripAnsiCodes(statusText);
+            const padding = Math.max(0, envColWidth - cleanText.length);
+            const statusDisplay = statusText + ' '.repeat(padding);
+            outputLine += statusDisplay + `${colors.dim}║${colors.reset}`;
+          } else if (nameLineIndex === 1) {
+            // Second line: show message (first line of message if wrapped)
+            const messageLines = this.wrapText(cellData.message || '', envColWidth);
+            const cleanMessageLine1 = this.stripAnsiCodes(messageLines[0] || '');
+            const messageDisplay = (messageLines[0] || '') + ' '.repeat(Math.max(0, envColWidth - cleanMessageLine1.length));
+            outputLine += messageDisplay + `${colors.dim}║${colors.reset}`;
+          } else {
+            // Additional lines: show continuation of message or empty
+            const messageLines = this.wrapText(cellData.message || '', envColWidth);
+            const messageLineIndex = nameLineIndex - 1;
+            const cleanMessageLine = this.stripAnsiCodes(messageLines[messageLineIndex] || '');
+            const messageDisplay = (messageLines[messageLineIndex] || '') + ' '.repeat(Math.max(0, envColWidth - cleanMessageLine.length));
+            outputLine += messageDisplay + `${colors.dim}║${colors.reset}`;
+          }
+        });
+        
+        process.stdout.write(outputLine + '\n');
+      });
+      
+      // If step name was only 1 line, add a second line for messages
+      if (nameLines.length === 1) {
+        let messageLine = `${colors.dim}║${colors.reset}${' '.repeat(stepNumColWidth)}${colors.dim}║${colors.reset}${' '.repeat(stepColWidth)}${colors.dim}║${colors.reset}`;
+        this.environments.forEach(env => {
+          const cellData = this.stepMatrix[index] && this.stepMatrix[index][env] 
+            ? this.stepMatrix[index][env] 
+            : { status: 'pending', message: '' };
+          
+          const messageLines = this.wrapText(cellData.message || '', envColWidth);
+          const cleanMessageLine1 = this.stripAnsiCodes(messageLines[0] || '');
+          const messageDisplay = (messageLines[0] || '') + ' '.repeat(Math.max(0, envColWidth - cleanMessageLine1.length));
+          messageLine += messageDisplay + `${colors.dim}║${colors.reset}`;
+        });
+        process.stdout.write(messageLine + '\n');
+      }
+      
+      // Use row separator between steps (except last one)
+      if (index < this.steps.length - 1) {
+        process.stdout.write(rowSeparator);
+      }
+    });
+
+    process.stdout.write(bottomSeparator);
+    
+    // Summary
+    const summary = this.calculateMatrixSummary();
+    const progressBar = this.renderProgressBar(summary.progress);
+    const summaryText = `${colors.bright}Progress:${colors.reset} ${progressBar} ${colors.bright}${summary.progress}%${colors.reset}\n` +
+                    `${colors.bright}Summary:${colors.reset} ${colors.green}${summary.completed}✓${colors.reset} ` +
+                    `${colors.red}${summary.failed}✗${colors.reset} ` +
+                    `${colors.yellow}${summary.warning}⚠${colors.reset} ` +
+                    `${colors.cyan}${summary.running}⟳${colors.reset} ` +
+                    `${colors.dim}${summary.pending}○${colors.reset} ` +
+                    `| ${summary.total} total\n`;
+    process.stdout.write(summaryText);
+  }
+
+  wrapText(text, maxWidth) {
+    if (!text) return [''];
+    
+    // If maxWidth is 0 or negative, return text as single line (no wrapping)
+    if (maxWidth <= 0) {
+      return [text];
+    }
+    
+    // Strip ANSI codes to get actual visible length
+    const cleanText = this.stripAnsiCodes(text);
+    if (cleanText.length <= maxWidth) {
+      return [text];
+    }
+    
+    // Try to break at word boundary first
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+    
+    for (const word of words) {
+      const cleanWord = this.stripAnsiCodes(word);
+      const cleanCurrentLine = this.stripAnsiCodes(currentLine);
+      
+      if (cleanCurrentLine.length + (cleanCurrentLine ? 1 : 0) + cleanWord.length <= maxWidth) {
+        currentLine += (currentLine ? ' ' : '') + word;
+      } else {
+        // Current line is full, start a new line
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        
+        // Check if word itself is too long for one line
+        if (cleanWord.length > maxWidth) {
+          // Word is too long, break it character by character
+          // Need to preserve ANSI codes when splitting
+          let charCount = 0;
+          let wordPart = '';
+          let inAnsi = false;
+          let ansiBuffer = '';
+          
+          for (let i = 0; i < word.length; i++) {
+            const char = word[i];
+            if (char === '\x1b') {
+              inAnsi = true;
+              ansiBuffer = char;
+            } else if (inAnsi) {
+              ansiBuffer += char;
+              if (char === 'm') {
+                inAnsi = false;
+                wordPart += ansiBuffer;
+                ansiBuffer = '';
+              }
+            } else {
+              if (charCount >= maxWidth) {
+                // Current word part is full, start new line
+                lines.push(wordPart);
+                wordPart = '';
+                charCount = 0;
+              }
+              wordPart += char;
+              charCount++;
+            }
+          }
+          currentLine = wordPart;
+        } else {
+          currentLine = word;
+        }
+      }
+    }
+    
+    // Add the last line if it has content
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+    
+    return lines.length > 0 ? lines : [''];
+  }
+
+
+  getStatusTextShort(status) {
+    switch (status) {
+      case 'completed': return `${colors.green}${colors.bright}COMPLETED${colors.reset}`;
+      case 'failed': return `${colors.red}${colors.bright}FAILED${colors.reset}`;
+      case 'running': return `${colors.cyan}${colors.bright}RUNNING${colors.reset}`;
+      case 'warning': return `${colors.yellow}${colors.bright}WARNING${colors.reset}`;
+      case 'skipped': return `${colors.green}${colors.bright}SKIPPED${colors.reset}`;
+      case 'pending': return `${colors.dim}PENDING${colors.reset}`;
+      default: return `${colors.dim}PENDING${colors.reset}`;
+    }
+  }
+
+  // Strip ANSI color codes to get actual text length
+  stripAnsiCodes(text) {
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
+  }
+
+  calculateMatrixSummary() {
+    let completed = 0, failed = 0, running = 0, warning = 0, pending = 0, total = 0;
+    
+    this.steps.forEach((step, index) => {
+      this.environments.forEach(env => {
+        const cellData = this.stepMatrix[index] && this.stepMatrix[index][env] 
+          ? this.stepMatrix[index][env] 
+          : { status: 'pending' };
+        
+        total++;
+        switch (cellData.status) {
+          case 'completed': completed++; break;
+          case 'failed': failed++; break;
+          case 'running': running++; break;
+          case 'warning': warning++; break;
+          default: pending++; break;
+        }
+      });
+    });
+    
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { completed, failed, running, warning, pending, total, progress };
   }
 
   renderProgressBar(percentage) {
@@ -2070,6 +2395,47 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
 
   console.log(`${colors.cyan}Deploying ${envsToDeploy.length} environment(s) in parallel: ${envsToDeploy.join(', ')}${colors.reset}\n`);
 
+  // Initialize matrix logger for parallel deployments - ONE shared logger
+  logger = new DeploymentLogger(envsToDeploy);
+  
+  // Pre-add all steps that will be used across all environments
+  const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
+  const DEPLOY_DB = flags.DEPLOY_DB !== false;
+  const DEPLOY_WORKER = flags.DEPLOY_WORKER !== false;
+  const DEPLOY_PAGES = flags.DEPLOY_PAGES !== false;
+  const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
+  const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;
+  const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
+
+  if (needsCloudflare || needsGCP) {
+    logger.addStep('Checking prerequisites', 'Validating required tools');
+  }
+  if (needsGCP) {
+    logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+    logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
+  }
+  if (needsCloudflare) {
+    logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+    if (DEPLOY_R2) {
+      logger.addStep('[Cloudflare] R2 Bucket', 'Checking/creating R2 storage bucket');
+    }
+    if (DEPLOY_DB) {
+      logger.addStep('[Cloudflare] D1 Database', 'Checking/creating D1 database');
+      logger.addStep('Running database migrations', 'Executing pending migrations');
+    }
+    logger.addStep('[Cloudflare] KV Namespace', 'Checking/creating KV namespace');
+    if (DEPLOY_SECRETS) {
+      logger.addStep('Deploying secrets', 'Configuring environment secrets');
+    }
+    if (DEPLOY_WORKER) {
+      logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
+    }
+    if (DEPLOY_PAGES) {
+      logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+    }
+  }
+  logger.render();
+
   const deployments = envsToDeploy.map((envName) => {
     return new Promise((resolve) => {
       const scriptPath = __filename;
@@ -2082,7 +2448,7 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
       
       const child = spawn('node', childArgs, {
         cwd: cwd,
-        env: { ...process.env },
+        env: { ...process.env, __CHILD_DEPLOY__: '1' },
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
@@ -2095,11 +2461,37 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
         stdout += output;
         const lines = output.split('\n');
         for (const line of lines) {
-          if (line.trim().startsWith('{') && line.includes('"envName"')) {
-            jsonOutput = line.trim();
-          } else {
-            process.stdout.write(`[${envName}] ${line}\n`);
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('{') && trimmedLine.includes('"envName"')) {
+            jsonOutput = trimmedLine;
+          } else if (trimmedLine.startsWith('__PROGRESS__')) {
+            // Parse progress updates from child: __PROGRESS__|stepName|status|message
+            try {
+              const parts = trimmedLine.split('|');
+              if (parts.length >= 4 && logger) {
+                const stepName = parts[1];
+                const status = parts[2];
+                const message = parts.slice(3).join('|');
+                const stepIndex = logger.findStep(stepName);
+                if (stepIndex >= 0) {
+                  if (status === 'running') {
+                    logger.startStep(stepIndex, message, envName);
+                  } else if (status === 'completed') {
+                    logger.completeStep(stepIndex, message, envName);
+                  } else if (status === 'failed') {
+                    logger.failStep(stepIndex, message, envName);
+                  } else if (status === 'warning') {
+                    logger.warnStep(stepIndex, message, envName);
+                  }
+                  // Force render after update
+                  logger.render();
+                }
+              }
+            } catch (e) {
+              // Ignore parse errors silently
+            }
           }
+          // Suppress all other child process output - we show it in the matrix instead
         }
       });
 
@@ -2199,9 +2591,10 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     validateEnvironmentConfig(config, config._environment);
   }
   
-  const useLogger = !progressCallback;
+  const useLogger = !progressCallback && !process.env.__CHILD_DEPLOY__;
   if (useLogger) {
-    logger = new DeploymentLogger();
+    const envName = config._environment ? [config._environment] : [];
+    logger = new DeploymentLogger(envName);
     
     const DEPLOY_SECRETS = flags.DEPLOY_SECRETS !== false;
     const DEPLOY_DB = flags.DEPLOY_DB !== false;
@@ -2215,14 +2608,14 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
     const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
 
     if (needsCloudflare || needsGCP) {
-      logger.addStep('Checking prerequisites...', 'Validating required tools');
+      logger.addStep('Checking prerequisites', 'Validating required tools');
     }
     if (needsGCP) {
-      logger.addStep('Authenticating with GCP...', 'Connecting to Google Cloud');
-      logger.addStep('Checking GCP APIs...', 'Verifying Vertex AI and Vision APIs');
+      logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+      logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
     }
     if (needsCloudflare) {
-      logger.addStep('Setting up Cloudflare credentials...', 'Configuring Cloudflare access');
+      logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
       if (DEPLOY_R2) {
         logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
       }
@@ -2232,26 +2625,34 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       }
       logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV.namespaceName}`, 'Checking/creating KV namespace');
       if (DEPLOY_SECRETS) {
-        logger.addStep('Deploying secrets...', 'Configuring environment secrets');
+        logger.addStep('Deploying secrets', 'Configuring environment secrets');
       }
       if (DEPLOY_WORKER) {
-        logger.addStep('Deploying worker...', 'Deploying Cloudflare Worker');
+        logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
       }
       if (DEPLOY_PAGES) {
-        logger.addStep('Deploying frontend...', 'Deploying Cloudflare Pages');
+        logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
       }
     }
     logger.render();
   }
 
-  const report = progressCallback || ((step, status, details) => {
-    if (!logger) return;
-    const stepIndex = logger.findStep(step);
-    if (stepIndex >= 0) {
-      if (status === 'running') logger.startStep(stepIndex, details);
-      else if (status === 'completed') logger.completeStep(stepIndex, details);
-      else if (status === 'failed') logger.failStep(stepIndex, details);
-      else if (status === 'warning') logger.warnStep(stepIndex, details);
+  const report = progressCallback || ((step, status, details, envName = null) => {
+    // If this is a child process, ALWAYS send progress to parent first
+    if (process.env.__CHILD_DEPLOY__ && config && config._environment) {
+      const progressLine = `__PROGRESS__|${step}|${status}|${details || ''}\n`;
+      process.stdout.write(progressLine);
+    }
+    
+    // Then update local logger if it exists (for single env deployments)
+    if (logger && !process.env.__CHILD_DEPLOY__) {
+      const stepIndex = logger.findStep(step);
+      if (stepIndex >= 0) {
+        if (status === 'running') logger.startStep(stepIndex, details, envName);
+        else if (status === 'completed') logger.completeStep(stepIndex, details, envName);
+        else if (status === 'failed') logger.failStep(stepIndex, details, envName);
+        else if (status === 'warning') logger.warnStep(stepIndex, details, envName);
+      }
     }
   });
 
@@ -2268,33 +2669,33 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
   const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
 
   if (needsCloudflare || needsGCP) {
-    report('Checking prerequisites...', 'running', 'Validating tools');
+    report('Checking prerequisites', 'running', 'Validating tools');
     if (needsCloudflare && !utils.checkWrangler()) throw new Error('Wrangler CLI not found');
     if (needsGCP && !utils.checkGcloud()) throw new Error('gcloud CLI not found');
-    report('Checking prerequisites...', 'completed', 'Tools validated');
+    report('Checking prerequisites', 'completed', 'Tools validated');
   }
 
   if (needsGCP) {
-    report('Authenticating with GCP...', 'running', 'Connecting to Google Cloud');
+    report('Authenticating with GCP', 'running', 'Connecting to Google Cloud');
     if (!await utils.authenticateGCP(config.gcp)) {
       throw new Error('GCP authentication failed');
     }
-    report('Authenticating with GCP...', 'completed', 'GCP authenticated');
+    report('Authenticating with GCP', 'completed', 'GCP authenticated');
 
-    report('Checking GCP APIs...', 'running', 'Verifying Vertex AI and Vision APIs');
+    report('Checking GCP APIs', 'running', 'Verifying Vertex AI and Vision APIs');
     const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
     if (apiResults.failed.length > 0) {
       const failedApis = apiResults.failed.map(f => f.api).join(', ');
-      report('Checking GCP APIs...', 'warning', `Some APIs failed to enable: ${failedApis}. Please enable manually in GCP Console.`);
+      report('Checking GCP APIs', 'warning', `Some APIs failed to enable: ${failedApis}. Please enable manually in GCP Console.`);
     } else if (apiResults.newlyEnabled.length > 0) {
-      report('Checking GCP APIs...', 'completed', `Enabled ${apiResults.newlyEnabled.length} API(s)`);
+      report('Checking GCP APIs', 'completed', `Enabled ${apiResults.newlyEnabled.length} API(s)`);
     } else {
-      report('Checking GCP APIs...', 'completed', 'All required APIs are enabled');
+      report('Checking GCP APIs', 'completed', 'All required APIs are enabled');
     }
   }
 
   if (needsCloudflare) {
-    report('Setting up Cloudflare credentials...', 'running', 'Configuring Cloudflare access');
+    report('Setting up Cloudflare credentials', 'running', 'Configuring Cloudflare access');
     let cfToken = config.cloudflare.apiToken;
     let cfAccountId = config.cloudflare.accountId;
 
@@ -2317,14 +2718,16 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
             const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
             config.secrets.BACKEND_DOMAIN = workerDevUrl;
             config._workerDevUrl = workerDevUrl;
-            console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+            if (!process.env.__CHILD_DEPLOY__) {
+              console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+            }
           }
         } catch {
         }
       }
     }
     
-    report('Setting up Cloudflare credentials...', 'completed', 'Cloudflare ready');
+    report('Setting up Cloudflare credentials', 'completed', 'Cloudflare ready');
 
     const origToken = process.env.CLOUDFLARE_API_TOKEN;
     const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -2426,24 +2829,24 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       }
 
       if (DEPLOY_SECRETS) {
-        report('Deploying secrets...', 'running', 'Configuring environment secrets');
+        report('Deploying secrets', 'running', 'Configuring environment secrets');
         if (Object.keys(config.secrets || {}).length > 0) {
           await utils.deploySecrets(config.secrets, cwd, config.workerName, config.workerName);
-          report('Deploying secrets...', 'completed', 'Secrets deployed');
+          report('Deploying secrets', 'completed', 'Secrets deployed');
         } else {
           const existing = utils.getExistingSecrets();
           const { missing, allSet } = checkSecrets(existing);
           if (!allSet) {
-            report('Deploying secrets...', 'warning', `Missing secrets: ${missing.join(', ')}`);
+            report('Deploying secrets', 'warning', `Missing secrets: ${missing.join(', ')}`);
           } else {
-            report('Deploying secrets...', 'completed', 'All secrets set');
+            report('Deploying secrets', 'completed', 'All secrets set');
           }
         }
       }
 
       let workerUrl = '';
       if (DEPLOY_WORKER) {
-        report('Deploying worker...', 'running', 'Deploying Cloudflare Worker');
+        report('Deploying worker', 'running', 'Deploying Cloudflare Worker');
         if (!dbResult) {
           dbResult = await utils.ensureD1Database(cwd, config.databaseName);
         }
@@ -2462,12 +2865,12 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           workerUrl = domain.startsWith('http') ? domain : `https://${domain}`;
         }
         
-        report('Deploying worker...', 'completed', 'Worker deployed');
+        report('Deploying worker', 'completed', 'Worker deployed');
       }
 
       let pagesUrl = '';
       if (DEPLOY_PAGES) {
-        report('Deploying frontend...', 'running', 'Deploying Cloudflare Pages');
+        report('Deploying frontend', 'running', 'Deploying Cloudflare Pages');
         // Update HTML with correct backend URL before deploying Pages
         const backendUrl = config.BACKEND_DOMAIN 
           ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
@@ -2478,7 +2881,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         const sourceDir = config._tempFrontendDir || null;
         updateWorkerUrlInHtml(cwd, backendUrl, config, htmlPath);
         pagesUrl = await utils.deployPages(cwd, config.pagesProjectName, sourceDir, config.pagesProjectName);
-        report('Deploying frontend...', 'completed', 'Frontend deployed');
+        report('Deploying frontend', 'completed', 'Frontend deployed');
       }
 
       if (useLogger && logger) {
@@ -2671,9 +3074,7 @@ async function main() {
     logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
     logger.addStep('Deploying secrets', 'Configuring environment secrets');
     logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
-    if (config.deployPages) {
-      logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
-    }
+    logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
     logger.render();
 
     logger.startStep('Checking prerequisites');
@@ -2728,7 +3129,9 @@ async function main() {
             const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
             config.secrets.BACKEND_DOMAIN = workerDevUrl;
             config._workerDevUrl = workerDevUrl;
-            console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+            if (!process.env.__CHILD_DEPLOY__) {
+              console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+            }
           }
         } catch {
         }

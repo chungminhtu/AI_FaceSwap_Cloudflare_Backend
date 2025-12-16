@@ -703,6 +703,29 @@ export default {
           const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
           const createdAt = Math.floor(Date.now() / 1000);
 
+          // Scan selfie uploads with vision API before saving to database
+          if (type === 'selfie') {
+            const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
+            if (!disableSafeSearch) {
+              const safeSearchResult = await checkSafeSearch(publicUrl, env);
+              if (!safeSearchResult.isSafe) {
+                // Delete from R2 if unsafe
+                try {
+                  await R2_BUCKET.delete(key);
+                } catch (deleteError) {
+                  console.warn('Failed to delete unsafe selfie from R2:', deleteError);
+                }
+                // Return special marker to indicate vision block failure
+                return {
+                  success: false,
+                  error: 'Upload failed',
+                  filename: fileData.filename,
+                  visionBlocked: true,
+                };
+              }
+            }
+          }
+
           if (type === 'preset') {
             // Generate Vertex AI prompt in parallel
             let promptJson: string | null = null;
@@ -856,6 +879,17 @@ export default {
 
         // Process all files in parallel
         const results = await Promise.all(allFileData.map((fileData, index) => processFile(fileData, index)));
+
+        // Check if any selfie was blocked by vision API - return 422 immediately with generic error
+        const visionBlocked = results.some(r => (r as any).visionBlocked === true);
+        if (visionBlocked) {
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: 'Upload failed',
+            code: 422,
+          }, 422, request, env);
+        }
 
         const successful = results.filter(r => r.success);
         const failed = results.filter(r => !r.success);
@@ -3044,39 +3078,6 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        // Check input image safety before upscaling
-        const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-        let inputSafetyDebug: SafetyCheckDebug | null = null;
-
-        if (!disableSafeSearch) {
-          const inputSafeSearchResult = await checkSafeSearch(body.image_url, env);
-          inputSafetyDebug = {
-            checked: true,
-            isSafe: !!inputSafeSearchResult.isSafe,
-            statusCode: inputSafeSearchResult.statusCode,
-            violationCategory: inputSafeSearchResult.violationCategory,
-            violationLevel: inputSafeSearchResult.violationLevel,
-            details: inputSafeSearchResult.details,
-            error: inputSafeSearchResult.error,
-            rawResponse: inputSafeSearchResult.rawResponse,
-            debug: inputSafeSearchResult.debug,
-          };
-
-          if (!inputSafeSearchResult.isSafe) {
-            const debugEnabled = isDebugEnabled(env);
-            const debugPayload = debugEnabled ? compact({
-              inputSafety: buildVisionDebug(inputSafetyDebug),
-            }) : undefined;
-            return jsonResponse({
-              data: null,
-              status: 'error',
-              message: '',
-              code: 400,
-              ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 400);
-          }
-        }
-
         const upscalerResult = await callUpscaler4k(body.image_url, env);
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
@@ -3085,11 +3086,9 @@ export default {
           const debugEnabled = isDebugEnabled(env);
           const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult) : undefined;
           const vertexDebug = debugEnabled ? buildVertexDebug(upscalerResult) : undefined;
-          const inputSafetyDebugInfo = debugEnabled ? buildVisionDebug(inputSafetyDebug) : undefined;
           const debugPayload = debugEnabled ? compact({
             provider: providerDebug,
             vertex: vertexDebug,
-            inputSafety: inputSafetyDebugInfo,
             rawError: upscalerResult.Error,
             fullResponse: (upscalerResult as any).FullResponse,
             wavespeedDebug: (upscalerResult as any).Debug,
@@ -3110,41 +3109,6 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        // Check output image safety after upscaling
-        let outputSafetyDebug: SafetyCheckDebug | null = null;
-
-        if (!disableSafeSearch) {
-          const outputSafeSearchResult = await checkSafeSearch(resultUrl, env);
-          outputSafetyDebug = {
-            checked: true,
-            isSafe: !!outputSafeSearchResult.isSafe,
-            statusCode: outputSafeSearchResult.statusCode,
-            violationCategory: outputSafeSearchResult.violationCategory,
-            violationLevel: outputSafeSearchResult.violationLevel,
-            details: outputSafeSearchResult.details,
-            error: outputSafeSearchResult.error,
-            rawResponse: outputSafeSearchResult.rawResponse,
-            debug: outputSafeSearchResult.debug,
-          };
-
-          if (!outputSafeSearchResult.isSafe) {
-            const debugEnabled = isDebugEnabled(env);
-            const debugPayload = debugEnabled ? compact({
-              provider: buildProviderDebug(upscalerResult, resultUrl),
-              vertex: buildVertexDebug(upscalerResult),
-              inputSafety: buildVisionDebug(inputSafetyDebug),
-              outputSafety: buildVisionDebug(outputSafetyDebug),
-            }) : undefined;
-            return jsonResponse({
-              data: null,
-              status: 'error',
-              message: '',
-              code: 400,
-              ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 400);
-          }
-        }
-
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
@@ -3153,8 +3117,6 @@ export default {
         const debugPayload = debugEnabled ? compact({
           provider: providerDebug,
           vertex: vertexDebug,
-          inputSafety: buildVisionDebug(inputSafetyDebug),
-          outputSafety: buildVisionDebug(outputSafetyDebug),
         }) : undefined;
 
         return jsonResponse({

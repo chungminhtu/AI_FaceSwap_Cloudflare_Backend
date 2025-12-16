@@ -2,18 +2,134 @@
 
 Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp. Base URL: `https://api.d.shotpix.app`
 
-## Cấu hình và Prompts
+## Mục lục (Table of Contents)
 
-Tất cả các prompts và cấu hình API đã được tập trung vào file `config.ts` để dễ dàng quản lý và thay đổi. Xem thêm tài liệu chi tiết tại `backend-cloudflare-workers/CONFIG_DOCUMENTATION.md`.
+### APIs cần test mobile performance
+1. POST `/upload-url` (type=selfie) - Upload selfie
+2. POST `/faceswap` - Face swap action
+3. POST `/removeBackground` - Remove background action
+4. POST `/enhance` - Enhance action
+5. POST `/colorize` - Colorize action
+6. POST `/aging` - Aging action
+7. POST `/upscaler4k` - Upscale 4K action
+8. POST `/profiles` - Tạo profile
+9. GET `/profiles/{id}` - Lấy profile
 
-**Các cấu hình chính:**
-- **API Prompts**: Facial preservation, merge prompts, vertex generation prompts
-- **Model Config**: Model mappings và default values
-- **Aspect Ratios**: Danh sách aspect ratios được hỗ trợ
-- **Timeouts**: Cấu hình timeout cho các request
-- **API Config**: Temperature, tokens, safety settings cho image generation
+### APIs không cần test mobile performance
+10. PUT `/profiles/{id}` - Cập nhật profile
+11. GET `/profiles` - Liệt kê profiles
+12. POST `/upload-url` (type=preset) - Upload preset (backend only)
+13. GET `/presets` - Liệt kê presets
+14. GET `/presets/{id}` - Lấy preset theo ID
+15. DELETE `/presets/{id}` - Xóa preset
+16. GET `/selfies` - Liệt kê selfies
+17. DELETE `/selfies/{id}` - Xóa selfie
+18. GET `/results` - Liệt kê results
+19. DELETE `/results/{id}` - Xóa result
+20. POST `/upload-thumbnails` - Upload thumbnails (backend only)
+21. GET `/thumbnails` - Liệt kê thumbnails
+22. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+23. GET `/config` - Lấy config
+24. OPTIONS `/*` - CORS preflight requests
 
-## 1. POST `/faceswap`
+---
+
+## APIs cần test mobile performance
+
+### 1. POST `/upload-url` (type=selfie) - Upload selfie
+
+### Mục đích
+Tải ảnh selfie trực tiếp lên server và lưu vào database. Endpoint này được sử dụng bởi mobile app để upload selfie.
+
+### Request
+
+**Upload selfie với action:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -F "files=@/path/to/selfie.jpg" \
+  -F "type=selfie" \
+  -F "profile_id=profile_1234567890" \
+  -F "action=faceswap"
+```
+
+**Multipart/form-data:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -F "files=@/path/to/selfie.jpg" \
+  -F "type=selfie" \
+  -F "profile_id=profile_1234567890"
+```
+
+**JSON với image_url:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://example.com/selfie.jpg",
+    "type": "selfie",
+    "profile_id": "profile_1234567890",
+    "action": "faceswap"
+  }'
+```
+
+**Các trường:**
+- `files` (file[], required nếu dùng multipart): Mảng file ảnh selfie cần upload (hỗ trợ nhiều file).
+- `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh selfie trực tiếp.
+- `type` (string, required): Phải là `"selfie"` cho mobile app.
+- `profile_id` (string, required): ID profile người dùng.
+- `action` (string, optional, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"default"`. 
+  - `"faceswap"`: Tối đa 4 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 3 ảnh mới nhất).
+  - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới.
+
+### Response
+
+**Success (200):**
+```json
+{
+  "data": {
+    "results": [
+      {
+        "id": "selfie_1234567890_xyz789",
+        "url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
+        "filename": "example.jpg"
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200
+}
+```
+
+**Error - Vision API Blocked (422):**
+Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoint sẽ trả về status code `422` với thông báo lỗi chung (không tiết lộ chi tiết vi phạm):
+
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Upload failed",
+  "code": 422
+}
+```
+
+**Lưu ý:**
+- Tất cả selfie uploads đều được quét bởi Vision API trước khi lưu vào database
+- Scan level mặc định: `strict` (chặn cả `LIKELY` và `VERY_LIKELY` violations)
+- Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về 422 ngay lập tức
+- Response không chứa chi tiết về loại vi phạm để bảo mật
+
+**Testing:**
+- Test với ảnh không phù hợp để verify 422 response
+- Verify message chỉ là "Upload failed" (generic, không có details)
+- Verify file không được lưu vào database khi bị block
+
+---
+
+### 2. POST `/faceswap`
 
 ### Mục đích
 Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
@@ -55,7 +171,7 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 - `profile_id` (string, required): ID profile người dùng.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, optional): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`. (Cấu hình trong `config.ts`: `ASPECT_RATIO_CONFIG`)
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
 
 ### Response
 
@@ -174,7 +290,7 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 }
 ```
 
-## 2. POST `/removeBackground`
+### 3. POST `/removeBackground`
 
 ### Mục đích
 Xóa nền của ảnh selfie, giữ lại người với transparent background sử dụng Vertex AI. Kết quả là ảnh người không có nền, sẵn sàng để sử dụng.
@@ -213,7 +329,7 @@ curl -X POST https://api.d.shotpix.app/removeBackground \
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`). Ảnh phải có transparent background sẵn.
 - `profile_id` (string, required): ID profile người dùng.
 - `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc xóa nền (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`. (Cấu hình trong `config.ts`: `ASPECT_RATIO_CONFIG`)
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
 
 ### Response
 
@@ -258,7 +374,7 @@ curl -X POST https://api.d.shotpix.app/removeBackground \
 }
 ```
 
-## 3. POST `/enhance`
+### 4. POST `/enhance`
 
 ### Mục đích
 AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
@@ -299,7 +415,7 @@ curl -X POST https://api.d.shotpix.app/enhance \
 }
 ```
 
-## 4. POST `/colorize`
+### 5. POST `/colorize`
 
 ### Mục đích
 AI chuyển đổi ảnh đen trắng thành ảnh màu.
@@ -340,7 +456,7 @@ curl -X POST https://api.d.shotpix.app/colorize \
 }
 ```
 
-## 5. POST `/aging`
+### 6. POST `/aging`
 
 ### Mục đích
 AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
@@ -383,7 +499,7 @@ curl -X POST https://api.d.shotpix.app/aging \
 }
 ```
 
-## 6. POST `/upscaler4k`
+### 7. POST `/upscaler4k`
 
 ### Mục đích
 Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
@@ -440,334 +556,9 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
 }
 ```
 
-## 7. POST `/upload-url`
+---
 
-### Mục đích
-Tải ảnh trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation).
-
-### Request
-
-**Multipart/form-data:**
-```bash
-curl -X POST https://api.d.shotpix.app/upload-url \
-  -F "files=@/path/to/image1.jpg" \
-  -F "files=@/path/to/image2.jpg" \
-  -F "type=preset" \
-  -F "profile_id=profile_1234567890" \
-  -F "enableVertexPrompt=true"
-```
-
-**JSON với image_url:**
-```bash
-curl -X POST https://api.d.shotpix.app/upload-url \
-  -H "Content-Type: application/json" \
-  -d '{
-    "image_url": "https://example.com/image.jpg",
-    "type": "preset",
-    "profile_id": "profile_1234567890",
-    "enableVertexPrompt": true
-  }'
-```
-
-**Upload selfie với action:**
-```bash
-curl -X POST https://api.d.shotpix.app/upload-url \
-  -F "files=@/path/to/selfie.jpg" \
-  -F "type=selfie" \
-  -F "profile_id=profile_1234567890" \
-  -F "action=faceswap"
-```
-
-**Các trường:**
-- `files` (file[], required nếu dùng multipart): Mảng file ảnh cần upload (hỗ trợ nhiều file).
-- `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh trực tiếp.
-- `type` (string, required): `preset` hoặc `selfie`.
-- `profile_id` (string, required): ID profile người dùng.
-- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset.
-- `action` (string, optional, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"default"`. 
-  - `"faceswap"`: Tối đa 4 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 3 ảnh mới nhất).
-  - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới.
-
-### Response
-
-```json
-{
-  "data": {
-    "results": [
-      {
-        "id": "preset_1234567890_abc123",
-        "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-        "filename": "example.jpg"
-      }
-    ],
-    "count": 1,
-    "successful": 1,
-    "failed": 0
-  },
-  "status": "success",
-  "message": "Processing successful",
-  "code": 200,
-  "debug": {
-    "vertex": [
-      {
-        "hasPrompt": true,
-        "prompt_json": {
-          "prompt": "...",
-          "style": "...",
-          "lighting": "..."
-        },
-        "vertex_info": {
-          "success": true,
-          "promptKeys": ["prompt", "style", "lighting"],
-          "debug": {
-            "endpoint": "https://.../generateContent",
-            "status": 200,
-            "responseTimeMs": 4200
-          }
-        }
-      }
-    ],
-    "filesProcessed": 1,
-    "resultsCount": 1
-  }
-}
-```
-
-## 8. GET `/presets`
-
-### Mục đích
-Trả về danh sách preset trong database.
-
-### Request
-
-```bash
-curl https://api.d.shotpix.app/presets
-curl https://api.d.shotpix.app/presets?include_thumbnails=true
-```
-
-**Query Parameters:**
-- `include_thumbnails` (optional): `true` để bao gồm cả presets có thumbnail. Mặc định chỉ trả về presets không có thumbnail.
-
-### Response
-
-```json
-{
-  "data": {
-    "presets": [
-      {
-        "id": "preset_1234567890_abc123",
-        "preset_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-        "image_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-        "hasPrompt": true,
-        "prompt_json": null,
-        "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
-        "thumbnail_format": "webp",
-        "thumbnail_resolution": "1x",
-        "created_at": "2024-01-01T00:00:00.000Z"
-      }
-    ]
-  },
-  "status": "success",
-  "message": "Presets retrieved successfully",
-  "code": 200,
-  "debug": {
-    "count": 1
-  }
-}
-```
-
-## 9. GET `/presets/{id}`
-
-### Mục đích
-Lấy thông tin chi tiết của một preset theo ID (bao gồm `prompt_json`).
-
-### Request
-
-```bash
-curl https://api.d.shotpix.app/presets/preset_1234567890_abc123
-```
-
-### Response
-
-```json
-{
-  "data": {
-    "id": "preset_1234567890_abc123",
-    "preset_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-    "image_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-    "hasPrompt": true,
-    "prompt_json": {
-      "prompt": "...",
-      "style": "...",
-      "lighting": "..."
-    },
-    "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
-    "thumbnail_format": "webp",
-    "thumbnail_resolution": "1x",
-    "created_at": 1704067200
-  },
-  "status": "success",
-  "message": "Preset retrieved successfully",
-  "code": 200,
-  "debug": {
-    "presetId": "preset_1234567890_abc123",
-    "hasPrompt": true
-  }
-}
-```
-
-## 10. DELETE `/presets/{id}`
-
-### Mục đích
-Xóa preset khỏi D1 và R2.
-
-### Request
-
-```bash
-curl -X DELETE https://api.d.shotpix.app/presets/preset_1234567890_abc123
-```
-
-### Response
-
-```json
-{
-  "data": null,
-  "status": "success",
-  "message": "Preset deleted successfully",
-  "code": 200
-}
-```
-
-## 11. GET `/selfies`
-
-### Mục đích
-Trả về tối đa 50 selfie gần nhất của một profile.
-
-### Request
-
-```bash
-curl https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
-```
-
-**Query Parameters:**
-- `profile_id` (required): ID profile.
-- `limit` (optional): Số lượng selfies tối đa trả về (1-50). Mặc định: 50.
-
-### Response
-
-```json
-{
-  "data": {
-    "selfies": [
-      {
-        "id": "selfie_1234567890_xyz789",
-        "selfie_url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
-        "action": "faceswap",
-        "created_at": "2024-01-01T00:00:00.000Z"
-      }
-    ]
-  },
-  "status": "success",
-  "message": "Selfies retrieved successfully",
-  "code": 200
-}
-```
-
-## 12. DELETE `/selfies/{id}`
-
-### Mục đích
-Xóa selfie khỏi D1 và R2.
-
-### Request
-
-```bash
-curl -X DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
-```
-
-### Response
-
-```json
-{
-  "data": null,
-  "status": "success",
-  "message": "Selfie deleted successfully",
-  "code": 200,
-  "debug": {
-    "selfieId": "selfie_1234567890_xyz789",
-    "r2Deleted": true,
-    "r2Error": null
-  }
-}
-```
-
-## 13. GET `/results`
-
-### Mục đích
-Trả về tối đa 50 kết quả face swap gần nhất.
-
-### Request
-
-```bash
-curl https://api.d.shotpix.app/results
-curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
-```
-
-**Query Parameters:**
-- `profile_id` (optional): ID profile để lọc kết quả.
-- `limit` (optional): Số lượng results tối đa trả về (1-50). Mặc định: 50.
-- `gender` (optional): Lọc theo giới tính. Giá trị: `male` hoặc `female`.
-
-### Response
-
-```json
-{
-  "data": {
-    "results": [
-      {
-        "id": "result_1234567890_abc123",
-        "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-        "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-        "profile_id": "profile_1234567890",
-        "created_at": "2024-01-01T00:00:00.000Z"
-      }
-    ]
-  },
-  "status": "success",
-  "message": "Results retrieved successfully",
-  "code": 200
-}
-```
-
-## 14. DELETE `/results/{id}`
-
-### Mục đích
-Xóa kết quả khỏi D1 và R2.
-
-### Request
-
-```bash
-curl -X DELETE https://api.d.shotpix.app/results/result_1234567890_abc123
-```
-
-### Response
-
-```json
-{
-  "data": null,
-  "status": "success",
-  "message": "Result deleted successfully",
-  "code": 200,
-  "debug": {
-    "resultId": "result_1234567890_abc123",
-    "databaseDeleted": 1,
-    "r2Deleted": true,
-    "r2Key": "results/result_123.jpg",
-    "r2Error": null
-  }
-}
-```
-
-## 15. POST `/profiles`
+### 8. POST `/profiles`
 
 ### Mục đích
 Tạo profile mới.
@@ -852,7 +643,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
 }
 ```
 
-## 16. GET `/profiles/{id}`
+### 9. GET `/profiles/{id}`
 
 ### Mục đích
 Lấy thông tin profile theo ID.
@@ -883,7 +674,11 @@ curl https://api.d.shotpix.app/profiles/profile_1234567890
 }
 ```
 
-## 17. PUT `/profiles/{id}`
+---
+
+## APIs không cần test mobile performance
+
+### 10. PUT `/profiles/{id}`
 
 ### Mục đích
 Cập nhật thông tin profile.
@@ -932,7 +727,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 }
 ```
 
-## 18. GET `/profiles`
+### 11. GET `/profiles`
 
 ### Mục đích
 Liệt kê tất cả profiles (dùng cho admin/debugging).
@@ -967,15 +762,143 @@ curl https://api.d.shotpix.app/profiles
 }
 ```
 
-## 19. GET `/config`
+---
+
+### 12. POST `/upload-url` (type=preset) - Upload preset (backend only)
 
 ### Mục đích
-Lấy cấu hình public của Worker (custom domains).
+Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
+
+### Request
+
+**Multipart/form-data:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -F "files=@/path/to/image1.jpg" \
+  -F "files=@/path/to/image2.jpg" \
+  -F "type=preset" \
+  -F "profile_id=profile_1234567890" \
+  -F "enableVertexPrompt=true"
+```
+
+**JSON với image_url:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://example.com/image.jpg",
+    "type": "preset",
+    "profile_id": "profile_1234567890",
+    "enableVertexPrompt": true
+  }'
+```
+
+**Các trường:**
+- `files` (file[], required nếu dùng multipart): Mảng file ảnh preset cần upload (hỗ trợ nhiều file).
+- `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh preset trực tiếp.
+- `type` (string, required): Phải là `"preset"` cho backend upload.
+- `profile_id` (string, required): ID profile người dùng.
+- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset.
+
+### Response
+
+```json
+{
+  "data": {
+    "results": [
+      {
+        "id": "preset_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+        "filename": "example.jpg"
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200,
+  "debug": {
+    "vertex": [
+      {
+        "hasPrompt": true,
+        "prompt_json": {
+          "prompt": "...",
+          "style": "...",
+          "lighting": "..."
+        },
+        "vertex_info": {
+          "success": true,
+          "promptKeys": ["prompt", "style", "lighting"],
+          "debug": {
+            "endpoint": "https://.../generateContent",
+            "status": 200,
+            "responseTimeMs": 4200
+          }
+        }
+      }
+    ],
+    "filesProcessed": 1,
+    "resultsCount": 1
+  }
+}
+```
+
+---
+
+### 13. GET `/presets`
+
+### Mục đích
+Trả về danh sách preset trong database.
 
 ### Request
 
 ```bash
-curl https://api.d.shotpix.app/config
+curl https://api.d.shotpix.app/presets
+curl https://api.d.shotpix.app/presets?include_thumbnails=true
+```
+
+**Query Parameters:**
+- `include_thumbnails` (optional): `true` để bao gồm cả presets có thumbnail. Mặc định chỉ trả về presets không có thumbnail.
+
+### Response
+
+```json
+{
+  "data": {
+    "presets": [
+      {
+        "id": "preset_1234567890_abc123",
+        "preset_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+        "image_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+        "hasPrompt": true,
+        "prompt_json": null,
+        "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "thumbnail_format": "webp",
+        "thumbnail_resolution": "1x",
+        "created_at": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "status": "success",
+  "message": "Presets retrieved successfully",
+  "code": 200,
+  "debug": {
+    "count": 1
+  }
+}
+```
+
+### 14. GET `/presets/{id}`
+
+### Mục đích
+Lấy thông tin chi tiết của một preset theo ID (bao gồm `prompt_json`).
+
+### Request
+
+```bash
+curl https://api.d.shotpix.app/presets/preset_1234567890_abc123
 ```
 
 ### Response
@@ -983,39 +906,213 @@ curl https://api.d.shotpix.app/config
 ```json
 {
   "data": {
-    "backendDomain": "https://api.d.shotpix.app",
-    "r2Domain": "https://resources.d.shotpix.app",
-    "kvCache": {
-      "available": true,
-      "test": "success",
-      "details": {
-        "bindingName": "PROMPT_CACHE_KV",
-        "envKeys": ["PROMPT_CACHE_KV_BINDING_NAME", "..."]
-      }
-    }
+    "id": "preset_1234567890_abc123",
+    "preset_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+    "image_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+    "hasPrompt": true,
+    "prompt_json": {
+      "prompt": "...",
+      "style": "...",
+      "lighting": "..."
+    },
+    "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+    "thumbnail_format": "webp",
+    "thumbnail_resolution": "1x",
+    "created_at": 1704067200
   },
   "status": "success",
-  "message": "Config retrieved successfully",
+  "message": "Preset retrieved successfully",
+  "code": 200,
+  "debug": {
+    "presetId": "preset_1234567890_abc123",
+    "hasPrompt": true
+  }
+}
+```
+
+### 15. DELETE `/presets/{id}`
+
+### Mục đích
+Xóa preset khỏi D1 và R2.
+
+### Request
+
+```bash
+curl -X DELETE https://api.d.shotpix.app/presets/preset_1234567890_abc123
+```
+
+### Response
+
+```json
+{
+  "data": null,
+  "status": "success",
+  "message": "Preset deleted successfully",
   "code": 200
 }
 ```
 
-## 20. OPTIONS `/*`
+### 16. GET `/selfies`
 
 ### Mục đích
-Xử lý CORS preflight requests cho tất cả các endpoints. Tự động được gọi bởi trình duyệt khi thực hiện cross-origin requests.
+Trả về tối đa 50 selfie gần nhất của một profile.
+
+### Request
+
+```bash
+curl https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
+```
+
+**Query Parameters:**
+- `profile_id` (required): ID profile.
+- `limit` (optional): Số lượng selfies tối đa trả về (1-50). Mặc định: 50.
 
 ### Response
 
-Trả về HTTP 204 (No Content) với các headers CORS:
-- `Access-Control-Allow-Origin`: Cho phép tất cả origins
-- `Access-Control-Allow-Methods`: GET, POST, PUT, DELETE, OPTIONS
-- `Access-Control-Allow-Headers`: Content-Type, Authorization, và các headers khác
-- `Access-Control-Max-Age`: 86400 (24 giờ)
+```json
+{
+  "data": {
+    "selfies": [
+      {
+        "id": "selfie_1234567890_xyz789",
+        "selfie_url": "https://resources.d.shotpix.app/faceswap-images/selfie/example.jpg",
+        "action": "faceswap",
+        "created_at": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "status": "success",
+  "message": "Selfies retrieved successfully",
+  "code": 200
+}
+```
 
-Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
+### 17. DELETE `/selfies/{id}`
 
-## 21. POST `/upload-thumbnails`
+### Mục đích
+Xóa selfie khỏi D1 và R2.
+
+### Request
+
+```bash
+curl -X DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
+```
+
+### Response
+
+```json
+{
+  "data": null,
+  "status": "success",
+  "message": "Selfie deleted successfully",
+  "code": 200,
+  "debug": {
+    "selfieId": "selfie_1234567890_xyz789",
+    "r2Deleted": true,
+    "r2Error": null
+  }
+}
+```
+
+### 18. GET `/results`
+
+### Mục đích
+Trả về tối đa 50 kết quả face swap gần nhất.
+
+### Request
+
+```bash
+curl https://api.d.shotpix.app/results
+curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
+```
+
+**Query Parameters:**
+- `profile_id` (optional): ID profile để lọc kết quả.
+- `limit` (optional): Số lượng results tối đa trả về (1-50). Mặc định: 50.
+- `gender` (optional): Lọc theo giới tính. Giá trị: `male` hoặc `female`.
+
+### Response
+
+```json
+{
+  "data": {
+    "results": [
+      {
+        "id": "result_1234567890_abc123",
+        "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+        "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+        "profile_id": "profile_1234567890",
+        "created_at": "2024-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "status": "success",
+  "message": "Results retrieved successfully",
+  "code": 200
+}
+```
+
+### 19. DELETE `/results/{id}`
+
+### Mục đích
+Xóa kết quả khỏi D1 và R2.
+
+### Request
+
+```bash
+curl -X DELETE https://api.d.shotpix.app/results/result_1234567890_abc123
+```
+
+### Response
+
+```json
+{
+  "data": null,
+  "status": "success",
+  "message": "Result deleted successfully",
+  "code": 200,
+  "debug": {
+    "resultId": "result_1234567890_abc123",
+    "databaseDeleted": 1,
+    "r2Deleted": true,
+    "r2Key": "results/result_123.jpg",
+    "r2Error": null
+  }
+}
+```
+
+### 20. POST `/upload-thumbnails`
+
+### Mục đích
+Lấy thông tin profile theo ID.
+
+### Request
+
+```bash
+curl https://api.d.shotpix.app/profiles/profile_1234567890
+```
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "uYNgRR70Ry9OFuMV",
+    "device_id": "device_1765774126587_yaq0uh6rvz",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "avatar_url": "https://example.com/avatar.jpg",
+    "preferences": "{\"theme\":\"dark\",\"language\":\"vi\"}",
+    "created_at": "2025-12-15T04:48:47.676Z",
+    "updated_at": "2025-12-15T04:48:47.676Z"
+  },
+  "status": "success",
+  "message": "Profile retrieved successfully",
+  "code": 200
+}
+```
+
+### 20. POST `/upload-thumbnails`
 
 ### Mục đích
 Tải lên thư mục chứa thumbnails (WebP và Lottie JSON) và original presets. Hỗ trợ batch upload nhiều file cùng lúc.
@@ -1077,7 +1174,7 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 }
 ```
 
-## 22. GET `/thumbnails`
+### 21. GET `/thumbnails`
 
 ### Mục đích
 Lấy danh sách thumbnails từ database. Trả về tất cả presets có thumbnail (bất kỳ cột thumbnail nào không null).
@@ -1119,7 +1216,7 @@ curl https://api.d.shotpix.app/thumbnails
 
 **Lưu ý:** Response trả về tất cả các cột thumbnail resolution (1x, 1.5x, 2x, 3x) từ database. `thumbnail_url` là alias của `thumbnail_url_1x` cho backward compatibility.
 
-## 23. GET `/thumbnails/{id}/preset`
+### 22. GET `/thumbnails/{id}/preset`
 
 ### Mục đích
 Lấy preset_id từ thumbnail_id (dùng cho mobile app).
@@ -1143,35 +1240,89 @@ curl https://api.d.shotpix.app/thumbnails/preset_1234567890_abc123/preset
 }
 ```
 
+### 23. GET `/config`
+
+### Mục đích
+Lấy cấu hình public của Worker (custom domains).
+
+### Request
+
+```bash
+curl https://api.d.shotpix.app/config
+```
+
+### Response
+
+```json
+{
+  "data": {
+    "backendDomain": "https://api.d.shotpix.app",
+    "r2Domain": "https://resources.d.shotpix.app",
+    "kvCache": {
+      "available": true,
+      "test": "success",
+      "details": {
+        "bindingName": "PROMPT_CACHE_KV",
+        "envKeys": ["PROMPT_CACHE_KV_BINDING_NAME", "..."]
+      }
+    }
+  },
+  "status": "success",
+  "message": "Config retrieved successfully",
+  "code": 200
+}
+```
+
+### 24. OPTIONS `/*`
+
+### Mục đích
+Xử lý CORS preflight requests cho tất cả các endpoints. Tự động được gọi bởi trình duyệt khi thực hiện cross-origin requests.
+
+### Response
+
+Trả về HTTP 204 (No Content) với các headers CORS:
+- `Access-Control-Allow-Origin`: Cho phép tất cả origins
+- `Access-Control-Allow-Methods`: GET, POST, PUT, DELETE, OPTIONS
+- `Access-Control-Allow-Headers`: Content-Type, Authorization, và các headers khác
+- `Access-Control-Max-Age`: 86400 (24 giờ)
+
+Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
+
+---
+
 ## Tổng kết
 
-**Tổng số API endpoints: 23**
+**Tổng số API endpoints: 24**
 
-**Danh sách đầy đủ các API endpoints:**
+### APIs cần test mobile performance (9 APIs)
 
-1. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
-2. POST `/removeBackground` - Xóa nền (Remove Background)
-3. POST `/enhance` - AI enhance ảnh
-4. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
-5. POST `/aging` - AI lão hóa khuôn mặt
-6. POST `/upscaler4k` - AI upscale ảnh lên 4K
-7. POST `/upload-url` - Tải ảnh lên server (hỗ trợ nhiều file)
-8. GET `/presets` - Liệt kê presets
-9. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-10. DELETE `/presets/{id}` - Xóa preset
-11. GET `/selfies` - Liệt kê selfies
-12. DELETE `/selfies/{id}` - Xóa selfie
-13. GET `/results` - Liệt kê results
-14. DELETE `/results/{id}` - Xóa result
-15. POST `/profiles` - Tạo profile
-16. GET `/profiles/{id}` - Lấy profile
-17. PUT `/profiles/{id}` - Cập nhật profile
-18. GET `/profiles` - Liệt kê profiles
-19. GET `/config` - Lấy config
-20. OPTIONS `/*` - CORS preflight requests
-21. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
-22. GET `/thumbnails` - Liệt kê thumbnails
-23. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+1. POST `/upload-url` (type=selfie) - Upload selfie
+2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
+3. POST `/removeBackground` - Xóa nền (Remove Background)
+4. POST `/enhance` - AI enhance ảnh
+5. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
+6. POST `/aging` - AI lão hóa khuôn mặt
+7. POST `/upscaler4k` - AI upscale ảnh lên 4K
+8. POST `/profiles` - Tạo profile
+9. GET `/profiles/{id}` - Lấy profile
+
+### APIs không cần test mobile performance (15 APIs)
+
+10. PUT `/profiles/{id}` - Cập nhật profile
+11. GET `/profiles` - Liệt kê profiles
+12. POST `/upload-url` (type=preset) - Upload preset (backend only)
+13. GET `/presets` - Liệt kê presets
+14. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
+15. DELETE `/presets/{id}` - Xóa preset
+16. GET `/selfies` - Liệt kê selfies
+17. DELETE `/selfies/{id}` - Xóa selfie
+18. GET `/results` - Liệt kê results
+19. DELETE `/results/{id}` - Xóa result
+20. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
+21. GET `/thumbnails` - Liệt kê thumbnails
+22. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+23. GET `/config` - Lấy config
+24. OPTIONS `/*` - CORS preflight requests
 
 ## Custom Domain
 

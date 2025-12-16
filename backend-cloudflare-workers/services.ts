@@ -849,8 +849,8 @@ export const checkSafeSearch = async (
       };
     }
 
-    // Get strictness from env (default: 'lenient' - only blocks VERY_LIKELY)
-    const strictness = (env.SAFETY_STRICTNESS === 'strict' ? 'strict' : 'lenient') as 'strict' | 'lenient';
+    // Get strictness from env (default: 'strict' - blocks LIKELY and VERY_LIKELY)
+    const strictness = (env.SAFETY_STRICTNESS === 'lenient' ? 'lenient' : 'strict') as 'strict' | 'lenient';
     const isUnsafeResult = isUnsafe(annotation, strictness);
     
     // Find worst violation (highest severity)
