@@ -270,8 +270,8 @@ class DeploymentLogger {
       });
     });
     
-    // Calculate step number column width (e.g., "#10" = 3 chars)
-    const stepNumColWidth = Math.max(String(this.steps.length).length + 2, 4); // "#" + number + space, minimum 4
+    // Calculate step number column width (e.g., "10" = 2 chars)
+    const stepNumColWidth = Math.max(String(this.steps.length).length + 1, 3); // number + space, minimum 3
     
     // Set column widths with padding
     const stepColWidth = Math.max(maxStepNameWidth + 2, 10); // Add 2 for padding, minimum 10
@@ -293,7 +293,7 @@ class DeploymentLogger {
     const topBorder = `${colors.dim}╔${'═'.repeat(stepNumColWidth)}╦${'═'.repeat(stepColWidth)}╦${this.environments.map(() => '═'.repeat(envColWidth)).join('╦')}╗${colors.reset}\n`;
     
     // Header line 1 - calculate fixed width with ANSI code handling
-    const stepNumHeader = '#';
+    const stepNumHeader = '';
     const stepNumHeaderPadded = stepNumHeader + ' '.repeat(Math.max(0, stepNumColWidth - stepNumHeader.length));
     const stepHeaderText = 'STEP';
     const stepHeaderPadded = stepHeaderText + ' '.repeat(Math.max(0, stepColWidth - stepHeaderText.length));
@@ -332,7 +332,7 @@ class DeploymentLogger {
       const stepName = step.name;
       const stepDesc = step.description || '';
       const stepNumber = String(index + 1);
-      const stepNumDisplay = `#${stepNumber}`;
+      const stepNumDisplay = stepNumber;
       const stepNumPadded = stepNumDisplay + ' '.repeat(Math.max(0, stepNumColWidth - stepNumDisplay.length));
       
       // Wrap step name to multiple lines (full text, no truncation)
