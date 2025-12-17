@@ -772,9 +772,6 @@
                 </select>
                 <button class="log-toggle-btn" onclick="window.open('docs/index.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--accent); color: #fff; transition: all 0.2s;">📖 API Docs</button>
                 <button class="log-toggle-btn" onclick="showComparisonView()" id="comparison-view-btn" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(59, 130, 246, 0.9); color: #fff; transition: all 0.2s;" title="Xem So Sánh">🔍 So Sánh (<span id="comparison-count">0</span>)</button>
-                <button class="log-toggle-btn" onclick="switchMainTab('thumbnails')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(34, 197, 94, 0.9); color: #fff; transition: all 0.2s;" title="Quản Lý Thumbnail">🖼️ Thumbnails</button>
-                <button class="log-toggle-btn" onclick="loadConfig()" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(168, 85, 247, 0.9); color: #fff; transition: all 0.2s;" title="Lấy Cấu Hình Backend">⚙️ Config</button>
-                <button class="log-toggle-btn" onclick="listAllProfiles()" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(251, 146, 60, 0.9); color: #fff; transition: all 0.2s;" title="Liệt Kê Tất Cả Profiles">👥 Profiles</button>
                 <button class="log-toggle-btn" onclick="toggleLogPanel()">Nhật Ký (Log)</button>
             </div>
         </div>
@@ -922,10 +919,10 @@
                             </select>
                         </div>
                         <div class="action-model" style="display: flex; gap: 6px; align-items: center;">
-                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px; white-space: nowrap;">Model:</label>
-                            <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer; min-width: 150px;">
-                                <option value="2.5" selected>Gemini 2.5 Flash</option>
-                                <option value="3">Gemini 3 Pro</option>
+                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px; white-space: nowrap; font-weight: 600;">Model (Nano Banana):</label>
+                            <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer; min-width: 150px; font-weight: 500;">
+                                <option value="2.5" selected>2.5 Flash</option>
+                                <option value="3">3 Pro</option>
                             </select>
                         </div>
                         <div class="action-gender">
