@@ -245,6 +245,106 @@ export const fetchWithTimeout = async (
   }
 };
 
+// Get image dimensions from URL by parsing image headers
+export const getImageDimensions = async (imageUrl: string, env: any): Promise<{ width: number; height: number } | null> => {
+  try {
+    // Fetch only first 32KB to read headers (enough for JPEG/PNG headers)
+    const IMAGE_FETCH_TIMEOUT = 60000; // 60 seconds
+    const response = await fetchWithTimeout(imageUrl, {
+      headers: { Range: 'bytes=0-32767' }
+    }, IMAGE_FETCH_TIMEOUT);
+    
+    if (!response.ok && response.status !== 206) {
+      // If Range not supported, fetch full image (but limit to 32KB)
+      const fullResponse = await fetchWithTimeout(imageUrl, {}, IMAGE_FETCH_TIMEOUT);
+      if (!fullResponse.ok) {
+        return null;
+      }
+      const arrayBuffer = await fullResponse.arrayBuffer();
+      return parseImageDimensions(new Uint8Array(arrayBuffer));
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    return parseImageDimensions(new Uint8Array(arrayBuffer));
+  } catch (error) {
+    console.error('[ImageDimensions] Failed to get dimensions:', error);
+    return null;
+  }
+};
+
+// Parse image dimensions from JPEG or PNG headers
+const parseImageDimensions = (data: Uint8Array): { width: number; height: number } | null => {
+  if (data.length < 24) return null;
+  
+  // Check for JPEG (starts with FF D8)
+  if (data[0] === 0xFF && data[1] === 0xD8) {
+    let i = 2;
+    while (i < data.length - 8) {
+      // Check for SOF markers (Start of Frame): C0, C1, C2, C3, C5, C6, C7, C9, CA, CB, CD, CE, CF
+      if (data[i] === 0xFF) {
+        const marker = data[i + 1];
+        // SOF markers (Start of Frame) contain dimension info
+        if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) || 
+            (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)) {
+          if (i + 8 < data.length) {
+            const height = (data[i + 5] << 8) | data[i + 6];
+            const width = (data[i + 7] << 8) | data[i + 8];
+            if (width > 0 && height > 0 && width < 65536 && height < 65536) {
+              return { width, height };
+            }
+          }
+        }
+        // Skip segment (skip marker byte + length bytes)
+        if (marker !== 0xFF && i + 3 < data.length) {
+          const segmentLength = (data[i + 2] << 8) | data[i + 3];
+          if (segmentLength > 0 && segmentLength < 65536) {
+            i += 2 + segmentLength;
+            continue;
+          }
+        }
+      }
+      i++;
+    }
+  }
+  
+  // Check for PNG (starts with 89 50 4E 47 0D 0A 1A 0A)
+  if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47 &&
+      data[4] === 0x0D && data[5] === 0x0A && data[6] === 0x1A && data[7] === 0x0A) {
+    // PNG dimensions are in first IHDR chunk (bytes 16-24)
+    if (data.length >= 24) {
+      const width = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+      const height = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+      if (width > 0 && height > 0 && width < 2147483647 && height < 2147483647) {
+        return { width, height };
+      }
+    }
+  }
+  
+  return null;
+};
+
+// Calculate aspect ratio from dimensions and find closest supported Vertex ratio
+export const getClosestAspectRatio = (width: number, height: number, supportedRatios: string[]): string => {
+  const actualRatio = width / height;
+  
+  // Parse supported ratios and find closest match
+  let closestRatio = supportedRatios[0];
+  let minDiff = Infinity;
+  
+  for (const ratioStr of supportedRatios) {
+    const [w, h] = ratioStr.split(':').map(Number);
+    const ratioValue = w / h;
+    const diff = Math.abs(actualRatio - ratioValue);
+    
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestRatio = ratioStr;
+    }
+  }
+  
+  return closestRatio;
+};
+
 export const getWorstViolation = (annotation: {
   adult: string;
   violence: string;

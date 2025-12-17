@@ -198,7 +198,6 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 - `profile_id` (string, required): ID profile người dùng.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, optional): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
 
 ### Response
 
@@ -339,7 +338,7 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 ### 3. POST `/aiBackground`
 
 ### Mục đích
-Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động.
+Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động. Hỗ trợ 3 cách cung cấp nền: preset_image_id (từ database), preset_image_url (URL trực tiếp), hoặc custom_prompt (tạo nền từ text prompt sử dụng Vertex AI). Hỗ trợ ba cách cung cấp nền: sử dụng preset từ database (`preset_image_id`), sử dụng URL preset (`preset_image_url`), hoặc tạo nền từ text prompt (`custom_prompt`).
 
 ### Request
 
@@ -369,14 +368,53 @@ curl -X POST https://api.d.shotpix.app/aiBackground \
   }'
 ```
 
+**Sử dụng custom_prompt (tạo nền từ text prompt với Vertex AI):**
+```bash
+curl -X POST https://api.d.shotpix.app/aiBackground \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_prompt": "A beautiful sunset beach scene with palm trees and golden sand",
+    "selfie_id": "selfie_1234567890_xyz789",
+    "profile_id": "profile_1234567890",
+    "additional_prompt": "Make the person look happy and relaxed",
+    "aspect_ratio": "16:9",
+    "model": "2.5"
+  }'
+```
+
+**Sử dụng custom_prompt với selfie_image_url:**
+```bash
+curl -X POST https://api.d.shotpix.app/aiBackground \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_prompt": "A futuristic cityscape at night with neon lights and flying cars",
+    "selfie_image_url": "https://example.com/selfie.png",
+    "profile_id": "profile_1234567890",
+    "aspect_ratio": "16:9"
+  }'
+```
+
+**Lưu ý về custom_prompt:**
+- Khi sử dụng `custom_prompt`, hệ thống sẽ thực hiện 2 bước:
+  1. **Tạo ảnh nền**: Sử dụng Vertex AI Gemini (gemini-2.5-flash-image hoặc gemini-3-pro-image-preview) để tạo ảnh nền từ text prompt
+  2. **Merge selfie**: Tự động merge selfie vào ảnh nền vừa tạo với lighting và color grading phù hợp
+- `custom_prompt` không thể kết hợp với `preset_image_id` hoặc `preset_image_url` (chỉ chọn một trong ba)
+- `aspect_ratio` và `model` sẽ được áp dụng cho cả việc tạo nền và merge
+- `additional_prompt` chỉ ảnh hưởng đến bước merge, không ảnh hưởng đến việc tạo nền
+
 **Các trường:**
-- `preset_image_id` (string, required): ID ảnh preset (landscape scene) đã lưu trong database (format: `preset_...`).
+- `preset_image_id` (string, optional): ID ảnh preset (landscape scene) đã lưu trong database (format: `preset_...`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
+- `preset_image_url` (string, optional): URL ảnh preset trực tiếp (thay thế cho `preset_image_id`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
+- `custom_prompt` (string, optional): Prompt tùy chỉnh để tạo ảnh nền từ text sử dụng Vertex AI (thay thế cho preset image). Khi sử dụng `custom_prompt`, hệ thống sẽ:
+  1. Tạo ảnh nền từ text prompt bằng Vertex AI Gemini (gemini-2.5-flash-image hoặc gemini-3-pro-image-preview)
+  2. Merge selfie vào ảnh nền đã tạo
+  Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `selfie_id` (string, optional): ID ảnh selfie đã lưu trong database (người). Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`).
 - `profile_id` (string, required): ID profile người dùng.
-- `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
+- `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset"). Chỉ áp dụng cho bước merge, không ảnh hưởng đến việc tạo nền từ `custom_prompt`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"3:4"`. Khi sử dụng `custom_prompt`, tỷ lệ này sẽ được áp dụng cho cả việc tạo nền và merge.
+- `model` (string | number, optional): Model để sử dụng cho cả việc tạo nền (nếu dùng `custom_prompt`) và merge. "2.5" hoặc 2.5 cho Gemini 2.5 Flash Image (mặc định), "3" hoặc 3 cho Gemini 3 Pro Image Preview.
 
 ### Response
 
@@ -426,6 +464,15 @@ curl -X POST https://api.d.shotpix.app/aiBackground \
 ### Mục đích
 AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
 
+**Lưu ý về Aspect Ratio:**
+- Các endpoints không phải faceswap (`/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`, `/aiBackground`) hỗ trợ giá trị `"original"` cho `aspect_ratio`.
+- Khi `aspect_ratio` là `"original"` hoặc không được cung cấp, hệ thống sẽ tự động:
+  1. Lấy kích thước (width/height) từ ảnh selfie được upload
+  2. Tính toán tỷ lệ khung hình thực tế
+  3. Chọn tỷ lệ gần nhất trong danh sách hỗ trợ của Vertex AI
+  4. Sử dụng tỷ lệ đó để generate ảnh
+- Điều này đảm bảo ảnh kết quả giữ được tỷ lệ gần với ảnh selfie gốc thay vì mặc định về 1:1.
+
 ### Request
 
 ```bash
@@ -442,7 +489,7 @@ curl -X POST https://api.d.shotpix.app/enhance \
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần enhance.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -487,7 +534,7 @@ curl -X POST https://api.d.shotpix.app/beauty \
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần beautify.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -559,7 +606,7 @@ curl -X POST https://api.d.shotpix.app/filter \
 - `selfie_id` (string, optional): ID selfie đã lưu trong database. Bắt buộc nếu không có `selfie_image_url`.
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp. Bắt buộc nếu không có `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
 
@@ -617,7 +664,7 @@ curl -X POST https://api.d.shotpix.app/restore \
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần khôi phục (ảnh cũ, bị hư hỏng, mờ, hoặc đen trắng).
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -671,6 +718,8 @@ curl -X POST https://api.d.shotpix.app/aging \
 - `image_url` (string, required): URL ảnh chứa khuôn mặt cần lão hóa.
 - `age_years` (number, optional): Số năm muốn lão hóa (mặc định: 20).
 - `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
 

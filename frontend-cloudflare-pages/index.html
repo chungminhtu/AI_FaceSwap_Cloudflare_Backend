@@ -906,10 +906,11 @@
                         <div class="action-ratio">
                             <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Tỷ Lệ (Ratio):</label>
                             <select id="aspect-ratio" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
+                                <option value="original" selected>Original (Từ ảnh selfie)</option>
                                 <option value="1:1">1:1 (Square)</option>
                                 <option value="3:2">3:2 (Landscape)</option>
                                 <option value="2:3">2:3 (Portrait)</option>
-                                <option value="3:4" selected>3:4 (Portrait)</option>
+                                <option value="3:4">3:4 (Portrait)</option>
                                 <option value="4:3">4:3 (Landscape)</option>
                                 <option value="4:5">4:5 (Portrait)</option>
                                 <option value="5:4">5:4 (Landscape)</option>
@@ -2256,7 +2257,7 @@
             showLoading(label);
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
-                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || 'original';
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
                 console.log(`[${label}] Aspect ratio select value:`, aspectRatioSelect?.value);
@@ -2266,7 +2267,7 @@
                 const payload = {
                     image_url: selectedSelfie.image_url,
                     profile_id: window.profileManager.currentProfile.id,
-                    aspect_ratio: selectedAspectRatio,
+                    aspect_ratio: selectedAspectRatio === 'original' ? 'original' : selectedAspectRatio,
                     model: selectedModel,
                     ...extra
                 };
@@ -3472,8 +3473,8 @@
 
             $('profile-id-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); switchProfile(); } });
 
-            // Load saved aspect ratio from localStorage
-            const savedRatio = localStorage.getItem('faceswap:aspectRatio') || '3:4';
+            // Load saved aspect ratio from localStorage (default to 'original' for non-faceswap endpoints)
+            const savedRatio = localStorage.getItem('faceswap:aspectRatio') || 'original';
             const aspectRatioSelect = document.getElementById('aspect-ratio');
             if (aspectRatioSelect) {
                 aspectRatioSelect.value = savedRatio;

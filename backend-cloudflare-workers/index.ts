@@ -3,8 +3,8 @@
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, BackgroundRequest } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio } from './utils';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { API_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
 
@@ -28,6 +28,32 @@ const checkRequestSize = (request: Request, maxSizeBytes: number): { valid: bool
 };
 
 const DEFAULT_R2_BUCKET_NAME = '';
+
+// Helper function to resolve aspect ratio for non-faceswap endpoints
+// If aspect_ratio is "original" or null/undefined, calculate from selfie image
+const resolveAspectRatioForNonFaceswap = async (
+  aspectRatio: string | undefined | null,
+  selfieImageUrl: string,
+  env: Env
+): Promise<string> => {
+  const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+  
+  // If aspect_ratio is "original" or null/undefined, calculate from image
+  if (!aspectRatio || aspectRatio === 'original') {
+    const dimensions = await getImageDimensions(selfieImageUrl, env);
+    if (dimensions) {
+      const closestRatio = getClosestAspectRatio(dimensions.width, dimensions.height, supportedRatios);
+      console.log(`[AspectRatio] Calculated from image (${dimensions.width}x${dimensions.height}): ${closestRatio}`);
+      return closestRatio;
+    }
+    // Fallback to default if we can't get dimensions
+    console.warn('[AspectRatio] Could not get image dimensions, using default');
+    return ASPECT_RATIO_CONFIG.DEFAULT;
+  }
+  
+  // Validate and return supported ratio, or default
+  return supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+};
 
 const globalScopeWithAccount = globalThis as typeof globalThis & {
   ACCOUNT_ID?: string;
@@ -2833,13 +2859,14 @@ export default {
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
+        const hasCustomPrompt = body.custom_prompt && body.custom_prompt.trim() !== '';
 
-        if (!hasPresetId && !hasPresetUrl) {
+        if (!hasPresetId && !hasPresetUrl && !hasCustomPrompt) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        if (hasPresetId && hasPresetUrl) {
+        if ((hasPresetId && hasPresetUrl) || (hasPresetId && hasCustomPrompt) || (hasPresetUrl && hasCustomPrompt)) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
@@ -2902,7 +2929,47 @@ export default {
         let presetName: string;
         let presetImageId: string | null = null;
 
-        if (hasPresetId) {
+        if (hasCustomPrompt) {
+          const envError = validateEnv(env, 'vertex');
+          if (envError) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+          }
+
+          const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+          const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+          const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+          const modelParam = body.model;
+
+          const backgroundGenResult = await generateBackgroundFromPrompt(body.custom_prompt!, env, validAspectRatio, modelParam);
+
+          if (!backgroundGenResult.Success || !backgroundGenResult.ResultImageUrl) {
+            console.error('[AIBackground] Background generation failed:', backgroundGenResult.Message || 'Unknown error');
+            const failureCode = backgroundGenResult.StatusCode || 500;
+            const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+            const debugEnabled = isDebugEnabled(env);
+            const debugPayload = debugEnabled ? compact({
+              customPrompt: body.custom_prompt,
+              provider: buildProviderDebug(backgroundGenResult),
+            }) : undefined;
+            return jsonResponse({
+              data: null,
+              status: 'error',
+              message: '',
+              code: failureCode,
+              ...(debugPayload ? { debug: debugPayload } : {}),
+            }, httpStatus);
+          }
+
+          if (backgroundGenResult.ResultImageUrl?.startsWith('r2://')) {
+            const r2Key = backgroundGenResult.ResultImageUrl.replace('r2://', '');
+            targetUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          } else {
+            targetUrl = backgroundGenResult.ResultImageUrl!;
+          }
+          presetName = 'Generated Background';
+          presetImageId = null;
+        } else if (hasPresetId) {
           const presetResult = results[1];
           if (!presetResult) {
             const debugEnabled = isDebugEnabled(env);
@@ -2940,6 +3007,7 @@ export default {
           presetImageUrl: hasPresetUrl ? body.preset_image_url : undefined,
           presetName: presetName,
           selfieId: body.selfie_id,
+          customPrompt: hasCustomPrompt ? body.custom_prompt : undefined,
           additionalPrompt: body.additional_prompt,
         });
 
@@ -3308,9 +3376,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
         const modelParam = body.model;
 
         const enhancedResult = await callNanoBanana(
@@ -3405,9 +3471,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
         const modelParam = body.model;
 
         const beautyResult = await callNanoBanana(
@@ -3640,9 +3704,7 @@ export default {
           undefined
         );
 
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, selfieUrl, env);
         const modelParam = body.model;
 
         const filterResult = await callNanoBanana(
@@ -3733,9 +3795,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
         const modelParam = body.model;
 
         const restoredResult = await callNanoBanana(
@@ -3830,9 +3890,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
         const modelParam = body.model;
 
         // For now, implement aging using existing Nano Banana API

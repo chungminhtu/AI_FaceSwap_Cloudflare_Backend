@@ -500,6 +500,295 @@ export const callNanoBanana = async (
   }
 };
 
+export const generateBackgroundFromPrompt = async (
+  prompt: string,
+  env: Env,
+  aspectRatio?: string,
+  modelParam?: string | number
+): Promise<FaceSwapResponse> => {
+  if (!env.GOOGLE_VERTEX_PROJECT_ID) {
+    return {
+      Success: false,
+      Message: 'GOOGLE_VERTEX_PROJECT_ID is required',
+      StatusCode: 500,
+    };
+  }
+
+  let debugInfo: Record<string, any> | undefined;
+
+  try {
+    const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+    const location = getVertexAILocation(env);
+    
+    const geminiModel = getVertexModelId(modelParam);
+    const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
+
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      console.error('[Vertex-GenerateBackground] Missing service account credentials');
+      return {
+        Success: false,
+        Message: 'Google Service Account credentials are required for Vertex AI. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY environment variables.',
+        StatusCode: 500,
+        Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
+      };
+    }
+      
+    let accessToken: string;
+    try {
+      accessToken = await getAccessToken(
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
+    } catch (tokenError) {
+      console.error('[Vertex-GenerateBackground] Failed to get OAuth token:', tokenError);
+      return {
+        Success: false,
+        Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        StatusCode: 500,
+      };
+    }
+
+    const providedRatio = aspectRatio || ASPECT_RATIO_CONFIG.DEFAULT;
+    const normalizedAspectRatio = ASPECT_RATIO_CONFIG.SUPPORTED.includes(providedRatio) ? providedRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+
+    const requestBody = {
+      contents: [{
+        role: "user",
+        parts: [
+          { text: prompt }
+        ]
+      }],
+      generationConfig: {
+        ...API_CONFIG.IMAGE_GENERATION,
+        imageConfig: {
+          ...API_CONFIG.IMAGE_GENERATION.imageConfig,
+          aspectRatio: normalizedAspectRatio,
+        },
+      },
+      safetySettings: SAFETY_SETTINGS,
+    };
+
+    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+      if (key === 'data' && typeof value === 'string' && value.length > 100) {
+        return '...';
+      }
+      return value;
+    }));
+    
+    const curlCommand = `curl -X POST \\
+  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+
+    debugInfo = {
+      endpoint: geminiEndpoint,
+      model: geminiModel,
+      requestPayload: sanitizedRequestBody,
+      curlCommand,
+      promptLength: prompt.length,
+      receivedAspectRatio: aspectRatio,
+      normalizedAspectRatio: normalizedAspectRatio,
+    };
+
+    const startTime = Date.now();
+    const response = await fetchWithTimeout(geminiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(requestBody),
+    }, 60000);
+
+    const rawResponse = await response.text();
+    const durationMs = Date.now() - startTime;
+    if (debugInfo) {
+      debugInfo.status = response.status;
+      debugInfo.statusText = response.statusText;
+      debugInfo.durationMs = durationMs;
+    }
+
+    if (!response.ok) {
+      console.error('[Vertex-GenerateBackground] API error:', response.status, response.statusText);
+      let parsedError: any = null;
+      if (debugInfo) {
+        try {
+          parsedError = JSON.parse(rawResponse);
+          debugInfo.rawResponse = parsedError;
+        } catch {
+          debugInfo.rawResponse = rawResponse;
+        }
+      } else {
+        try {
+          parsedError = JSON.parse(rawResponse);
+        } catch {
+        }
+      }
+      
+      if (parsedError) {
+        const safetyViolation = getVertexSafetyViolation(parsedError);
+        if (safetyViolation) {
+          console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+          return {
+            Success: false,
+            Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+            StatusCode: safetyViolation.code,
+            Error: safetyViolation.reason,
+            FullResponse: rawResponse,
+            ParsedError: parsedError,
+            CurlCommand: curlCommand,
+            Debug: debugInfo,
+          } as any;
+        }
+      }
+      
+      const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
+      
+      return {
+        Success: false,
+        Message: errorMessage,
+        StatusCode: response.status,
+        Error: rawResponse,
+        FullResponse: rawResponse,
+        ParsedError: parsedError,
+        CurlCommand: curlCommand,
+        Debug: debugInfo,
+      } as any;
+    }
+
+    try {
+      const data = JSON.parse(rawResponse);
+      if (debugInfo) {
+        debugInfo.rawResponse = sanitizeObject(data);
+      }
+      
+      const safetyViolation = getVertexSafetyViolation(data);
+      if (safetyViolation) {
+        console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+        return {
+          Success: false,
+          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+          Debug: debugInfo,
+        };
+      }
+      
+      const candidates = data.candidates || [];
+      if (candidates.length === 0) {
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return any candidates',
+          StatusCode: 500,
+          Error: 'No candidates found in response',
+          Debug: debugInfo,
+        };
+      }
+
+      const parts = candidates[0].content?.parts || [];
+      let base64Image: string | null = null;
+      let mimeType = 'image/jpeg';
+
+      for (const part of parts) {
+        if (part.inlineData) {
+          base64Image = part.inlineData.data;
+          mimeType = part.inlineData.mimeType || part.inlineData.mime_type || 'image/jpeg';
+          break;
+        }
+        if (part.inline_data) {
+          base64Image = part.inline_data.data;
+          mimeType = part.inline_data.mime_type || part.inline_data.mimeType || 'image/jpeg';
+          break;
+        }
+      }
+
+      if (!base64Image) {
+        console.error('[Vertex-GenerateBackground] No image data found in response');
+        return {
+          Success: false,
+          Message: 'Vertex AI Gemini API did not return an image in the response',
+          StatusCode: 500,
+          Error: 'No inline_data found in response parts',
+          Debug: debugInfo,
+        };
+      }
+
+      const bytes = base64ToUint8Array(base64Image);
+      
+      const ext = getMimeExt(mimeType);
+      const id = nanoid(16);
+      const resultKey = `results/${id}.${ext}`;
+      
+      const R2_BUCKET = getR2Bucket(env);
+      await R2_BUCKET.put(resultKey, bytes, {
+        httpMetadata: {
+          contentType: mimeType,
+          cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+        },
+      });
+      if (debugInfo) {
+        debugInfo.r2Key = resultKey;
+        debugInfo.mimeType = mimeType;
+      }
+      
+      const resultImageUrl = `r2://${resultKey}`;
+
+      const sanitizedData = sanitizeObject(data);
+
+      const sanitizedRequestBodyForCurl = sanitizeObject(requestBody);
+
+      const curlCommandFinal = `curl -X POST \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  ${geminiEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'`;
+      if (debugInfo) {
+        debugInfo.requestPayload = sanitizedRequestBodyForCurl;
+        debugInfo.curlCommand = curlCommandFinal;
+        debugInfo.response = sanitizedData;
+      }
+
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: 'Vertex AI background generation completed',
+        StatusCode: response.status,
+        VertexResponse: sanitizedData,
+        Prompt: prompt,
+        CurlCommand: curlCommandFinal,
+        Debug: debugInfo,
+      };
+    } catch (parseError) {
+      console.error('[Vertex-GenerateBackground] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
+      if (debugInfo) {
+        debugInfo.rawResponse = rawResponse.substring(0, 200);
+        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      }
+      return {
+        Success: false,
+        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+        StatusCode: 500,
+        Error: rawResponse.substring(0, 200),
+        Debug: debugInfo,
+      };
+    }
+  } catch (error) {
+    console.error('[Vertex-GenerateBackground] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+    const debugPayload = debugInfo;
+    if (debugPayload) {
+      debugPayload.error = error instanceof Error ? error.message : String(error);
+    }
+    return {
+      Success: false,
+      Message: `Vertex AI background generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugPayload,
+    };
+  }
+};
+
 export const callNanoBananaMerge = async (
   prompt: unknown,
   selfieUrl: string,
