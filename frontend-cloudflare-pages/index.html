@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=375, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Face Swap AI</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@300;400;500;600;700&display=swap');
@@ -26,7 +29,26 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { width: 100%; margin: 0; padding: 0; }
+        html, body { 
+            width: 100%; 
+            max-width: 100vw;
+            margin: 0; 
+            padding: 0; 
+            overflow-x: hidden;
+            position: relative;
+            touch-action: pan-y pan-x;
+            -ms-touch-action: pan-y pan-x;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html {
+            transform: scale(1);
+            transform-origin: top left;
+        }
+        html {
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+            touch-action: pan-y pan-x;
+        }
 
         body {
             font-family: 'Lexend Deca', -apple-system, sans-serif;
@@ -36,6 +58,11 @@
             font-size: 14px;
             -webkit-font-smoothing: antialiased;
             overflow-x: hidden;
+            width: 100%;
+            max-width: 100vw;
+            position: relative;
+            touch-action: pan-y pan-x;
+            -ms-touch-action: pan-y pan-x;
         }
 
         body.locked { overflow: hidden; }
@@ -80,10 +107,14 @@
 
         /* Main Layout */
         .main-container {
-            width: 100%; padding: 8px 20px 40px;
+            width: 100%; 
+            max-width: 100vw;
+            padding: 8px 20px 40px;
             background: var(--bg-primary);
             box-shadow: var(--shadow-soft);
             border: 1px solid var(--border);
+            overflow-x: hidden;
+            position: relative;
         }
 
         .app-header {
@@ -103,6 +134,10 @@
             gap: 20px;
             min-height: calc(100vh - 120px);
             transition: all 0.3s;
+            width: 100%;
+            max-width: 100vw;
+            overflow-x: hidden;
+            position: relative;
         }
         .app-layout.log-hidden { grid-template-columns: 320px 1fr 0; gap: 20px 0; }
         .app-layout.log-hidden .log-panel { opacity: 0; transform: translateX(20px); pointer-events: none; overflow: hidden; padding: 0; width: 0; }
@@ -186,6 +221,9 @@
         .action-panel {
             border: 1px solid var(--border); padding: 12px 16px;
             display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: var(--bg-secondary);
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
         }
         .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .action-btn {
@@ -204,13 +242,22 @@
             border-radius: 50%; animation: spin 0.6s linear infinite;
         }
 
-        .action-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; width: 100%; }
+        .action-options { 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 12px; 
+            align-items: center; 
+            width: 100%; 
+            max-width: 100%;
+            overflow-x: hidden;
+        }
         .action-prompt {
             flex: 1; min-width: 180px; height: 36px; padding: 0 12px;
             border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 14px;
             border-radius: 12px;
         }
         .action-ratio { display: flex; gap: 6px; align-items: center; }
+        .action-model { display: flex; gap: 6px; align-items: center; }
         .action-gender { display: flex; gap: 8px; align-items: center; }
         .action-gender label { font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
         .action-aging { display: flex; gap: 6px; align-items: center; }
@@ -569,9 +616,29 @@
             .log-toggle-float { display: none !important; }
         }
         @media (max-width: 768px) {
-            .main-container { padding: 12px; }
+            html, body {
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden;
+                position: relative;
+                touch-action: pan-y pan-x;
+                -ms-touch-action: pan-y pan-x;
+                -webkit-overflow-scrolling: touch;
+            }
+            .main-container { 
+                padding: 12px; 
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden;
+            }
+            .app-layout { 
+                grid-template-columns: 1fr; 
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden;
+            }
             .app-header { flex-direction: column; align-items: flex-start; gap: 8px; }
-            .header-controls { width: 100%; gap: 6px; }
+            .header-controls { width: 100%; gap: 6px; max-width: 100%; overflow-x: hidden; }
             #profile-section { 
                 font-size: 11px; 
                 padding: 4px 8px; 
@@ -600,10 +667,55 @@
             .preview-card.selfie-card { grid-column: 1; grid-row: 2; min-height: 250px; }
             .preview-card.result-card { grid-column: 1; grid-row: 3; min-height: 400px; }
             .preview-card.result-card .preview-image { min-height: 350px; }
-            .action-panel { flex-direction: column; align-items: stretch; }
-            .action-buttons { flex-direction: column; }
-            .action-btn { width: 100%; justify-content: center; }
-            .results-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+            .action-panel { 
+                flex-direction: column; 
+                align-items: stretch; 
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden;
+                padding: 12px;
+            }
+            .action-buttons { 
+                flex-direction: column; 
+                width: 100%;
+                max-width: 100%;
+            }
+            .action-btn { 
+                width: 100%; 
+                max-width: 100%;
+                justify-content: center; 
+            }
+            .action-options {
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden;
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .action-prompt {
+                width: 100%;
+                max-width: 100%;
+                min-width: 100%;
+            }
+            .action-ratio, .action-model, .action-gender {
+                width: 100%;
+                max-width: 100%;
+            }
+            .action-ratio select, .action-model select {
+                width: 100%;
+                max-width: 100%;
+                flex: 1;
+            }
+            .results-grid { 
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); 
+            }
+            * {
+                max-width: 100vw;
+            }
+            img, video, iframe {
+                max-width: 100%;
+                height: auto;
+            }
         }
     </style>
 </head>
@@ -674,14 +786,16 @@
                 </div>
                 <div class="sidebar-section">
                     <div class="sidebar-header">
-                        <span>Ảnh Tự Sướng (Selfies) - Chọn tối đa 2 cho Wedding</span>
+                        <span>Ảnh Tự Sướng (Selfies)</span>
                         <button class="gallery-upload-btn" onclick="document.getElementById('selfie-input').click()">+</button>
                         <input type="file" class="file-input" id="selfie-input" accept="image/*" multiple>
                     </div>
                     <div style="padding: 8px 12px; border-bottom: 1px solid var(--border-color);">
                         <label for="selfie-action-select" style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">Action:</label>
                         <select id="selfie-action-select" style="width: 100%; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;">
-                            <option value="faceswap">Faceswap (Max 4)</option>
+                            <option value="faceswap">Faceswap (Max 8)</option>
+                            <option value="wedding">Wedding (Max 2)</option>
+                            <option value="4k">4K Upscale (Max 1)</option>
                             <option value="default" selected>Default (Max 1)</option>
                         </select>
                     </div>
@@ -756,7 +870,7 @@
                             <span>✨</span><span>Đổi Mặt (Face Swap)</span>
                         </button>
                         <button class="action-btn primary" id="merge-btn" disabled onclick="generateBackground()">
-                            <span>🖼️</span><span>Xóa Nền (Remove Background)</span>
+                            <span>🖼️</span><span>Tạo Nền (AI Background)</span>
                         </button>
                         <button class="action-btn" id="enhance-btn" disabled onclick="runEnhance()">🔍 Nâng Cấp (Enhance)</button>
                         <button class="action-btn" id="beauty-btn" disabled onclick="runBeauty()">✨ Làm Đẹp (Beauty)</button>
@@ -785,9 +899,9 @@
                                 <option value="21:9">21:9 (Ultrawide)</option>
                             </select>
                         </div>
-                        <div class="action-model">
-                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Model:</label>
-                            <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
+                        <div class="action-model" style="display: flex; gap: 6px; align-items: center;">
+                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px; white-space: nowrap;">Model:</label>
+                            <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer; min-width: 150px;">
                                 <option value="2.5" selected>Gemini 2.5 Flash</option>
                                 <option value="3">Gemini 3 Pro</option>
                             </select>
@@ -983,7 +1097,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
-        let WORKER_URL = 'https://ai-faceswap-backend-office-prod.Thanhlx273.workers.dev'; // Injected during deployment - DO NOT MODIFY MANUALLY
+        let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
@@ -3087,6 +3201,156 @@
             } finally {
                 hideLoading();
             }
+        }
+
+        // Prevent zoom gestures on mobile and auto-reset zoom
+        function preventZoom() {
+            let lastTouchEnd = 0;
+            let lastTouchStart = 0;
+            let touchStartTime = 0;
+            let touchCount = 0;
+            
+            // Monitor and reset zoom level
+            function resetZoom() {
+                const viewport = document.querySelector('meta[name="viewport"]');
+                if (viewport) {
+                    viewport.setAttribute('content', 'width=375, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover');
+                }
+                
+                // Force reset using document.body.style.zoom (if supported)
+                if (document.body.style.zoom !== undefined) {
+                    document.body.style.zoom = '1';
+                }
+                
+                // Force reset using transform scale
+                const currentScale = window.visualViewport ? window.visualViewport.scale : 1;
+                if (currentScale !== 1) {
+                    document.documentElement.style.transform = 'scale(1)';
+                    document.documentElement.style.transformOrigin = 'top left';
+                }
+            }
+            
+            // Continuously monitor and reset zoom
+            setInterval(resetZoom, 100);
+            
+            // Reset on any touch event
+            document.addEventListener('touchstart', function(event) {
+                touchCount = event.touches.length;
+                touchStartTime = Date.now();
+                
+                if (event.touches.length > 1) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+                
+                // Prevent if too quick (double tap)
+                const timeSinceLastTouch = Date.now() - lastTouchStart;
+                if (timeSinceLastTouch < 300 && timeSinceLastTouch > 0) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+                lastTouchStart = Date.now();
+            }, { passive: false, capture: true });
+            
+            // Prevent double-tap zoom
+            document.addEventListener('touchend', function(event) {
+                const now = Date.now();
+                const timeSinceStart = now - touchStartTime;
+                
+                if (timeSinceStart < 300 && touchCount === 1) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+                
+                if (now - lastTouchEnd <= 300) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+                lastTouchEnd = now;
+                touchCount = 0;
+            }, { passive: false, capture: true });
+            
+            // Prevent gesture zoom (iOS Safari)
+            document.addEventListener('gesturestart', function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                resetZoom();
+                return false;
+            }, { passive: false, capture: true });
+            
+            document.addEventListener('gesturechange', function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                resetZoom();
+                return false;
+            }, { passive: false, capture: true });
+            
+            document.addEventListener('gestureend', function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                resetZoom();
+                return false;
+            }, { passive: false, capture: true });
+            
+            // Prevent pinch zoom during move
+            document.addEventListener('touchmove', function(event) {
+                if (event.touches.length > 1) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+            }, { passive: false, capture: true });
+            
+            // Prevent wheel zoom
+            document.addEventListener('wheel', function(event) {
+                if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+            }, { passive: false, capture: true });
+            
+            // Prevent keyboard zoom (Ctrl/Cmd + Plus/Minus)
+            document.addEventListener('keydown', function(event) {
+                if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '-' || event.key === '=' || event.keyCode === 187 || event.keyCode === 189)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetZoom();
+                    return false;
+                }
+            }, { passive: false, capture: true });
+            
+            // Reset on orientation change
+            window.addEventListener('orientationchange', function() {
+                setTimeout(resetZoom, 100);
+            });
+            
+            // Reset on resize
+            let resizeTimer;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(resetZoom, 100);
+            });
+            
+            // Initial reset
+            resetZoom();
+        }
+        
+        // Call preventZoom immediately, not just on DOMContentLoaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', preventZoom);
+        } else {
+            preventZoom();
         }
 
         // Startup
