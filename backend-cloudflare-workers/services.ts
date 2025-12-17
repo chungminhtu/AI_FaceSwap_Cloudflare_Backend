@@ -2,7 +2,7 @@
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
-import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation } from './utils';
 import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
@@ -324,6 +324,24 @@ export const callNanoBanana = async (
         }
       }
       
+      // Check for Vertex AI safety violations in error response
+      if (parsedError) {
+        const safetyViolation = getVertexSafetyViolation(parsedError);
+        if (safetyViolation) {
+          console.warn('[Vertex-NanoBanana] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+          return {
+            Success: false,
+            Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+            StatusCode: safetyViolation.code,
+            Error: safetyViolation.reason,
+            FullResponse: rawResponse,
+            ParsedError: parsedError,
+            CurlCommand: curlCommand,
+            Debug: debugInfo,
+          } as any;
+        }
+      }
+      
       // Keep message simple - detailed error is in ParsedError/FullResponse for debug
       const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
       
@@ -345,16 +363,29 @@ export const callNanoBanana = async (
         debugInfo.rawResponse = sanitizeObject(data);
       }
       
+      // Check for Vertex AI safety violations
+      const safetyViolation = getVertexSafetyViolation(data);
+      if (safetyViolation) {
+        console.warn('[Vertex-NanoBanana] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+        return {
+          Success: false,
+          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+          Debug: debugInfo,
+        };
+      }
+      
       // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
           return {
             Success: false,
           Message: 'Vertex AI Gemini API did not return any candidates',
-          StatusCode: 500,
-          Error: 'No candidates found in response',
-          Debug: debugInfo,
-        };
+            StatusCode: 500,
+            Error: 'No candidates found in response',
+            Debug: debugInfo,
+          };
       }
 
       const parts = candidates[0].content?.parts || [];
@@ -630,6 +661,24 @@ export const callNanoBananaMerge = async (
         }
       }
       
+      // Check for Vertex AI safety violations in error response
+      if (parsedError) {
+        const safetyViolation = getVertexSafetyViolation(parsedError);
+        if (safetyViolation) {
+          console.warn('[Vertex-NanoBananaMerge] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+          return {
+            Success: false,
+            Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+            StatusCode: safetyViolation.code,
+            Error: safetyViolation.reason,
+            FullResponse: rawResponse,
+            ParsedError: parsedError,
+            CurlCommand: curlCommand,
+            Debug: debugInfo,
+          } as any;
+        }
+      }
+      
       // Keep message simple - detailed error is in ParsedError/FullResponse for debug
       const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
       
@@ -649,6 +698,19 @@ export const callNanoBananaMerge = async (
       const data = JSON.parse(rawResponse);
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
+      }
+      
+      // Check for Vertex AI safety violations
+      const safetyViolation = getVertexSafetyViolation(data);
+      if (safetyViolation) {
+        console.warn('[Vertex-NanoBananaMerge] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+        return {
+          Success: false,
+          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+          Debug: debugInfo,
+        };
       }
       
       const candidates = data.candidates || [];
@@ -937,6 +999,7 @@ export const generateVertexPrompt = async (
         ]
       }],
       generationConfig: API_CONFIG.PROMPT_GENERATION,
+      safetySettings: SAFETY_SETTINGS,
     };
 
     debugInfo.requestSent = true;

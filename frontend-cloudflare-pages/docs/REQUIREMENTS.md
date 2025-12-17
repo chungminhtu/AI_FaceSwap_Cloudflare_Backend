@@ -577,9 +577,14 @@ A minimal web application for face swapping that allows users to upload preset i
 - Body (JSON): `image_url` hoặc `image_urls` (string[]), `type`, `profile_id`, `enableVertexPrompt` (optional), `action` (optional, chỉ cho selfie)
 - Backend logic:
   1. Upload file(s) to R2 storage
-  2. Với selfie: Tự động xóa ảnh cũ dựa trên action:
-     - `action="faceswap"`: Tối đa 4 ảnh, xóa ảnh cũ nhất khi có >= 4 ảnh
-     - Action khác: Tối đa 1 ảnh, xóa ảnh cũ khi có >= 1 ảnh
+  2. Với selfie: 
+     - **Chỉ với `action="4k"` hoặc `action="4K"`**: Kiểm tra an toàn bằng Vision API trước khi lưu vào database
+     - **Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.)**: Không kiểm tra Vision API
+     - Tự động xóa ảnh cũ dựa trên action:
+       - `action="faceswap"`: Tối đa 8 ảnh (có thể cấu hình qua `SELFIE_MAX_FACESWAP`), xóa ảnh cũ nhất khi vượt quá giới hạn
+       - `action="wedding"`: Tối đa 2 ảnh (cấu hình qua `SELFIE_MAX_WEDDING`), xóa ảnh cũ nhất khi có >= 2 ảnh
+       - `action="4k"` hoặc `"4K"`: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_4K`), xóa ảnh cũ khi có >= 1 ảnh
+       - Action khác: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_OTHER`), xóa ảnh cũ khi có >= 1 ảnh
   3. Insert record(s) vào database (`presets` hoặc `selfies` table) với bucket key (không phải full URL)
   4. Với preset: tự động generate Vertex prompt nếu `enableVertexPrompt=true`
 - Response format: `{ data: { results: [...], count, successful, failed }, status, message, code, debug? }`

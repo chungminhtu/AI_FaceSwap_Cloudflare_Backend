@@ -23,6 +23,21 @@ const colors = {
   bgCyan: '\x1b[46m',
 };
 
+function formatVietnameseDateTime(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('vi-VN', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour12: false
+  });
+  return formatter.format(date);
+}
+
 class DeploymentLogger {
   constructor(environments = []) {
     this.steps = [];
@@ -2556,8 +2571,12 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
 
   const results = await Promise.all(deployments);
   
+  const deploymentTime = new Date();
+  const vietnameseTime = formatVietnameseDateTime(deploymentTime);
+  
   console.log('\n' + '='.repeat(80));
   console.log(`${colors.bright}Parallel Deployment Summary${colors.reset}\n`);
+  console.log(`${colors.dim}Thời gian triển khai: ${colors.reset}${colors.cyan}${vietnameseTime}${colors.reset}\n`);
   
   const successful = results.filter(r => r.success);
   const failed = results.filter(r => !r.success);

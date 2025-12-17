@@ -78,8 +78,10 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 - `type` (string, required): Phải là `"selfie"` cho mobile app.
 - `profile_id` (string, required): ID profile người dùng.
 - `action` (string, optional, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"default"`. 
-  - `"faceswap"`: Tối đa 4 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 3 ảnh mới nhất).
-  - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới.
+  - `"faceswap"`: Tối đa 8 ảnh (có thể cấu hình), tự động xóa ảnh cũ khi upload ảnh mới (giữ lại số ảnh mới nhất theo giới hạn). **Không kiểm tra Vision API.**
+  - `"wedding"`: Tối đa 2 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 1 ảnh mới nhất). **Không kiểm tra Vision API.**
+  - `"4k"` hoặc `"4K"`: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Ảnh sẽ được kiểm tra bằng Vision API trước khi lưu vào database.**
+  - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Không kiểm tra Vision API.**
 
 ### Response
 
@@ -104,23 +106,42 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 }
 ```
 
-**Error - Vision API Blocked (422):**
-Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoint sẽ trả về status code `422` với thông báo lỗi chung (không tiết lộ chi tiết vi phạm):
+**Error - Vision API Blocked:**
+Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoint sẽ trả về error code tương ứng với loại vi phạm:
 
 ```json
 {
   "data": null,
   "status": "error",
   "message": "Upload failed",
-  "code": 422
+  "code": 1001
 }
 ```
 
+**Vision API Error Codes (1001-1005):**
+- **1001** - ADULT: Ảnh người lớn, nude, gợi dục, porn, ...
+- **1002** - VIOLENCE: Ảnh bạo lực, chiến tranh, tử vong, ...
+- **1003** - RACY: Ảnh nhạy cảm sexy, gợi dục, khiêu gợi, ...
+- **1004** - MEDICAL: Ảnh máu me, phẫu thuật, y tế, nạn nhân, ...
+- **1005** - SPOOF: Lừa bịp, ảnh copy của người khác, ...
+
+**Vertex AI Safety Error Codes (2001-2004):**
+- **2001** - HATE_SPEECH: Negative or harmful comments targeting identity and/or protected attributes
+- **2002** - HARASSMENT: Threatening, intimidating, bullying, or abusive comments targeting another individual
+- **2003** - SEXUALLY_EXPLICIT: Contains references to sexual acts or other lewd content
+- **2004** - DANGEROUS_CONTENT: Promotes or enables access to harmful goods, services, and activities
+
 **Lưu ý:**
-- Tất cả selfie uploads đều được quét bởi Vision API trước khi lưu vào database
+- **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API.
+- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/removeBackground`, `/enhance`, `/colorize`, `/aging`.
 - Scan level mặc định: `strict` (chặn cả `LIKELY` và `VERY_LIKELY` violations)
-- Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về 422 ngay lập tức
-- Response không chứa chi tiết về loại vi phạm để bảo mật
+- Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về error code tương ứng
+- Error code được trả về trong trường `code` của response
+- **Giới hạn số lượng selfie:** Mỗi action có giới hạn riêng và tự động xóa ảnh cũ khi vượt quá giới hạn:
+  - `faceswap`: Tối đa 8 ảnh (có thể cấu hình qua `SELFIE_MAX_FACESWAP`)
+  - `wedding`: Tối đa 2 ảnh (cấu hình qua `SELFIE_MAX_WEDDING`)
+  - `4k`/`4K`: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_4K`)
+  - Các action khác: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_OTHER`)
 
 **Testing:**
 - Test với ảnh không phù hợp để verify 422 response
@@ -238,24 +259,43 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 
 ### Error Response
 
-**Lỗi kiểm duyệt (Google Vision) trả về HTTP 422:**
+**Lỗi kiểm duyệt (Google Vision API) - Error Codes 1001-1005:**
 ```json
 {
   "data": null,
   "status": "error",
   "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
-  "code": 422,
+  "code": 1001,
   "debug": {
     "provider": { "...": "..." },
     "vision": {
       "checked": true,
       "isSafe": false,
+      "statusCode": 1001,
       "violationCategory": "adult",
       "violationLevel": "VERY_LIKELY",
       "debug": {
         "endpoint": "https://vision.googleapis.com/v1/images:annotate",
         "status": 200
       }
+    }
+  }
+}
+```
+
+**Lỗi kiểm duyệt (Vertex AI Safety Filters) - Error Codes 2001-2004:**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: hate speech - Input blocked: SAFETY",
+  "code": 2001,
+  "debug": {
+    "provider": {
+      "success": false,
+      "statusCode": 2001,
+      "message": "Content blocked: hate speech - Input blocked: SAFETY",
+      "error": "Input blocked: SAFETY"
     }
   }
 }
@@ -1287,6 +1327,88 @@ Trả về HTTP 204 (No Content) với các headers CORS:
 - `Access-Control-Max-Age`: 86400 (24 giờ)
 
 Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
+
+---
+
+## Error Codes Reference
+
+### Vision API Safety Error Codes (1001-1005)
+
+Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
+- POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
+- POST `/faceswap` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
+- POST `/removeBackground` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
+
+| Error Code | Category | Mô tả |
+|------------|----------|-------|
+| **1001** | ADULT | Ảnh người lớn, nude, gợi dục, porn, ... |
+| **1002** | VIOLENCE | Ảnh bạo lực, chiến tranh, tử vong, ... |
+| **1003** | RACY | Ảnh nhạy cảm sexy, gợi dục, khiêu gợi, ... |
+| **1004** | MEDICAL | Ảnh máu me, phẫu thuật, y tế, nạn nhân, ... |
+| **1005** | SPOOF | Lừa bịp, ảnh copy của người khác, ... |
+
+**Ví dụ Response:**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
+  "code": 1001
+}
+```
+
+### Vertex AI Safety Error Codes (2001-2004)
+
+Các error codes này được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Được sử dụng cho:
+- POST `/faceswap` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/removeBackground` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/enhance` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/colorize` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
+
+| Error Code | Category | Mô tả |
+|------------|----------|-------|
+| **2001** | HATE_SPEECH | Negative or harmful comments targeting identity and/or protected attributes |
+| **2002** | HARASSMENT | Threatening, intimidating, bullying, or abusive comments targeting another individual |
+| **2003** | SEXUALLY_EXPLICIT | Contains references to sexual acts or other lewd content |
+| **2004** | DANGEROUS_CONTENT | Promotes or enables access to harmful goods, services, and activities |
+
+**Ví dụ Response (Input Blocked):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: hate speech - Input blocked: SAFETY",
+  "code": 2001
+}
+```
+
+**Ví dụ Response (Output Blocked):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: sexually explicit - Output blocked: SAFETY - HARM_CATEGORY_SEXUALLY_EXPLICIT (HIGH)",
+  "code": 2003
+}
+```
+
+### HTTP Status Codes
+
+Ngoài các error codes trên, API cũng trả về các HTTP status codes chuẩn:
+
+| Status Code | Mô tả |
+|-------------|-------|
+| **200** | Success |
+| **400** | Bad Request - Request không hợp lệ |
+| **422** | Unprocessable Entity - Content bị chặn (sử dụng error codes 1001-1005 hoặc 2001-2004) |
+| **429** | Rate Limit Exceeded - Vượt quá giới hạn request |
+| **500** | Internal Server Error - Lỗi server |
+
+**Lưu ý:**
+- Error codes 1001-1005 và 2001-2004 được trả về trong trường `code` của response body
+- HTTP status code có thể là 422 hoặc chính error code (1001-1005, 2001-2004) tùy thuộc vào implementation
+- Chi tiết về violation có thể được tìm thấy trong `debug.vision` (cho Vision API) hoặc `debug.provider` (cho Vertex AI)
 
 ---
 

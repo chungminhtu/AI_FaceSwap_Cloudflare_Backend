@@ -703,10 +703,12 @@ export default {
           const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
           const createdAt = Math.floor(Date.now() / 1000);
 
-          // Scan selfie uploads with vision API before saving to database
+          // Scan selfie uploads with vision API before saving to database (only for 4k/4K action)
           if (type === 'selfie') {
+            const actionValue = action || 'default';
+            const needsVisionCheck = actionValue.toLowerCase() === '4k';
             const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-            if (!disableSafeSearch) {
+            if (needsVisionCheck && !disableSafeSearch) {
               const safeSearchResult = await checkSafeSearch(publicUrl, env);
               if (!safeSearchResult.isSafe) {
                 // Delete from R2 if unsafe
@@ -715,12 +717,13 @@ export default {
                 } catch (deleteError) {
                   console.warn('Failed to delete unsafe selfie from R2:', deleteError);
                 }
-                // Return special marker to indicate vision block failure
+                // Return special marker to indicate vision block failure with statusCode
                 return {
                   success: false,
                   error: 'Upload failed',
                   filename: fileData.filename,
                   visionBlocked: true,
+                  visionStatusCode: safeSearchResult.statusCode || 422,
                 };
               }
             }
@@ -801,56 +804,62 @@ export default {
               vertex_info: vertexCallInfo
             };
           } else if (type === 'selfie') {
-            const actionValue = action || 'default';
+            let actionValue = action || 'default';
+            const actionLower = actionValue.toLowerCase();
+            
+            // Normalize 4k action to lowercase for consistency
+            if (actionLower === '4k') {
+              actionValue = '4k';
+            }
 
-            if (actionValue === 'faceswap') {
+            // Helper function to delete old selfies
+            const deleteOldSelfies = async (existingSelfies: any, maxCount: number, actionFilter: string) => {
+              if (existingSelfies.results && existingSelfies.results.length >= maxCount) {
+                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxCount - 1));
+                const idsToDelete = toDelete.map((s: any) => s.id);
+                if (idsToDelete.length > 0) {
+                  const placeholders = idsToDelete.map(() => '?').join(',');
+                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+                  
+                  // Delete from R2
+                  for (const oldSelfie of toDelete) {
+                    const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
+                    try {
+                      await R2_BUCKET.delete(oldKey);
+                    } catch (r2Error) {
+                      console.warn('Failed to delete old selfie from R2:', r2Error);
+                    }
+                  }
+                }
+              }
+            };
+
+            if (actionLower === 'faceswap') {
               const maxFaceswap = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
               const existingSelfies = await DB.prepare(
                 'SELECT id, ext FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
               ).bind(profileId, actionValue).all();
-
-              if (existingSelfies.results && existingSelfies.results.length >= maxFaceswap) {
-                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxFaceswap - 1));
-                const idsToDelete = toDelete.map((s: any) => s.id);
-                if (idsToDelete.length > 0) {
-                  const placeholders = idsToDelete.map(() => '?').join(',');
-                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
-                  
-                  // Delete from R2
-                  for (const oldSelfie of toDelete) {
-                    const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
-                    try {
-                      await R2_BUCKET.delete(oldKey);
-                    } catch (r2Error) {
-                      console.warn('Failed to delete old selfie from R2:', r2Error);
-                    }
-                  }
-                }
-              }
+              await deleteOldSelfies(existingSelfies, maxFaceswap, actionValue);
+            } else if (actionLower === 'wedding') {
+              const maxWedding = parseInt(env.SELFIE_MAX_WEDDING || '2', 10);
+              const existingSelfies = await DB.prepare(
+                'SELECT id, ext FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
+              ).bind(profileId, actionValue).all();
+              await deleteOldSelfies(existingSelfies, maxWedding, actionValue);
+            } else if (actionLower === '4k') {
+              const max4K = parseInt(env.SELFIE_MAX_4K || '1', 10);
+              // Query for both '4k' and '4K' to handle existing data with different cases
+              const existingSelfies = await DB.prepare(
+                'SELECT id, ext FROM selfies WHERE profile_id = ? AND (action = ? OR action = ?) ORDER BY created_at ASC'
+              ).bind(profileId, '4k', '4K').all();
+              await deleteOldSelfies(existingSelfies, max4K, '4k');
             } else {
               const maxOther = parseInt(env.SELFIE_MAX_OTHER || '1', 10);
+              // For other actions, delete selfies with the same action
               const existingSelfies = await DB.prepare(
-                'SELECT id, ext FROM selfies WHERE profile_id = ? AND (action != ? OR action IS NULL) ORDER BY created_at ASC'
-              ).bind(profileId, 'faceswap').all();
-
-              if (existingSelfies.results && existingSelfies.results.length >= maxOther) {
-                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxOther - 1));
-                const idsToDelete = toDelete.map((s: any) => s.id);
-                if (idsToDelete.length > 0) {
-                  const placeholders = idsToDelete.map(() => '?').join(',');
-                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
-                  
-                  // Delete from R2
-                  for (const oldSelfie of toDelete) {
-                    const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
-                    try {
-                      await R2_BUCKET.delete(oldKey);
-                    } catch (r2Error) {
-                      console.warn('Failed to delete old selfie from R2:', r2Error);
-                    }
-                  }
-                }
-              }
+                'SELECT id, ext FROM selfies WHERE profile_id = ? AND action = ? ORDER BY created_at ASC'
+              ).bind(profileId, actionValue).all();
+              await deleteOldSelfies(existingSelfies, maxOther, actionValue);
             }
 
             const result = await DB.prepare(
@@ -880,15 +889,16 @@ export default {
         // Process all files in parallel
         const results = await Promise.all(allFileData.map((fileData, index) => processFile(fileData, index)));
 
-        // Check if any selfie was blocked by vision API - return 422 immediately with generic error
-        const visionBlocked = results.some(r => (r as any).visionBlocked === true);
-        if (visionBlocked) {
+        // Check if any selfie was blocked by vision API - return specific error code
+        const visionBlockedResult = results.find(r => (r as any).visionBlocked === true);
+        if (visionBlockedResult) {
+          const visionStatusCode = (visionBlockedResult as any).visionStatusCode || 422;
           return jsonResponse({
             data: null,
             status: 'error',
             message: 'Upload failed',
-            code: 422,
-          }, 422, request, env);
+            code: visionStatusCode,
+          }, visionStatusCode, request, env);
         }
 
         const successful = results.filter(r => r.success);
@@ -2603,7 +2613,8 @@ export default {
           if (!safeSearchResult.isSafe) {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel);
+            const violationCode = safeSearchResult.statusCode || 422;
+            console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel, violationCode);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -2614,9 +2625,9 @@ export default {
               data: null,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
-              code: 422,
+              code: violationCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 422);
+            }, violationCode);
           }
         } else {
           safetyDebug = {
@@ -2928,6 +2939,7 @@ export default {
           if (!safeSearchResult.isSafe) {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
+            const violationCode = safeSearchResult.statusCode || 422;
             const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
@@ -2939,9 +2951,9 @@ export default {
               data: null,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
-              code: 422,
+              code: violationCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 422);
+            }, violationCode);
           }
         }
 
