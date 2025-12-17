@@ -194,6 +194,17 @@
             width: 100%; max-width: 100%; box-sizing: border-box;
             position: relative;
         }
+        .preview-action-badge {
+            position: absolute; bottom: 8px; left: 8px; z-index: 2;
+            padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.2px;
+            background: rgba(0, 0, 0, 0.8); color: #fff; backdrop-filter: blur(4px);
+            pointer-events: none; white-space: nowrap; line-height: 1.2;
+        }
+        .preview-action-badge.action-4k { background: rgba(139, 92, 246, 0.9); color: #fff; }
+        .preview-action-badge.action-faceswap { background: rgba(16, 185, 129, 0.9); color: #fff; }
+        .preview-action-badge.action-wedding { background: rgba(236, 72, 153, 0.9); color: #fff; }
+        .preview-action-badge.action-default { background: rgba(100, 116, 139, 0.9); color: #fff; }
         .preview-card.preset-card .preview-image {
             max-height: calc(320px - 50px);
         }
@@ -321,6 +332,17 @@
         .gallery-item.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
         .gallery-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); }
         .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-action-badge {
+            position: absolute; bottom: 4px; left: 4px; z-index: 2;
+            padding: 1px 3px; border-radius: 2px; font-size: 8px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.1px;
+            background: rgba(0, 0, 0, 0.8); color: #fff; backdrop-filter: blur(4px);
+            pointer-events: none; white-space: nowrap; line-height: 1.1;
+        }
+        .gallery-action-badge.action-4k { background: rgba(139, 92, 246, 0.9); color: #fff; }
+        .gallery-action-badge.action-faceswap { background: rgba(16, 185, 129, 0.9); color: #fff; }
+        .gallery-action-badge.action-wedding { background: rgba(236, 72, 153, 0.9); color: #fff; }
+        .gallery-action-badge.action-default { background: rgba(100, 116, 139, 0.9); color: #fff; }
         .gallery-delete-btn {
             position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
             background: var(--danger); color: #fff; border: none; border-radius: 12px;
@@ -1658,8 +1680,13 @@
                     const isSelected = type === 'selfie' && Array.isArray(selected) 
                         ? selected.some(s => s.id === item.id)
                         : selected?.id === item.id;
+                    // Add action badge for selfies
+                    const actionBadge = type === 'selfie' && item.action 
+                        ? `<span class="gallery-action-badge action-${item.action.toLowerCase()}">${item.action.toLowerCase() === '4k' ? '4K' : item.action}</span>`
+                        : '';
                     return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
                         <img src="${item.image_url}" alt="" loading="lazy">
+                        ${actionBadge}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>`;
                 }).join('');
@@ -1751,6 +1778,52 @@
             if (!preview) return;
 
             const clearBtn = $(type + '-clear-btn');
+            
+            // Update selfie preview label with action type
+            if (type === 'selfie') {
+                const labelEl = document.querySelector('#selfie-card .preview-label');
+                if (labelEl) {
+                    if (Array.isArray(selected) && selected.length > 0) {
+                        const actions = selected.map(s => {
+                            const action = s.action?.toLowerCase() || 'default';
+                            if (action === '4k') return '4K';
+                            if (action === 'faceswap') return 'Faceswap';
+                            if (action === 'wedding') return 'Wedding';
+                            return 'Default';
+                        });
+                        const uniqueActions = [...new Set(actions)];
+                        const actionText = uniqueActions.length === 1 
+                            ? uniqueActions[0] 
+                            : uniqueActions.join(', ');
+                        const maxText = selected[0]?.action?.toLowerCase() === 'wedding' 
+                            ? ' - Tối đa 2 cho Wedding'
+                            : selected[0]?.action?.toLowerCase() === 'faceswap'
+                            ? ' - Tối đa 8 cho Faceswap'
+                            : selected[0]?.action?.toLowerCase() === '4k'
+                            ? ' - Tối đa 1 cho 4K'
+                            : ' - Tối đa 1';
+                        labelEl.textContent = `Ảnh Tự Sướng (Selfie) - ${actionText}${maxText}`;
+                    } else if (selected && !Array.isArray(selected)) {
+                        const action = selected.action?.toLowerCase() || 'default';
+                        let actionText = 'Default';
+                        let maxText = ' - Tối đa 1';
+                        if (action === '4k') {
+                            actionText = '4K';
+                            maxText = ' - Tối đa 1 cho 4K';
+                        } else if (action === 'faceswap') {
+                            actionText = 'Faceswap';
+                            maxText = ' - Tối đa 8 cho Faceswap';
+                        } else if (action === 'wedding') {
+                            actionText = 'Wedding';
+                            maxText = ' - Tối đa 2 cho Wedding';
+                        }
+                        labelEl.textContent = `Ảnh Tự Sướng (Selfie) - ${actionText}${maxText}`;
+                    } else {
+                        labelEl.textContent = 'Ảnh Tự Sướng (Selfie) - Tối đa 2 cho Wedding';
+                    }
+                }
+            }
+            
             if (type === 'selfie' && Array.isArray(selected)) {
                 // Handle multiple selfie selection
                 if (selected.length === 0) {
@@ -1761,7 +1834,9 @@
                 // Display both selfies side by side
                 const imagesHtml = selected.map((item, index) => {
                     const imageUrl = item.image_url || item.result_url || '';
-                    return `<div style="flex: 1; padding: 4px;"><img src="${imageUrl}" alt="Selfie ${index + 1}" style="width: 100%; height: 100%; object-fit: contain; cursor: pointer; border: 2px solid #4CAF50; border-radius: 4px;" onclick="openPreviewLightbox('selfie', ${index})"></div>`;
+                    const action = item.action?.toLowerCase() || 'default';
+                    const actionBadge = `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`;
+                    return `<div style="flex: 1; padding: 4px; position: relative;"><img src="${imageUrl}" alt="Selfie ${index + 1}" style="width: 100%; height: 100%; object-fit: contain; cursor: pointer; border: 2px solid #4CAF50; border-radius: 4px;" onclick="openPreviewLightbox('selfie', ${index})">${actionBadge}</div>`;
                 }).join('');
                 preview.innerHTML = `<div style="display: flex; gap: 8px; height: 100%;">${imagesHtml}</div>`;
                 if (clearBtn) clearBtn.style.display = 'block';
@@ -1775,7 +1850,11 @@
                 return;
             }
             const imageUrl = selected.image_url || selected.result_url || '';
-            preview.innerHTML = `<img src="${imageUrl}" alt="" style="cursor: pointer;" onclick="openPreviewLightbox('${type}')">`;
+            const action = selected.action?.toLowerCase() || 'default';
+            const actionBadge = type === 'selfie' && selected.action 
+                ? `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`
+                : '';
+            preview.innerHTML = `<div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"><img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">${actionBadge}</div>`;
             if (clearBtn) clearBtn.style.display = 'block';
         }
 
@@ -2219,7 +2298,22 @@
 
         function runEnhance() { runImageOperation('Nâng Cấp (Enhance)', 'enhance'); }
         function runBeauty() { runImageOperation('Làm Đẹp (Beauty)', 'beauty'); }
-        function runUpscale4k() { runImageOperation('Nâng Cấp 4K (4K Upscale)', 'upscaler4k'); }
+        function runUpscale4k() {
+            const selfieSelected = galleries.selfie.state.selected;
+            const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
+            if (selfieArray.length === 0) {
+                showStatusMessage('Chọn selfie để chạy API.', 'error');
+                return;
+            }
+            const selectedSelfie = selfieArray[0];
+            // Validate that the selected selfie has action="4k" or "4K"
+            const selfieAction = selectedSelfie.action?.toLowerCase();
+            if (!selfieAction || selfieAction !== '4k') {
+                showStatusMessage('Chỉ có thể sử dụng selfie với action="4k" cho 4K Upscale. Vui lòng upload selfie mới với action="4k" (chọn "4K Upscale (Max 1)" trong dropdown Action khi upload) hoặc chọn selfie khác có action="4k".', 'error');
+                return;
+            }
+            runImageOperation('Nâng Cấp 4K (4K Upscale)', 'upscaler4k');
+        }
         function runRestore() { runImageOperation('Khôi Phục (Restore)', 'restore'); }
         function runAging() { runImageOperation('Lão Hóa (Aging)', 'aging', { age_years: parseInt($('aging-years')?.value || '20', 10) }); }
         

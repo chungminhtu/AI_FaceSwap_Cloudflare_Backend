@@ -1303,7 +1303,15 @@ export const callUpscaler4k = async (
       const resultEndpoint = API_ENDPOINTS.WAVESPEED_RESULT(requestId);
       
       for (let attempt = 0; attempt < TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS; attempt++) {
-        const delay = Math.min(TIMEOUT_CONFIG.POLLING.BASE_DELAY * Math.pow(2, attempt), TIMEOUT_CONFIG.POLLING.MAX_DELAY);
+        let delay = 0;
+        if (attempt === 0) {
+          delay = TIMEOUT_CONFIG.POLLING.FIRST_DELAY;
+        } else if (attempt <= 2) {
+          delay = TIMEOUT_CONFIG.POLLING.SECOND_THIRD_DELAY;
+        } else {
+          delay = TIMEOUT_CONFIG.POLLING.SUBSEQUENT_DELAY;
+        }
+        
         if (attempt > 0) {
           await new Promise(resolve => setTimeout(resolve, delay));
         }

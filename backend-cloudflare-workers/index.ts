@@ -2354,10 +2354,13 @@ export default {
           }
         }
 
-        // Parallelize all independent database queries
-        const queries: Promise<any>[] = [
+        // Optimize database queries with JOINs to validate ownership in single queries
+        const queries: Promise<any>[] = [];
+
+        // Profile validation (needed for all cases)
+        queries.push(
           DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first()
-        ];
+        );
 
         if (hasPresetId) {
           queries.push(
@@ -2366,10 +2369,15 @@ export default {
         }
 
         if (hasSelfieIds && body.selfie_ids) {
-          // Add all selfie lookups in parallel
+          // Use JOIN to validate selfies belong to profile in single query per selfie
           for (const selfieId of body.selfie_ids) {
             queries.push(
-              DB.prepare('SELECT id, ext FROM selfies WHERE id = ?').bind(selfieId).first()
+              DB.prepare(`
+                SELECT s.id, s.ext, p.id as profile_exists
+                FROM selfies s
+                INNER JOIN profiles p ON s.profile_id = p.id
+                WHERE s.id = ? AND p.id = ?
+              `).bind(selfieId, body.profile_id).first()
             );
           }
         }
@@ -2414,7 +2422,7 @@ export default {
           for (let i = 0; i < body.selfie_ids.length; i++) {
             const selfieResult = results[selfieStartIndex + i];
             if (!selfieResult) {
-              return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found`, 404, debugEnabled ? { selfieId: body.selfie_ids[i], path } : undefined, request, env);
+              return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found or does not belong to profile`, 404, debugEnabled ? { selfieId: body.selfie_ids[i], profileId: body.profile_id, path } : undefined, request, env);
             }
             const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
             const fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
@@ -2858,9 +2866,33 @@ export default {
         const R2_BUCKET = getR2Bucket(env);
         const requestUrl = new URL(request.url);
 
-        const profileCheck = await DB.prepare(
-          'SELECT id FROM profiles WHERE id = ?'
-        ).bind(body.profile_id).first();
+        // Optimize database queries: validate profile, preset, and selfie in parallel with JOINs where applicable
+        const queries: Promise<any>[] = [
+          DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first()
+        ];
+
+        if (hasPresetId) {
+          queries.push(
+            DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first()
+          );
+        }
+
+        if (hasSelfieId) {
+          // Use JOIN to validate selfie belongs to profile
+          queries.push(
+            DB.prepare(`
+              SELECT s.id, s.ext, p.id as profile_exists
+              FROM selfies s
+              INNER JOIN profiles p ON s.profile_id = p.id
+              WHERE s.id = ? AND p.id = ?
+            `).bind(body.selfie_id, body.profile_id).first()
+          );
+        }
+
+        // Execute all queries in parallel
+        const results = await Promise.all(queries);
+
+        const profileCheck = results[0];
         if (!profileCheck) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
@@ -2871,10 +2903,7 @@ export default {
         let presetImageId: string | null = null;
 
         if (hasPresetId) {
-          const presetResult = await DB.prepare(
-            'SELECT id, ext FROM presets WHERE id = ?'
-          ).bind(body.preset_image_id).first();
-
+          const presetResult = results[1];
           if (!presetResult) {
             const debugEnabled = isDebugEnabled(env);
             return errorResponse('Preset image not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
@@ -2892,13 +2921,10 @@ export default {
 
         let selfieUrl: string;
         if (hasSelfieId) {
-          const selfieResult = await DB.prepare(
-            'SELECT id, ext FROM selfies WHERE id = ?'
-          ).bind(body.selfie_id!).first();
-
+          const selfieResult = results[hasPresetId ? 2 : 1];
           if (!selfieResult) {
             const debugEnabled = isDebugEnabled(env);
-            return errorResponse(`Selfie with ID ${body.selfie_id} not found`, 404, debugEnabled ? { selfieId: body.selfie_id, path } : undefined, request, env);
+            return errorResponse(`Selfie with ID ${body.selfie_id} not found or does not belong to profile`, 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
 
           const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
@@ -3146,14 +3172,6 @@ export default {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        const profileCheck = await DB.prepare(
-          'SELECT id FROM profiles WHERE id = ?'
-        ).bind(body.profile_id).first();
-        if (!profileCheck) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
-        }
-
         // Validate that the image_url is a selfie with action='4k' or '4K'
         const r2Key = extractR2KeyFromUrl(body.image_url);
         if (!r2Key || !r2Key.startsWith('selfie/')) {
@@ -3169,19 +3187,27 @@ export default {
         }
         const selfieId = keyParts.slice(0, -1).join('.');
 
-        // Verify selfie exists and has action='4k' or '4K'
-        const selfieCheck = await DB.prepare(
-          'SELECT id, action FROM selfies WHERE id = ? AND profile_id = ?'
-        ).bind(selfieId, body.profile_id).first<{ id: string; action: string | null }>();
+        // Single JOIN query to validate profile exists, selfie exists, belongs to profile, and has action='4k'
+        const validation = await DB.prepare(`
+          SELECT s.id, s.action, s.ext, p.id as profile_exists
+          FROM selfies s
+          INNER JOIN profiles p ON s.profile_id = p.id
+          WHERE s.id = ? AND p.id = ? AND LOWER(s.action) = '4k'
+        `).bind(selfieId, body.profile_id).first<{ id: string; action: string | null; ext: string; profile_exists: string }>();
         
-        if (!selfieCheck) {
+        if (!validation) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Selfie not found', 404, debugEnabled ? { selfieId, profileId: body.profile_id, path } : undefined, request, env);
-        }
-
-        const selfieAction = selfieCheck.action?.toLowerCase();
-        if (selfieAction !== '4k') {
-          const debugEnabled = isDebugEnabled(env);
+          // Check if profile exists separately to provide better error message
+          const profileCheck = await DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first();
+          if (!profileCheck) {
+            return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+          }
+          // Profile exists but selfie validation failed
+          const selfieCheck = await DB.prepare('SELECT id, action FROM selfies WHERE id = ?').bind(selfieId).first<{ id: string; action: string | null }>();
+          if (!selfieCheck) {
+            return errorResponse('Selfie not found', 404, debugEnabled ? { selfieId, profileId: body.profile_id, path } : undefined, request, env);
+          }
+          const selfieAction = selfieCheck.action?.toLowerCase();
           return errorResponse('Only selfies with action="4k" or "4K" can be used for 4K upscaling', 400, debugEnabled ? { selfieId, selfieAction, path } : undefined, request, env);
         }
 
@@ -3492,14 +3518,21 @@ export default {
           return errorResponse('', 400, undefined, request, env);
         }
 
+        // Optimize database queries with JOINs to validate ownership
         const queries: Promise<any>[] = [
           DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first(),
           DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first()
         ];
 
         if (hasSelfieId) {
+          // Use JOIN to validate selfie belongs to profile
           queries.push(
-            DB.prepare('SELECT id, ext FROM selfies WHERE id = ?').bind(body.selfie_id).first()
+            DB.prepare(`
+              SELECT s.id, s.ext, p.id as profile_exists
+              FROM selfies s
+              INNER JOIN profiles p ON s.profile_id = p.id
+              WHERE s.id = ? AND p.id = ?
+            `).bind(body.selfie_id, body.profile_id).first()
           );
         }
 
@@ -3519,7 +3552,7 @@ export default {
         if (hasSelfieId) {
           const selfieResult = results[2];
           if (!selfieResult) {
-            return errorResponse('Selfie not found', 404, debugEnabled ? { selfieId: body.selfie_id, path } : undefined, request, env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
           const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
           selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
