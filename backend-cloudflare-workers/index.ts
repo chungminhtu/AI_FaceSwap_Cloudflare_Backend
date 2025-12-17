@@ -2,7 +2,7 @@
 
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
-import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, AIBackgroundRequest } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, BackgroundRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
@@ -744,12 +744,23 @@ export default {
                   console.warn('Failed to delete unsafe selfie from R2:', deleteError);
                 }
                 // Return special marker to indicate vision block failure with statusCode
+                // Ensure we have a valid statusCode (1001-1005), default to 1001 if somehow missing
+                const visionStatusCode = safeSearchResult.statusCode && safeSearchResult.statusCode >= 1001 && safeSearchResult.statusCode <= 1005 
+                  ? safeSearchResult.statusCode 
+                  : 1001; // Default to ADULT if statusCode is missing/invalid
                 return {
                   success: false,
                   error: 'Upload failed',
                   filename: fileData.filename,
                   visionBlocked: true,
-                  visionStatusCode: safeSearchResult.statusCode || 422,
+                  visionStatusCode: visionStatusCode,
+                  visionDetails: {
+                    violationCategory: safeSearchResult.violationCategory,
+                    violationLevel: safeSearchResult.violationLevel,
+                    details: safeSearchResult.details,
+                    rawResponse: safeSearchResult.rawResponse,
+                    debug: safeSearchResult.debug,
+                  },
                 };
               }
             }
@@ -840,20 +851,28 @@ export default {
 
             // Helper function to delete old selfies
             const deleteOldSelfies = async (existingSelfies: any, maxCount: number, actionFilter: string) => {
-              if (existingSelfies.results && existingSelfies.results.length >= maxCount) {
-                const toDelete = existingSelfies.results.slice(0, existingSelfies.results.length - (maxCount - 1));
-                const idsToDelete = toDelete.map((s: any) => s.id);
-                if (idsToDelete.length > 0) {
-                  const placeholders = idsToDelete.map(() => '?').join(',');
-                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
-                  
-                  // Delete from R2
-                  for (const oldSelfie of toDelete) {
-                    const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
-                    try {
-                      await R2_BUCKET.delete(oldKey);
-                    } catch (r2Error) {
-                      console.warn('Failed to delete old selfie from R2:', r2Error);
+              if (existingSelfies.results && existingSelfies.results.length > 0) {
+                // Calculate how many we'll have after adding the new one
+                const currentCount = existingSelfies.results.length;
+                const totalAfterAdd = currentCount + 1;
+                
+                // If we'll exceed the limit, delete the oldest ones to make room
+                if (totalAfterAdd > maxCount) {
+                  const excessCount = totalAfterAdd - maxCount;
+                  const toDelete = existingSelfies.results.slice(0, excessCount);
+                  const idsToDelete = toDelete.map((s: any) => s.id);
+                  if (idsToDelete.length > 0) {
+                    const placeholders = idsToDelete.map(() => '?').join(',');
+                    await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+                    
+                    // Delete from R2
+                    for (const oldSelfie of toDelete) {
+                      const oldKey = reconstructR2Key((oldSelfie as any).id, (oldSelfie as any).ext, 'selfie');
+                      try {
+                        await R2_BUCKET.delete(oldKey);
+                      } catch (r2Error) {
+                        console.warn('Failed to delete old selfie from R2:', r2Error);
+                      }
                     }
                   }
                 }
@@ -918,13 +937,30 @@ export default {
         // Check if any selfie was blocked by vision API - return specific error code
         const visionBlockedResult = results.find(r => (r as any).visionBlocked === true);
         if (visionBlockedResult) {
-          const visionStatusCode = (visionBlockedResult as any).visionStatusCode || 422;
+          const visionStatusCode = (visionBlockedResult as any).visionStatusCode || 1001;
+          const visionDetails = (visionBlockedResult as any).visionDetails || {};
+          const debugEnabled = isDebugEnabled(env);
+          
+          const debugPayload = debugEnabled ? compact({
+            vision: {
+              checked: true,
+              isSafe: false,
+              statusCode: visionStatusCode,
+              violationCategory: visionDetails.violationCategory,
+              violationLevel: visionDetails.violationLevel,
+              details: visionDetails.details,
+              rawResponse: visionDetails.rawResponse,
+              debug: visionDetails.debug,
+            },
+          }) : undefined;
+          
           return jsonResponse({
             data: null,
             status: 'error',
             message: 'Upload failed',
             code: visionStatusCode,
-          }, visionStatusCode, request, env);
+            ...(debugPayload ? { debug: debugPayload } : {}),
+          }, 422, request, env); // HTTP status 422, but code field contains 1001-1005
         }
 
         const successful = results.filter(r => r.success);
@@ -2561,6 +2597,8 @@ export default {
             }) : undefined;
 
             const failureCode = faceSwapResult.StatusCode || 500;
+            // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+            const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
 
             return jsonResponse({
               data: null,
@@ -2568,7 +2606,7 @@ export default {
               message: '',
               code: failureCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
-            }, failureCode);
+            }, httpStatus);
           }
 
           if (faceSwapResult.ResultImageUrl?.startsWith('r2://')) {
@@ -2579,6 +2617,8 @@ export default {
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           console.error('FaceSwap failed:', faceSwapResult.Message || 'Unknown error');
           const failureCode = faceSwapResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugPayload = debugEnabled ? compact({
             request: requestDebug,
             provider: buildProviderDebug(faceSwapResult),
@@ -2590,7 +2630,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
@@ -2639,7 +2679,7 @@ export default {
           if (!safeSearchResult.isSafe) {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            const violationCode = safeSearchResult.statusCode || 422;
+            const violationCode = safeSearchResult.statusCode || 1001;
             console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel, violationCode);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
@@ -2647,13 +2687,14 @@ export default {
               vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
             }) : undefined;
+            // HTTP status must be 422, code field contains Vision API error code (1001-1005)
             return jsonResponse({
               data: null,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
               code: violationCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
-            }, violationCode);
+            }, 422);
           }
         } else {
           safetyDebug = {
@@ -2780,7 +2821,7 @@ export default {
     // Handle aiBackground endpoint
     if (path === '/aiBackground' && request.method === 'POST') {
       try {
-        const body: AIBackgroundRequest = await request.json();
+        const body: BackgroundRequest = await request.json();
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
@@ -2899,6 +2940,8 @@ export default {
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
           console.error('[AIBackground] Merge failed:', mergeResult.Message || 'Unknown error');
           const failureCode = mergeResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
             request: requestDebug,
@@ -2910,7 +2953,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         if (mergeResult.ResultImageUrl?.startsWith('r2://')) {
@@ -2965,7 +3008,7 @@ export default {
           if (!safeSearchResult.isSafe) {
             const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
             const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            const violationCode = safeSearchResult.statusCode || 422;
+            const violationCode = safeSearchResult.statusCode || 1001;
             const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
@@ -2973,13 +3016,14 @@ export default {
               vertex: undefined,
               vision: buildVisionDebug(safetyDebug),
             }) : undefined;
+            // HTTP status must be 422, code field contains Vision API error code (1001-1005)
             return jsonResponse({
               data: null,
               status: 'error',
               message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
               code: violationCode,
               ...(debugPayload ? { debug: debugPayload } : {}),
-            }, violationCode);
+            }, 422);
           }
         }
 
@@ -3110,6 +3154,37 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
+        // Validate that the image_url is a selfie with action='4k' or '4K'
+        const r2Key = extractR2KeyFromUrl(body.image_url);
+        if (!r2Key || !r2Key.startsWith('selfie/')) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Image must be a selfie', 400, debugEnabled ? { path, imageUrl: body.image_url } : undefined, request, env);
+        }
+
+        // Extract selfie ID from R2 key (format: selfie/{id}.{ext})
+        const keyParts = r2Key.replace('selfie/', '').split('.');
+        if (keyParts.length < 2) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Invalid selfie URL format', 400, debugEnabled ? { path, imageUrl: body.image_url } : undefined, request, env);
+        }
+        const selfieId = keyParts.slice(0, -1).join('.');
+
+        // Verify selfie exists and has action='4k' or '4K'
+        const selfieCheck = await DB.prepare(
+          'SELECT id, action FROM selfies WHERE id = ? AND profile_id = ?'
+        ).bind(selfieId, body.profile_id).first<{ id: string; action: string | null }>();
+        
+        if (!selfieCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Selfie not found', 404, debugEnabled ? { selfieId, profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        const selfieAction = selfieCheck.action?.toLowerCase();
+        if (selfieAction !== '4k') {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Only selfies with action="4k" or "4K" can be used for 4K upscaling', 400, debugEnabled ? { selfieId, selfieAction, path } : undefined, request, env);
+        }
+
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
@@ -3121,6 +3196,8 @@ export default {
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
           console.error('Upscaler4K failed:', upscalerResult.Message || 'Unknown error');
           const failureCode = upscalerResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult) : undefined;
           const vertexDebug = debugEnabled ? buildVertexDebug(upscalerResult) : undefined;
@@ -3137,7 +3214,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugEnabled && debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode, request, env);
+          }, httpStatus, request, env);
         }
 
         let resultUrl = upscalerResult.ResultImageUrl;
@@ -3222,6 +3299,8 @@ export default {
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
           console.error('Enhance failed:', enhancedResult.Message || 'Unknown error');
           const failureCode = enhancedResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(enhancedResult),
@@ -3233,7 +3312,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         let resultUrl = enhancedResult.ResultImageUrl;
@@ -3317,6 +3396,8 @@ export default {
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
           console.error('Beauty failed:', beautyResult.Message || 'Unknown error');
           const failureCode = beautyResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(beautyResult),
@@ -3328,7 +3409,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         let resultUrl = beautyResult.ResultImageUrl;
@@ -3543,6 +3624,8 @@ export default {
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
           console.error('Filter failed:', filterResult.Message || 'Unknown error');
           const failureCode = filterResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(filterResult),
             vertex: mergeVertexDebug(filterResult, undefined),
@@ -3553,7 +3636,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         let resultUrl = filterResult.ResultImageUrl;
@@ -3634,6 +3717,8 @@ export default {
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
           console.error('Restore failed:', restoredResult.Message || 'Unknown error');
           const failureCode = restoredResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(restoredResult),
@@ -3645,7 +3730,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         let resultUrl = restoredResult.ResultImageUrl;
@@ -3731,6 +3816,8 @@ export default {
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
           console.error('Aging failed:', agingResult.Message || 'Unknown error');
           const failureCode = agingResult.StatusCode || 500;
+          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(agingResult),
@@ -3742,7 +3829,7 @@ export default {
             message: '',
             code: failureCode,
             ...(debugPayload ? { debug: debugPayload } : {}),
-          }, failureCode);
+          }, httpStatus);
         }
 
         let resultUrl = agingResult.ResultImageUrl;

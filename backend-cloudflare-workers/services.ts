@@ -917,10 +917,17 @@ export const checkSafeSearch = async (
     
     // Find worst violation (highest severity)
     const worstViolation = getWorstViolation(annotation);
+    
+    // Ensure statusCode is set if unsafe (default to 1001 if worstViolation is null but isUnsafe is true)
+    let statusCode = worstViolation?.code;
+    if (isUnsafeResult && !statusCode) {
+      // If unsafe but no violation found (edge case), default to ADULT
+      statusCode = 1001;
+    }
 
     return {
       isSafe: !isUnsafeResult,
-      statusCode: worstViolation?.code,
+      statusCode: statusCode,
       violationCategory: worstViolation?.category,
       violationLevel: worstViolation?.level,
       details: annotation, // Return full safeSearchAnnotation details
@@ -1172,9 +1179,10 @@ export const streamImageToR2 = async (
   imageUrl: string,
   r2Key: string,
   env: Env,
-  contentType?: string
+  contentType?: string,
+  skipValidation?: boolean
 ): Promise<void> => {
-  if (!validateImageUrl(imageUrl, env)) {
+  if (!skipValidation && !validateImageUrl(imageUrl, env)) {
     throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
   }
   
@@ -1423,7 +1431,7 @@ export const callUpscaler4k = async (
           throw new Error('Invalid base64 data URL format');
         }
       } else {
-        await streamImageToR2(resultImageUrl, resultKey, env, DEFAULT_VALUES.UPSCALER_MIME_TYPE);
+        await streamImageToR2(resultImageUrl, resultKey, env, DEFAULT_VALUES.UPSCALER_MIME_TYPE, true);
         contentType = DEFAULT_VALUES.UPSCALER_MIME_TYPE;
       }
       

@@ -793,10 +793,10 @@
                     <div style="padding: 8px 12px; border-bottom: 1px solid var(--border-color);">
                         <label for="selfie-action-select" style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">Action:</label>
                         <select id="selfie-action-select" style="width: 100%; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;">
-                            <option value="faceswap">Faceswap (Max 8)</option>
+                            <option value="faceswap" selected>Faceswap (Max 8)</option>
                             <option value="wedding">Wedding (Max 2)</option>
                             <option value="4k">4K Upscale (Max 1)</option>
-                            <option value="default" selected>Default (Max 1)</option>
+                            <option value="default">Default (Max 1)</option>
                         </select>
                     </div>
                     <div class="sidebar-content" id="selfie-sidebar-content">
@@ -1405,6 +1405,10 @@
             
             if (headers) {
                 Object.entries(headers).forEach(([key, value]) => {
+                    // Skip Content-Type for FormData as curl will set it automatically
+                    if (body instanceof FormData && key.toLowerCase() === 'content-type') {
+                        return;
+                    }
                     curl += ` \\\n  -H "${key}: ${value}"`;
                 });
             }
@@ -1413,9 +1417,24 @@
             
             if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
                 if (body instanceof FormData) {
-                    curl += ` \\\n  -F "file=@filename.jpg"`;
-                    curl += ` \\\n  -F "type=preset"`;
-                    curl += ` \\\n  -F "profile_id=YOUR_PROFILE_ID"`;
+                    // Extract actual values from FormData
+                    const formEntries = [];
+                    for (const [key, value] of body.entries()) {
+                        if (value instanceof File) {
+                            formEntries.push({ key, value: `@${value.name}`, isFile: true });
+                        } else {
+                            formEntries.push({ key, value: String(value), isFile: false });
+                        }
+                    }
+                    
+                    // Generate curl command with actual FormData values
+                    formEntries.forEach(({ key, value, isFile }) => {
+                        if (isFile) {
+                            curl += ` \\\n  -F "${key}=${value}"`;
+                        } else {
+                            curl += ` \\\n  -F "${key}=${value}"`;
+                        }
+                    });
                 } else if (typeof body === 'string') {
                     try {
                         const parsed = JSON.parse(body);
