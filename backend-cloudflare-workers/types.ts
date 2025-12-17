@@ -19,7 +19,7 @@ export interface FaceSwapRequest {
   model?: string | number; // Optional: Model parameter ("2.5" for gemini-2.5-flash-image, "3" for gemini-3-pro-image-preview). Default: "2.5"
 }
 
-export interface RemoveBackgroundRequest {
+export interface BackgroundRequest {
   preset_image_id?: string; // Optional: Preset image ID from database (landscape scene)
   preset_image_url?: string; // Optional: Preset image URL (alternative to preset_image_id)
   selfie_id?: string; // Optional: Selfie ID from database (person with transparent background)

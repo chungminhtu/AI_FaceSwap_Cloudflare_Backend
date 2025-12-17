@@ -7,30 +7,32 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ### APIs cần test mobile performance
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Face swap action
-3. POST `/removeBackground` - Remove background action
+3. POST `/aiBackground` - AI Background action
 4. POST `/enhance` - Enhance action
-5. POST `/colorize` - Colorize action
-6. POST `/aging` - Aging action
-7. POST `/upscaler4k` - Upscale 4K action
-8. POST `/profiles` - Tạo profile
-9. GET `/profiles/{id}` - Lấy profile
+5. POST `/beauty` - Beauty action
+6. POST `/filter` - Filter (Styles) action
+7. POST `/restore` - Restore action
+8. POST `/aging` - Aging action
+9. POST `/upscaler4k` - Upscale 4K action
+10. POST `/profiles` - Tạo profile
+11. GET `/profiles/{id}` - Lấy profile
 
 ### APIs không cần test mobile performance
-10. PUT `/profiles/{id}` - Cập nhật profile
-11. GET `/profiles` - Liệt kê profiles
-12. POST `/upload-url` (type=preset) - Upload preset (backend only)
-13. GET `/presets` - Liệt kê presets
-14. GET `/presets/{id}` - Lấy preset theo ID
-15. DELETE `/presets/{id}` - Xóa preset
-16. GET `/selfies` - Liệt kê selfies
-17. DELETE `/selfies/{id}` - Xóa selfie
-18. GET `/results` - Liệt kê results
-19. DELETE `/results/{id}` - Xóa result
-20. POST `/upload-thumbnails` - Upload thumbnails (backend only)
-21. GET `/thumbnails` - Liệt kê thumbnails
-22. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
-23. GET `/config` - Lấy config
-24. OPTIONS `/*` - CORS preflight requests
+12. PUT `/profiles/{id}` - Cập nhật profile
+13. GET `/profiles` - Liệt kê profiles
+14. POST `/upload-url` (type=preset) - Upload preset (backend only)
+15. GET `/presets` - Liệt kê presets
+16. GET `/presets/{id}` - Lấy preset theo ID
+17. DELETE `/presets/{id}` - Xóa preset
+18. GET `/selfies` - Liệt kê selfies
+19. DELETE `/selfies/{id}` - Xóa selfie
+20. GET `/results` - Liệt kê results
+21. DELETE `/results/{id}` - Xóa result
+22. POST `/upload-thumbnails` - Upload thumbnails (backend only)
+23. GET `/thumbnails` - Liệt kê thumbnails
+24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+25. GET `/config` - Lấy config
+26. OPTIONS `/*` - CORS preflight requests
 
 ---
 
@@ -133,7 +135,7 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 
 **Lưu ý:**
 - **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API.
-- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/removeBackground`, `/enhance`, `/colorize`, `/aging`.
+- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/aiBackground`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`.
 - Scan level mặc định: `strict` (chặn cả `LIKELY` và `VERY_LIKELY` violations)
 - Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về error code tương ứng
 - Error code được trả về trong trường `code` của response
@@ -154,6 +156,8 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 
 ### Mục đích
 Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
+
+**Lưu ý:** Khác với `/aiBackground`: FaceSwap thay đổi khuôn mặt trong preset, còn AI Background merge selfie vào preset scene.
 
 ### Request
 
@@ -188,6 +192,8 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 **Các trường:**
 - `preset_image_id` (string, required): ID ảnh preset đã lưu trong database (format: `preset_...`).
 - `selfie_ids` (array of strings, optional): Mảng các ID ảnh selfie đã lưu trong database (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "3:4"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `selfie_image_urls` (array of strings, optional): Mảng các URL ảnh selfie trực tiếp (thay thế cho `selfie_ids`). Hỗ trợ multiple selfies. Phải cung cấp `selfie_ids` HOẶC `selfie_image_urls` (không phải cả hai).
 - `profile_id` (string, required): ID profile người dùng.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
@@ -330,16 +336,16 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 }
 ```
 
-### 3. POST `/removeBackground`
+### 3. POST `/aiBackground`
 
 ### Mục đích
-Xóa nền của ảnh selfie, giữ lại người với transparent background sử dụng Vertex AI. Kết quả là ảnh người không có nền, sẵn sàng để sử dụng.
+Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động.
 
 ### Request
 
 **Sử dụng selfie_id (từ database):**
 ```bash
-curl -X POST https://api.d.shotpix.app/removeBackground \
+curl -X POST https://api.d.shotpix.app/aiBackground \
   -H "Content-Type: application/json" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
@@ -352,7 +358,7 @@ curl -X POST https://api.d.shotpix.app/removeBackground \
 
 **Sử dụng selfie_image_url (URL trực tiếp):**
 ```bash
-curl -X POST https://api.d.shotpix.app/removeBackground \
+curl -X POST https://api.d.shotpix.app/aiBackground \
   -H "Content-Type: application/json" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
@@ -365,11 +371,12 @@ curl -X POST https://api.d.shotpix.app/removeBackground \
 
 **Các trường:**
 - `preset_image_id` (string, required): ID ảnh preset (landscape scene) đã lưu trong database (format: `preset_...`).
-- `selfie_id` (string, optional): ID ảnh selfie đã lưu trong database (người có transparent background). Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
-- `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`). Ảnh phải có transparent background sẵn.
+- `selfie_id` (string, optional): ID ảnh selfie đã lưu trong database (người). Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
+- `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`).
 - `profile_id` (string, required): ID profile người dùng.
-- `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc xóa nền (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
+- `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset").
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"1:1"`.
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
 
@@ -426,13 +433,17 @@ curl -X POST https://api.d.shotpix.app/enhance \
   -H "Content-Type: application/json" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-    "profile_id": "profile_1234567890"
+    "profile_id": "profile_1234567890",
+    "aspect_ratio": "1:1",
+    "model": "2.5"
   }'
 ```
 
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần enhance.
 - `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
 
@@ -455,25 +466,29 @@ curl -X POST https://api.d.shotpix.app/enhance \
 }
 ```
 
-### 5. POST `/colorize`
+### 5. POST `/beauty`
 
 ### Mục đích
-AI chuyển đổi ảnh đen trắng thành ảnh màu.
+AI beautify ảnh - cải thiện thẩm mỹ khuôn mặt (lý tưởng cho selfies và chân dung). Làm mịn da, xóa mụn, làm sáng mắt, tinh chỉnh khuôn mặt một cách tự nhiên.
 
 ### Request
 
 ```bash
-curl -X POST https://api.d.shotpix.app/colorize \
+curl -X POST https://api.d.shotpix.app/beauty \
   -H "Content-Type: application/json" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-    "profile_id": "profile_1234567890"
+    "profile_id": "profile_1234567890",
+    "aspect_ratio": "1:1",
+    "model": "2.5"
   }'
 ```
 
 **Các trường:**
-- `image_url` (string, required): URL ảnh đen trắng cần chuyển thành màu.
+- `image_url` (string, required): URL ảnh cần beautify.
 - `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
 
@@ -481,22 +496,161 @@ curl -X POST https://api.d.shotpix.app/colorize \
 {
   "data": {
     "id": "result_1234567890_abc123",
-    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/colorize_123.jpg"
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/beauty_123.jpg"
   },
   "status": "success",
-  "message": "Colorization completed",
+  "message": "Image beautification completed",
   "code": 200,
   "debug": {
     "provider": {
       "success": true,
       "statusCode": 200,
-      "message": "Colorization completed"
+      "message": "Beautification completed"
     }
   }
 }
 ```
 
-### 6. POST `/aging`
+**Tính năng AI Beauty:**
+- Làm mịn da (smooth skin)
+- Xóa mụn và vết thâm (removes blemishes/acne)
+- Đều màu da (evens skin tone)
+- Làm thon mặt và đường viền hàm một cách tinh tế (slims face/jawline subtly)
+- Làm sáng mắt (brightens eyes)
+- Tăng cường môi và lông mày (enhances lips and eyebrows)
+- Mở rộng mắt nhẹ (enlarges eyes slightly, optional)
+- Làm mềm hoặc chỉnh hình mũi (softens or reshapes nose)
+- Tự động điều chỉnh makeup (adjusts makeup automatically)
+
+**Lưu ý:** AI Beauty tập trung vào cải thiện thẩm mỹ khuôn mặt, khác với AI Enhance (cải thiện chất lượng kỹ thuật như độ sắc nét, giảm nhiễu).
+
+### 6. POST `/filter`
+
+### Mục đích
+AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt. Sử dụng prompt_json từ preset để áp dụng style.
+
+### Request
+
+```bash
+curl -X POST https://api.d.shotpix.app/filter \
+  -H "Content-Type: application/json" \
+  -d '{
+    "preset_image_id": "preset_1234567890_abc123",
+    "selfie_id": "selfie_1234567890_xyz789",
+    "profile_id": "profile_1234567890",
+    "aspect_ratio": "1:1",
+    "additional_prompt": "Add dramatic lighting"
+  }'
+```
+
+**Hoặc sử dụng selfie_image_url:**
+```bash
+curl -X POST https://api.d.shotpix.app/filter \
+  -H "Content-Type: application/json" \
+  -d '{
+    "preset_image_id": "preset_1234567890_abc123",
+    "selfie_image_url": "https://resources.d.shotpix.app/faceswap-images/selfie/selfie_001.png",
+    "profile_id": "profile_1234567890"
+  }'
+```
+
+**Các trường:**
+- `preset_image_id` (string, required): ID preset đã lưu trong database (format: `preset_...`). Preset phải có prompt_json.
+- `selfie_id` (string, optional): ID selfie đã lưu trong database. Bắt buộc nếu không có `selfie_image_url`.
+- `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp. Bắt buộc nếu không có `selfie_id`.
+- `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
+- `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "result_1234567890_abc123",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/filter_123.jpg"
+  },
+  "status": "success",
+  "message": "Style filter applied successfully",
+  "code": 200,
+  "debug": {
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Filter applied"
+    }
+  }
+}
+```
+
+**Tính năng AI Filter:**
+- Đọc prompt_json từ preset (chứa thông tin về style, lighting, composition, camera, background)
+- Áp dụng style sáng tạo/điện ảnh từ preset lên selfie
+- Giữ nguyên 100% khuôn mặt, đặc điểm, cấu trúc xương, màu da
+- Chỉ thay đổi style, môi trường, ánh sáng, màu sắc, và mood hình ảnh
+- Hỗ trợ additional_prompt để tùy chỉnh thêm
+
+**Lưu ý:**
+- Preset phải có prompt_json (được tạo tự động khi upload preset với `enableVertexPrompt=true`)
+- Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image
+- Khác với `/faceswap`: Filter giữ nguyên khuôn mặt và chỉ áp dụng style, không thay đổi khuôn mặt
+
+### 7. POST `/restore`
+
+### Mục đích
+AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
+
+### Request
+
+```bash
+curl -X POST https://api.d.shotpix.app/restore \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+    "profile_id": "profile_1234567890",
+    "aspect_ratio": "1:1",
+    "model": "2.5"
+  }'
+```
+
+**Các trường:**
+- `image_url` (string, required): URL ảnh cần khôi phục (ảnh cũ, bị hư hỏng, mờ, hoặc đen trắng).
+- `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "1:1"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "result_1234567890_abc123",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/restore_123.jpg"
+  },
+  "status": "success",
+  "message": "Image restoration completed",
+  "code": 200,
+  "debug": {
+    "provider": {
+      "success": true,
+      "statusCode": 200,
+      "message": "Restoration completed"
+    }
+  }
+}
+```
+
+**Tính năng AI Restore:**
+- Khôi phục ảnh bị hư hỏng (fix scratches, tears, noise, blurriness)
+- Chuyển đổi ảnh đen trắng thành màu với màu sắc sống động
+- Nâng cấp chất lượng lên 16K DSLR quality
+- Tăng cường chi tiết (face, eyes, hair, clothing)
+- Thêm ánh sáng, bóng đổ, và độ sâu trường ảnh thực tế
+- Retouching chuyên nghiệp cấp Photoshop
+- High dynamic range, ultra-HD, lifelike textures
+
+### 8. POST `/aging`
 
 ### Mục đích
 AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
@@ -539,7 +693,7 @@ curl -X POST https://api.d.shotpix.app/aging \
 }
 ```
 
-### 7. POST `/upscaler4k`
+### 9. POST `/upscaler4k`
 
 ### Mục đích
 Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
@@ -598,7 +752,7 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
 
 ---
 
-### 8. POST `/profiles`
+### 10. POST `/profiles`
 
 ### Mục đích
 Tạo profile mới.
@@ -1337,7 +1491,7 @@ Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
 Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
 - POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
 - POST `/faceswap` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
-- POST `/removeBackground` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
+- POST `/aiBackground` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
 
 | Error Code | Category | Mô tả |
 |------------|----------|-------|
@@ -1361,9 +1515,11 @@ Các error codes này được trả về khi Google Vision API SafeSearch phát
 
 Các error codes này được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Được sử dụng cho:
 - POST `/faceswap` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/removeBackground` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/aiBackground` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/enhance` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/colorize` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/beauty` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/filter` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/restore` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
 
 | Error Code | Category | Mô tả |
@@ -1414,37 +1570,39 @@ Ngoài các error codes trên, API cũng trả về các HTTP status codes chu�
 
 ## Tổng kết
 
-**Tổng số API endpoints: 24**
+**Tổng số API endpoints: 26**
 
-### APIs cần test mobile performance (9 APIs)
+### APIs cần test mobile performance (11 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
-3. POST `/removeBackground` - Xóa nền (Remove Background)
-4. POST `/enhance` - AI enhance ảnh
-5. POST `/colorize` - AI chuyển ảnh đen trắng thành màu
-6. POST `/aging` - AI lão hóa khuôn mặt
-7. POST `/upscaler4k` - AI upscale ảnh lên 4K
-8. POST `/profiles` - Tạo profile
-9. GET `/profiles/{id}` - Lấy profile
+3. POST `/aiBackground` - Tạo nền AI (AI Background)
+4. POST `/enhance` - AI enhance ảnh (cải thiện chất lượng kỹ thuật)
+5. POST `/beauty` - AI beautify ảnh (cải thiện thẩm mỹ khuôn mặt)
+6. POST `/filter` - AI Filter (Styles) - Áp dụng style từ preset lên selfie
+7. POST `/restore` - AI khôi phục và nâng cấp ảnh
+8. POST `/aging` - AI lão hóa khuôn mặt
+9. POST `/upscaler4k` - AI upscale ảnh lên 4K
+10. POST `/profiles` - Tạo profile
+11. GET `/profiles/{id}` - Lấy profile
 
 ### APIs không cần test mobile performance (15 APIs)
 
-10. PUT `/profiles/{id}` - Cập nhật profile
-11. GET `/profiles` - Liệt kê profiles
-12. POST `/upload-url` (type=preset) - Upload preset (backend only)
-13. GET `/presets` - Liệt kê presets
-14. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-15. DELETE `/presets/{id}` - Xóa preset
-16. GET `/selfies` - Liệt kê selfies
-17. DELETE `/selfies/{id}` - Xóa selfie
-18. GET `/results` - Liệt kê results
-19. DELETE `/results/{id}` - Xóa result
-20. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
-21. GET `/thumbnails` - Liệt kê thumbnails
-22. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
-23. GET `/config` - Lấy config
-24. OPTIONS `/*` - CORS preflight requests
+12. PUT `/profiles/{id}` - Cập nhật profile
+13. GET `/profiles` - Liệt kê profiles
+14. POST `/upload-url` (type=preset) - Upload preset (backend only)
+15. GET `/presets` - Liệt kê presets
+16. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
+17. DELETE `/presets/{id}` - Xóa preset
+18. GET `/selfies` - Liệt kê selfies
+19. DELETE `/selfies/{id}` - Xóa selfie
+20. GET `/results` - Liệt kê results
+21. DELETE `/results/{id}` - Xóa result
+22. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
+23. GET `/thumbnails` - Liệt kê thumbnails
+24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+25. GET `/config` - Lấy config
+26. OPTIONS `/*` - CORS preflight requests
 
 ## Custom Domain
 

@@ -2,7 +2,7 @@
 
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
-import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, RemoveBackgroundRequest } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, AIBackgroundRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k } from './services';
 import { validateEnv, validateRequest } from './validators';
@@ -485,6 +485,32 @@ const augmentVertexPrompt = (
   const suffix = additions.join(' + ');
   clone.prompt = basePrompt ? `${basePrompt} + ${suffix}` : suffix;
 
+  return clone;
+};
+
+const transformPromptForFilter = (promptPayload: any): any => {
+  if (!promptPayload || typeof promptPayload !== 'object') {
+    return promptPayload;
+  }
+
+  const clone = { ...promptPayload };
+  
+  if (typeof clone.prompt === 'string') {
+    let promptText = clone.prompt;
+    
+    const styleApplicationInstruction = 'Apply this creative style, lighting, composition, and visual atmosphere to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood to match the described scene. Maintain natural appearance and professional quality with 1:1 aspect ratio, 8K ultra-high detail, and ultra-sharp facial features.';
+    
+    if (promptText.includes('Replace the original face')) {
+      promptText = promptText.replace(/Replace the original face with the face from the image I will upload later\.[^.]*/g, styleApplicationInstruction);
+    } else if (!promptText.includes('Apply this creative style')) {
+      promptText = `${promptText} ${styleApplicationInstruction}`;
+    }
+    
+    clone.prompt = promptText;
+  } else {
+    clone.prompt = 'Apply the creative style, lighting, composition, and visual atmosphere described in this preset to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood. Maintain natural appearance and professional quality.';
+  }
+  
   return clone;
 };
 
@@ -2751,10 +2777,10 @@ export default {
       }
     }
 
-    // Handle removeBackground endpoint
-    if (path === '/removeBackground' && request.method === 'POST') {
+    // Handle aiBackground endpoint
+    if (path === '/aiBackground' && request.method === 'POST') {
       try {
-        const body: RemoveBackgroundRequest = await request.json();
+        const body: AIBackgroundRequest = await request.json();
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
@@ -2871,7 +2897,7 @@ export default {
         const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
-          console.error('[RemoveBackground] Merge failed:', mergeResult.Message || 'Unknown error');
+          console.error('[AIBackground] Merge failed:', mergeResult.Message || 'Unknown error');
           const failureCode = mergeResult.StatusCode || 500;
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
@@ -2919,7 +2945,7 @@ export default {
           };
 
           if (safeSearchResult.error) {
-            console.error('[RemoveBackground] Safe search error:', safeSearchResult.error?.substring(0, 200));
+            console.error('[AIBackground] Safe search error:', safeSearchResult.error?.substring(0, 200));
             const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
@@ -3244,8 +3270,326 @@ export default {
       }
     }
 
-    // Handle colorize endpoint
-    if (path === '/colorize' && request.method === 'POST') {
+    // Handle beauty endpoint
+    if (path === '/beauty' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+
+        if (!body.image_url) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
+
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const modelParam = body.model;
+
+        const beautyResult = await callNanoBanana(
+          'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure.',
+          body.image_url,
+          body.image_url,
+          env,
+          validAspectRatio,
+          modelParam
+        );
+
+        if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
+          console.error('Beauty failed:', beautyResult.Message || 'Unknown error');
+          const failureCode = beautyResult.StatusCode || 500;
+          const debugEnabled = isDebugEnabled(env);
+          const debugPayload = debugEnabled ? compact({
+            provider: buildProviderDebug(beautyResult),
+            vertex: mergeVertexDebug(beautyResult, undefined),
+          }) : undefined;
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(debugPayload ? { debug: debugPayload } : {}),
+          }, failureCode);
+        }
+
+        let resultUrl = beautyResult.ResultImageUrl;
+        if (beautyResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = beautyResult.ResultImageUrl.replace('r2://', '');
+          const requestUrl = new URL(request.url);
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+
+        const debugEnabled = isDebugEnabled(env);
+        const providerDebug = debugEnabled ? buildProviderDebug(beautyResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(beautyResult, undefined) : undefined;
+
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: beautyResult.Message || 'Image beautification completed',
+          code: 200,
+          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
+            provider: providerDebug,
+            vertex: vertexDebug,
+          }) } : {}),
+        });
+      } catch (error) {
+        console.error('Beauty unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle filter endpoint
+    if (path === '/filter' && request.method === 'POST') {
+      const debugEnabled = isDebugEnabled(env);
+      const requestCache = new Map<string, Promise<any>>();
+      const getCachedAsync = async <T>(key: string, compute: () => Promise<T>): Promise<T> => {
+        if (!requestCache.has(key)) {
+          requestCache.set(key, compute());
+        }
+        return requestCache.get(key) as Promise<T>;
+      };
+
+      try {
+        const body = await request.json() as { 
+          preset_image_id: string; 
+          selfie_id?: string; 
+          selfie_image_url?: string;
+          profile_id: string; 
+          aspect_ratio?: string; 
+          model?: string | number;
+          additional_prompt?: string;
+        };
+
+        if (!body.preset_image_id) {
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.selfie_id && !body.selfie_image_url) {
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.profile_id) {
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) {
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
+
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (hasSelfieUrl && !validateImageUrl(body.selfie_image_url!, env)) {
+          return errorResponse('', 400, undefined, request, env);
+        }
+
+        const queries: Promise<any>[] = [
+          DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first(),
+          DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first()
+        ];
+
+        if (hasSelfieId) {
+          queries.push(
+            DB.prepare('SELECT id, ext FROM selfies WHERE id = ?').bind(body.selfie_id).first()
+          );
+        }
+
+        const results = await Promise.all(queries);
+
+        const profileCheck = results[0];
+        if (!profileCheck) {
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        const presetResult = results[1];
+        if (!presetResult) {
+          return errorResponse('Preset image not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
+        }
+
+        let selfieUrl: string;
+        if (hasSelfieId) {
+          const selfieResult = results[2];
+          if (!selfieResult) {
+            return errorResponse('Selfie not found', 404, debugEnabled ? { selfieId: body.selfie_id, path } : undefined, request, env);
+          }
+          const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+        }
+
+        const presetImageId = body.preset_image_id;
+        const r2Key = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+        
+        const promptCacheKV = env.PROMPT_CACHE_KV;
+        const cacheKey = `prompt:${presetImageId}`;
+        let storedPromptPayload: any = null;
+
+        if (promptCacheKV) {
+          try {
+            const cachedPrompt = await getCachedAsync(cacheKey, async () =>
+              await promptCacheKV.get(cacheKey)
+            );
+            if (cachedPrompt) {
+              try {
+                storedPromptPayload = JSON.parse(cachedPrompt);
+              } catch {
+                // Invalid JSON in cache, continue
+              }
+            }
+          } catch {
+            // Cache read failed, continue
+          }
+        }
+
+        if (!storedPromptPayload) {
+          try {
+            const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
+              await R2_BUCKET.head(r2Key)
+            );
+            const promptJson = r2Object?.customMetadata?.prompt_json;
+            if (promptJson?.trim()) {
+              storedPromptPayload = JSON.parse(promptJson);
+              if (promptCacheKV) {
+                promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+              }
+            }
+          } catch {
+            // R2 metadata read failed, continue
+          }
+        }
+
+        if (!storedPromptPayload) {
+          const presetImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          const generateResult = await generateVertexPrompt(presetImageUrl, env);
+          if (generateResult.success && generateResult.prompt) {
+            storedPromptPayload = generateResult.prompt;
+            const promptJsonString = JSON.stringify(storedPromptPayload);
+            
+            if (promptCacheKV) {
+              promptCacheKV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+            }
+            
+            try {
+              const existingObject = await getCachedAsync(`r2head:${r2Key}`, async () =>
+                await R2_BUCKET.head(r2Key)
+              );
+              if (existingObject) {
+                const objectBody = await R2_BUCKET.get(r2Key);
+                if (objectBody) {
+                  await R2_BUCKET.put(r2Key, objectBody.body, {
+                    httpMetadata: existingObject.httpMetadata,
+                    customMetadata: { ...existingObject.customMetadata, prompt_json: promptJsonString }
+                  });
+                }
+              }
+            } catch (error) {
+              console.error(`[R2 Metadata] Write failed for preset ${presetImageId}:`, error);
+            }
+          } else {
+            return errorResponse('', 400, debugEnabled ? { error: 'Failed to generate prompt', path } : undefined, request, env);
+          }
+        }
+
+        const transformedPrompt = transformPromptForFilter(storedPromptPayload);
+        const augmentedPrompt = augmentVertexPrompt(
+          transformedPrompt,
+          body.additional_prompt,
+          undefined
+        );
+
+        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
+        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
+        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        const modelParam = body.model;
+
+        const filterResult = await callNanoBanana(
+          augmentedPrompt,
+          selfieUrl,
+          selfieUrl,
+          env,
+          validAspectRatio,
+          modelParam
+        );
+
+        if (!filterResult.Success || !filterResult.ResultImageUrl) {
+          console.error('Filter failed:', filterResult.Message || 'Unknown error');
+          const failureCode = filterResult.StatusCode || 500;
+          const debugPayload = debugEnabled ? compact({
+            provider: buildProviderDebug(filterResult),
+            vertex: mergeVertexDebug(filterResult, undefined),
+          }) : undefined;
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(debugPayload ? { debug: debugPayload } : {}),
+          }, failureCode);
+        }
+
+        let resultUrl = filterResult.ResultImageUrl;
+        if (filterResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2ResultKey = filterResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2ResultKey, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+
+        const providerDebug = debugEnabled ? buildProviderDebug(filterResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(filterResult, undefined) : undefined;
+
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: filterResult.Message || 'Style filter applied successfully',
+          code: 200,
+          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
+            provider: providerDebug,
+            vertex: vertexDebug,
+          }) } : {}),
+        });
+      } catch (error) {
+        console.error('Filter unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle restore endpoint
+    if (path === '/restore' && request.method === 'POST') {
       try {
         const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
@@ -3278,7 +3622,7 @@ export default {
         const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
         const modelParam = body.model;
 
-        const colorizedResult = await callNanoBanana(
+        const restoredResult = await callNanoBanana(
           'Restore and enhance this damaged photo to a hyper-realistic, ultra-detailed image, 16K DSLR quality. Fix scratches, tears, noise, and blurriness. Enhance colors to vivid, vibrant tones while keeping natural skin tones. Perfectly sharpen details in face, eyes, hair, and clothing. Add realistic lighting, shadows, and depth of field. Photoshop-level professional retouching. High dynamic range, ultra-HD, lifelike textures, cinematic finish, crisp and clean background, fully restored and enhanced version of the original photo.',
           body.image_url,
           body.image_url,
@@ -3287,13 +3631,13 @@ export default {
           modelParam
         );
 
-        if (!colorizedResult.Success || !colorizedResult.ResultImageUrl) {
-          console.error('Colorize failed:', colorizedResult.Message || 'Unknown error');
-          const failureCode = colorizedResult.StatusCode || 500;
+        if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
+          console.error('Restore failed:', restoredResult.Message || 'Unknown error');
+          const failureCode = restoredResult.StatusCode || 500;
           const debugEnabled = isDebugEnabled(env);
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(colorizedResult),
-            vertex: mergeVertexDebug(colorizedResult, undefined),
+            provider: buildProviderDebug(restoredResult),
+            vertex: mergeVertexDebug(restoredResult, undefined),
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -3304,9 +3648,9 @@ export default {
           }, failureCode);
         }
 
-        let resultUrl = colorizedResult.ResultImageUrl;
-        if (colorizedResult.ResultImageUrl?.startsWith('r2://')) {
-          const r2Key = colorizedResult.ResultImageUrl.replace('r2://', '');
+        let resultUrl = restoredResult.ResultImageUrl;
+        if (restoredResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = restoredResult.ResultImageUrl.replace('r2://', '');
           const requestUrl = new URL(request.url);
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
@@ -3314,8 +3658,8 @@ export default {
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(colorizedResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(colorizedResult, undefined) : undefined;
+        const providerDebug = debugEnabled ? buildProviderDebug(restoredResult, resultUrl) : undefined;
+        const vertexDebug = debugEnabled ? mergeVertexDebug(restoredResult, undefined) : undefined;
 
         return jsonResponse({
           data: {
@@ -3323,7 +3667,7 @@ export default {
             resultImageUrl: resultUrl,
           },
           status: 'success',
-          message: colorizedResult.Message || 'Colorization completed',
+          message: restoredResult.Message || 'Image restoration completed',
           code: 200,
           ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
             provider: providerDebug,
@@ -3331,7 +3675,7 @@ export default {
           }) } : {}),
         });
       } catch (error) {
-        console.error('Colorize unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        console.error('Restore unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);

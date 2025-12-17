@@ -38,7 +38,7 @@
 │                 ◀ 1 · 2 · 3 ▶             │                   └──────────┘│
 │                                           │                                 │
 ├───────────────────────────────────────────┴─────────────────────────────────┤
-│ [Face Swap*] [Enhance] [4K Upscale] [Colorize] [Age:__]  [__prompt__] ○M ○F │
+│ [Face Swap*] [Enhance] [4K Upscale] [Restore] [Age:__]  [__prompt__] ○M ○F │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ HISTORY (24)                                                                │
 │ [img][img][img][img][img][img][img][img][img][img][img][img]                │
@@ -79,7 +79,7 @@
 │  │   [×]        │  │                                          │ │
 │  └──────────────┘  └──────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────────┤
-│ [Face Swap*] [Enhance] [4K] [Colorize] [Age:__] [prompt] ○M ○F │
+│ [Face Swap*] [Enhance] [4K] [Restore] [Age:__] [prompt] ○M ○F │
 ├─────────────────────────────────────────────────────────────────┤
 │ HISTORY (24)                                                    │
 │ [img][img][img][img][img][img][img][img]                        │
@@ -123,7 +123,7 @@
 │ └─────────────────────────────┘  │
 ├───────────────────────────────────┤
 │ [Face Swap] [Enhance] [4K]       │
-│ [Colorize] [Age:__]              │
+│ [Restore] [Age:__]              │
 │ [__prompt__] ○M ○F               │
 ├───────────────────────────────────┤
 │ HISTORY (24)                     │
@@ -236,7 +236,7 @@
 | Face Swap | Primary button | Requires preset + selfie |
 | Enhance | Button | Requires selfie only |
 | 4K Upscale | Button | Requires selfie only |
-| Colorize | Button | Requires selfie only |
+| Restore | Button | Requires selfie only |
 | Age | Input + Button | Number input + button |
 | Prompt | Text input | Optional prompt |
 | Gender | Radio | ○M ○F |
@@ -354,7 +354,7 @@
 - Profile management (ID, switch)
 - Preset gallery (gender filter, upload, pagination)
 - Selfie gallery (upload, pagination)
-- All 5 action buttons (Face Swap, Enhance, 4K, Colorize, Aging)
+- All 5 action buttons (Face Swap, Enhance, 4K, Restore, Aging)
 - Prompt input
 - Gender selection
 - API provider dropdown

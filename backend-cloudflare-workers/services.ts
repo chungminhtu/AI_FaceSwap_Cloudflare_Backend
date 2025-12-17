@@ -382,10 +382,10 @@ export const callNanoBanana = async (
           return {
             Success: false,
           Message: 'Vertex AI Gemini API did not return any candidates',
-            StatusCode: 500,
-            Error: 'No candidates found in response',
-            Debug: debugInfo,
-          };
+          StatusCode: 500,
+          Error: 'No candidates found in response',
+          Debug: debugInfo,
+        };
       }
 
       const parts = candidates[0].content?.parts || [];

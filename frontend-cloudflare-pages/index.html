@@ -755,12 +755,14 @@
                         <button class="action-btn primary" id="generate-btn" disabled onclick="generateFaceSwap()">
                             <span>✨</span><span>Đổi Mặt (Face Swap)</span>
                         </button>
-                        <button class="action-btn primary" id="merge-btn" disabled onclick="generateRemoveBackground()">
+                        <button class="action-btn primary" id="merge-btn" disabled onclick="generateBackground()">
                             <span>🖼️</span><span>Xóa Nền (Remove Background)</span>
                         </button>
                         <button class="action-btn" id="enhance-btn" disabled onclick="runEnhance()">🔍 Nâng Cấp (Enhance)</button>
+                        <button class="action-btn" id="beauty-btn" disabled onclick="runBeauty()">✨ Làm Đẹp (Beauty)</button>
+                        <button class="action-btn" id="filter-btn" disabled onclick="runFilter()">🎨 Bộ Lọc (Filter)</button>
                         <button class="action-btn" id="upscale4k-btn" disabled onclick="runUpscale4k()">📐 Nâng Cấp 4K (4K Upscale)</button>
-                        <button class="action-btn" id="colorize-btn" disabled onclick="runColorize()">🎨 Tô Màu (Colorize)</button>
+                        <button class="action-btn" id="restore-btn" disabled onclick="runRestore()">🔄 Khôi Phục (Restore)</button>
                         <div class="action-aging">
                             <input type="number" id="aging-years" value="20" min="5" max="60" step="5">
                             <button class="action-btn" id="aging-btn" disabled onclick="runAging()">⏳ Lão Hóa (Age)</button>
@@ -781,6 +783,13 @@
                                 <option value="9:16">9:16 (Vertical)</option>
                                 <option value="16:9">16:9 (Widescreen)</option>
                                 <option value="21:9">21:9 (Ultrawide)</option>
+                            </select>
+                        </div>
+                        <div class="action-model">
+                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Model:</label>
+                            <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
+                                <option value="2.5" selected>Gemini 2.5 Flash</option>
+                                <option value="3">Gemini 3 Pro</option>
                             </select>
                         </div>
                         <div class="action-gender">
@@ -1652,13 +1661,21 @@
             const shouldDisable = !(hasSelfie && hasProfile);
             
             const enhanceBtn = $('enhance-btn');
+            const beautyBtn = $('beauty-btn');
+            const filterBtn = $('filter-btn');
             const upscaleBtn = $('upscale4k-btn');
-            const colorizeBtn = $('colorize-btn');
+            const restoreBtn = $('restore-btn');
             const agingBtn = $('aging-btn');
             
             if (enhanceBtn) enhanceBtn.disabled = shouldDisable;
+            if (beautyBtn) beautyBtn.disabled = shouldDisable;
+            if (filterBtn) {
+                const presetSelected = galleries.preset.state.selected;
+                const hasPreset = !!presetSelected;
+                filterBtn.disabled = !(hasSelfie && hasPreset && hasProfile);
+            }
             if (upscaleBtn) upscaleBtn.disabled = shouldDisable;
-            if (colorizeBtn) colorizeBtn.disabled = shouldDisable;
+            if (restoreBtn) restoreBtn.disabled = shouldDisable;
             if (agingBtn) agingBtn.disabled = shouldDisable;
         }
 
@@ -1902,6 +1919,9 @@
                     }
                 }
                 
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                
                 const requestBody = {
                     ...(usePresetUrl 
                         ? { preset_image_url: presetSelected.image_url }
@@ -1910,7 +1930,8 @@
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
                     character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || ''),
-                    aspect_ratio: selectedAspectRatio
+                    aspect_ratio: selectedAspectRatio,
+                    model: selectedModel
                 };
                 
                 if (selfieUrls.length > 0) {
@@ -1954,22 +1975,24 @@
             }
         }
 
-        async function generateRemoveBackground() {
+        async function generateBackground() {
             const presetSelected = galleries.preset.state.selected;
             const selfieSelected = galleries.selfie.state.selected;
             const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
             
-            if (!presetSelected) { showStatusMessage('Vui lòng chọn mẫu (preset) trước khi xóa nền.', 'error'); return; }
-            if (selfieArray.length === 0) { showStatusMessage('Vui lòng chọn selfie trước khi xóa nền.', 'error'); return; }
-            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi xóa nền.', 'error'); return; }
+            if (!presetSelected) { showStatusMessage('Vui lòng chọn mẫu (preset) trước khi tạo nền AI.', 'error'); return; }
+            if (selfieArray.length === 0) { showStatusMessage('Vui lòng chọn selfie trước khi tạo nền AI.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi tạo nền AI.', 'error'); return; }
 
             const selectedSelfie = selfieArray[0];
 
-            showLoading('Đang xóa nền...');
+            showLoading('Đang tạo nền AI...');
 
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
                 const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
                 const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
                 const requestBody = {
@@ -1983,17 +2006,18 @@
                     ),
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
-                    aspect_ratio: selectedAspectRatio
+                    aspect_ratio: selectedAspectRatio,
+                    model: selectedModel
                 };
 
-                const removeBackgroundUrl = `${WORKER_URL}/removeBackground`;
+                const backgroundUrl = `${WORKER_URL}/background`;
                 const startTime = Date.now();
-                const response = await fetch(removeBackgroundUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const response = await fetch(backgroundUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
-                logApiCall({ label: 'Xóa Nền', method: 'POST', url: '/removeBackground', fullUrl: removeBackgroundUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
-                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Xóa nền thất bại');
+                logApiCall({ label: 'Nền AI', method: 'POST', url: '/background', fullUrl: backgroundUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
+                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Tạo nền AI thất bại');
 
                 await loadGallery('results');
                 
@@ -2003,9 +2027,9 @@
                 
                 displayResultInPreview(newResult.image_url);
                 updateResultsCount();
-                showStatusMessage('Xóa nền thành công!', 'success');
+                showStatusMessage('Tạo nền AI thành công!', 'success');
             } catch (error) {
-                showStatusMessage(`Xóa nền thất bại: ${error.message}`, 'error');
+                showStatusMessage(`Tạo nền AI thất bại: ${error.message}`, 'error');
             } finally {
                 hideLoading();
             }
@@ -2024,13 +2048,17 @@
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
                 console.log(`[${label}] Aspect ratio select value:`, aspectRatioSelect?.value);
                 console.log(`[${label}] Selected aspect ratio:`, selectedAspectRatio);
+                console.log(`[${label}] Selected model:`, selectedModel);
 
                 const payload = {
                     image_url: selectedSelfie.image_url,
                     profile_id: window.profileManager.currentProfile.id,
                     aspect_ratio: selectedAspectRatio,
+                    model: selectedModel,
                     ...extra
                 };
                 console.log(`[${label}] Full request body:`, JSON.stringify(payload, null, 2));
@@ -2057,9 +2085,72 @@
         }
 
         function runEnhance() { runImageOperation('Nâng Cấp (Enhance)', 'enhance'); }
+        function runBeauty() { runImageOperation('Làm Đẹp (Beauty)', 'beauty'); }
         function runUpscale4k() { runImageOperation('Nâng Cấp 4K (4K Upscale)', 'upscaler4k'); }
-        function runColorize() { runImageOperation('Tô Màu (Colorize)', 'colorize'); }
+        function runRestore() { runImageOperation('Khôi Phục (Restore)', 'restore'); }
         function runAging() { runImageOperation('Lão Hóa (Aging)', 'aging', { age_years: parseInt($('aging-years')?.value || '20', 10) }); }
+        
+        async function runFilter() {
+            const presetSelected = galleries.preset.state.selected;
+            const selfieSelected = galleries.selfie.state.selected;
+            const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
+            
+            if (!presetSelected) { showStatusMessage('Vui lòng chọn mẫu (preset) trước khi áp dụng bộ lọc.', 'error'); return; }
+            if (selfieArray.length === 0) { showStatusMessage('Vui lòng chọn selfie trước khi áp dụng bộ lọc.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi áp dụng bộ lọc.', 'error'); return; }
+
+            const selectedSelfie = selfieArray[0];
+
+            showLoading('Đang áp dụng bộ lọc...');
+
+            try {
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
+                const additionalPromptInput = document.getElementById('additional-prompt');
+                const requestBody = {
+                    ...(usePresetUrl 
+                        ? { preset_image_url: presetSelected.image_url }
+                        : { preset_image_id: presetSelected.id }
+                    ),
+                    ...(useSelfieUrl 
+                        ? { selfie_image_url: selectedSelfie.image_url }
+                        : { selfie_id: selectedSelfie.id }
+                    ),
+                    profile_id: window.profileManager.currentProfile.id,
+                    additional_prompt: additionalPromptInput?.value.trim() || '',
+                    aspect_ratio: selectedAspectRatio,
+                    model: selectedModel
+                };
+
+                const filterUrl = `${WORKER_URL}/filter`;
+                const startTime = Date.now();
+                const response = await fetch(filterUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const data = await response.json();
+                const duration = Date.now() - startTime;
+
+                logApiCall({ label: 'Bộ Lọc (Filter)', method: 'POST', url: '/filter', fullUrl: filterUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
+                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Áp dụng bộ lọc thất bại');
+
+                await loadGallery('results');
+                
+                const loadedResults = galleries.results.state.items;
+                const newResult = loadedResults.find(r => r.result_url === data.data.resultImageUrl) || 
+                                 { id: data.data.id || `result-${Date.now()}`, result_url: data.data.resultImageUrl, image_url: data.data.resultImageUrl, created_at: new Date().toISOString() };
+                
+                displayResultInPreview(newResult.image_url);
+                updateResultsCount();
+                showStatusMessage('Áp dụng bộ lọc thành công!', 'success');
+            } catch (error) {
+                showStatusMessage(`Áp dụng bộ lọc thất bại: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+                updateImageOperationButtons();
+            }
+        }
 
         function displayResultInPreview(imageUrl) {
             const resultPreview = $('result-preview');
@@ -3020,6 +3111,21 @@
                 });
             } else {
                 console.error('[Init] Aspect ratio select element not found during initialization!');
+            }
+
+            // Load saved model from localStorage
+            const savedModel = localStorage.getItem('faceswap:model') || '2.5';
+            const modelSelect = document.getElementById('gemini-model');
+            if (modelSelect) {
+                modelSelect.value = savedModel;
+                console.log('[Init] Set model select to:', savedModel, 'Current value:', modelSelect.value);
+                modelSelect.addEventListener('change', (e) => {
+                    const newValue = e.target.value;
+                    localStorage.setItem('faceswap:model', newValue);
+                    console.log('[Init] Model changed to:', newValue);
+                });
+            } else {
+                console.error('[Init] Model select element not found during initialization!');
             }
 
             // Initialize profile FIRST, then load galleries
