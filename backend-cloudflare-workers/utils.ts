@@ -1,3 +1,6 @@
+// backend-cloudflare-workers/utils.ts
+import type { Env } from './types';
+
 // Safety violation status codes (1000+) Loại nhạy cảm
 export const SAFETY_STATUS_CODES = {
   ADULT: 1001, // Ảnh người lớn, nude, gợi dục, porn, ...
@@ -72,7 +75,7 @@ export const getCorsHeaders = (request: Request, env: any): Record<string, strin
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, X-Enable-Gemini-Prompt, X-Enable-Vision-Scan, X-Gender, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, X-Enable-Gemini-Prompt, X-Enable-Vision-Scan, X-Gender, Authorization, X-API-Key',
     'Access-Control-Allow-Credentials': 'true',
   };
 };
@@ -80,7 +83,7 @@ export const getCorsHeaders = (request: Request, env: any): Record<string, strin
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, X-Enable-Gemini-Prompt, X-Enable-Vision-Scan, X-Gender, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Preset-Name, X-Preset-Name-Encoded, X-Enable-Vertex-Prompt, X-Enable-Gemini-Prompt, X-Enable-Vision-Scan, X-Gender, Authorization, X-API-Key',
   'Access-Control-Allow-Credentials': 'true',
 };
 
@@ -528,81 +531,42 @@ export const base64Decode = (str: string): string => {
   return atob(str);
 };
 
-interface TokenCacheEntry {
-  token: string;
-  expiresAt: number;
-  lastAccessed: number;
-}
-
-class LRUCache<K, V extends TokenCacheEntry> {
-  private cache: Map<K, V>;
-  private maxSize: number;
-
-  constructor(maxSize: number) {
-    this.cache = new Map();
-    this.maxSize = maxSize;
+// Get KV namespace for token caching (reuses PROMPT_CACHE_KV)
+const getTokenCacheKV = (env: Env): KVNamespace | null => {
+  const kvBindingName = env.PROMPT_CACHE_KV_BINDING_NAME;
+  if (!kvBindingName) {
+    return null;
   }
-
-  get(key: K): V | undefined {
-    const entry = this.cache.get(key);
-    if (entry) {
-      entry.lastAccessed = Date.now();
-      this.cache.delete(key);
-      this.cache.set(key, entry);
-      return entry;
-    }
-    return undefined;
-  }
-
-  set(key: K, value: V): void {
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      const firstKey: any = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
-    }
-    value.lastAccessed = Date.now();
-    this.cache.set(key, value);
-  }
-
-  delete(key: K): boolean {
-    return this.cache.delete(key);
-  }
-
-  size(): number {
-    return this.cache.size;
-  }
-
-  cleanup(now: number): void {
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.expiresAt <= now) {
-        this.cache.delete(key);
-      }
-    }
-  }
-}
-
-const tokenCache = new LRUCache<string, TokenCacheEntry>(50);
+  return (env as any)[kvBindingName] as KVNamespace || null;
+};
 
 // Generate cache key from service account credentials
-const getCacheKey = (serviceAccountEmail: string, privateKey: string): string => {
+const getTokenCacheKey = (serviceAccountEmail: string): string => {
   return `oauth_token:${serviceAccountEmail}`;
 };
 
 // Generate OAuth access token for Google Service Account
 // This is used for Vertex AI authentication
-// Caches tokens for 55 minutes (tokens valid for 1 hour)
+// Caches tokens in KV for 55 minutes (tokens valid for 1 hour)
 export const getAccessToken = async (
   serviceAccountEmail: string,
-  privateKey: string
+  privateKey: string,
+  env: Env
 ): Promise<string> => {
-  const cacheKey = getCacheKey(serviceAccountEmail, privateKey);
+  const cacheKey = getTokenCacheKey(serviceAccountEmail);
   const now = Math.floor(Date.now() / 1000);
   
-  // Check cache first
-  const cached = tokenCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.token;
+  // Check KV cache first
+  const tokenCacheKV = getTokenCacheKV(env);
+  if (tokenCacheKV) {
+    try {
+      const cached = await tokenCacheKV.get(cacheKey, 'json') as { token: string; expiresAt: number } | null;
+      if (cached && cached.expiresAt > now) {
+        return cached.token;
+      }
+    } catch (error) {
+      // KV read failed, continue to generate new token
+    }
   }
   
   // Cache miss or expired, generate new token
@@ -692,14 +656,19 @@ export const getAccessToken = async (
     const tokenData = await tokenResponse.json() as { access_token: string };
     const accessToken = tokenData.access_token;
   
-    const expiresAt = now + 3300;
-    tokenCache.set(cacheKey, {
-      token: accessToken,
-      expiresAt: expiresAt,
-      lastAccessed: Date.now()
-    });
-    
-    tokenCache.cleanup(now);
+    // Store token in KV cache with TTL (55 minutes = 3300 seconds)
+    // KV TTL is in seconds, set to 3300 to expire before token expires (3600 seconds)
+    const cacheExpiresAt = now + 3300;
+    if (tokenCacheKV) {
+      try {
+        await tokenCacheKV.put(cacheKey, JSON.stringify({
+          token: accessToken,
+          expiresAt: cacheExpiresAt
+        }), { expirationTtl: 3300 });
+      } catch (error) {
+        // KV write failed, but token is still valid - continue
+      }
+    }
     
     return accessToken;
   } catch (error) {

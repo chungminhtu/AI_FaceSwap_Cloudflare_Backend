@@ -2,6 +2,9 @@
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
+
+// Generate unique mock ID for performance testing mode to avoid database conflicts
+const generateMockId = () => `mock-${nanoid(16)}`;
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation } from './utils';
 import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
 
@@ -121,7 +124,6 @@ export const callFaceSwap = async (
     
     return transformedResponse;
   } catch (error) {
-    console.error('JSON parse error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
     debugInfo.rawResponse = responseText.substring(0, 200);
     debugInfo.parseError = error instanceof Error ? error.message : String(error);
     return {
@@ -211,7 +213,8 @@ export const callNanoBanana = async (
       try {
       accessToken = await getAccessToken(
           env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+          env
         );
       } catch (tokenError) {
       console.error('[Vertex-NanoBanana] Failed to get OAuth token:', tokenError);
@@ -231,8 +234,10 @@ export const callNanoBanana = async (
       sourceUrls.map(url => fetchImageAsBase64(url, env))
     );
 
-    const providedRatio = aspectRatio || ASPECT_RATIO_CONFIG.DEFAULT;
-    const normalizedAspectRatio = ASPECT_RATIO_CONFIG.SUPPORTED.includes(providedRatio) ? providedRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+    // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
+    const normalizedAspectRatio = !aspectRatio 
+      ? "original" 
+      : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
@@ -287,6 +292,21 @@ export const callNanoBanana = async (
       receivedAspectRatio: aspectRatio, // Log the aspect ratio received
       normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
     };
+
+    // Performance testing mode: skip API call if disabled
+    if (env.DISABLE_VERTEX_IMAGE_GEN === 'true') {
+      const mockId = generateMockId();
+      const ext = 'jpg';
+      const resultKey = `results/${mockId}.${ext}`;
+      const resultImageUrl = `r2://${resultKey}`;
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: 'Vertex AI image generation disabled (performance testing mode)',
+        StatusCode: 200,
+        Debug: { disabled: true, mode: 'performance_testing', mockId, r2Key: resultKey },
+      };
+    }
 
     const startTime = Date.now();
     const response = await fetchWithTimeout(geminiEndpoint, {
@@ -410,7 +430,6 @@ export const callNanoBanana = async (
       }
 
       if (!base64Image) {
-        console.error('[Vertex-NanoBanana] No image data found in response');
         return {
           Success: false,
           Message: 'Vertex AI Gemini API did not return an image in the response',
@@ -471,7 +490,6 @@ export const callNanoBanana = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Vertex-NanoBanana] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 200);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
@@ -537,7 +555,8 @@ export const generateBackgroundFromPrompt = async (
     try {
       accessToken = await getAccessToken(
         env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        env
       );
     } catch (tokenError) {
       console.error('[Vertex-GenerateBackground] Failed to get OAuth token:', tokenError);
@@ -548,8 +567,10 @@ export const generateBackgroundFromPrompt = async (
       };
     }
 
-    const providedRatio = aspectRatio || ASPECT_RATIO_CONFIG.DEFAULT;
-    const normalizedAspectRatio = ASPECT_RATIO_CONFIG.SUPPORTED.includes(providedRatio) ? providedRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+    // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
+    const normalizedAspectRatio = !aspectRatio 
+      ? "original" 
+      : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
 
     const requestBody = {
       contents: [{
@@ -590,6 +611,21 @@ export const generateBackgroundFromPrompt = async (
       receivedAspectRatio: aspectRatio,
       normalizedAspectRatio: normalizedAspectRatio,
     };
+
+    // Performance testing mode: skip API call if disabled
+    if (env.DISABLE_VERTEX_IMAGE_GEN === 'true') {
+      const mockId = generateMockId();
+      const ext = 'jpg';
+      const resultKey = `results/${mockId}.${ext}`;
+      const resultImageUrl = `r2://${resultKey}`;
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: 'Vertex AI background generation disabled (performance testing mode)',
+        StatusCode: 200,
+        Debug: { disabled: true, mode: 'performance_testing', mockId, r2Key: resultKey },
+      };
+    }
 
     const startTime = Date.now();
     const response = await fetchWithTimeout(geminiEndpoint, {
@@ -704,7 +740,6 @@ export const generateBackgroundFromPrompt = async (
       }
 
       if (!base64Image) {
-        console.error('[Vertex-GenerateBackground] No image data found in response');
         return {
           Success: false,
           Message: 'Vertex AI Gemini API did not return an image in the response',
@@ -760,7 +795,6 @@ export const generateBackgroundFromPrompt = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Vertex-GenerateBackground] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 200);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
@@ -839,7 +873,8 @@ export const callNanoBananaMerge = async (
     try {
       accessToken = await getAccessToken(
         env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        env
       );
     } catch (tokenError) {
       console.error('[Vertex-NanoBananaMerge] Failed to get OAuth token:', tokenError);
@@ -855,8 +890,10 @@ export const callNanoBananaMerge = async (
       fetchImageAsBase64(presetUrl, env)
     ]);
 
-    const providedRatio = aspectRatio || ASPECT_RATIO_CONFIG.DEFAULT;
-    const normalizedAspectRatio = ASPECT_RATIO_CONFIG.SUPPORTED.includes(providedRatio) ? providedRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+    // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
+    const normalizedAspectRatio = !aspectRatio 
+      ? "original" 
+      : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
 
     const requestBody = {
       contents: [{
@@ -913,6 +950,21 @@ export const callNanoBananaMerge = async (
       receivedAspectRatio: aspectRatio,
       normalizedAspectRatio: normalizedAspectRatio,
     };
+
+    // Performance testing mode: skip API call if disabled
+    if (env.DISABLE_VERTEX_IMAGE_GEN === 'true') {
+      const mockId = generateMockId();
+      const ext = 'jpg';
+      const resultKey = `results/${mockId}.${ext}`;
+      const resultImageUrl = `r2://${resultKey}`;
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: 'Vertex AI merge disabled (performance testing mode)',
+        StatusCode: 200,
+        Debug: { disabled: true, mode: 'performance_testing', mockId, r2Key: resultKey },
+      };
+    }
 
     const startTime = Date.now();
     const response = await fetchWithTimeout(geminiEndpoint, {
@@ -1031,7 +1083,6 @@ export const callNanoBananaMerge = async (
       }
 
       if (!base64Image) {
-        console.error('[Vertex-NanoBananaMerge] No image data found in response');
         return {
           Success: false,
           Message: 'Vertex AI Gemini API did not return an image in the response',
@@ -1087,7 +1138,6 @@ export const callNanoBananaMerge = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Vertex-NanoBananaMerge] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 200);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
@@ -1140,6 +1190,15 @@ export const checkSafeSearch = async (
       }],
     };
 
+    // Performance testing mode: skip API call if disabled
+    if (env.DISABLE_VISION_API === 'true') {
+      return {
+        isSafe: true,
+        statusCode: 200,
+        debug: { disabled: true, mode: 'performance_testing' },
+      };
+    }
+
     const startTime = Date.now();
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -1181,7 +1240,6 @@ export const checkSafeSearch = async (
     if (data.responses?.[0]?.error) {
       const errorObj: any = data.responses[0].error;
       const errorMsg = typeof errorObj === 'string' ? errorObj.substring(0, 200) : (errorObj?.message ? String(errorObj.message).substring(0, 200) : JSON.stringify(errorObj).substring(0, 200));
-      console.error('[SafeSearch] API returned error:', errorMsg);
       return { 
         isSafe: false, 
         error: data.responses[0].error.message,
@@ -1191,7 +1249,6 @@ export const checkSafeSearch = async (
     }
 
     if (!annotation) {
-      console.warn('[SafeSearch] No safe search annotation in response');
       return { 
         isSafe: false, 
         error: 'No safe search annotation',
@@ -1251,6 +1308,27 @@ export const generateVertexPrompt = async (
   }
 }> => {
   const startTime = Date.now();
+  
+  // Performance testing mode: skip API call if disabled (before any setup/image fetching/token generation)
+  if (env.DISABLE_VERTEX_IMAGE_GEN === 'true') {
+    const mockPrompt = {
+      prompt: 'A professional portrait with natural lighting',
+      style: 'photorealistic',
+      lighting: 'natural',
+      composition: 'portrait',
+      camera: 'professional',
+      background: 'neutral'
+    };
+    return {
+      success: true,
+      prompt: mockPrompt,
+      debug: {
+        disabled: true,
+        mode: 'performance_testing',
+        responseTimeMs: Date.now() - startTime
+      } as any
+    };
+  }
   
   const debugInfo: any = {};
   
@@ -1319,7 +1397,8 @@ export const generateVertexPrompt = async (
       try {
       accessToken = await getAccessToken(
         env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        env
       );
       } catch (tokenError) {
       console.error('[Vertex] Failed to get OAuth token:', tokenError instanceof Error ? tokenError.message.substring(0, 200) : String(tokenError).substring(0, 200));
@@ -1384,7 +1463,6 @@ export const generateVertexPrompt = async (
           break;
         } catch (e) {
           // If parse fails, try extracting from markdown code blocks
-          console.debug('[Vertex] Initial JSON parse failed, attempting markdown extraction');
           let jsonText = part.text;
           if (jsonText.includes('```json')) {
             const jsonMatch = jsonText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
@@ -1401,7 +1479,6 @@ export const generateVertexPrompt = async (
             promptJson = JSON.parse(jsonText);
             break;
           } catch (parseError) {
-            console.warn('[Vertex] Failed to parse JSON from text:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
           }
         }
       }
@@ -1529,6 +1606,21 @@ export const callUpscaler4k = async (
       target_resolution: DEFAULT_VALUES.UPSCALER_TARGET_RESOLUTION
     };
 
+    // Performance testing mode: skip API call if disabled
+    if (env.DISABLE_4K_UPSCALER === 'true') {
+      const mockId = generateMockId();
+      const ext = DEFAULT_VALUES.UPSCALER_EXT;
+      const resultKey = `results/${mockId}.${ext}`;
+      const resultImageUrl = `r2://${resultKey}`;
+      return {
+        Success: true,
+        ResultImageUrl: resultImageUrl,
+        Message: '4K upscaler disabled (performance testing mode)',
+        StatusCode: 200,
+        Debug: { disabled: true, mode: 'performance_testing', mockId, r2Key: resultKey },
+      };
+    }
+
     const startTime = Date.now();
     const response = await fetchWithTimeout(apiEndpoint, {
       method: 'POST',
@@ -1579,7 +1671,6 @@ export const callUpscaler4k = async (
       requestId = data.id || data.requestId || data.request_id || data.data?.id || data.data?.requestId || data.data?.request_id;
       
       if (!requestId) {
-        console.error('[Upscaler4K] No requestId found in response');
         return {
           Success: false,
           Message: 'WaveSpeed API did not return a request ID',
@@ -1612,7 +1703,6 @@ export const callUpscaler4k = async (
         }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
         
         if (!resultResponse.ok) {
-          console.warn('[Upscaler4K] Poll request failed:', resultResponse.status, resultResponse.statusText);
           if (attempt === TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS - 1) {
             throw new Error(`Failed to get result: ${resultResponse.status} ${resultResponse.statusText}`);
           }
@@ -1747,7 +1837,6 @@ export const callUpscaler4k = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      console.error('[Upscaler4K] JSON parse error:', parseError instanceof Error ? parseError.message.substring(0, 200) : String(parseError).substring(0, 200));
       if (debugInfo) {
         debugInfo.rawResponse = rawResponse.substring(0, 2000);
         debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);

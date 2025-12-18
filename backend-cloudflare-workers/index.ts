@@ -16,6 +16,44 @@ const checkRateLimit = async (env: Env, request: Request, path: string): Promise
   return result.success;
 };
 
+const constantTimeCompare = (a: string, b: string): boolean => {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+};
+
+const checkApiKey = (env: Env, request: Request): boolean => {
+  const authEnabled = env.ENABLE_MOBILE_API_KEY_AUTH === 'true' || env.ENABLE_MOBILE_API_KEY_AUTH === true;
+  if (!authEnabled) {
+    return true;
+  }
+
+  const apiKey = request.headers.get('X-API-Key') || 
+                 request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '');
+  
+  if (!apiKey || !env.MOBILE_API_KEY) {
+    return false;
+  }
+
+  return constantTimeCompare(apiKey, env.MOBILE_API_KEY);
+};
+
+const PROTECTED_MOBILE_APIS = [
+  '/upload-url',
+  '/faceswap',
+  '/background',
+  '/enhance',
+  '/beauty',
+  '/filter',
+  '/restore',
+  '/aging',
+  '/upscaler4k',
+  '/profiles',
+];
+
 const checkRequestSize = (request: Request, maxSizeBytes: number): { valid: boolean; error?: string } => {
   const contentLength = request.headers.get('Content-Length');
   if (contentLength) {
@@ -43,11 +81,8 @@ const resolveAspectRatioForNonFaceswap = async (
     const dimensions = await getImageDimensions(selfieImageUrl, env);
     if (dimensions) {
       const closestRatio = getClosestAspectRatio(dimensions.width, dimensions.height, supportedRatios);
-      console.log(`[AspectRatio] Calculated from image (${dimensions.width}x${dimensions.height}): ${closestRatio}`);
       return closestRatio;
     }
-    // Fallback to default if we can't get dimensions
-    console.warn('[AspectRatio] Could not get image dimensions, using default');
     return ASPECT_RATIO_CONFIG.DEFAULT;
   }
   
@@ -368,7 +403,6 @@ const convertLegacyUrl = (url: string, env: Env): string => {
       }
     }
   } catch (error) {
-    console.warn('Failed to parse URL for conversion:', url);
   }
 
   return url;
@@ -573,6 +607,31 @@ export default {
       }, 429, request, env);
     }
 
+    const checkProtectedPath = (path: string, method: string): boolean => {
+      if (path === '/upload-url') {
+        return false;
+      }
+      if (path === '/profiles') {
+        return method === 'POST';
+      }
+      if (path.startsWith('/profiles/') && path.split('/').length === 3) {
+        return method === 'GET';
+      }
+      return PROTECTED_MOBILE_APIS.includes(path);
+    };
+
+    const isProtectedPath = checkProtectedPath(path, request.method);
+    if (isProtectedPath && !checkApiKey(env, request)) {
+      const debugEnabled = isDebugEnabled(env);
+      return jsonResponse({
+        data: null,
+        status: 'error',
+        message: 'Unauthorized',
+        code: 401,
+        ...(debugEnabled ? { debug: { path, method: request.method } } : {})
+      }, 401, request, env);
+    }
+
     if (request.method === 'POST' || request.method === 'PUT') {
       const maxSize = path === '/upload-url' || path === '/upload-thumbnails' ? 10 * 1024 * 1024 : 1024 * 1024;
       const sizeCheck = checkRequestSize(request, maxSize);
@@ -668,6 +727,17 @@ export default {
           return errorResponse('', 400, debugEnabled ? { type, path } : undefined, request, env);
         }
 
+        if (type === 'selfie' && !checkApiKey(env, request)) {
+          const debugEnabled = isDebugEnabled(env);
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: 'Unauthorized',
+            code: 401,
+            ...(debugEnabled ? { debug: { path, method: request.method, type } } : {})
+          }, 401, request, env);
+        }
+
         // Validate that profile exists
         const profileResult = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
@@ -703,7 +773,6 @@ export default {
           try {
             const imageResponse = await fetchWithTimeout(imageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
             if (!imageResponse.ok) {
-              console.warn(`[Upload] Failed to fetch image from URL: ${imageResponse.status}`);
               continue;
             }
             const fileData = await imageResponse.arrayBuffer();
@@ -744,7 +813,6 @@ export default {
               },
             });
           } catch (r2Error) {
-            console.error('R2 upload error:', r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200));
             return {
               success: false,
               error: `R2 upload failed: ${r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200)}`,
@@ -767,7 +835,6 @@ export default {
                 try {
                   await R2_BUCKET.delete(key);
                 } catch (deleteError) {
-                  console.warn('Failed to delete unsafe selfie from R2:', deleteError);
                 }
                 // Return special marker to indicate vision block failure with statusCode
                 // Ensure we have a valid statusCode (1001-1005), default to 1001 if somehow missing
@@ -840,7 +907,6 @@ export default {
                   });
                 }
               } catch (metadataError) {
-                console.warn('Failed to store prompt_json in R2 metadata:', metadataError);
               }
             }
 
@@ -897,7 +963,6 @@ export default {
                       try {
                         await R2_BUCKET.delete(oldKey);
                       } catch (r2Error) {
-                        console.warn('Failed to delete old selfie from R2:', r2Error);
                       }
                     }
                   }
@@ -1035,7 +1100,6 @@ export default {
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        console.error('Upload error:', errorMsg);
         const debugEnabled = isDebugEnabled(env);
         return errorResponse(
           `Upload failed: ${errorMsg}`, 
@@ -1382,7 +1446,6 @@ export default {
           ...(debugEnabled ? { debug: { filesProcessed: files.length, resultsCount: results.length } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Thumbnail upload error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -1475,7 +1538,6 @@ export default {
           ...(debugEnabled ? { debug: { profileId, deviceId } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Profile creation error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -1519,7 +1581,6 @@ export default {
           ...(debugEnabled ? { debug: { profileId } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Profile retrieval error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -1581,7 +1642,6 @@ export default {
           ...(debugEnabled ? { debug: { profileId } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Profile update error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -1615,7 +1675,6 @@ export default {
           ...(debugEnabled ? { debug: { count: profiles.length } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Profile listing error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -1702,7 +1761,6 @@ export default {
           ...(debugEnabled ? { debug: { presetId, hasPrompt } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Get preset error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -1807,7 +1865,6 @@ export default {
           ...(debugEnabled ? { debug: { count: presets.length } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('List presets error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
@@ -1874,7 +1931,6 @@ export default {
           code: 200
         });
       } catch (error) {
-        console.error('[DELETE] Delete preset exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
@@ -1988,7 +2044,6 @@ export default {
           ...(debugEnabled ? { debug: { count: selfies.length, profileId } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('List selfies error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         // Return empty array instead of error to prevent UI breaking
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
@@ -2055,7 +2110,6 @@ export default {
           ...(debugEnabled ? { debug: { selfieId, r2Deleted, r2Error } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('[DELETE] Delete selfie exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
@@ -2106,7 +2160,6 @@ export default {
           ...(debugEnabled ? { debug: { thumbnailId, presetId: (preset as any).id } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Get preset from thumbnail error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -2158,7 +2211,6 @@ export default {
           ...(debugEnabled ? { debug: { count: thumbnails.length } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('Get thumbnails error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
@@ -2241,7 +2293,6 @@ export default {
           ...(debugEnabled ? { debug: { count: results.length, profileId: profileId || null } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('[Results] List results error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { results: [] },
@@ -2311,7 +2362,6 @@ export default {
           } } : {})
         }, 200, request, env);
       } catch (error) {
-        console.error('[DELETE] Delete result exception:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
@@ -2590,7 +2640,6 @@ export default {
                   sanitizedVertexFailure = parsedResponse;
                 }
               } catch (parseErr) {
-                console.warn('[FaceSwap] Failed to parse/sanitize vertex failure response:', parseErr instanceof Error ? parseErr.message.substring(0, 200) : String(parseErr).substring(0, 200));
                 if (typeof fullResponse === 'string') {
                   sanitizedVertexFailure = fullResponse.substring(0, 500) + (fullResponse.length > 500 ? '...' : '');
                 } else {
@@ -2649,7 +2698,6 @@ export default {
           }
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
-          console.error('FaceSwap failed:', faceSwapResult.Message || 'Unknown error');
           const failureCode = faceSwapResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -2694,7 +2742,6 @@ export default {
           };
 
           if (safeSearchResult.error) {
-            console.error('[FaceSwap] Safe search error:', safeSearchResult.error?.substring(0, 200));
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
               provider: buildProviderDebug(faceSwapResult),
@@ -2852,8 +2899,8 @@ export default {
       }
     }
 
-    // Handle aiBackground endpoint
-    if (path === '/aiBackground' && request.method === 'POST') {
+    // Handle background endpoint
+    if (path === '/background' && request.method === 'POST') {
       try {
         const body: BackgroundRequest = await request.json();
 
@@ -2944,7 +2991,6 @@ export default {
           const backgroundGenResult = await generateBackgroundFromPrompt(body.custom_prompt!, env, validAspectRatio, modelParam);
 
           if (!backgroundGenResult.Success || !backgroundGenResult.ResultImageUrl) {
-            console.error('[AIBackground] Background generation failed:', backgroundGenResult.Message || 'Unknown error');
             const failureCode = backgroundGenResult.StatusCode || 500;
             const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
             const debugEnabled = isDebugEnabled(env);
@@ -3032,7 +3078,6 @@ export default {
         const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
-          console.error('[AIBackground] Merge failed:', mergeResult.Message || 'Unknown error');
           const failureCode = mergeResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -3082,7 +3127,6 @@ export default {
           };
 
           if (safeSearchResult.error) {
-            console.error('[AIBackground] Safe search error:', safeSearchResult.error?.substring(0, 200));
             const debugEnabled = isDebugEnabled(env);
             const debugPayload = debugEnabled ? compact({
               request: requestDebug,
@@ -3288,7 +3332,6 @@ export default {
         const upscalerResult = await callUpscaler4k(body.image_url, env);
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
-          console.error('Upscaler4K failed:', upscalerResult.Message || 'Unknown error');
           const failureCode = upscalerResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -3389,7 +3432,6 @@ export default {
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
-          console.error('Enhance failed:', enhancedResult.Message || 'Unknown error');
           const failureCode = enhancedResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -3484,7 +3526,6 @@ export default {
         );
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
-          console.error('Beauty failed:', beautyResult.Message || 'Unknown error');
           const failureCode = beautyResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -3717,7 +3758,6 @@ export default {
         );
 
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
-          console.error('Filter failed:', filterResult.Message || 'Unknown error');
           const failureCode = filterResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -3808,7 +3848,6 @@ export default {
         );
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
-          console.error('Restore failed:', restoredResult.Message || 'Unknown error');
           const failureCode = restoredResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -3905,7 +3944,6 @@ export default {
         );
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
-          console.error('Aging failed:', agingResult.Message || 'Unknown error');
           const failureCode = agingResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);

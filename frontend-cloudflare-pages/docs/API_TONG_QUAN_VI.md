@@ -2,12 +2,97 @@
 
 Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp. Base URL: `https://api.d.shotpix.app`
 
+## Xác thực API (API Authentication)
+
+### Mobile API Key Authentication
+
+Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính năng này có thể được bật/tắt thông qua biến môi trường `ENABLE_MOBILE_API_KEY_AUTH`.
+
+**Khi bật (`ENABLE_MOBILE_API_KEY_AUTH=true`):**
+- Các mobile APIs được bảo vệ yêu cầu API key trong request header
+- API key có thể được gửi qua:
+  - Header `X-API-Key`: `X-API-Key: your_api_key_here`
+  - Header `Authorization`: `Authorization: Bearer your_api_key_here`
+
+**Các endpoints được bảo vệ (khi authentication được bật):**
+- POST `/upload-url` (type=selfie) - Chỉ khi upload selfie
+- POST `/faceswap`
+- POST `/background`
+- POST `/enhance`
+- POST `/beauty`
+- POST `/filter`
+- POST `/restore`
+- POST `/aging`
+- POST `/upscaler4k`
+- POST `/profiles` - Chỉ khi tạo profile mới
+- GET `/profiles/{id}` - Chỉ khi lấy profile theo ID
+
+**Lưu ý:**
+- POST `/upload-url` (type=preset) không yêu cầu API key (backend only)
+- Các endpoints khác không nằm trong danh sách trên không yêu cầu API key
+
+**Tạo API Key:**
+
+Sử dụng script `generate-api-key.js` để tạo API key mới:
+
+```bash
+node backend-cloudflare-workers/generate-api-key.js
+```
+
+Script sẽ tạo một API key ngẫu nhiên 32 bytes (256 bits) và hiển thị hướng dẫn thêm vào `deployments-secrets.json`:
+
+```json
+{
+  "MOBILE_API_KEY": "your_generated_key_here",
+  "ENABLE_MOBILE_API_KEY_AUTH": "true"
+}
+```
+
+**Ví dụ request với API key:**
+
+```bash
+curl -X POST https://api.d.shotpix.app/faceswap \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "preset_image_id": "preset_1234567890_abc123",
+    "selfie_ids": ["selfie_1234567890_xyz789"],
+    "profile_id": "profile_1234567890"
+  }'
+```
+
+Hoặc sử dụng Authorization header:
+
+```bash
+curl -X POST https://api.d.shotpix.app/faceswap \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_api_key_here" \
+  -d '{
+    "preset_image_id": "preset_1234567890_abc123",
+    "selfie_ids": ["selfie_1234567890_xyz789"],
+    "profile_id": "profile_1234567890"
+  }'
+```
+
+**Error Response (401 Unauthorized):**
+
+Khi API key không hợp lệ hoặc thiếu:
+
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Unauthorized",
+  "code": 401
+}
+```
+
 ## Mục lục (Table of Contents)
 
 ### APIs cần test mobile performance
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Face swap action
-3. POST `/aiBackground` - AI Background action
+3. POST `/background` - AI Background action
 4. POST `/enhance` - Enhance action
 5. POST `/beauty` - Beauty action
 6. POST `/filter` - Filter (Styles) action
@@ -43,11 +128,14 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ### Mục đích
 Tải ảnh selfie trực tiếp lên server và lưu vào database. Endpoint này được sử dụng bởi mobile app để upload selfie.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true` (chỉ áp dụng cho `type=selfie`).
+
 ### Request
 
 **Upload selfie với action:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
+  -H "X-API-Key: your_api_key_here" \
   -F "files=@/path/to/selfie.jpg" \
   -F "type=selfie" \
   -F "profile_id=profile_1234567890" \
@@ -66,6 +154,7 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "image_url": "https://example.com/selfie.jpg",
     "type": "selfie",
@@ -135,7 +224,7 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 
 **Lưu ý:**
 - **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API.
-- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/aiBackground`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`.
+- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`.
 - Scan level mặc định: `strict` (chặn cả `LIKELY` và `VERY_LIKELY` violations)
 - Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về error code tương ứng
 - Error code được trả về trong trường `code` của response
@@ -157,7 +246,9 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 ### Mục đích
 Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
 
-**Lưu ý:** Khác với `/aiBackground`: FaceSwap thay đổi khuôn mặt trong preset, còn AI Background merge selfie vào preset scene.
+**Lưu ý:** 
+- Khác với `/background`: FaceSwap thay đổi khuôn mặt trong preset, còn AI Background merge selfie vào preset scene.
+- Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 ### Request
 
@@ -165,6 +256,7 @@ Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex 
 ```bash
 curl -X POST https://api.d.shotpix.app/faceswap \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_ids": ["selfie_1234567890_xyz789"],
@@ -179,6 +271,7 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 ```bash
 curl -X POST https://api.d.shotpix.app/faceswap \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_image_urls": ["https://example.com/selfie1.jpg", "https://example.com/selfie2.jpg"],
@@ -335,17 +428,20 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 }
 ```
 
-### 3. POST `/aiBackground`
+### 3. POST `/background`
 
 ### Mục đích
 Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động. Hỗ trợ 3 cách cung cấp nền: preset_image_id (từ database), preset_image_url (URL trực tiếp), hoặc custom_prompt (tạo nền từ text prompt sử dụng Vertex AI). Hỗ trợ ba cách cung cấp nền: sử dụng preset từ database (`preset_image_id`), sử dụng URL preset (`preset_image_url`), hoặc tạo nền từ text prompt (`custom_prompt`).
+
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 ### Request
 
 **Sử dụng selfie_id (từ database):**
 ```bash
-curl -X POST https://api.d.shotpix.app/aiBackground \
+curl -X POST https://api.d.shotpix.app/background \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_id": "selfie_1234567890_xyz789",
@@ -357,8 +453,9 @@ curl -X POST https://api.d.shotpix.app/aiBackground \
 
 **Sử dụng selfie_image_url (URL trực tiếp):**
 ```bash
-curl -X POST https://api.d.shotpix.app/aiBackground \
+curl -X POST https://api.d.shotpix.app/background \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_image_url": "https://example.com/selfie.png",
@@ -370,8 +467,9 @@ curl -X POST https://api.d.shotpix.app/aiBackground \
 
 **Sử dụng custom_prompt (tạo nền từ text prompt với Vertex AI):**
 ```bash
-curl -X POST https://api.d.shotpix.app/aiBackground \
+curl -X POST https://api.d.shotpix.app/background \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "custom_prompt": "A beautiful sunset beach scene with palm trees and golden sand",
     "selfie_id": "selfie_1234567890_xyz789",
@@ -384,8 +482,9 @@ curl -X POST https://api.d.shotpix.app/aiBackground \
 
 **Sử dụng custom_prompt với selfie_image_url:**
 ```bash
-curl -X POST https://api.d.shotpix.app/aiBackground \
+curl -X POST https://api.d.shotpix.app/background \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "custom_prompt": "A futuristic cityscape at night with neon lights and flying cars",
     "selfie_image_url": "https://example.com/selfie.png",
@@ -464,8 +563,10 @@ curl -X POST https://api.d.shotpix.app/aiBackground \
 ### Mục đích
 AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 **Lưu ý về Aspect Ratio:**
-- Các endpoints không phải faceswap (`/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`, `/aiBackground`) hỗ trợ giá trị `"original"` cho `aspect_ratio`.
+- Các endpoints không phải faceswap (`/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`, `/background`) hỗ trợ giá trị `"original"` cho `aspect_ratio`.
 - Khi `aspect_ratio` là `"original"` hoặc không được cung cấp, hệ thống sẽ tự động:
   1. Lấy kích thước (width/height) từ ảnh selfie được upload
   2. Tính toán tỷ lệ khung hình thực tế
@@ -478,6 +579,7 @@ AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương ph�
 ```bash
 curl -X POST https://api.d.shotpix.app/enhance \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890",
@@ -518,11 +620,14 @@ curl -X POST https://api.d.shotpix.app/enhance \
 ### Mục đích
 AI beautify ảnh - cải thiện thẩm mỹ khuôn mặt (lý tưởng cho selfies và chân dung). Làm mịn da, xóa mụn, làm sáng mắt, tinh chỉnh khuôn mặt một cách tự nhiên.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 ```bash
 curl -X POST https://api.d.shotpix.app/beauty \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890",
@@ -576,11 +681,14 @@ curl -X POST https://api.d.shotpix.app/beauty \
 ### Mục đích
 AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt. Sử dụng prompt_json từ preset để áp dụng style.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 ```bash
 curl -X POST https://api.d.shotpix.app/filter \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_id": "selfie_1234567890_xyz789",
@@ -594,6 +702,7 @@ curl -X POST https://api.d.shotpix.app/filter \
 ```bash
 curl -X POST https://api.d.shotpix.app/filter \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_image_url": "https://resources.d.shotpix.app/faceswap-images/selfie/selfie_001.png",
@@ -648,11 +757,14 @@ curl -X POST https://api.d.shotpix.app/filter \
 ### Mục đích
 AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 ```bash
 curl -X POST https://api.d.shotpix.app/restore \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890",
@@ -702,11 +814,14 @@ curl -X POST https://api.d.shotpix.app/restore \
 ### Mục đích
 AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 ```bash
 curl -X POST https://api.d.shotpix.app/aging \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "age_years": 20,
@@ -747,11 +862,14 @@ curl -X POST https://api.d.shotpix.app/aging \
 ### Mục đích
 Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 ```bash
 curl -X POST https://api.d.shotpix.app/upscaler4k \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890"
@@ -806,12 +924,15 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
 ### Mục đích
 Tạo profile mới.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 **Minimal (chỉ cần device_id):**
 ```bash
 curl -X POST https://api.d.shotpix.app/profiles \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "device_id": "device_1765774126587_yaq0uh6rvz"
   }'
@@ -821,6 +942,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
 ```bash
 curl -X POST https://api.d.shotpix.app/profiles \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "device_id": "device_1765774126587_yaq0uh6rvz",
     "userID": "profile_1234567890",
@@ -835,6 +957,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
 ```bash
 curl -X POST https://api.d.shotpix.app/profiles \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "device_id": "device_1765774126587_yaq0uh6rvz",
     "name": "John Doe",
@@ -851,6 +974,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
 ```bash
 curl -X POST https://api.d.shotpix.app/profiles \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
   -H "x-device-id: device_1765774126587_yaq0uh6rvz" \
   -d '{
     "name": "John Doe",
@@ -886,15 +1010,18 @@ curl -X POST https://api.d.shotpix.app/profiles \
 }
 ```
 
-### 9. GET `/profiles/{id}`
+### 11. GET `/profiles/{id}`
 
 ### Mục đích
 Lấy thông tin profile theo ID.
 
+**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
 ### Request
 
 ```bash
-curl https://api.d.shotpix.app/profiles/profile_1234567890
+curl https://api.d.shotpix.app/profiles/profile_1234567890 \
+  -H "X-API-Key: your_api_key_here"
 ```
 
 ### Response
@@ -1526,7 +1653,7 @@ Xử lý CORS preflight requests cho tất cả các endpoints. Tự động đ�
 Trả về HTTP 204 (No Content) với các headers CORS:
 - `Access-Control-Allow-Origin`: Cho phép tất cả origins
 - `Access-Control-Allow-Methods`: GET, POST, PUT, DELETE, OPTIONS
-- `Access-Control-Allow-Headers`: Content-Type, Authorization, và các headers khác
+- `Access-Control-Allow-Headers`: Content-Type, Authorization, X-API-Key, và các headers khác
 - `Access-Control-Max-Age`: 86400 (24 giờ)
 
 Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
@@ -1540,7 +1667,7 @@ Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
 Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
 - POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
 - POST `/faceswap` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
-- POST `/aiBackground` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
+- POST `/background` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
 
 | Error Code | Category | Mô tả |
 |------------|----------|-------|
@@ -1564,7 +1691,7 @@ Các error codes này được trả về khi Google Vision API SafeSearch phát
 
 Các error codes này được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Được sử dụng cho:
 - POST `/faceswap` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/aiBackground` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/background` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/enhance` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/beauty` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/filter` - Khi Vertex AI chặn prompt hoặc generated image
@@ -1606,6 +1733,7 @@ Ngoài các error codes trên, API cũng trả về các HTTP status codes chu�
 |-------------|-------|
 | **200** | Success |
 | **400** | Bad Request - Request không hợp lệ |
+| **401** | Unauthorized - API key không hợp lệ hoặc thiếu (khi `ENABLE_MOBILE_API_KEY_AUTH=true`) |
 | **422** | Unprocessable Entity - Content bị chặn (sử dụng error codes 1001-1005 hoặc 2001-2004) |
 | **429** | Rate Limit Exceeded - Vượt quá giới hạn request |
 | **500** | Internal Server Error - Lỗi server |
@@ -1625,7 +1753,7 @@ Ngoài các error codes trên, API cũng trả về các HTTP status codes chu�
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
-3. POST `/aiBackground` - Tạo nền AI (AI Background)
+3. POST `/background` - Tạo nền AI (AI Background)
 4. POST `/enhance` - AI enhance ảnh (cải thiện chất lượng kỹ thuật)
 5. POST `/beauty` - AI beautify ảnh (cải thiện thẩm mỹ khuôn mặt)
 6. POST `/filter` - AI Filter (Styles) - Áp dụng style từ preset lên selfie

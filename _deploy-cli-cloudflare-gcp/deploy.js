@@ -878,9 +878,16 @@ function parseConfig(config) {
   if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
   if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
   if (config.SELFIE_MAX_FACESWAP) secrets.SELFIE_MAX_FACESWAP = config.SELFIE_MAX_FACESWAP;
+  if (config.SELFIE_MAX_WEDDING) secrets.SELFIE_MAX_WEDDING = config.SELFIE_MAX_WEDDING;
+  if (config.SELFIE_MAX_4K) secrets.SELFIE_MAX_4K = config.SELFIE_MAX_4K;
   if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
   if (config.DISABLE_SAFE_SEARCH) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
   if (config.SAFETY_STRICTNESS) secrets.SAFETY_STRICTNESS = config.SAFETY_STRICTNESS;
+  if (config.DISABLE_VERTEX_IMAGE_GEN) secrets.DISABLE_VERTEX_IMAGE_GEN = config.DISABLE_VERTEX_IMAGE_GEN;
+  if (config.DISABLE_VISION_API) secrets.DISABLE_VISION_API = config.DISABLE_VISION_API;
+  if (config.DISABLE_4K_UPSCALER) secrets.DISABLE_4K_UPSCALER = config.DISABLE_4K_UPSCALER;
+  if (config.MOBILE_API_KEY) secrets.MOBILE_API_KEY = config.MOBILE_API_KEY;
+  if (config.ENABLE_MOBILE_API_KEY_AUTH) secrets.ENABLE_MOBILE_API_KEY_AUTH = config.ENABLE_MOBILE_API_KEY_AUTH;
   if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
     throw new Error('promptCacheKV.namespaceName is required in deployments-secrets.json');
   }
@@ -1371,6 +1378,21 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config, htmlPath = null) {
   if (fallbackUrlPattern.test(content)) {
     content = content.replace(fallbackUrlPattern, `const fallbackUrl = '${finalWorkerUrl}';`);
     console.log(`[Deploy] ✓ Updated fallbackUrl in HTML to: ${finalWorkerUrl}`);
+  }
+  
+  // Inject MOBILE_API_KEY if available in config
+  const mobileApiKey = config?.MOBILE_API_KEY || '';
+  const mobileApiKeyPattern = /let MOBILE_API_KEY\s*=\s*['"](.*?)['"];?\s*\/\/.*/g;
+  if (mobileApiKeyPattern.test(content)) {
+    content = content.replace(mobileApiKeyPattern, `let MOBILE_API_KEY = '${mobileApiKey}'; // Injected during deployment - DO NOT MODIFY MANUALLY`);
+    console.log(`[Deploy] ✓ Updated MOBILE_API_KEY in HTML`);
+  } else {
+    // Try to find and update after WORKER_URL line
+    const workerUrlLinePattern = /(let WORKER_URL\s*=\s*['"](.*?)['"];?\s*\/\/.*)/;
+    if (workerUrlLinePattern.test(content)) {
+      content = content.replace(workerUrlLinePattern, `$1\n        let MOBILE_API_KEY = '${mobileApiKey}'; // Injected during deployment - DO NOT MODIFY MANUALLY`);
+      console.log(`[Deploy] ✓ Added MOBILE_API_KEY to HTML`);
+    }
   }
   
   fs.writeFileSync(finalHtmlPath, content);
@@ -2172,18 +2194,38 @@ const utils = {
     }
 
     let successCount = 0;
+    const failedSecrets = [];
     for (const [key, value] of Object.entries(secrets)) {
+      const secretTempFile = path.join(os.tmpdir(), `secret-${key}-${Date.now()}-${Math.random().toString(36).substring(7)}.txt`);
       try {
+        fs.writeFileSync(secretTempFile, value, 'utf8');
         const cmd = workerName ? `wrangler secret put ${key} --name ${workerName}` : `wrangler secret put ${key}`;
-        const result = await runCommand(`echo "${value.replace(/"/g, '\\"')}" | ${cmd}`, cwd);
-        if (result.success) successCount++;
-      } catch {
-        // continue
+        const result = await runCommand(`cat "${secretTempFile}" | ${cmd}`, cwd);
+        if (result.success) {
+          successCount++;
+        } else {
+          failedSecrets.push(key);
+        }
+      } catch (error) {
+        failedSecrets.push(key);
+      } finally {
+        try {
+          fs.unlinkSync(secretTempFile);
+        } catch {
+          // ignore
+        }
       }
     }
 
-    if (successCount === 0) throw new Error('Failed to deploy secrets');
-    if (successCount < keys.length) logWarn(`Only ${successCount}/${keys.length} secrets deployed`);
+    if (successCount === 0) {
+      const errorMsg = failedSecrets.length > 0 
+        ? `Failed to deploy secrets. Failed: ${failedSecrets.join(', ')}`
+        : 'Failed to deploy secrets';
+      throw new Error(errorMsg);
+    }
+    if (successCount < keys.length) {
+      logWarn(`Only ${successCount}/${keys.length} secrets deployed. Failed: ${failedSecrets.join(', ')}`);
+    }
 
     return { success: true, deployed: successCount, total: keys.length };
   },

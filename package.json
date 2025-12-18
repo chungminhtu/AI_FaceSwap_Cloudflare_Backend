@@ -14,7 +14,8 @@
     "docs:build": "node frontend-cloudflare-pages/docs/build-static.js",
     "deploy:parallel": "node _deploy-cli-cloudflare-gcp/deploy.js --envs",
     "deploy:all": "node _deploy-cli-cloudflare-gcp/deploy.js --all-envs",
-    "deploy:parallel:test": "node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office,ai-office-dev,ai-office-prod"
+    "deploy:parallel:test": "node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office,ai-office-dev,ai-office-prod",
+    "generate:api-key": "node backend-cloudflare-workers/generate-api-key.js"
   },
   "dependencies": {
     "express": "^4.18.2",

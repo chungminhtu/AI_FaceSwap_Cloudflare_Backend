@@ -902,7 +902,7 @@
                         </div>
                     </div>
                     <div class="action-options">
-                        <input type="text" id="additional-prompt" class="action-prompt" placeholder="Gợi ý (tùy chọn) (Prompt optional)">
+                        <input type="text" id="additional-prompt" class="action-prompt" placeholder="Gợi ý (tùy chọn) / Tạo nền từ text (Custom Background Prompt)">
                         <div class="action-ratio">
                             <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Tỷ Lệ (Ratio):</label>
                             <select id="aspect-ratio" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
@@ -1118,9 +1118,21 @@
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
         let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
+        // Mobile API Key for authentication (set when ENABLE_MOBILE_API_KEY_AUTH is enabled in backend)
+        let MOBILE_API_KEY = ''; // Injected during deployment - DO NOT MODIFY MANUALLY
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
+        
+        // Helper function to build headers object with API key for authenticated requests
+        // Returns a new headers object (does not modify anything)
+        function buildHeaders(customHeaders = {}) {
+            const headers = { ...customHeaders };
+            if (MOBILE_API_KEY) {
+                headers['X-API-Key'] = MOBILE_API_KEY;
+            }
+            return headers;
+        }
         
         // Vertex AI Configuration
         // Note: Vertex AI region is configured via GOOGLE_VERTEX_LOCATION environment variable
@@ -1168,7 +1180,7 @@
                     if (profileId) {
                         const startTime = Date.now();
                         const profileUrl = `${WORKER_URL}/profiles/${profileId}`;
-                        const response = await fetch(profileUrl);
+                        const response = await fetch(profileUrl, { headers: buildHeaders() });
                         const duration = Date.now() - startTime;
                         if (response.ok) {
                 const data = await response.json();
@@ -1206,7 +1218,7 @@
                     localStorage.setItem('deviceId', deviceId);
                 }
                 const requestBody = { device_id: deviceId };
-                const response = await fetch(createProfileUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const response = await fetch(createProfileUrl, { method: 'POST', headers: buildHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(requestBody) });
                 const duration = Date.now() - startTime;
                 if (!response.ok) throw new Error('Không thể tạo hồ sơ');
                 const data = await response.json();
@@ -1229,7 +1241,7 @@
                 const updateUrl = `${WORKER_URL}/profiles/${this.currentProfile.id}`;
                 const response = await fetch(updateUrl, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: buildHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(updates)
                 });
                 const duration = Date.now() - startTime;
@@ -1261,7 +1273,7 @@
                 try {
                     const startTime = Date.now();
                     const getProfileUrl = `${WORKER_URL}/profiles/${profileId.trim()}`;
-                    const response = await fetch(getProfileUrl);
+                    const response = await fetch(getProfileUrl, { headers: buildHeaders() });
                     const duration = Date.now() - startTime;
                     if (!response.ok) throw new Error(response.status === 404 ? 'Không tìm thấy hồ sơ' : `HTTP ${response.status}`);
                     const data = await response.json();
@@ -1595,7 +1607,7 @@
                 // Gender filter removed - metadata is in R2 path, not DB
                 if (params.toString()) url += `?${params.toString()}`;
                 startTime = Date.now();
-                const response = await fetch(url);
+                const response = await fetch(url, { headers: buildHeaders() });
                 const duration = Date.now() - startTime;
                 
                 if (!response.ok) {
@@ -1860,8 +1872,12 @@
             const hasPreset = !!galleries.preset.state.selected;
             const selfieSelected = galleries.selfie.state.selected;
             const hasSelfie = selfieSelected && (Array.isArray(selfieSelected) ? selfieSelected.length > 0 : !!selfieSelected);
+            const additionalPromptInput = document.getElementById('additional-prompt');
+            const hasCustomPrompt = additionalPromptInput && additionalPromptInput.value.trim() !== '';
+            
             if (generateBtn) generateBtn.disabled = !(hasPreset && hasSelfie);
-            if (mergeBtn) mergeBtn.disabled = !(hasPreset && hasSelfie);
+            // Enable merge button if: (preset AND selfie) OR (custom_prompt AND selfie)
+            if (mergeBtn) mergeBtn.disabled = !((hasPreset || hasCustomPrompt) && hasSelfie);
         }
 
         function updateImageOperationButtons() {
@@ -1912,7 +1928,7 @@
             try {
                 const startTime = Date.now();
                 const deleteUrl = `${WORKER_URL}${config.endpoints.delete}/${itemId}`;
-                const response = await fetch(deleteUrl, { method: 'DELETE' });
+                const response = await fetch(deleteUrl, { method: 'DELETE', headers: buildHeaders() });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
                 logApiCall({ label: `Xóa ${config.logName}`, method: 'DELETE', url: `${config.endpoints.delete}/${itemId}`, fullUrl: deleteUrl, status: response.ok ? 'success' : 'error', payload: data, duration });
@@ -2035,7 +2051,7 @@
 
                 const uploadUrl = `${WORKER_URL}/upload-url`;
                 const startTime = Date.now();
-                const response = await fetch(uploadUrl, { method: 'POST', body: formData });
+                const response = await fetch(uploadUrl, { method: 'POST', headers: buildHeaders(), body: formData });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
@@ -2155,7 +2171,7 @@
 
                 const faceswapUrl = `${WORKER_URL}/faceswap`;
                 const startTime = Date.now();
-                const response = await fetch(faceswapUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const response = await fetch(faceswapUrl, { method: 'POST', headers: buildHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(requestBody) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
@@ -2189,8 +2205,17 @@
             const presetSelected = galleries.preset.state.selected;
             const selfieSelected = galleries.selfie.state.selected;
             const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
+            const additionalPromptInput = document.getElementById('additional-prompt');
+            const customPrompt = additionalPromptInput?.value.trim() || '';
             
-            if (!presetSelected) { showStatusMessage('Vui lòng chọn mẫu (preset) trước khi tạo nền AI.', 'error'); return; }
+            if (!presetSelected && !customPrompt) { 
+                showStatusMessage('Vui lòng chọn mẫu (preset) hoặc nhập prompt tùy chỉnh để tạo nền AI.', 'error'); 
+                return; 
+            }
+            if (presetSelected && customPrompt) {
+                // When both preset and custom prompt are provided, use custom prompt as additional_prompt for merge
+                // This allows users to use custom prompt as additional instructions when preset is selected
+            }
             if (selfieArray.length === 0) { showStatusMessage('Vui lòng chọn selfie trước khi tạo nền AI.', 'error'); return; }
             if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi tạo nền AI.', 'error'); return; }
 
@@ -2203,26 +2228,32 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
-                const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
                 const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
+                
                 const requestBody = {
-                    ...(usePresetUrl 
-                        ? { preset_image_url: presetSelected.image_url }
-                        : { preset_image_id: presetSelected.id }
+                    ...(customPrompt && !presetSelected
+                        ? { custom_prompt: customPrompt }
+                        : (() => {
+                            if (!presetSelected) return {};
+                            const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                            return usePresetUrl 
+                                ? { preset_image_url: presetSelected.image_url }
+                                : { preset_image_id: presetSelected.id };
+                        })()
                     ),
                     ...(useSelfieUrl 
                         ? { selfie_image_url: selectedSelfie.image_url }
                         : { selfie_id: selectedSelfie.id }
                     ),
                     profile_id: window.profileManager.currentProfile.id,
-                    additional_prompt: additionalPromptInput?.value.trim() || '',
+                    ...(presetSelected && customPrompt ? { additional_prompt: customPrompt } : {}),
                     aspect_ratio: selectedAspectRatio,
                     model: selectedModel
                 };
 
                 const backgroundUrl = `${WORKER_URL}/background`;
                 const startTime = Date.now();
-                const response = await fetch(backgroundUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const response = await fetch(backgroundUrl, { method: 'POST', headers: buildHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(requestBody) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
@@ -2276,7 +2307,7 @@
                 
                 const startTime = Date.now();
                 const operationUrl = `${WORKER_URL}/${endpoint}`;
-                const response = await fetch(operationUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const response = await fetch(operationUrl, { method: 'POST', headers: buildHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
@@ -2353,7 +2384,7 @@
 
                 const filterUrl = `${WORKER_URL}/filter`;
                 const startTime = Date.now();
-                const response = await fetch(filterUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const response = await fetch(filterUrl, { method: 'POST', headers: buildHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(requestBody) });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
 
@@ -2734,9 +2765,7 @@
                 const startTime = Date.now();
                 const uploadResponse = await fetch(uploadUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: buildHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(requestBody)
                 });
                 const data = await uploadResponse.json();
@@ -2884,7 +2913,7 @@
 
         async function loadThumbnails() {
             try {
-                const response = await fetch(`${WORKER_URL}/thumbnails`);
+                const response = await fetch(`${WORKER_URL}/thumbnails`, { headers: buildHeaders() });
                 const data = await response.json();
                 if (data.status === 'success' && data.data?.thumbnails) {
                     renderThumbnails(data.data.thumbnails);
@@ -2949,7 +2978,7 @@
             }
             // Load preset and set as selected
             try {
-                const response = await fetch(`${WORKER_URL}/presets/${presetId}`);
+                const response = await fetch(`${WORKER_URL}/presets/${presetId}`, { headers: buildHeaders() });
                 const data = await response.json();
                 if (data && data.image_url) {
                     const tempPreset = {
@@ -3152,6 +3181,7 @@
                 progressFill.style.width = '30%';
                 const response = await fetch(`${WORKER_URL}/upload-thumbnails`, {
                     method: 'POST',
+                    headers: buildHeaders(),
                     body: formData
                 });
 
@@ -3472,6 +3502,17 @@
             setupDragDrop('selfie');
 
             $('profile-id-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); switchProfile(); } });
+            
+            // Add event listener for additional-prompt input to update button state (used as custom prompt for background)
+            const additionalPromptInput = $('additional-prompt');
+            if (additionalPromptInput) {
+                additionalPromptInput.addEventListener('input', () => {
+                    updateGenerateButton();
+                });
+                additionalPromptInput.addEventListener('keyup', () => {
+                    updateGenerateButton();
+                });
+            }
 
             // Load saved aspect ratio from localStorage (default to 'original' for non-faceswap endpoints)
             const savedRatio = localStorage.getItem('faceswap:aspectRatio') || 'original';
