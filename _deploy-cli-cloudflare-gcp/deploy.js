@@ -2195,19 +2195,28 @@ const utils = {
 
     let successCount = 0;
     const failedSecrets = [];
+    const errorDetails = [];
     for (const [key, value] of Object.entries(secrets)) {
       const secretTempFile = path.join(os.tmpdir(), `secret-${key}-${Date.now()}-${Math.random().toString(36).substring(7)}.txt`);
       try {
         fs.writeFileSync(secretTempFile, value, 'utf8');
         const cmd = workerName ? `wrangler secret put ${key} --name ${workerName}` : `wrangler secret put ${key}`;
-        const result = await runCommand(`cat "${secretTempFile}" | ${cmd}`, cwd);
-        if (result.success) {
-          successCount++;
-        } else {
+        try {
+          const result = await runCommand(`cat "${secretTempFile}" | ${cmd}`, cwd);
+          if (result.success) {
+            successCount++;
+          } else {
+            failedSecrets.push(key);
+            const errorMsg = result.error || result.stderr || result.stdout || 'Unknown error';
+            errorDetails.push(`${key}: ${errorMsg}`);
+          }
+        } catch (error) {
           failedSecrets.push(key);
+          errorDetails.push(`${key}: ${error.message || error.stderr || error.stdout || 'Unknown error'}`);
         }
       } catch (error) {
         failedSecrets.push(key);
+        errorDetails.push(`${key}: ${error.message}`);
       } finally {
         try {
           fs.unlinkSync(secretTempFile);
@@ -2218,9 +2227,17 @@ const utils = {
     }
 
     if (successCount === 0) {
-      const errorMsg = failedSecrets.length > 0 
-        ? `Failed to deploy secrets. Failed: ${failedSecrets.join(', ')}`
-        : 'Failed to deploy secrets';
+      let errorMsg = `Failed to deploy secrets. Failed: ${failedSecrets.join(', ')}`;
+      if (errorDetails.length > 0) {
+        const firstError = errorDetails[0];
+        if (firstError.includes('not found') || firstError.includes('does not exist')) {
+          errorMsg += `. Worker "${workerName}" may not exist yet. Deploy the worker first, then deploy secrets.`;
+        } else if (firstError.includes('Authentication') || firstError.includes('permission')) {
+          errorMsg += `. Authentication or permission error. Check your API token.`;
+        } else {
+          errorMsg += `. First error: ${firstError}`;
+        }
+      }
       throw new Error(errorMsg);
     }
     if (successCount < keys.length) {
@@ -2889,22 +2906,6 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         report('Running database migrations', 'warning', 'Skipped (database setup skipped)');
       }
 
-      if (DEPLOY_SECRETS) {
-        report('Deploying secrets', 'running', 'Configuring environment secrets');
-        if (Object.keys(config.secrets || {}).length > 0) {
-          await utils.deploySecrets(config.secrets, cwd, config.workerName, config.workerName);
-          report('Deploying secrets', 'completed', 'Secrets deployed');
-        } else {
-          const existing = utils.getExistingSecrets();
-          const { missing, allSet } = checkSecrets(existing);
-          if (!allSet) {
-            report('Deploying secrets', 'warning', `Missing secrets: ${missing.join(', ')}`);
-          } else {
-            report('Deploying secrets', 'completed', 'All secrets set');
-          }
-        }
-      }
-
       let workerUrl = '';
       if (DEPLOY_WORKER) {
         report('Deploying worker', 'running', 'Deploying Cloudflare Worker');
@@ -2927,6 +2928,27 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         }
         
         report('Deploying worker', 'completed', 'Worker deployed');
+      }
+
+      if (DEPLOY_SECRETS) {
+        report('Deploying secrets', 'running', 'Configuring environment secrets');
+        try {
+          if (Object.keys(config.secrets || {}).length > 0) {
+            await utils.deploySecrets(config.secrets, cwd, config.workerName, config.workerName);
+            report('Deploying secrets', 'completed', 'Secrets deployed');
+          } else {
+            const existing = utils.getExistingSecrets();
+            const { missing, allSet } = checkSecrets(existing);
+            if (!allSet) {
+              report('Deploying secrets', 'warning', `Missing secrets: ${missing.join(', ')}`);
+            } else {
+              report('Deploying secrets', 'completed', 'All secrets set');
+            }
+          }
+        } catch (error) {
+          report('Deploying secrets', 'failed', error.message);
+          throw error;
+        }
       }
 
       let pagesUrl = '';
@@ -3284,6 +3306,25 @@ async function main() {
       }
       
       logger.completeStep('Deploying worker', 'Worker deployed');
+
+      logger.startStep('Deploying secrets');
+      try {
+        if (Object.keys(config.secrets).length > 0) {
+          await utils.deploySecrets(config.secrets, process.cwd(), config.workerName, config.workerName);
+          logger.completeStep('Deploying secrets', 'Secrets deployed');
+        } else {
+          const existing = utils.getExistingSecrets();
+          const { missing, allSet } = checkSecrets(existing);
+          if (!allSet) {
+            logger.warnStep('Deploying secrets', `Missing secrets: ${missing.join(', ')}`);
+          } else {
+            logger.completeStep('Deploying secrets', 'All secrets set');
+          }
+        }
+      } catch (error) {
+        logger.failStep('Deploying secrets', error.message);
+        throw error;
+      }
 
       let pagesUrl = '';
       if (config.deployPages) {
