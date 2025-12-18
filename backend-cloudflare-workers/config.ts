@@ -20,6 +20,10 @@ export const API_CONFIG = {
     imageConfig: {
       imageSize: '1K' as const,
       personGeneration: 'ALLOW_ALL' as const,
+      imageOutputOptions: {
+        mimeType: 'image/jpeg',
+        compressionQuality: 100,
+      },
     },
   },
   

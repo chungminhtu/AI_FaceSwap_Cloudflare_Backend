@@ -265,6 +265,10 @@ export const callNanoBanana = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
+          imageOutputOptions: {
+            mimeType: 'image/jpeg',
+            compressionQuality: 100,
+          },
         },
       },
       safetySettings: SAFETY_SETTINGS,
@@ -584,6 +588,10 @@ export const generateBackgroundFromPrompt = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
+          imageOutputOptions: {
+            mimeType: 'image/jpeg',
+            compressionQuality: 100,
+          },
         },
       },
       safetySettings: SAFETY_SETTINGS,
@@ -919,6 +927,10 @@ export const callNanoBananaMerge = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
+          imageOutputOptions: {
+            mimeType: 'image/jpeg',
+            compressionQuality: 100,
+          },
         },
       },
       safetySettings: SAFETY_SETTINGS,
