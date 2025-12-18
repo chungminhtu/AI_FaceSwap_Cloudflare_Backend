@@ -2716,7 +2716,8 @@ export default {
         }
 
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-        const skipSafetyCheckForVertex = true; // Always skip for Vertex AI mode
+        const disableVisionApi = env.DISABLE_VISION_API === 'true';
+        const skipSafetyCheckForVertex = disableVisionApi; // Skip if Vision API is disabled
         let safetyDebug: SafetyCheckDebug | null = null;
 
         // Early return if safety checks are disabled - skip Vision API call entirely
@@ -2724,7 +2725,7 @@ export default {
           safetyDebug = {
             checked: false,
             isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+            error: skipSafetyCheckForVertex ? 'Safety check skipped (Vision API disabled)' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
           };
         } else if (!disableSafeSearch && !skipSafetyCheckForVertex) {
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
@@ -2781,7 +2782,7 @@ export default {
           safetyDebug = {
             checked: false,
             isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+            error: skipSafetyCheckForVertex ? 'Safety check skipped (Vision API disabled)' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
           };
         }
 
@@ -3101,7 +3102,8 @@ export default {
         }
 
         const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-        const skipSafetyCheckForVertex = true;
+        const disableVisionApi = env.DISABLE_VISION_API === 'true';
+        const skipSafetyCheckForVertex = disableVisionApi; // Skip if Vision API is disabled
         let safetyDebug: SafetyCheckDebug | null = null;
 
         // Early return if safety checks are disabled - skip Vision API call entirely
@@ -3109,7 +3111,7 @@ export default {
           safetyDebug = {
             checked: false,
             isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped for Vertex AI mode' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+            error: skipSafetyCheckForVertex ? 'Safety check skipped (Vision API disabled)' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
           };
         } else if (!disableSafeSearch && !skipSafetyCheckForVertex) {
           const safeSearchResult = await checkSafeSearch(mergeResult.ResultImageUrl, env);

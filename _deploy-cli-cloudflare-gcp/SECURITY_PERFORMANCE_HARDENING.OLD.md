@@ -14,16 +14,15 @@ This document describes all security fixes and performance optimizations impleme
    - [SQL Injection Hardening](#5-sql-injection-hardening)
    - [Token Cache Bounds](#6-token-cache-bounds)
    - [Debug Info Sanitization](#7-debug-info-sanitization)
-   - [D1 JSON Object Handling](#8-d1-json-object-handling)
-   - [Error Message Sanitization](#9-error-message-sanitization)
+   - [Error Message Sanitization](#8-error-message-sanitization)
 2. [Performance Optimizations](#performance-optimizations)
-   - [Parallel Image Fetches](#8-parallel-image-fetches)
-   - [Stream Large Images](#9-stream-large-images)
-   - [Enforce Pagination Limits](#10-enforce-pagination-limits)
-   - [Cache Preset Prompts](#11-cache-preset-prompts)
-   - [Request Timeouts](#12-request-timeouts)
-   - [Diagnostic Endpoint](#13-diagnostic-endpoint)
-   - [CPU Time & Cost Optimizations](#14-cpu-time--cost-optimizations)
+   - [Parallel Image Fetches](#1-parallel-image-fetches)
+   - [Stream Large Images](#2-stream-large-images)
+   - [Enforce Pagination Limits](#3-enforce-pagination-limits)
+   - [Cache Preset Prompts](#4-cache-preset-prompts)
+   - [Request Timeouts](#5-request-timeouts)
+   - [Diagnostic Endpoint](#6-diagnostic-endpoint)
+   - [CPU Time & Cost Optimizations](#7-cpu-time--cost-optimizations)
 3. [Configuration](#configuration)
 4. [Centralized Config System](#centralized-config-system)
 5. [Migration Guide](#migration-guide)
@@ -292,35 +291,48 @@ await DB.prepare(`DELETE FROM results WHERE id IN (${placeholders})`).bind(...id
 
 **Problem:** In-memory token cache could grow unbounded.
 
-**Solution:** LRU cache with maximum 50 entries and automatic cleanup.
+**Solution:** KV-based token cache with automatic expiration (reuses PROMPT_CACHE_KV namespace).
 
 **Implementation:**
-- Replaced `Map` with `LRUCache` class
-- Maximum size: 50 entries
-- Automatic expiration cleanup
-- Last-accessed tracking for LRU eviction
+- Uses Workers KV for token caching (reuses `PROMPT_CACHE_KV` namespace)
+- Key format: `oauth_token:${serviceAccountEmail}`
+- TTL: 3300 seconds (55 minutes, tokens valid for 1 hour)
+- Automatic expiration via KV TTL
+- Graceful degradation if KV not available
 
 **Files Changed:**
-- `backend-cloudflare-workers/utils.ts` - `LRUCache` class and `getAccessToken()` function
+- `backend-cloudflare-workers/utils.ts` - `getTokenCacheKV()`, `getTokenCacheKey()`, and `getAccessToken()` function
 
 **Cache Details:**
-- **Max size:** 50 entries
-- **TTL:** 55 minutes (tokens valid for 1 hour)
-- **Eviction:** LRU (Least Recently Used)
-- **Cleanup:** Automatic on cache miss
+- **Storage:** Workers KV (shared with prompt cache)
+- **Key format:** `oauth_token:${serviceAccountEmail}`
+- **TTL:** 3300 seconds (55 minutes)
+- **Expiration:** Automatic via KV TTL (expires before token expires)
+- **Fallback:** If KV not available, generates new token each time (no caching)
 
 **Code Example:**
 ```typescript
-// Before (unbounded Map)
-const tokenCache = new Map<string, TokenCacheEntry>();
-
-// After (bounded LRU)
-const tokenCache = new LRUCache<string, TokenCacheEntry>(50);
+// Token caching uses KV (not in-memory)
+const cacheKey = `oauth_token:${serviceAccountEmail}`;
+const tokenCacheKV = getTokenCacheKV(env);
+if (tokenCacheKV) {
+  const cached = await tokenCacheKV.get(cacheKey, 'json');
+  if (cached && cached.expiresAt > now) {
+    return cached.token;
+  }
+}
+// Cache miss - generate new token and store in KV
+await tokenCacheKV.put(cacheKey, JSON.stringify({
+  token: accessToken,
+  expiresAt: cacheExpiresAt
+}), { expirationTtl: 3300 });
 ```
 
 **Affected:** All Vertex AI calls (faceswap, removeBackground, enhance, beauty, filter, restore, aging, prompt generation)
 
-**Memory Impact:** Reduced from potentially unlimited to maximum 50 entries (~5KB memory).
+**Memory Impact:** No in-memory storage - uses Workers KV (persistent, distributed cache).
+
+**Note:** Token cache shares the same KV namespace as prompt cache (`PROMPT_CACHE_KV`). If KV is not configured, tokens are generated on every request (no caching).
 
 ---
 
@@ -376,9 +388,63 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 
 ---
 
+### 8. Error Message Sanitization
+
+**Problem:** Error messages could leak sensitive information or internal implementation details.
+
+**Solution:** Generic error messages for 400/500 status codes, with detailed information only in debug mode.
+
+**Implementation:**
+- `jsonResponse()` and `errorResponse()` functions sanitize error messages
+- 400 errors: Always return "Bad Request" (detailed info only in debug)
+- 500 errors: Always return "Internal Server Error" (detailed info only in debug)
+- Other status codes: Return original message (e.g., 401, 403, 404, 429)
+
+**Files Changed:**
+- `backend-cloudflare-workers/utils.ts` - `jsonResponse()` and `errorResponse()` functions
+
+**Code Example:**
+```typescript
+// Before (could leak internal details)
+{
+  "status": "error",
+  "message": "Database connection failed: postgresql://user:pass@host/db",
+  "code": 500
+}
+
+// After (sanitized)
+{
+  "status": "error",
+  "message": "Internal Server Error",
+  "code": 500,
+  "debug": {
+    "error": "Database connection failed: postgresql://user:pass@host/db"
+  }
+}
+```
+
+**Sanitization Rules:**
+- **400 Bad Request:** Always "Bad Request" (details in debug if enabled)
+- **500 Internal Server Error:** Always "Internal Server Error" (details in debug if enabled)
+- **Other codes:** Original message preserved (401 Unauthorized, 403 Forbidden, 404 Not Found, 429 Too Many Requests, etc.)
+
+**Affected Endpoints:** All endpoints that return errors
+
+**Testing:**
+```bash
+# Test 400 error (should show generic message)
+curl -X POST https://api.d.shotpix.app/faceswap \
+  -d '{"invalid": "data"}'
+
+# Test 500 error (should show generic message)
+# (Trigger internal error - details only in debug mode)
+```
+
+---
+
 ## Performance Optimizations
 
-### 8. Parallel Image Fetches
+### 1. Parallel Image Fetches
 
 **Problem:** Sequential image fetching for multiple selfies was slow.
 
@@ -414,7 +480,7 @@ const selfieImageDataArray = await Promise.all(
 
 ---
 
-### 9. Stream Large Images
+### 2. Stream Large Images
 
 **Problem:** Loading full images into memory before uploading to R2 was memory-intensive.
 
@@ -458,7 +524,7 @@ await R2_BUCKET.put(resultKey, imageResponse.body, {...});
 
 ---
 
-### 10. Enforce Pagination Limits
+### 3. Enforce Pagination Limits
 
 **Problem:** No maximum limit validation on pagination could cause performance issues.
 
@@ -507,7 +573,7 @@ curl "https://api.d.shotpix.app/presets?limit=25"
 
 ---
 
-### 11. Cache Preset Prompts
+### 4. Cache Preset Prompts
 
 **Problem:** Reading prompt_json from R2 metadata on every faceswap request was slow.
 
@@ -570,7 +636,7 @@ if (!storedPromptPayload) {
 
 ---
 
-### 12. Request Timeouts
+### 5. Request Timeouts
 
 **Problem:** External API calls could hang indefinitely.
 
@@ -618,7 +684,7 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 
 ---
 
-### 13. Diagnostic Endpoint
+### 6. Diagnostic Endpoint
 
 **Problem:** No easy way to check configuration status and KV cache availability.
 
@@ -666,7 +732,7 @@ curl https://api.d.shotpix.app/config | jq '.data.kvCache'
 
 ---
 
-### 14. CPU Time & Cost Optimizations
+### 7. CPU Time & Cost Optimizations
 
 **Problem:** High CPU time (138ms) for POST /faceswap endpoint due to duplicate operations, inefficient loops, and blocking I/O operations.
 
@@ -686,7 +752,7 @@ curl https://api.d.shotpix.app/config | jq '.data.kvCache'
 - `backend-cloudflare-workers/index.ts` - `/faceswap` handler optimizations
 - `backend-cloudflare-workers/services.ts` - Base64 conversion, loop optimization, helper functions
 
-#### 14.1 Request-Scoped Caching for Expensive I/O Operations
+#### 7.1 Request-Scoped Caching for Expensive I/O Operations
 
 **Location:** Start of `/faceswap` handler (line 2179)
 
@@ -725,7 +791,7 @@ const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
 - Eliminates duplicate R2 HEAD operations (saves $0.00000036 per duplicate)
 - Reduces CPU time by avoiding redundant network I/O
 
-#### 14.2 Eliminate Duplicate Database Query
+#### 7.2 Eliminate Duplicate Database Query
 
 **Location:** Line 2317
 
@@ -748,7 +814,7 @@ promptResult = presetResult;
 - Eliminates one database query per request
 - Reduces CPU time by ~5-10ms
 
-#### 14.3 Optimize Base64 Conversions
+#### 7.3 Optimize Base64 Conversions
 
 **Location:** `backend-cloudflare-workers/services.ts` (lines 10-13, 394, 693, 1350)
 
@@ -783,7 +849,7 @@ const bytes = base64ToUint8Array(base64Image);
 - Reduces CPU time by ~2-5ms per conversion
 - Applied to 3+ functions (callNanoBanana, callNanoBananaMerge, callUpscaler4k)
 
-#### 14.4 Optimize fetchImageAsBase64 Loop
+#### 7.4 Optimize fetchImageAsBase64 Loop
 
 **Location:** `backend-cloudflare-workers/services.ts` (line 1102)
 
@@ -808,7 +874,7 @@ for (let i = 0; i < uint8Array.length; i++) {
 **Performance Impact:**
 - Reduces CPU time by ~1-3ms for large images
 
-#### 14.5 Non-Blocking Cache Writes
+#### 7.5 Non-Blocking Cache Writes
 
 **Location:** `backend-cloudflare-workers/index.ts` (line 2345)
 
@@ -836,7 +902,7 @@ promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CAC
 - Reduces CPU time by ~5-10ms per cache write
 - Same number of KV writes (no cost increase)
 
-#### 14.6 Optimize Mime Type Extraction
+#### 7.6 Optimize Mime Type Extraction
 
 **Location:** `backend-cloudflare-workers/services.ts` (lines 15-18, 396, 695)
 
@@ -867,7 +933,7 @@ const ext = getMimeExt(mimeType);
 - Reduces CPU time by ~0.5-1ms per call
 - Applied to 3+ functions
 
-#### 14.7 Cache isDebugEnabled() Per Request
+#### 7.7 Cache isDebugEnabled() Per Request
 
 **Location:** `backend-cloudflare-workers/index.ts` (line 2178)
 
@@ -891,7 +957,7 @@ const debugEnabled = isDebugEnabled(env);
 - Reduces CPU time by ~1-2ms per request
 - Eliminates 5+ redundant function calls
 
-#### 14.8 Skip Unnecessary Image Download
+#### 7.8 Skip Unnecessary Image Download
 
 **Location:** `backend-cloudflare-workers/index.ts` (line 2602)
 
@@ -922,7 +988,7 @@ if (resultUrl?.startsWith('r2://')) {
 - Eliminates external fetch operation (saves ~50-200ms)
 - Reduces CPU time and external API costs
 
-#### 14.9 Reuse requestUrl Variable
+#### 7.9 Reuse requestUrl Variable
 
 **Location:** `backend-cloudflare-workers/index.ts` (line 2495, 2604)
 
@@ -1249,8 +1315,9 @@ time curl https://api.d.shotpix.app/faceswap -d '{"profile_id":"test","preset_im
 ✅ Rate limiting (prevents abuse)
 ✅ Request size limits (prevents DoS)
 ✅ SQL injection bounds (limits array sizes)
-✅ Token cache bounds (prevents memory leaks)
+✅ Token cache bounds (uses KV with TTL, prevents unbounded growth)
 ✅ Debug sanitization (prevents data leaks)
+✅ Error message sanitization (prevents information disclosure)
 
 ### Performance Improvements
 ✅ Parallel image fetches (3x faster for multiple selfies)
@@ -1272,8 +1339,10 @@ time curl https://api.d.shotpix.app/faceswap -d '{"profile_id":"test","preset_im
 
 ### Configuration Required
 - `ALLOWED_ORIGINS` - CORS whitelist (required for production, set in deployments-secrets.json)
-- `PROMPT_CACHE_KV` - KV namespace for prompt caching (optional but recommended, auto-created from deployments-secrets.json)
+- `PROMPT_CACHE_KV_BINDING_NAME` - KV namespace binding name for prompt and token caching (optional but recommended, auto-created from deployments-secrets.json)
 - All environment variables configured in `deployments-secrets.json` and auto-deployed
+
+**Note:** Token cache and prompt cache share the same KV namespace (`PROMPT_CACHE_KV`). If KV is not configured, tokens are generated on every request (no caching).
 
 ### Backward Compatibility
 - All changes are backward compatible
@@ -1302,4 +1371,7 @@ For issues or questions:
 - Added error logging for KV cache operations
 - Simplified TypeScript Env interface (uses index signature)
 - All configuration now via `deployments-secrets.json` (automatic deployment)
+- Token cache uses KV (Workers KV) instead of in-memory LRU cache
+- Error message sanitization implemented for 400/500 errors
+- Documentation updated to reflect current implementation (December 2024)
 

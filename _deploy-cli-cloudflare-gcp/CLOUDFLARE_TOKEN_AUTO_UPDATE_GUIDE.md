@@ -18,7 +18,7 @@ Automatically update an existing Cloudflare API token with all "Edit" and "Write
 1. **Token ID Resolution**: Get the token's internal ID from Cloudflare
 2. **Permission Group Discovery**: Fetch all available "Edit" and "Write" permission groups
 3. **Token Update**: Update the token via Cloudflare API with all discovered permissions
-4. **Fallback Mechanism**: Use tokens from other environments if current token can't read permission groups
+4. **Fallback Mechanism**: Automatically use tokens from other environments in `deployments-secrets.json` if current token can't read permission groups (permission groups are global across all Cloudflare accounts)
 
 ### Architecture Flow
 
@@ -91,11 +91,12 @@ flowchart TD
     Q -->|Success| R[Filter Edit/Write Groups]
     Q -->|Error| S[Try Fallback Tokens]
     
-    S --> T{Has Fallback Tokens?}
-    T -->|Yes| U[Try Each Fallback Token]
-    T -->|No| V[Error: Cannot Get Permission Groups]
-    U -->|Success| R
-    U -->|All Failed| V
+    S --> T[Read deployments-secrets.json]
+    T --> U{Other Environments Available?}
+    U -->|Yes| V[Try Each Environment Token]
+    U -->|No| W[Error: Cannot Get Permission Groups]
+    V -->|Success| R
+    V -->|All Failed| W
     
     R --> W[Build Token Update Payload]
     W --> X["PUT /user/tokens/[tokenId]"]
@@ -145,9 +146,9 @@ sequenceDiagram
     GEPG-->>UT: editGroups[]
     
     alt Permission Groups Fetch Failed
-        UT->>FT: Try fallback tokens
-        loop For each fallback token
-            FT->>GEPG: getAllEditPermissionGroups(fallbackToken, accountId)
+        UT->>UT: Read deployments-secrets.json
+        loop For each environment in config
+            UT->>GEPG: getAllEditPermissionGroups(envToken, accountId)
             GEPG->>CF: GET /accounts/{accountId}/tokens/permission_groups
             CF-->>GEPG: { success: true, result: [groups...] }
             GEPG-->>UT: editGroups[]
@@ -224,16 +225,16 @@ flowchart TD
     C -->|Success| D[Filter Edit/Write Groups]
     C -->|Error| E[Permission Groups Fetch Failed]
     
-    E --> F{Has Fallback Tokens?}
-    F -->|No| G[Error: Cannot Get Permission Groups]
-    F -->|Yes| H[Load Fallback Tokens from Config]
+    E --> F[Read deployments-secrets.json]
+    F --> G{Other Environments Available?}
+    G -->|No| H[Error: Cannot Get Permission Groups]
+    G -->|Yes| I[Loop Through Other Environment Tokens]
     
-    H --> I[Loop Through Fallback Tokens]
-    I --> J[Try getAllEditPermissionGroups with Fallback Token]
+    I --> J[Try getAllEditPermissionGroups with Environment Token]
     J -->|Success| D
-    J -->|Error| K{More Fallback Tokens?}
+    J -->|Error| K{More Environments?}
     K -->|Yes| I
-    K -->|No| G
+    K -->|No| H
     
     D --> L{Edit Groups Found?}
     L -->|No| M[Error: No Edit Groups Found]
@@ -340,6 +341,15 @@ graph TB
 - Cloudflare API token (can be minimal initially)
 - Account ID where token will be used
 
+### Implementation Versions
+
+There are two implementations:
+
+1. **`deploy.js` (Integrated)**: Automatically reads fallback tokens from `deployments-secrets.json`. This is the version used during deployment.
+2. **`cloudflare-token-updater.js` (Standalone)**: Accepts fallback tokens as a parameter. Can be used independently.
+
+Both implementations use the same Cloudflare API endpoints and logic, but differ in how fallback tokens are handled.
+
 ### Step 1: Core Functions
 
 #### 1.1 Get Token ID
@@ -425,11 +435,15 @@ async function getAllEditPermissionGroups(token, accountId) {
 
 #### 1.3 Update Token with All Edit Permissions
 
+**Note:** The actual implementation in `deploy.js` automatically reads fallback tokens from `deployments-secrets.json`. The standalone version in `cloudflare-token-updater.js` accepts fallback tokens as a parameter.
+
+**Implementation in deploy.js (automatic fallback):**
+
 ```javascript
 const fs = require('fs');
 const path = require('path');
 
-async function updateTokenWithAllEditPermissions(currentToken, accountId, fallbackTokens = []) {
+async function updateTokenWithAllEditPermissions(currentToken, accountId) {
   const tokenId = await getTokenId(currentToken);
   
   let editGroups;
@@ -439,16 +453,26 @@ async function updateTokenWithAllEditPermissions(currentToken, accountId, fallba
     editGroups = await getAllEditPermissionGroups(currentToken, accountId);
   } catch (error) {
     permissionGroupsError = error;
-    
-    if (fallbackTokens.length > 0) {
-      for (const fallbackToken of fallbackTokens) {
-        try {
-          const fallbackAccountId = fallbackToken.accountId || accountId;
-          editGroups = await getAllEditPermissionGroups(fallbackToken.token, fallbackAccountId);
-          console.log(`✓ Using permission groups from fallback token (account: ${fallbackAccountId})`);
-          break;
-        } catch (e) {
-          continue;
+    // If current token can't access permission groups, try to use a working token from another environment
+    // Note: Permission groups are GLOBAL (same across all Cloudflare accounts), so we can use any token
+    // from any account/environment to get the list. However, the token UPDATE must be done with a token
+    // that has permission to update tokens in the target account.
+    const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+    if (fs.existsSync(secretsPath)) {
+      const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+      // Try to find a working token from any environment (permission groups are global, same across accounts)
+      for (const envName in secrets.environments || {}) {
+        const envConfig = secrets.environments[envName];
+        if (envConfig?.cloudflare?.apiToken && envConfig.cloudflare.apiToken !== currentToken) {
+          try {
+            // Use any account ID to get permission groups (they're the same globally)
+            const fallbackAccountId = envConfig.cloudflare.accountId || accountId;
+            editGroups = await getAllEditPermissionGroups(envConfig.cloudflare.apiToken, fallbackAccountId);
+            console.log(`✓ Using permission groups from ${envName} environment (account: ${fallbackAccountId})`);
+            break;
+          } catch (e) {
+            // Continue to next environment
+          }
         }
       }
     }
@@ -456,8 +480,8 @@ async function updateTokenWithAllEditPermissions(currentToken, accountId, fallba
     if (!editGroups || editGroups.length === 0) {
       throw new Error(
         `Cannot get permission groups. Current token error: ${permissionGroupsError.message}. ` +
-        `Please ensure your token has access to read permission groups, or provide a working ` +
-        `fallback token with permission to read permission groups.`
+        `Please ensure your token has access to read permission groups, or provide a working token ` +
+        `with permission to read permission groups in another environment in deployments-secrets.json.`
       );
     }
   }
@@ -495,7 +519,7 @@ async function updateTokenWithAllEditPermissions(currentToken, accountId, fallba
         try {
           const json = JSON.parse(data);
           if (!json.success) {
-            reject(new Error(`Failed to update token: ${JSON.stringify(json.errors)}`));
+            reject(new Error(`Failed to update token: ${JSON.stringify(json.errors || json)}`));
             return;
           }
           resolve(json.result);
@@ -552,21 +576,43 @@ module.exports = { updateTokenWithAllEditPermissions, getTokenId, getAllEditPerm
 
 #### 2.2 Integration into Deployment Script
 
+**Note:** The actual implementation in `deploy.js` automatically handles fallback tokens by reading from `deployments-secrets.json`. No fallback tokens parameter is needed.
+
 ```javascript
-async function setupCloudflare(token, accountId, fallbackTokens = []) {
+async function setupCloudflare(env = null, preferredAccountId = null) {
   console.log('Setting up Cloudflare credentials...');
   
+  // Read config from deployments-secrets.json
+  const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+  const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+  const targetEnv = env || process.env.DEPLOY_ENV || 'production';
+  const envConfig = secrets.environments?.[targetEnv];
+  
+  if (!envConfig?.cloudflare) {
+    throw new Error(`No Cloudflare config found for environment: ${targetEnv}`);
+  }
+  
+  const token = envConfig.cloudflare.apiToken;
+  const accountId = envConfig.cloudflare.accountId || preferredAccountId;
+  
   if (!token) {
-    throw new Error('API token is required');
+    throw new Error(`No API token found for environment: ${targetEnv}`);
   }
   
   if (!accountId) {
-    throw new Error('Account ID is required');
+    throw new Error(`No account ID found for environment: ${targetEnv}`);
+  }
+  
+  // Validate token first
+  const isValid = await validateCloudflareToken(token);
+  if (!isValid) {
+    throw new Error(`API token validation failed for environment: ${targetEnv}`);
   }
   
   console.log('Updating API token with all edit permissions...');
   try {
-    await updateTokenWithAllEditPermissions(token, accountId, fallbackTokens);
+    // Fallback mechanism is built-in: automatically tries other environment tokens
+    await updateTokenWithAllEditPermissions(token, accountId);
     console.log('✅ Token updated with all edit permissions');
     
     process.env.CLOUDFLARE_API_TOKEN = token;
@@ -613,7 +659,13 @@ async function deploy() {
 }
 ```
 
-#### 3.3 With Fallback Tokens
+#### 3.3 Fallback Mechanism (Automatic in deploy.js)
+
+**In the deployment script (`deploy.js`), fallback tokens are automatically read from `deployments-secrets.json`:**
+
+The script will automatically try tokens from other environments if the current token cannot read permission groups. No manual configuration needed - just ensure you have multiple environments configured in `deployments-secrets.json`.
+
+**For standalone usage (`cloudflare-token-updater.js`), you can pass fallback tokens:**
 
 ```javascript
 const fallbackTokens = [
@@ -624,20 +676,28 @@ const fallbackTokens = [
 await updateTokenWithAllEditPermissions(currentToken, accountId, fallbackTokens);
 ```
 
+**Note:** Permission groups are global across all Cloudflare accounts, so any working token from any account can be used to fetch the permission groups list. However, the token update itself must be performed with a token that has permission to update tokens in the target account.
+
 ## API Endpoints Reference
 
 ### 1. Get Token ID
 - **Endpoint**: `GET /client/v4/user/tokens/verify`
-- **Headers**: `Authorization: Bearer {token}`
-- **Response**: `{ success: true, result: { id: "token-id", ... } }`
+- **URL**: `https://api.cloudflare.com/client/v4/user/tokens/verify`
+- **Headers**: `Authorization: Bearer {token}`, `Content-Type: application/json`
+- **Response**: `{ success: true, result: { id: "token-id", status: "active", ... } }`
+- **Documentation**: [Cloudflare API: Verify Token](https://developers.cloudflare.com/api/resources/user/subresources/tokens/methods/verify/)
 
 ### 2. Get Permission Groups
 - **Endpoint**: `GET /client/v4/accounts/{accountId}/tokens/permission_groups`
-- **Headers**: `Authorization: Bearer {token}`
-- **Response**: `{ success: true, result: [{ id: "...", name: "...", ... }, ...] }`
+- **URL**: `https://api.cloudflare.com/client/v4/accounts/{accountId}/tokens/permission_groups`
+- **Headers**: `Authorization: Bearer {token}`, `Content-Type: application/json`
+- **Response**: `{ success: true, result: [{ id: "...", name: "...", scopes: [...] }, ...] }`
+- **Note**: Permission groups are global across all Cloudflare accounts, so any account ID can be used to fetch them
+- **Documentation**: [Cloudflare API: List Permission Groups](https://developers.cloudflare.com/api/operations/permission-groups-get-permission-groups)
 
 ### 3. Update Token
 - **Endpoint**: `PUT /client/v4/user/tokens/{tokenId}`
+- **URL**: `https://api.cloudflare.com/client/v4/user/tokens/{tokenId}`
 - **Headers**: `Authorization: Bearer {token}`, `Content-Type: application/json`
 - **Body**:
 ```json
@@ -654,6 +714,8 @@ await updateTokenWithAllEditPermissions(currentToken, accountId, fallbackTokens)
   }]
 }
 ```
+- **Note**: The token used in the Authorization header must have "User API Tokens:Edit" permission to update itself
+- **Documentation**: [Cloudflare API: Update User Token](https://developers.cloudflare.com/api/resources/user/subresources/tokens/methods/update/)
 
 ## Error Handling
 
@@ -665,7 +727,7 @@ await updateTokenWithAllEditPermissions(currentToken, accountId, fallbackTokens)
 
 2. **"Failed to get permission groups"**
    - **Cause**: Token lacks permission to read permission groups
-   - **Solution**: Use fallback token mechanism or ensure token has basic read permissions
+   - **Solution**: The script automatically tries tokens from other environments in `deployments-secrets.json`. If all fail, ensure at least one token in your config has permission to read permission groups, or manually grant the current token permission to read permission groups
 
 3. **"Failed to update token: effect must be present"**
    - **Cause**: Missing `effect: "allow"` in policy
@@ -687,7 +749,7 @@ await updateTokenWithAllEditPermissions(currentToken, accountId, fallbackTokens)
 
 3. **Account Scoping**: Permissions are scoped to the specific account ID. Ensure you're using the correct account.
 
-4. **Fallback Tokens**: Fallback tokens should be from trusted sources and have appropriate permissions.
+4. **Fallback Tokens**: The deployment script automatically uses tokens from other environments in `deployments-secrets.json` as fallback. Ensure all tokens in your config are from trusted sources. Permission groups are global, so any working token can fetch them, but token updates require a token with "User API Tokens:Edit" permission for the target account.
 
 ## Testing
 
@@ -912,10 +974,10 @@ This solution automatically updates Cloudflare API tokens with all necessary edi
 
 1. **Fetches all edit/write permission groups** from Cloudflare API
 2. **Updates the token** with all discovered permissions
-3. **Supports fallback tokens** if current token can't read permission groups
+3. **Automatically uses fallback tokens** from other environments in `deployments-secrets.json` if current token can't read permission groups (permission groups are global across all Cloudflare accounts)
 4. **Requires minimal initial permissions** (just "User API Tokens:Edit" to update itself)
 
-The token in your configuration file doesn't need full permissions initially - the code updates it automatically during deployment.
+The token in your configuration file doesn't need full permissions initially - the code updates it automatically during deployment. The fallback mechanism is built into `deploy.js` and automatically tries tokens from other configured environments.
 
 
 ---
