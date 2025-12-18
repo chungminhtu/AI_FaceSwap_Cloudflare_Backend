@@ -881,11 +881,11 @@ function parseConfig(config) {
   if (config.SELFIE_MAX_WEDDING) secrets.SELFIE_MAX_WEDDING = config.SELFIE_MAX_WEDDING;
   if (config.SELFIE_MAX_4K) secrets.SELFIE_MAX_4K = config.SELFIE_MAX_4K;
   if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
-  if (config.DISABLE_SAFE_SEARCH) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
+  if (config.DISABLE_SAFE_SEARCH !== undefined) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
   if (config.SAFETY_STRICTNESS) secrets.SAFETY_STRICTNESS = config.SAFETY_STRICTNESS;
-  if (config.DISABLE_VERTEX_IMAGE_GEN) secrets.DISABLE_VERTEX_IMAGE_GEN = config.DISABLE_VERTEX_IMAGE_GEN;
-  if (config.DISABLE_VISION_API) secrets.DISABLE_VISION_API = config.DISABLE_VISION_API;
-  if (config.DISABLE_4K_UPSCALER) secrets.DISABLE_4K_UPSCALER = config.DISABLE_4K_UPSCALER;
+  if (config.DISABLE_VERTEX_IMAGE_GEN !== undefined) secrets.DISABLE_VERTEX_IMAGE_GEN = config.DISABLE_VERTEX_IMAGE_GEN;
+  if (config.DISABLE_VISION_API !== undefined) secrets.DISABLE_VISION_API = config.DISABLE_VISION_API;
+  if (config.DISABLE_4K_UPSCALER !== undefined) secrets.DISABLE_4K_UPSCALER = config.DISABLE_4K_UPSCALER;
   if (config.MOBILE_API_KEY) secrets.MOBILE_API_KEY = config.MOBILE_API_KEY;
   if (config.ENABLE_MOBILE_API_KEY_AUTH) secrets.ENABLE_MOBILE_API_KEY_AUTH = config.ENABLE_MOBILE_API_KEY_AUTH;
   if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
@@ -3001,19 +3001,35 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       }
 
       let pagesUrl = '';
+      let tempFrontendDir = null;
+      let shouldCleanupTemp = false;
       if (DEPLOY_PAGES) {
         report('Deploying frontend', 'running', 'Deploying Cloudflare Pages');
+        
+        // Create temp folder copy if not already created (to avoid editing source file directly)
+        if (!config._tempFrontendDir) {
+          const envName = config._environment || 'default';
+          tempFrontendDir = createTempFrontendCopy(cwd, envName);
+          config._tempFrontendDir = tempFrontendDir;
+          shouldCleanupTemp = true;
+        } else {
+          tempFrontendDir = config._tempFrontendDir;
+        }
+        
         // Update HTML with correct backend URL before deploying Pages
         const backendUrl = config.BACKEND_DOMAIN 
           ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
           : (workerUrl || config._workerDevUrl || `https://${config.workerName}.workers.dev`);
-        const htmlPath = config._tempFrontendDir 
-          ? path.join(config._tempFrontendDir, 'index.html')
-          : null;
-        const sourceDir = config._tempFrontendDir || null;
+        const htmlPath = path.join(tempFrontendDir, 'index.html');
+        const sourceDir = tempFrontendDir;
         updateWorkerUrlInHtml(cwd, backendUrl, config, htmlPath);
         pagesUrl = await utils.deployPages(cwd, config.pagesProjectName, sourceDir, config.pagesProjectName);
         report('Deploying frontend', 'completed', 'Frontend deployed');
+        
+        // Cleanup temp folder only if we created it (caller handles cleanup if it created the temp folder)
+        if (shouldCleanupTemp && tempFrontendDir) {
+          cleanupTempFrontendCopy(tempFrontendDir);
+        }
       }
 
       if (useLogger && logger) {
@@ -3376,19 +3392,28 @@ async function main() {
       }
 
       let pagesUrl = '';
+      let tempFrontendDir = null;
       if (config.deployPages) {
         logger.startStep('Deploying frontend');
+        // Create temp folder copy to avoid editing source file directly
+        const envName = config._environment || 'default';
+        tempFrontendDir = createTempFrontendCopy(process.cwd(), envName);
+        config._tempFrontendDir = tempFrontendDir;
+        
         // Update HTML with correct backend URL before deploying Pages
         const backendUrl = config.BACKEND_DOMAIN 
           ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
           : (workerUrl || config._workerDevUrl || `https://${config.workerName}.workers.dev`);
-        const htmlPath = config._tempFrontendDir 
-          ? path.join(config._tempFrontendDir, 'index.html')
-          : null;
-        const sourceDir = config._tempFrontendDir || null;
+        const htmlPath = path.join(tempFrontendDir, 'index.html');
+        const sourceDir = tempFrontendDir;
         updateWorkerUrlInHtml(process.cwd(), backendUrl, config, htmlPath);
         pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName, sourceDir, config.pagesProjectName);
         logger.completeStep('Deploying frontend', 'Frontend deployed');
+        
+        // Cleanup temp folder
+        if (tempFrontendDir) {
+          cleanupTempFrontendCopy(tempFrontendDir);
+        }
       } else {
         logger.skipStep('Deploying frontend', 'Skipped (deployPages disabled)');
       }

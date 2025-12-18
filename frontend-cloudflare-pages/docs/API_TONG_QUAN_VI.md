@@ -209,23 +209,10 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 }
 ```
 
-**Vision API Error Codes (1001-1005):**
-- **1001** - ADULT: Ảnh người lớn, nude, gợi dục, porn, ...
-- **1002** - VIOLENCE: Ảnh bạo lực, chiến tranh, tử vong, ...
-- **1003** - RACY: Ảnh nhạy cảm sexy, gợi dục, khiêu gợi, ...
-- **1004** - MEDICAL: Ảnh máu me, phẫu thuật, y tế, nạn nhân, ...
-- **1005** - SPOOF: Lừa bịp, ảnh copy của người khác, ...
-
-**Vertex AI Safety Error Codes (2001-2004):**
-- **2001** - HATE_SPEECH: Negative or harmful comments targeting identity and/or protected attributes
-- **2002** - HARASSMENT: Threatening, intimidating, bullying, or abusive comments targeting another individual
-- **2003** - SEXUALLY_EXPLICIT: Contains references to sexual acts or other lewd content
-- **2004** - DANGEROUS_CONTENT: Promotes or enables access to harmful goods, services, and activities
-
 **Lưu ý:**
-- **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API.
-- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`.
-- Scan level mặc định: `strict` (chặn cả `LIKELY` và `VERY_LIKELY` violations)
+- **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API. Xem chi tiết error codes tại [Vision API Safety Error Codes](#vision-api-safety-error-codes-1001-1005).
+- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`. Xem chi tiết error codes tại [Vertex AI Safety Error Codes](#vertex-ai-safety-error-codes-2001-2004).
+- Scan level mặc định: `strict` (chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` violations)
 - Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về error code tương ứng
 - Error code được trả về trong trường `code` của response
 - **Giới hạn số lượng selfie:** Mỗi action có giới hạn riêng và tự động xóa ảnh cũ khi vượt quá giới hạn:
@@ -568,11 +555,12 @@ AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương ph�
 **Lưu ý về Aspect Ratio:**
 - Các endpoints không phải faceswap (`/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`, `/background`) hỗ trợ giá trị `"original"` cho `aspect_ratio`.
 - Khi `aspect_ratio` là `"original"` hoặc không được cung cấp, hệ thống sẽ tự động:
-  1. Lấy kích thước (width/height) từ ảnh selfie được upload
+  1. Lấy kích thước (width/height) từ ảnh input
   2. Tính toán tỷ lệ khung hình thực tế
   3. Chọn tỷ lệ gần nhất trong danh sách hỗ trợ của Vertex AI
   4. Sử dụng tỷ lệ đó để generate ảnh
-- Điều này đảm bảo ảnh kết quả giữ được tỷ lệ gần với ảnh selfie gốc thay vì mặc định về 1:1.
+- Điều này đảm bảo ảnh kết quả giữ được tỷ lệ gần với ảnh gốc thay vì mặc định về 1:1.
+- **Các giá trị hỗ trợ:** `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"`.
 
 ### Request
 
@@ -591,7 +579,7 @@ curl -X POST https://api.d.shotpix.app/enhance \
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần enhance.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -639,7 +627,7 @@ curl -X POST https://api.d.shotpix.app/beauty \
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần beautify.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -715,7 +703,7 @@ curl -X POST https://api.d.shotpix.app/filter \
 - `selfie_id` (string, optional): ID selfie đã lưu trong database. Bắt buộc nếu không có `selfie_image_url`.
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp. Bắt buộc nếu không có `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
 
@@ -776,7 +764,7 @@ curl -X POST https://api.d.shotpix.app/restore \
 **Các trường:**
 - `image_url` (string, required): URL ảnh cần khôi phục (ảnh cũ, bị hư hỏng, mờ, hoặc đen trắng).
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -833,7 +821,7 @@ curl -X POST https://api.d.shotpix.app/aging \
 - `image_url` (string, required): URL ảnh chứa khuôn mặt cần lão hóa.
 - `age_years` (number, optional): Số năm muốn lão hóa (mặc định: 20).
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"` (tự động tính từ ảnh selfie). Giá trị `"original"` sẽ tự động tính tỷ lệ từ ảnh selfie và chọn tỷ lệ gần nhất trong danh sách hỗ trợ.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 ### Response
@@ -1048,7 +1036,7 @@ curl https://api.d.shotpix.app/profiles/profile_1234567890 \
 
 ## APIs không cần test mobile performance
 
-### 10. PUT `/profiles/{id}`
+### 12. PUT `/profiles/{id}`
 
 ### Mục đích
 Cập nhật thông tin profile.
@@ -1097,7 +1085,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 }
 ```
 
-### 11. GET `/profiles`
+### 13. GET `/profiles`
 
 ### Mục đích
 Liệt kê tất cả profiles (dùng cho admin/debugging).
@@ -1454,37 +1442,6 @@ curl -X DELETE https://api.d.shotpix.app/results/result_1234567890_abc123
 ### 20. POST `/upload-thumbnails`
 
 ### Mục đích
-Lấy thông tin profile theo ID.
-
-### Request
-
-```bash
-curl https://api.d.shotpix.app/profiles/profile_1234567890
-```
-
-### Response
-
-```json
-{
-  "data": {
-    "id": "uYNgRR70Ry9OFuMV",
-    "device_id": "device_1765774126587_yaq0uh6rvz",
-    "name": "John Doe",
-    "email": "john@example.com",
-    "avatar_url": "https://example.com/avatar.jpg",
-    "preferences": "{\"theme\":\"dark\",\"language\":\"vi\"}",
-    "created_at": "2025-12-15T04:48:47.676Z",
-    "updated_at": "2025-12-15T04:48:47.676Z"
-  },
-  "status": "success",
-  "message": "Profile retrieved successfully",
-  "code": 200
-}
-```
-
-### 20. POST `/upload-thumbnails`
-
-### Mục đích
 Tải lên thư mục chứa thumbnails (WebP và Lottie JSON) và original presets. Hỗ trợ batch upload nhiều file cùng lúc.
 
 ### Request
@@ -1677,6 +1634,37 @@ Các error codes này được trả về khi Google Vision API SafeSearch phát
 | **1004** | MEDICAL | Ảnh máu me, phẫu thuật, y tế, nạn nhân, ... |
 | **1005** | SPOOF | Lừa bịp, ảnh copy của người khác, ... |
 
+### Severity Levels (Độ nghiêm trọng)
+
+Google Vision API SafeSearch trả về các mức độ nghiêm trọng cho mỗi category. App sử dụng các mức độ này để quyết định có chặn ảnh hay không:
+
+| Severity Level | Giá trị | Mô tả | Có bị chặn? |
+|----------------|---------|-------|-------------|
+| **VERY_UNLIKELY** | -1 | Không có nội dung nhạy cảm, chắc chắn | ❌ Không |
+| **UNLIKELY** | 0 | Không có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ Không |
+| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ✅ Có (chỉ trong strict mode) |
+| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (chỉ trong strict mode) |
+| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (cả strict và lenient mode) |
+
+### Strictness Modes (Chế độ kiểm tra)
+
+App hỗ trợ 2 chế độ kiểm tra, được cấu hình qua biến môi trường `SAFETY_STRICTNESS`:
+
+**Strict Mode (Mặc định):**
+- Chặn: `POSSIBLE`, `LIKELY`, và `VERY_LIKELY`
+- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`
+- Sử dụng khi: `SAFETY_STRICTNESS=strict` hoặc không set (default)
+
+**Lenient Mode:**
+- Chặn: `VERY_LIKELY` only
+- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`
+- Sử dụng khi: `SAFETY_STRICTNESS=lenient`
+
+**Lưu ý:**
+- `statusCode` (1001-1005) chỉ được trả về khi nội dung thực sự bị chặn
+- Trong strict mode, `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` đều bị chặn
+- Trong lenient mode, chỉ `VERY_LIKELY` bị chặn
+
 **Ví dụ Response:**
 ```json
 {
@@ -1698,12 +1686,32 @@ Các error codes này được trả về khi Vertex AI Gemini safety filters ch
 - POST `/restore` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
 
-| Error Code | Category | Mô tả |
-|------------|----------|-------|
-| **2001** | HATE_SPEECH | Negative or harmful comments targeting identity and/or protected attributes |
-| **2002** | HARASSMENT | Threatening, intimidating, bullying, or abusive comments targeting another individual |
-| **2003** | SEXUALLY_EXPLICIT | Contains references to sexual acts or other lewd content |
-| **2004** | DANGEROUS_CONTENT | Promotes or enables access to harmful goods, services, and activities |
+Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại sau:
+
+| Error Code | Category | Mô tả (English) | Định nghĩa (Vietnamese) |
+|------------|----------|-----------------|------------------------|
+| **2001** | HATE_SPEECH | Negative or harmful comments targeting identity and/or protected attributes | Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ |
+| **2002** | HARASSMENT | Threatening, intimidating, bullying, or abusive comments targeting another individual | Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác |
+| **2003** | SEXUALLY_EXPLICIT | Contains references to sexual acts or other lewd content | Có chứa nội dung liên quan đến hành vi tình dục hoặc nội dung khiêu dâm khác |
+| **2004** | DANGEROUS_CONTENT | Promotes or enables access to harmful goods, services, and activities | Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại |
+
+### So sánh điểm xác suất và điểm mức độ nghiêm trọng (Probability Scores and Severity Scores)
+
+Điểm an toàn xác suất phản ánh khả năng phản hồi của mô hình có liên quan đến tác hại tương ứng. Nó có một điểm tin cậy tương ứng nằm trong khoảng từ **0.0 đến 1.0**, được làm tròn đến một chữ số thập phân.
+
+Điểm tin cậy được chia thành bốn mức độ tin cậy:
+
+| Mức độ tin cậy | Mô tả |
+|----------------|-------|
+| **NEGLIGIBLE** | Rất thấp - Khả năng có nội dung gây hại là không đáng kể |
+| **LOW** | Thấp - Khả năng có nội dung gây hại là thấp |
+| **MEDIUM** | Trung bình - Khả năng có nội dung gây hại là trung bình |
+| **HIGH** | Cao - Khả năng có nội dung gây hại là cao |
+
+**Lưu ý:**
+- App chặn nội dung khi Vertex AI trả về `HIGH` hoặc `MEDIUM` probability
+- Nội dung với `LOW` hoặc `NEGLIGIBLE` probability thường được cho phép
+- Chi tiết về probability level có thể được tìm thấy trong `debug.provider` hoặc `debug.vertex` của response
 
 **Ví dụ Response (Input Blocked):**
 ```json

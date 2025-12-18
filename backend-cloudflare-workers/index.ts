@@ -727,6 +727,15 @@ export default {
           return errorResponse('', 400, debugEnabled ? { type, path } : undefined, request, env);
         }
 
+        // Log parsed parameters for debugging
+        console.log('[Upload-url] Parsed parameters:', {
+          type,
+          profileId,
+          action,
+          filesCount: files.length,
+          imageUrlsCount: imageUrls.length
+        });
+
         if (type === 'selfie' && !checkApiKey(env, request)) {
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
@@ -828,12 +837,29 @@ export default {
           if (type === 'selfie') {
             const actionValue = action || 'default';
             const needsVisionCheck = actionValue.toLowerCase() === '4k';
-            const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
             const disableVisionApi = env.DISABLE_VISION_API === 'true';
-            const shouldCheckVision = needsVisionCheck && !disableSafeSearch && !disableVisionApi;
             
-            if (shouldCheckVision) {
+            // Always log for debugging
+            console.log('[VisionCheck] Upload-url check:', {
+              type,
+              action,
+              actionValue,
+              needsVisionCheck,
+              DISABLE_VISION_API: env.DISABLE_VISION_API,
+              disableVisionApi,
+              shouldCheck: needsVisionCheck && !disableVisionApi,
+              publicUrl
+            });
+            
+            if (needsVisionCheck && !disableVisionApi) {
+              // Run Vision API safety scan
+              console.log('[VisionCheck] Running Vision API scan for:', publicUrl);
               const safeSearchResult = await checkSafeSearch(publicUrl, env);
+              console.log('[VisionCheck] Scan result:', {
+                isSafe: safeSearchResult.isSafe,
+                statusCode: safeSearchResult.statusCode,
+                error: safeSearchResult.error
+              });
               const debugEnabled = isDebugEnabled(env);
               if (debugEnabled) {
                 visionCheckResult = {
@@ -844,7 +870,29 @@ export default {
                   violationLevel: safeSearchResult.violationLevel,
                   details: safeSearchResult.details,
                   error: safeSearchResult.error,
+                  rawResponse: safeSearchResult.rawResponse,
                   debug: safeSearchResult.debug,
+                };
+              }
+              
+              // If vision scan failed with an error, block the upload
+              if (safeSearchResult.error) {
+                // Delete from R2 if vision scan failed
+                try {
+                  await R2_BUCKET.delete(key);
+                } catch (deleteError) {
+                }
+                return {
+                  success: false,
+                  error: 'Vision scan failed',
+                  filename: fileData.filename,
+                  visionError: true,
+                  ...(debugEnabled ? {
+                    visionDetails: {
+                      error: safeSearchResult.error,
+                      debug: safeSearchResult.debug,
+                    }
+                  } : {})
                 };
               }
               
@@ -876,15 +924,15 @@ export default {
                   } : {})
                 };
               }
-            } else if (needsVisionCheck) {
-              // Only set visionCheckResult if debug is enabled and we would have checked
+            } else if (needsVisionCheck && disableVisionApi) {
+              // Vision API disabled - return mock (always pass)
               const debugEnabled = isDebugEnabled(env);
               if (debugEnabled) {
                 visionCheckResult = {
                   checked: false,
                   isSafe: true,
                   skipped: true,
-                  reason: disableVisionApi ? 'Vision API disabled (DISABLE_VISION_API=true)' : 'Safe search disabled (DISABLE_SAFE_SEARCH=true)',
+                  reason: 'Vision API disabled (DISABLE_VISION_API=true)',
                 };
               }
             }
@@ -1113,8 +1161,15 @@ export default {
             vertex_info: r.vertex_info
           }));
 
-        const debugPayload = debugEnabled && vertexDebugData.length > 0 
-          ? compact({ vertex: vertexDebugData })
+        const visionDebugData = results
+          .filter(r => r.success && (r as any).visionCheck)
+          .map(r => buildVisionDebug((r as any).visionCheck));
+
+        const debugPayload = debugEnabled 
+          ? compact({
+              ...(vertexDebugData.length > 0 ? { vertex: vertexDebugData } : {}),
+              ...(visionDebugData.length > 0 ? { vision: visionDebugData.length === 1 ? visionDebugData[0] : visionDebugData } : {})
+            })
           : undefined;
 
         return jsonResponse({
@@ -2762,19 +2817,17 @@ export default {
           }, httpStatus);
         }
 
-        const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
         const disableVisionApi = env.DISABLE_VISION_API === 'true';
-        const skipSafetyCheckForVertex = disableVisionApi; // Skip if Vision API is disabled
         let safetyDebug: SafetyCheckDebug | null = null;
 
-        // Early return if safety checks are disabled - skip Vision API call entirely
-        if (disableSafeSearch || skipSafetyCheckForVertex) {
+        // Skip Vision API call if disabled
+        if (disableVisionApi) {
           safetyDebug = {
             checked: false,
             isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped (Vision API disabled)' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+            error: 'Safety check skipped (Vision API disabled)',
           };
-        } else if (!disableSafeSearch && !skipSafetyCheckForVertex) {
+        } else {
           const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
 
           safetyDebug = {
@@ -2825,12 +2878,6 @@ export default {
               ...(debugPayload ? { debug: debugPayload } : {}),
             }, 422);
           }
-        } else {
-          safetyDebug = {
-            checked: false,
-            isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped (Vision API disabled)' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
-          };
         }
 
         const storageDebug: {
@@ -3148,19 +3195,17 @@ export default {
           mergeResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
         const disableVisionApi = env.DISABLE_VISION_API === 'true';
-        const skipSafetyCheckForVertex = disableVisionApi; // Skip if Vision API is disabled
         let safetyDebug: SafetyCheckDebug | null = null;
 
-        // Early return if safety checks are disabled - skip Vision API call entirely
-        if (disableSafeSearch || skipSafetyCheckForVertex) {
+        // Skip Vision API call if disabled
+        if (disableVisionApi) {
           safetyDebug = {
             checked: false,
             isSafe: true,
-            error: skipSafetyCheckForVertex ? 'Safety check skipped (Vision API disabled)' : 'Safety check disabled via DISABLE_SAFE_SEARCH',
+            error: 'Safety check skipped (Vision API disabled)',
           };
-        } else if (!disableSafeSearch && !skipSafetyCheckForVertex) {
+        } else {
           const safeSearchResult = await checkSafeSearch(mergeResult.ResultImageUrl, env);
 
           safetyDebug = {

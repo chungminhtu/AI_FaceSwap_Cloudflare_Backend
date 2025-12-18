@@ -1206,7 +1206,6 @@ export const checkSafeSearch = async (
     if (env.DISABLE_VISION_API === 'true') {
       return {
         isSafe: true,
-        statusCode: 200,
         debug: { disabled: true, mode: 'performance_testing' },
       };
     }
@@ -1269,18 +1268,21 @@ export const checkSafeSearch = async (
       };
     }
 
-    // Get strictness from env (default: 'strict' - blocks LIKELY and VERY_LIKELY)
+    // Get strictness from env (default: 'strict' - blocks POSSIBLE, LIKELY, and VERY_LIKELY)
     const strictness = (env.SAFETY_STRICTNESS === 'lenient' ? 'lenient' : 'strict') as 'strict' | 'lenient';
     const isUnsafeResult = isUnsafe(annotation, strictness);
     
-    // Find worst violation (highest severity)
-    const worstViolation = getWorstViolation(annotation);
+    // Find worst violation (highest severity) - only return violations that match strictness
+    const worstViolation = getWorstViolation(annotation, strictness);
     
-    // Ensure statusCode is set if unsafe (default to 1001 if worstViolation is null but isUnsafe is true)
-    let statusCode = worstViolation?.code;
-    if (isUnsafeResult && !statusCode) {
+    // Only set statusCode if actually unsafe (worstViolation will be null if no blocking violations)
+    let statusCode: number | undefined = undefined;
+    if (isUnsafeResult) {
+      statusCode = worstViolation?.code;
       // If unsafe but no violation found (edge case), default to ADULT
-      statusCode = 1001;
+      if (!statusCode) {
+        statusCode = 1001;
+      }
     }
 
     return {

@@ -41,10 +41,10 @@ function getSeverity(level: string): number {
 }
 
 // Default: Only block VERY_LIKELY (loose mode)
-// Strict mode: Block both LIKELY and VERY_LIKELY
+// Strict mode: Block POSSIBLE, LIKELY, and VERY_LIKELY
 export const getUnsafeLevels = (strictness: 'strict' | 'lenient'): string[] => {
   if (strictness === 'strict') {
-    return ['LIKELY', 'VERY_LIKELY'];
+    return ['POSSIBLE', 'LIKELY', 'VERY_LIKELY'];
   }
   return ['VERY_LIKELY'];
 };
@@ -348,15 +348,19 @@ export const getClosestAspectRatio = (width: number, height: number, supportedRa
   return closestRatio;
 };
 
-export const getWorstViolation = (annotation: {
-  adult: string;
-  violence: string;
-  racy: string;
-  medical?: string;
-  spoof?: string;
-}): { code: number; category: string; level: string } | null => {
+export const getWorstViolation = (
+  annotation: {
+    adult: string;
+    violence: string;
+    racy: string;
+    medical?: string;
+    spoof?: string;
+  },
+  strictness: 'strict' | 'lenient' = 'strict'
+): { code: number; category: string; level: string } | null => {
+  // Only check levels that should be blocked based on strictness
+  const unsafeLevels = getUnsafeLevels(strictness);
   const violations: Array<{ category: string; level: string; severity: number; code: number }> = [];
-  const concerningLevels = ['POSSIBLE', 'LIKELY', 'VERY_LIKELY'];
 
   // Define category mappings
   const categories = [
@@ -367,10 +371,10 @@ export const getWorstViolation = (annotation: {
     { key: 'spoof', code: SAFETY_STATUS_CODES.SPOOF },
   ];
 
-  // Check each category
+  // Check each category - only include violations that match strictness (should be blocked)
   for (const { key, code } of categories) {
     const level = annotation[key as keyof typeof annotation];
-    if (level && concerningLevels.includes(level)) {
+    if (level && unsafeLevels.includes(level)) {
       violations.push({
         category: key,
         level,
@@ -381,7 +385,7 @@ export const getWorstViolation = (annotation: {
   }
 
   if (violations.length === 0) {
-    return null; // No violations
+    return null; // No blocking violations
   }
 
   // Find the worst violation (highest severity)
