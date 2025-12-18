@@ -26,12 +26,12 @@ const sanitizeObject = (obj: any, maxStringLength = 100): any => {
   if (Array.isArray(obj)) {
     return obj.map(item => sanitizeObject(item, maxStringLength));
   }
-  
+
   const sanitized: any = {};
   for (const [key, value] of Object.entries(obj)) {
     const lowerKey = key.toLowerCase();
     const isSensitive = SENSITIVE_KEYS.some(sk => lowerKey.includes(sk));
-    
+
     if (isSensitive && typeof value === 'string') {
       sanitized[key] = '***REDACTED***';
     } else if (key === 'data' && typeof value === 'string' && value.length > maxStringLength) {
@@ -102,7 +102,7 @@ export const callFaceSwap = async (
   try {
     const data = JSON.parse(responseText);
     debugInfo.rawResponse = data;
-    
+
     // Transform API response to match FaceSwapResponse format
     // API returns: { message, file_url, processing_time }
     // We need: { Success, ResultImageUrl, Message, StatusCode }
@@ -114,14 +114,14 @@ export const callFaceSwap = async (
       ProcessingTime: data.processing_time?.toString() || data.ProcessingTime,
       Debug: debugInfo,
     };
-    
+
     // If no file_url and no ResultImageUrl, it's a failure
     if (!transformedResponse.ResultImageUrl) {
       transformedResponse.Success = false;
       transformedResponse.Message = data.message || 'No result image URL received';
       transformedResponse.Error = JSON.stringify(data);
     }
-    
+
     return transformedResponse;
   } catch (error) {
     debugInfo.rawResponse = responseText.substring(0, 200);
@@ -159,7 +159,7 @@ export const callNanoBanana = async (
   try {
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = getVertexAILocation(env);
-    
+
     // Use Vertex AI Gemini API with image generation (Nano Banana)
     // IMPORTANT: Must use gemini-2.5-flash-image (not gemini-2.5-flash) for image generation
     // Only gemini-2.5-flash-image supports image + text output (responseModalities: ["TEXT", "IMAGE"])
@@ -174,7 +174,7 @@ export const callNanoBanana = async (
     if (prompt && typeof prompt === 'object') {
       // Clone the prompt object to avoid mutating the original
       const enhancedPrompt = { ...prompt } as any;
-      
+
       if (enhancedPrompt.prompt && typeof enhancedPrompt.prompt === 'string') {
         if (!enhancedPrompt.prompt.includes('100% identical facial features')) {
           enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
@@ -182,7 +182,7 @@ export const callNanoBanana = async (
       } else {
         enhancedPrompt.prompt = API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION;
       }
-      
+
       // Convert the enhanced prompt object to a formatted text string
       promptText = JSON.stringify(enhancedPrompt, null, 2);
     } else if (typeof prompt === 'string') {
@@ -199,31 +199,31 @@ export const callNanoBanana = async (
     const faceSwapPrompt = promptText;
 
     // Vertex AI requires OAuth token for service account authentication
-      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBanana] Missing service account credentials');
-        return {
-          Success: false,
+      return {
+        Success: false,
         Message: 'Google Service Account credentials are required for Vertex AI. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY environment variables.',
-          StatusCode: 500,
+        StatusCode: 500,
         Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
-        };
-      }
-      
+      };
+    }
+
     let accessToken: string;
-      try {
+    try {
       accessToken = await getAccessToken(
-          env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-          env
-        );
-      } catch (tokenError) {
+        env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        env
+      );
+    } catch (tokenError) {
       console.error('[Vertex-NanoBanana] Failed to get OAuth token:', tokenError);
-        return {
-          Success: false,
-          Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
-          StatusCode: 500,
-        };
-      }
+      return {
+        Success: false,
+        Message: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        StatusCode: 500,
+      };
+    }
 
     // Fetch selfie image(s) as base64
     // For Nano Banana (Vertex AI), we send the selfie image(s) and text prompt
@@ -235,8 +235,8 @@ export const callNanoBanana = async (
     );
 
     // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
-    const normalizedAspectRatio = !aspectRatio 
-      ? "original" 
+    const normalizedAspectRatio = !aspectRatio
+      ? "original"
       : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
 
     // Vertex AI Gemini API request format with image generation
@@ -251,7 +251,7 @@ export const callNanoBanana = async (
         data: imageData
       }
     }));
-    
+
     const requestBody = {
       contents: [{
         role: "user",
@@ -265,10 +265,6 @@ export const callNanoBanana = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-          imageOutputOptions: {
-            mimeType: 'image/jpeg',
-            compressionQuality: 100,
-          },
         },
       },
       safetySettings: SAFETY_SETTINGS,
@@ -276,7 +272,7 @@ export const callNanoBanana = async (
 
     // Generate curl command for testing (with sanitized base64)
     const sanitizedRequestBody = sanitizeObject(requestBody);
-    
+
     const curlCommand = `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
@@ -347,7 +343,7 @@ export const callNanoBanana = async (
           // Keep as string
         }
       }
-      
+
       // Check for Vertex AI safety violations in error response
       if (parsedError) {
         const safetyViolation = getVertexSafetyViolation(parsedError);
@@ -365,10 +361,10 @@ export const callNanoBanana = async (
           } as any;
         }
       }
-      
+
       // Keep message simple - detailed error is in ParsedError/FullResponse for debug
       const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-      
+
       return {
         Success: false,
         Message: errorMessage,
@@ -386,7 +382,7 @@ export const callNanoBanana = async (
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
-      
+
       // Check for Vertex AI safety violations
       const safetyViolation = getVertexSafetyViolation(data);
       if (safetyViolation) {
@@ -399,12 +395,12 @@ export const callNanoBanana = async (
           Debug: debugInfo,
         };
       }
-      
+
       // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
-          return {
-            Success: false,
+        return {
+          Success: false,
           Message: 'Vertex AI Gemini API did not return any candidates',
           StatusCode: 500,
           Error: 'No candidates found in response',
@@ -442,15 +438,15 @@ export const callNanoBanana = async (
           Debug: debugInfo,
         };
       }
-      
+
 
       // Convert base64 to Uint8Array and upload to R2
       const bytes = base64ToUint8Array(base64Image);
-      
+
       const ext = getMimeExt(mimeType);
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
-      
+
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
         httpMetadata: {
@@ -462,7 +458,7 @@ export const callNanoBanana = async (
         debugInfo.r2Key = resultKey;
         debugInfo.mimeType = mimeType;
       }
-      
+
       // Get public URL (will be converted by caller)
       const resultImageUrl = `r2://${resultKey}`;
 
@@ -507,7 +503,7 @@ export const callNanoBanana = async (
       };
     }
   } catch (error) {
-      console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+    console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
     const debugPayload = debugInfo;
     if (debugPayload) {
       debugPayload.error = error instanceof Error ? error.message : String(error);
@@ -541,7 +537,7 @@ export const generateBackgroundFromPrompt = async (
   try {
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = getVertexAILocation(env);
-    
+
     const geminiModel = getVertexModelId(modelParam);
     const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
@@ -554,7 +550,7 @@ export const generateBackgroundFromPrompt = async (
         Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
       };
     }
-      
+
     let accessToken: string;
     try {
       accessToken = await getAccessToken(
@@ -572,8 +568,8 @@ export const generateBackgroundFromPrompt = async (
     }
 
     // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
-    const normalizedAspectRatio = !aspectRatio 
-      ? "original" 
+    const normalizedAspectRatio = !aspectRatio
+      ? "original"
       : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
 
     const requestBody = {
@@ -588,13 +584,9 @@ export const generateBackgroundFromPrompt = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-          imageOutputOptions: {
-            mimeType: 'image/jpeg',
-            compressionQuality: 100,
-          },
+
         },
-      },
-      safetySettings: SAFETY_SETTINGS,
+      }, safetySettings: SAFETY_SETTINGS,
     };
 
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
@@ -603,7 +595,7 @@ export const generateBackgroundFromPrompt = async (
       }
       return value;
     }));
-    
+
     const curlCommand = `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
@@ -669,7 +661,7 @@ export const generateBackgroundFromPrompt = async (
         } catch {
         }
       }
-      
+
       if (parsedError) {
         const safetyViolation = getVertexSafetyViolation(parsedError);
         if (safetyViolation) {
@@ -686,9 +678,9 @@ export const generateBackgroundFromPrompt = async (
           } as any;
         }
       }
-      
+
       const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-      
+
       return {
         Success: false,
         Message: errorMessage,
@@ -706,7 +698,7 @@ export const generateBackgroundFromPrompt = async (
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
-      
+
       const safetyViolation = getVertexSafetyViolation(data);
       if (safetyViolation) {
         console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
@@ -718,7 +710,7 @@ export const generateBackgroundFromPrompt = async (
           Debug: debugInfo,
         };
       }
-      
+
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
         return {
@@ -758,11 +750,11 @@ export const generateBackgroundFromPrompt = async (
       }
 
       const bytes = base64ToUint8Array(base64Image);
-      
+
       const ext = getMimeExt(mimeType);
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
-      
+
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
         httpMetadata: {
@@ -774,7 +766,7 @@ export const generateBackgroundFromPrompt = async (
         debugInfo.r2Key = resultKey;
         debugInfo.mimeType = mimeType;
       }
-      
+
       const resultImageUrl = `r2://${resultKey}`;
 
       const sanitizedData = sanitizeObject(data);
@@ -852,7 +844,7 @@ export const callNanoBananaMerge = async (
   try {
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = getVertexAILocation(env);
-    
+
     const geminiModel = getVertexModelId(modelParam);
     const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
@@ -876,7 +868,7 @@ export const callNanoBananaMerge = async (
         Error: 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY',
       };
     }
-      
+
     let accessToken: string;
     try {
       accessToken = await getAccessToken(
@@ -899,8 +891,8 @@ export const callNanoBananaMerge = async (
     ]);
 
     // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
-    const normalizedAspectRatio = !aspectRatio 
-      ? "original" 
+    const normalizedAspectRatio = !aspectRatio
+      ? "original"
       : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
 
     const requestBody = {
@@ -927,22 +919,18 @@ export const callNanoBananaMerge = async (
         imageConfig: {
           ...API_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-          imageOutputOptions: {
-            mimeType: 'image/jpeg',
-            compressionQuality: 100,
-          },
+
         },
       },
       safetySettings: SAFETY_SETTINGS,
     };
-
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
       if (key === 'data' && typeof value === 'string' && value.length > 100) {
         return '...';
       }
       return value;
     }));
-    
+
     const curlCommand = `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
@@ -1013,7 +1001,7 @@ export const callNanoBananaMerge = async (
           // Keep as string
         }
       }
-      
+
       // Check for Vertex AI safety violations in error response
       if (parsedError) {
         const safetyViolation = getVertexSafetyViolation(parsedError);
@@ -1031,10 +1019,10 @@ export const callNanoBananaMerge = async (
           } as any;
         }
       }
-      
+
       // Keep message simple - detailed error is in ParsedError/FullResponse for debug
       const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-      
+
       return {
         Success: false,
         Message: errorMessage,
@@ -1052,7 +1040,7 @@ export const callNanoBananaMerge = async (
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
-      
+
       // Check for Vertex AI safety violations
       const safetyViolation = getVertexSafetyViolation(data);
       if (safetyViolation) {
@@ -1065,7 +1053,7 @@ export const callNanoBananaMerge = async (
           Debug: debugInfo,
         };
       }
-      
+
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
         return {
@@ -1105,11 +1093,11 @@ export const callNanoBananaMerge = async (
       }
 
       const bytes = base64ToUint8Array(base64Image);
-      
+
       const ext = getMimeExt(mimeType);
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
-      
+
       const R2_BUCKET = getR2Bucket(env);
       await R2_BUCKET.put(resultKey, bytes, {
         httpMetadata: {
@@ -1121,7 +1109,7 @@ export const callNanoBananaMerge = async (
         debugInfo.r2Key = resultKey;
         debugInfo.mimeType = mimeType;
       }
-      
+
       const resultImageUrl = `r2://${resultKey}`;
 
       const sanitizedData = sanitizeObject(data);
@@ -1233,13 +1221,13 @@ export const checkSafeSearch = async (
       const errorText = await response.text();
       console.error('[SafeSearch] API error:', response.status, response.statusText);
       debugInfo.rawResponse = errorText.substring(0, 200);
-      
+
       // Provide helpful error message for billing errors
       let errorMessage = `API error: ${response.status} - ${errorText.substring(0, 200)}`;
       if (response.status === 403 && errorText.includes('billing')) {
         errorMessage = `Billing not enabled. Google Vision API requires billing to be enabled. Please enable billing at: https://console.developers.google.com/billing?project=521788129450`;
       }
-      
+
       return { isSafe: false, error: errorMessage, debug: debugInfo };
     }
 
@@ -1251,8 +1239,8 @@ export const checkSafeSearch = async (
     if (data.responses?.[0]?.error) {
       const errorObj: any = data.responses[0].error;
       const errorMsg = typeof errorObj === 'string' ? errorObj.substring(0, 200) : (errorObj?.message ? String(errorObj.message).substring(0, 200) : JSON.stringify(errorObj).substring(0, 200));
-      return { 
-        isSafe: false, 
+      return {
+        isSafe: false,
         error: data.responses[0].error.message,
         rawResponse: data, // Include full raw response even on error
         debug: debugInfo,
@@ -1260,8 +1248,8 @@ export const checkSafeSearch = async (
     }
 
     if (!annotation) {
-      return { 
-        isSafe: false, 
+      return {
+        isSafe: false,
         error: 'No safe search annotation',
         rawResponse: data, // Include full raw response
         debug: debugInfo,
@@ -1271,10 +1259,10 @@ export const checkSafeSearch = async (
     // Get strictness from env (default: 'strict' - blocks POSSIBLE, LIKELY, and VERY_LIKELY)
     const strictness = (env.SAFETY_STRICTNESS === 'lenient' ? 'lenient' : 'strict') as 'strict' | 'lenient';
     const isUnsafeResult = isUnsafe(annotation, strictness);
-    
+
     // Find worst violation (highest severity) - only return violations that match strictness
     const worstViolation = getWorstViolation(annotation, strictness);
-    
+
     // Only set statusCode if actually unsafe (worstViolation will be null if no blocking violations)
     let statusCode: number | undefined = undefined;
     if (isUnsafeResult) {
@@ -1305,9 +1293,9 @@ export const checkSafeSearch = async (
 export const generateVertexPrompt = async (
   imageUrl: string,
   env: Env
-): Promise<{ 
-  success: boolean; 
-  prompt?: any; 
+): Promise<{
+  success: boolean;
+  prompt?: any;
   error?: string;
   debug?: {
     endpoint?: string;
@@ -1322,7 +1310,7 @@ export const generateVertexPrompt = async (
   }
 }> => {
   const startTime = Date.now();
-  
+
   // Performance testing mode: skip API call if disabled (before any setup/image fetching/token generation)
   if (env.DISABLE_VERTEX_IMAGE_GEN === 'true') {
     const mockPrompt = {
@@ -1343,15 +1331,15 @@ export const generateVertexPrompt = async (
       } as any
     };
   }
-  
+
   const debugInfo: any = {};
-  
+
   try {
     // Use Vertex AI credentials (OAuth token from service account, not API key)
     if (!env.GOOGLE_VERTEX_PROJECT_ID) {
       console.error('[Vertex] ERROR: GOOGLE_VERTEX_PROJECT_ID is required');
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: 'GOOGLE_VERTEX_PROJECT_ID is required',
         debug: { errorDetails: 'Vertex AI project ID is missing from environment variables' }
       };
@@ -1396,33 +1384,33 @@ export const generateVertexPrompt = async (
       imageBytes: imageData.length,
       imageUrl,
     };
-    
+
     // Vertex AI requires OAuth token
-      if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex] Vertex AI requires service account credentials');
-        return {
-          success: false,
-          error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
-          debug: { errorDetails: 'Service account credentials missing' }
-        };
-      }
-      
+      return {
+        success: false,
+        error: 'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY are required for Vertex AI',
+        debug: { errorDetails: 'Service account credentials missing' }
+      };
+    }
+
     let accessToken: string;
-      try {
+    try {
       accessToken = await getAccessToken(
         env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
         env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
         env
       );
-      } catch (tokenError) {
+    } catch (tokenError) {
       console.error('[Vertex] Failed to get OAuth token:', tokenError instanceof Error ? tokenError.message.substring(0, 200) : String(tokenError).substring(0, 200));
-        return {
-          success: false,
-          error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
-          debug: { errorDetails: String(tokenError) }
-        };
+      return {
+        success: false,
+        error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
+        debug: { errorDetails: String(tokenError) }
+      };
     }
-    
+
     const response = await fetchWithTimeout(vertexEndpoint, {
       method: 'POST',
       headers: {
@@ -1431,12 +1419,12 @@ export const generateVertexPrompt = async (
       },
       body: JSON.stringify(requestBody),
     }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
-    
+
     const responseTime = Date.now() - startTime;
     debugInfo.httpStatus = response.status;
     debugInfo.httpStatusText = response.statusText;
     debugInfo.responseTimeMs = responseTime;
-    
+
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1444,8 +1432,8 @@ export const generateVertexPrompt = async (
       debugInfo.errorDetails = errorPreview;
       debugInfo.rawError = errorText;
       console.error('[Vertex] API error:', response.status, response.statusText);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: `Vertex AI API error: ${response.status} ${response.statusText}`,
         debug: debugInfo
       };
@@ -1459,8 +1447,8 @@ export const generateVertexPrompt = async (
     if (!parts || parts.length === 0) {
       debugInfo.errorDetails = 'Response received but no parts found in candidates[0].content.parts';
       debugInfo.responseStructure = JSON.stringify(data);
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: 'No response parts from Vertex AI API',
         debug: debugInfo
       };
@@ -1501,8 +1489,8 @@ export const generateVertexPrompt = async (
     if (!promptJson) {
       console.error('[Vertex] Could not extract JSON from response parts');
       debugInfo.errorDetails = 'Could not extract valid JSON from response parts';
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: 'No valid JSON response from Vertex AI API',
         debug: debugInfo
       };
@@ -1526,10 +1514,10 @@ export const generateVertexPrompt = async (
   } catch (error) {
     const responseTime = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
-      debugInfo.errorDetails = errorMessage.substring(0, 200);
+    debugInfo.errorDetails = errorMessage.substring(0, 200);
     debugInfo.responseTimeMs = responseTime;
-    return { 
-      success: false, 
+    return {
+      success: false,
       error: errorMessage,
       debug: debugInfo
     };
@@ -1540,7 +1528,7 @@ const fetchImageAsBase64 = async (imageUrl: string, env: Env): Promise<string> =
   if (!validateImageUrl(imageUrl, env)) {
     throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
   }
-  
+
   const response = await fetchWithTimeout(imageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
@@ -1565,7 +1553,7 @@ export const streamImageToR2 = async (
   if (!skipValidation && !validateImageUrl(imageUrl, env)) {
     throw new Error(`Invalid or unsafe image URL: ${imageUrl}`);
   }
-  
+
   const response = await fetchWithTimeout(imageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
   if (!response.ok) {
     throw new Error(`Failed to fetch image: ${response.status}`);
@@ -1573,11 +1561,11 @@ export const streamImageToR2 = async (
 
   const detectedContentType = contentType || response.headers.get('content-type') || 'image/jpeg';
   const R2_BUCKET = getR2Bucket(env);
-  
+
   if (!response.body) {
     throw new Error('Response body is null');
   }
-  
+
   await R2_BUCKET.put(r2Key, response.body, {
     httpMetadata: {
       contentType: detectedContentType,
@@ -1605,7 +1593,7 @@ export const callUpscaler4k = async (
   try {
     const apiKey = env.WAVESPEED_API_KEY;
     const apiEndpoint = API_ENDPOINTS.WAVESPEED_UPSCALER;
-    
+
     debugInfo = {
       endpoint: apiEndpoint,
       model: 'wavespeed-ai/image-upscaler',
@@ -1662,7 +1650,7 @@ export const callUpscaler4k = async (
           debugInfo.rawResponse = rawResponse.substring(0, 2000);
         }
       }
-      
+
       return {
         Success: false,
         Message: `WaveSpeed API error: ${response.status} ${response.statusText}`,
@@ -1678,12 +1666,12 @@ export const callUpscaler4k = async (
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
-      
+
       let resultImageUrl: string | null = null;
       let requestId: string | null = null;
-      
+
       requestId = data.id || data.requestId || data.request_id || data.data?.id || data.data?.requestId || data.data?.request_id;
-      
+
       if (!requestId) {
         return {
           Success: false,
@@ -1693,9 +1681,9 @@ export const callUpscaler4k = async (
           Debug: debugInfo,
         };
       }
-      
+
       const resultEndpoint = API_ENDPOINTS.WAVESPEED_RESULT(requestId);
-      
+
       for (let attempt = 0; attempt < TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS; attempt++) {
         let delay = 0;
         if (attempt === 0) {
@@ -1705,28 +1693,28 @@ export const callUpscaler4k = async (
         } else {
           delay = TIMEOUT_CONFIG.POLLING.SUBSEQUENT_DELAY;
         }
-        
+
         if (attempt > 0) {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
-        
+
         const resultResponse = await fetchWithTimeout(resultEndpoint, {
           headers: {
             'Authorization': `Bearer ${apiKey}`
           }
         }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
-        
+
         if (!resultResponse.ok) {
           if (attempt === TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS - 1) {
             throw new Error(`Failed to get result: ${resultResponse.status} ${resultResponse.statusText}`);
           }
           continue;
         }
-        
+
         const resultData: any = await resultResponse.json();
-        
+
         const pollStatus = resultData.status || resultData.data?.status;
-        
+
         // Early success detection - check for completed status first
         if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success') {
           if (resultData.output && typeof resultData.output === 'string') {
@@ -1804,7 +1792,7 @@ export const callUpscaler4k = async (
           }
         }
       }
-      
+
       if (!resultImageUrl) {
         throw new Error(`Upscaling timed out - no result after ${TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS} polling attempts`);
       }
@@ -1813,14 +1801,14 @@ export const callUpscaler4k = async (
       const id = nanoid(16);
       const resultKey = `results/${id}.${ext}`;
       let contentType = DEFAULT_VALUES.UPSCALER_MIME_TYPE;
-      
+
       if (resultImageUrl.startsWith('data:')) {
         const base64Match = resultImageUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (base64Match) {
           contentType = base64Match[1] || DEFAULT_VALUES.UPSCALER_MIME_TYPE;
           const base64String = base64Match[2];
           const imageBytes = base64ToUint8Array(base64String);
-          
+
           const R2_BUCKET = getR2Bucket(env);
           await R2_BUCKET.put(resultKey, imageBytes, {
             httpMetadata: {
@@ -1835,12 +1823,12 @@ export const callUpscaler4k = async (
         await streamImageToR2(resultImageUrl, resultKey, env, DEFAULT_VALUES.UPSCALER_MIME_TYPE, true);
         contentType = DEFAULT_VALUES.UPSCALER_MIME_TYPE;
       }
-      
+
       if (debugInfo) {
         debugInfo.r2Key = resultKey;
         debugInfo.mimeType = contentType;
       }
-      
+
       const finalResultUrl = `r2://${resultKey}`;
 
       return {
