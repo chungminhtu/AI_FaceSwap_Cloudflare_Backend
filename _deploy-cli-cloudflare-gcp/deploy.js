@@ -1446,7 +1446,9 @@ async function runSqlMigration(migrationFile, databaseName, accountId, apiToken)
   if (accountId) env.CLOUDFLARE_ACCOUNT_ID = accountId;
   if (apiToken) env.CLOUDFLARE_API_TOKEN = apiToken;
   
-  const command = `wrangler d1 execute ${databaseName} --remote --file=${migrationFile.fullPath} --yes`;
+  // Use absolute path and quote it to avoid issues with spaces or special characters
+  const filePath = path.resolve(migrationFile.fullPath);
+  const command = `wrangler d1 execute ${databaseName} --remote --file="${filePath}" --yes`;
   
   try {
     const result = execSync(command, { 
@@ -1469,6 +1471,52 @@ async function runSqlMigration(migrationFile, databaseName, accountId, apiToken)
     const errorMessage = execError.message || '';
     const errorOutput = execError.output ? execError.output.map(o => o ? o.toString() : '').join('') : '';
     const allErrorText = (stdout + stderr + errorMessage + errorOutput).toLowerCase();
+    
+    // Handle "Not currently importing anything" error - this can happen if wrangler is in a weird state
+    if (allErrorText.includes('not currently importing') || allErrorText.includes('not currently importing anything')) {
+      console.warn(`[Migration] Warning: Wrangler import state issue detected. Retrying with direct SQL execution...`);
+      
+      // Try reading the SQL file and executing it directly via stdin
+      try {
+        const sqlContent = readFileSync(migrationFile.fullPath, 'utf8');
+        const directCommand = `wrangler d1 execute ${databaseName} --remote --command="${sqlContent.replace(/"/g, '\\"')}" --yes`;
+        const retryResult = execSync(directCommand, {
+          stdio: 'pipe',
+          cwd: process.cwd(),
+          env: env,
+          encoding: 'utf8'
+        });
+        
+        if (retryResult) console.log(retryResult);
+        
+        const executedPath = migrationFile.fullPath.replace('.sql', '.executed.sql');
+        await rename(migrationFile.fullPath, executedPath);
+        return { success: true };
+      } catch (retryError) {
+        // If direct command also fails, check if it's a duplicate column error
+        const retryErrorText = ((retryError.stdout || '') + (retryError.stderr || '') + (retryError.message || '')).toLowerCase();
+        const isDuplicateColumn = 
+          retryErrorText.includes('duplicate column') || 
+          retryErrorText.includes('duplicate column name') ||
+          (retryErrorText.includes('sqlite_error') && retryErrorText.includes('duplicate')) ||
+          (retryErrorText.includes('column name:') && retryErrorText.includes('duplicate')) ||
+          /duplicate.*column/i.test(retryErrorText);
+        
+        if (isDuplicateColumn) {
+          const executedPath = migrationFile.fullPath.replace('.sql', '.executed.sql');
+          await rename(migrationFile.fullPath, executedPath);
+          return { success: true, skipped: true, reason: 'Column already exists' };
+        }
+        
+        // If it's still the import error, mark as skipped with a note
+        if (retryErrorText.includes('not currently importing')) {
+          console.warn(`[Migration] ⚠ Skipping migration ${migrationFile.name} due to wrangler import state issue. You may need to run this migration manually.`);
+          return { success: false, skipped: true, reason: 'Wrangler import state issue - run manually', error: 'Not currently importing anything' };
+        }
+        
+        throw retryError;
+      }
+    }
     
     const isDuplicateColumn = 
       allErrorText.includes('duplicate column') || 
@@ -2135,7 +2183,8 @@ const utils = {
           // Old migrations removed - now handled by migration files
           // Migration files in migrations/ folder will be executed separately
           
-          const execResult = await runCommandWithRetry(`wrangler d1 execute ${databaseName} --remote --file=${schemaPath}`, cwd, 2, 2000);
+          const schemaFilePath = path.resolve(schemaPath);
+          const execResult = await runCommandWithRetry(`wrangler d1 execute ${databaseName} --remote --file="${schemaFilePath}" --yes`, cwd, 2, 2000);
           if (execResult.success) {
             schemaApplied = true;
           }

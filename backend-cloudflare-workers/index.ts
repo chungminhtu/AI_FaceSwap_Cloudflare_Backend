@@ -824,12 +824,30 @@ export default {
           const createdAt = Math.floor(Date.now() / 1000);
 
           // Scan selfie uploads with vision API before saving to database (only for 4k/4K action)
+          let visionCheckResult: any = null;
           if (type === 'selfie') {
             const actionValue = action || 'default';
             const needsVisionCheck = actionValue.toLowerCase() === '4k';
             const disableSafeSearch = env.DISABLE_SAFE_SEARCH === 'true';
-            if (needsVisionCheck && !disableSafeSearch) {
+            const disableVisionApi = env.DISABLE_VISION_API === 'true';
+            const shouldCheckVision = needsVisionCheck && !disableSafeSearch && !disableVisionApi;
+            
+            if (shouldCheckVision) {
               const safeSearchResult = await checkSafeSearch(publicUrl, env);
+              const debugEnabled = isDebugEnabled(env);
+              if (debugEnabled) {
+                visionCheckResult = {
+                  checked: true,
+                  isSafe: safeSearchResult.isSafe,
+                  statusCode: safeSearchResult.statusCode,
+                  violationCategory: safeSearchResult.violationCategory,
+                  violationLevel: safeSearchResult.violationLevel,
+                  details: safeSearchResult.details,
+                  error: safeSearchResult.error,
+                  debug: safeSearchResult.debug,
+                };
+              }
+              
               if (!safeSearchResult.isSafe) {
                 // Delete from R2 if unsafe
                 try {
@@ -847,13 +865,26 @@ export default {
                   filename: fileData.filename,
                   visionBlocked: true,
                   visionStatusCode: visionStatusCode,
-                  visionDetails: {
-                    violationCategory: safeSearchResult.violationCategory,
-                    violationLevel: safeSearchResult.violationLevel,
-                    details: safeSearchResult.details,
-                    rawResponse: safeSearchResult.rawResponse,
-                    debug: safeSearchResult.debug,
-                  },
+                  ...(debugEnabled ? {
+                    visionDetails: {
+                      violationCategory: safeSearchResult.violationCategory,
+                      violationLevel: safeSearchResult.violationLevel,
+                      details: safeSearchResult.details,
+                      rawResponse: safeSearchResult.rawResponse,
+                      debug: safeSearchResult.debug,
+                    }
+                  } : {})
+                };
+              }
+            } else if (needsVisionCheck) {
+              // Only set visionCheckResult if debug is enabled and we would have checked
+              const debugEnabled = isDebugEnabled(env);
+              if (debugEnabled) {
+                visionCheckResult = {
+                  checked: false,
+                  isSafe: true,
+                  skipped: true,
+                  reason: disableVisionApi ? 'Vision API disabled (DISABLE_VISION_API=true)' : 'Safe search disabled (DISABLE_SAFE_SEARCH=true)',
                 };
               }
             }
@@ -911,11 +942,11 @@ export default {
             }
 
             // Save to database (store only id and ext, prompt_json in R2 metadata)
-            const result = await DB.prepare(
+            const dbResult = await DB.prepare(
               'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
             ).bind(id, ext, createdAt).run();
 
-            if (!result.success) {
+            if (!dbResult.success) {
               return {
                 success: false,
                 error: 'Database insert failed',
@@ -923,7 +954,7 @@ export default {
               };
             }
 
-            return {
+            const response: any = {
               success: true,
               url: publicUrl,
               id: id,
@@ -932,6 +963,14 @@ export default {
               prompt_json: promptJson ? JSON.parse(promptJson) : null,
               vertex_info: vertexCallInfo
             };
+            
+            // Include vision check result in response only if debug is enabled (if preset also needs vision check in future)
+            const debugEnabled = isDebugEnabled(env);
+            if (debugEnabled && visionCheckResult) {
+              response.visionCheck = visionCheckResult;
+            }
+            
+            return response;
           } else if (type === 'selfie') {
             let actionValue = action || 'default';
             const actionLower = actionValue.toLowerCase();
@@ -998,11 +1037,11 @@ export default {
               await deleteOldSelfies(existingSelfies, maxOther, actionValue);
             }
 
-            const result = await DB.prepare(
+            const dbResult = await DB.prepare(
               'INSERT INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
             ).bind(id, ext, profileId, actionValue, createdAt).run();
 
-            if (!result.success) {
+            if (!dbResult.success) {
               return {
                 success: false,
                 error: 'Database insert failed',
@@ -1010,13 +1049,21 @@ export default {
               };
             }
 
-            return {
+            const response: any = {
               success: true,
               url: publicUrl,
               id: id,
               filename: `${id}.${ext}`,
               action: actionValue
             };
+            
+            // Include vision check result in response only if debug is enabled
+            const debugEnabled = isDebugEnabled(env);
+            if (debugEnabled && visionCheckResult) {
+              response.visionCheck = visionCheckResult;
+            }
+            
+            return response;
           }
 
           return { success: true, url: publicUrl };
