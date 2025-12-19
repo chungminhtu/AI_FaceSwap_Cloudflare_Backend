@@ -477,6 +477,9 @@ export const callNanoBanana = async (
         debugInfo.requestPayload = sanitizedRequestBody;
         debugInfo.curlCommand = curlCommand;
         debugInfo.response = sanitizedData;
+        if (data.usageMetadata) {
+          debugInfo.usageMetadata = data.usageMetadata;
+        }
       }
 
       return {
@@ -782,6 +785,9 @@ export const generateBackgroundFromPrompt = async (
         debugInfo.requestPayload = sanitizedRequestBodyForCurl;
         debugInfo.curlCommand = curlCommandFinal;
         debugInfo.response = sanitizedData;
+        if (data.usageMetadata) {
+          debugInfo.usageMetadata = data.usageMetadata;
+        }
       }
 
       return {
@@ -1125,6 +1131,9 @@ export const callNanoBananaMerge = async (
         debugInfo.requestPayload = sanitizedRequestBodyForCurl;
         debugInfo.curlCommand = curlCommandFinal;
         debugInfo.response = sanitizedData;
+        if (data.usageMetadata) {
+          debugInfo.usageMetadata = data.usageMetadata;
+        }
       }
 
       return {
@@ -1441,6 +1450,9 @@ export const generateVertexPrompt = async (
 
     const data = await response.json() as any;
     debugInfo.responseStructure = JSON.stringify(data).substring(0, 200);
+    if (data.usageMetadata) {
+      debugInfo.usageMetadata = data.usageMetadata;
+    }
 
     // With structured outputs (responseMimeType: "application/json"), Vertex AI returns JSON directly
     const parts = data.candidates?.[0]?.content?.parts;

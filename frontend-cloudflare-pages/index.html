@@ -923,7 +923,8 @@
                             <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px; white-space: nowrap; font-weight: 600;">Model (Nano Banana):</label>
                             <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer; min-width: 150px; font-weight: 500;">
                                 <option value="2.5" selected>2.5 Flash</option>
-                                <option value="3">3 Pro</option>
+                                <option value="3p">3 Pro</option>
+                                <option value="3f">3 Flash</option>
                             </select>
                         </div>
                         <div class="action-gender">
@@ -3530,7 +3531,12 @@
             }
 
             // Load saved model from localStorage
-            const savedModel = localStorage.getItem('faceswap:model') || '2.5';
+            let savedModel = localStorage.getItem('faceswap:model') || '2.5';
+            // Migrate legacy '3' value to '3p' for backward compatibility
+            if (savedModel === '3') {
+                savedModel = '3p';
+                localStorage.setItem('faceswap:model', savedModel);
+            }
             const modelSelect = document.getElementById('gemini-model');
             if (modelSelect) {
                 modelSelect.value = savedModel;

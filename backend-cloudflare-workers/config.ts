@@ -75,10 +75,11 @@ export const SAFETY_SETTINGS = [
 
 export const MODEL_CONFIG = {
   IMAGE_GENERATION_MODEL: 'gemini-2.5-flash-image',
-  PROMPT_GENERATION_MODEL: 'gemini-2.5-flash',
+  PROMPT_GENERATION_MODEL: 'gemini-3-flash-preview',
   MODEL_MAPPING: {
     '2.5': 'gemini-2.5-flash-image',
-    '3': 'gemini-3-pro-image-preview',
+    '3p': 'gemini-3-pro-image-preview',
+    '3f': 'gemini-3-flash-preview',
   },
   DEFAULT_MODEL: '2.5',
 };

@@ -100,8 +100,16 @@ export const getVertexAILocation = (env: any): string => {
 export const getVertexModelId = (modelParam?: string | number): string => {
   // Map frontend model parameter to Vertex AI model ID
   // "2.5" or 2.5 => "gemini-2.5-flash-image" (default)
-  // "3" or 3 => "gemini-3-pro-image-preview"
+  // "3p" => "gemini-3-pro-image-preview"
+  // "3f" => "gemini-3-flash-preview"
   const modelStr = String(modelParam || '2.5').trim();
+  if (modelStr === '3p') {
+    return 'gemini-3-pro-image-preview';
+  }
+  if (modelStr === '3f') {
+    return 'gemini-3-flash-preview';
+  }
+  // Legacy support: "3" maps to "3p" (pro)
   if (modelStr === '3') {
     return 'gemini-3-pro-image-preview';
   }

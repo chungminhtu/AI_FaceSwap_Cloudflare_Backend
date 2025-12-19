@@ -736,8 +736,8 @@ curl -X POST https://api.d.shotpix.app/filter \
 - Hỗ trợ additional_prompt để tùy chỉnh thêm
 
 **Lưu ý:**
-- Preset phải có prompt_json (được tạo tự động khi upload preset với `enableVertexPrompt=true`)
-- Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image
+- Preset phải có prompt_json (được tạo tự động khi upload preset với `enableVertexPrompt=true` sử dụng Gemini 3 Flash Preview)
+- Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image sử dụng Gemini 3 Flash Preview
 - Khác với `/faceswap`: Filter giữ nguyên khuôn mặt và chỉ áp dụng style, không thay đổi khuôn mặt
 
 ### 7. POST `/restore`
@@ -1125,7 +1125,7 @@ curl https://api.d.shotpix.app/profiles
 ### 12. POST `/upload-url` (type=preset) - Upload preset (backend only)
 
 ### Mục đích
-Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
+Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation sử dụng Gemini 3 Flash Preview). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
 
 ### Request
 
@@ -1156,7 +1156,7 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 - `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh preset trực tiếp.
 - `type` (string, required): Phải là `"preset"` cho backend upload.
 - `profile_id` (string, required): ID profile người dùng.
-- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset.
+- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset. Sử dụng Gemini 3 Flash Preview để phân tích ảnh và tạo prompt_json tự động.
 
 ### Response
 
