@@ -2,20 +2,22 @@
 import type { Env } from './types';
 
 // Safety violation status codes (1000+) Loại nhạy cảm
+// Tìm kiếm An toàn: Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính
 export const SAFETY_STATUS_CODES = {
-  ADULT: 1001, // Ảnh người lớn, nude, gợi dục, porn, ...
-  VIOLENCE: 1002, // Ảnh bạo lực, chiến tranh, tử vong, ...
-  RACY: 1003, // Ảnh nhạy cảm sexy, gợi dục, khiêu gợi, ...
-  MEDICAL: 1004, // Ảnh máu me, phẫu thuật, y tế, nạn nhân, ...
-  SPOOF: 1005, // Lừa bịp, ảnh copy của người khác, ...
+  ADULT: 1001, // Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục.
+  VIOLENCE: 1002, // Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân.
+  RACY: 1003, // Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể.
+  MEDICAL: 1004, // Rất có thể đây là hình ảnh y tế.
+  SPOOF: 1005, // Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
 } as const;
 
 // Vertex AI safety violation status codes (2000+) - Vertex AI Gemini safety filters
+// Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại sau:
 export const VERTEX_SAFETY_STATUS_CODES = {
-  HATE_SPEECH: 2001, // Negative or harmful comments targeting identity and/or protected attributes
-  HARASSMENT: 2002, // Threatening, intimidating, bullying, or abusive comments targeting another individual
-  SEXUALLY_EXPLICIT: 2003, // Contains references to sexual acts or other lewd content
-  DANGEROUS_CONTENT: 2004, // Promotes or enables access to harmful goods, services, and activities
+  HATE_SPEECH: 2001, // Lời lẽ kích động thù hận: Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ.
+  HARASSMENT: 2002, // Quấy rối: Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác.
+  SEXUALLY_EXPLICIT: 2003, // Nội dung khiêu dâm: Có chứa nội dung liên quan đến hành vi tình dục hoặc các nội dung khiêu dâm khác.
+  DANGEROUS_CONTENT: 2004, // Nội dung nguy hiểm: Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại.
 } as const;
 
 // Map Vertex AI harm categories to our custom error codes

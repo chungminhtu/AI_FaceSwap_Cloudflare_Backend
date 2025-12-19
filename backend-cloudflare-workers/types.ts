@@ -58,6 +58,7 @@ export interface FaceSwapResponse {
   };
 }
 
+// Tìm kiếm An toàn: Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính
 export interface SafeSearchResult {
   isSafe: boolean;
   error?: string;
@@ -65,24 +66,25 @@ export interface SafeSearchResult {
   violationCategory?: string; // 'adult', 'violence', 'racy', 'medical', 'spoof'
   violationLevel?: string; // 'POSSIBLE', 'LIKELY', 'VERY_LIKELY'
   details?: {
-    adult: string;
-    spoof?: string;
-    medical?: string;
-    violence: string;
-    racy: string;
+    adult: string; // Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục.
+    spoof?: string; // Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
+    medical?: string; // Rất có thể đây là hình ảnh y tế.
+    violence: string; // Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân.
+    racy: string; // Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể.
   };
   rawResponse?: GoogleVisionResponse; // Full raw response from Vision API
   debug?: Record<string, any>;
 }
 
+// Tìm kiếm An toàn: Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính
 export interface GoogleVisionResponse {
   responses?: Array<{
     safeSearchAnnotation?: {
-      adult: string;
-      spoof?: string;
-      medical?: string;
-      violence: string;
-      racy: string;
+      adult: string; // Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục.
+      spoof?: string; // Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
+      medical?: string; // Rất có thể đây là hình ảnh y tế.
+      violence: string; // Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân.
+      racy: string; // Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể.
     };
     error?: { message: string };
   }>;

@@ -89,7 +89,7 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ## Mục lục (Table of Contents)
 
-### APIs cần test mobile performance
+### APIs cần tích hợp với mobile 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Face swap action
 3. POST `/background` - AI Background action
@@ -102,7 +102,7 @@ Khi API key không hợp lệ hoặc thiếu:
 10. POST `/profiles` - Tạo profile
 11. GET `/profiles/{id}` - Lấy profile
 
-### APIs không cần test mobile performance
+### APIs không cần tích hợp với mobile
 12. PUT `/profiles/{id}` - Cập nhật profile
 13. GET `/profiles` - Liệt kê profiles
 14. POST `/upload-url` (type=preset) - Upload preset (backend only)
@@ -1276,7 +1276,7 @@ curl https://api.d.shotpix.app/presets/preset_1234567890_abc123
     "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
     "thumbnail_format": "webp",
     "thumbnail_resolution": "1x",
-    "created_at": 1704067200
+    "created_at": "2024-01-01T00:00:00.000Z"
   },
   "status": "success",
   "message": "Preset retrieved successfully",
@@ -1531,7 +1531,7 @@ curl https://api.d.shotpix.app/thumbnails
         "thumbnail_url_1_5x": null,
         "thumbnail_url_2x": null,
         "thumbnail_url_3x": null,
-        "created_at": 1704067200
+        "created_at": "2024-01-01T00:00:00.000Z"
       }
     ]
   },
@@ -1634,6 +1634,27 @@ Các error codes này được trả về khi Google Vision API SafeSearch phát
 | **1004** | MEDICAL | Ảnh máu me, phẫu thuật, y tế, nạn nhân, ... |
 | **1005** | SPOOF | Lừa bịp, ảnh copy của người khác, ... |
 
+### Tìm kiếm An toàn (Safe Search)
+
+Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính trên các lĩnh vực tìm kiếm an toàn (ví dụ: người lớn, giả mạo, y tế, bạo lực).
+
+#### Các trường (Fields)
+
+**adult** (Likelihood)
+- Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục.
+
+**spoof** (Likelihood)
+- Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
+
+**medical** (Likelihood)
+- Rất có thể đây là hình ảnh y tế.
+
+**violence** (Likelihood)
+- Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân.
+
+**racy** (Likelihood)
+- Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể.
+
 ### Severity Levels (Độ nghiêm trọng)
 
 Google Vision API SafeSearch trả về các mức độ nghiêm trọng cho mỗi category. App sử dụng các mức độ này để quyết định có chặn ảnh hay không:
@@ -1686,14 +1707,16 @@ Các error codes này được trả về khi Vertex AI Gemini safety filters ch
 - POST `/restore` - Khi Vertex AI chặn prompt hoặc generated image
 - POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
 
+#### Các loại tác hại
+
 Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại sau:
 
-| Error Code | Category | Mô tả (English) | Định nghĩa (Vietnamese) |
-|------------|----------|-----------------|------------------------|
-| **2001** | HATE_SPEECH | Negative or harmful comments targeting identity and/or protected attributes | Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ |
-| **2002** | HARASSMENT | Threatening, intimidating, bullying, or abusive comments targeting another individual | Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác |
-| **2003** | SEXUALLY_EXPLICIT | Contains references to sexual acts or other lewd content | Có chứa nội dung liên quan đến hành vi tình dục hoặc nội dung khiêu dâm khác |
-| **2004** | DANGEROUS_CONTENT | Promotes or enables access to harmful goods, services, and activities | Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại |
+| Error Code | Loại nguy hiểm | Sự định nghĩa |
+|------------|----------------|---------------|
+| **2001** | Lời lẽ kích động thù hận | Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ. |
+| **2002** | Quấy rối | Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác. |
+| **2003** | Nội dung khiêu dâm | Có chứa nội dung liên quan đến hành vi tình dục hoặc các nội dung khiêu dâm khác. |
+| **2004** | Nội dung nguy hiểm | Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại. |
 
 ### So sánh điểm xác suất và điểm mức độ nghiêm trọng (Probability Scores and Severity Scores)
 

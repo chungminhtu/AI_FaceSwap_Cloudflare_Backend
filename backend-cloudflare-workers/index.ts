@@ -2301,7 +2301,8 @@ export default {
         const thumbnails = (result.results || []).map((row: any) => ({
           ...row,
           // Use 1x as primary thumbnail_url for backward compatibility
-          thumbnail_url: row.thumbnail_url_1x || row.thumbnail_url || null
+          thumbnail_url: row.thumbnail_url_1x || row.thumbnail_url || null,
+          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
         }));
           
         const debugEnabled = isDebugEnabled(env);

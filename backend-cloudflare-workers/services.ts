@@ -1177,6 +1177,7 @@ export const callNanoBananaMerge = async (
 
 // JWT and OAuth2 functions removed - now using API key authentication instead
 
+// Tìm kiếm An toàn: Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính trên các lĩnh vực tìm kiếm an toàn (ví dụ: người lớn, giả mạo, y tế, bạo lực)
 export const checkSafeSearch = async (
   imageUrl: string,
   env: Env
