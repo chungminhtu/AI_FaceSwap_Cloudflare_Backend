@@ -1,6 +1,25 @@
 # Tổng quan API Face Swap AI
 
-Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp. Base URL: `https://api.d.shotpix.app`
+Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudflare Worker cung cấp.
+
+**Base URL:** `https://api.d.shotpix.app`
+
+---
+
+## Mục lục
+
+- [Xác thực API](#xác-thực-api-api-authentication)
+- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-11-apis)
+- [Error Codes Reference](#error-codes-reference)
+- [API Endpoints (Chi tiết)](#api-endpoints-chi-tiết)
+  - [1. Upload & Quản lý File](#1-upload--quản-lý-file)
+  - [2. AI Processing](#2-ai-processing)
+  - [3. Quản lý Profile](#3-quản-lý-profile)
+  - [4. Truy vấn Dữ liệu](#4-truy-vấn-dữ-liệu)
+  - [5. Hệ thống & Cấu hình](#5-hệ-thống--cấu-hình)
+- [Tổng kết](#tổng-kết)
+
+---
 
 ## Xác thực API (API Authentication)
 
@@ -87,33 +106,39 @@ Khi API key không hợp lệ hoặc thiếu:
 }
 ```
 
-## Mục lục (Table of Contents)
+---
 
-### APIs cần tích hợp với mobile 
+## APIs cần tích hợp với mobile (11 APIs)
+
+**Tổng số API endpoints: 26**
+
+### APIs cần tích hợp với mobile (11 APIs)
+
 1. POST `/upload-url` (type=selfie) - Upload selfie
-2. POST `/faceswap` - Face swap action
-3. POST `/background` - AI Background action
-4. POST `/enhance` - Enhance action
-5. POST `/beauty` - Beauty action
-6. POST `/filter` - Filter (Styles) action
-7. POST `/restore` - Restore action
-8. POST `/aging` - Aging action
-9. POST `/upscaler4k` - Upscale 4K action
+2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
+3. POST `/background` - Tạo nền AI (AI Background)
+4. POST `/enhance` - AI enhance ảnh (cải thiện chất lượng kỹ thuật)
+5. POST `/beauty` - AI beautify ảnh (cải thiện thẩm mỹ khuôn mặt)
+6. POST `/filter` - AI Filter (Styles) - Áp dụng style từ preset lên selfie
+7. POST `/restore` - AI khôi phục và nâng cấp ảnh
+8. POST `/aging` - AI lão hóa khuôn mặt
+9. POST `/upscaler4k` - AI upscale ảnh lên 4K
 10. POST `/profiles` - Tạo profile
 11. GET `/profiles/{id}` - Lấy profile
 
-### APIs không cần tích hợp với mobile
+### APIs không cần tích hợp với mobile (15 APIs)
+
 12. PUT `/profiles/{id}` - Cập nhật profile
 13. GET `/profiles` - Liệt kê profiles
 14. POST `/upload-url` (type=preset) - Upload preset (backend only)
 15. GET `/presets` - Liệt kê presets
-16. GET `/presets/{id}` - Lấy preset theo ID
+16. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
 17. DELETE `/presets/{id}` - Xóa preset
 18. GET `/selfies` - Liệt kê selfies
 19. DELETE `/selfies/{id}` - Xóa selfie
 20. GET `/results` - Liệt kê results
 21. DELETE `/results/{id}` - Xóa result
-22. POST `/upload-thumbnails` - Upload thumbnails (backend only)
+22. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
 23. GET `/thumbnails` - Liệt kê thumbnails
 24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
 25. GET `/config` - Lấy config
@@ -121,16 +146,175 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần test mobile performance
+## Error Codes Reference
 
-### 1. POST `/upload-url` (type=selfie) - Upload selfie
+### Vision API Safety Error Codes (1001-1005)
 
-### Mục đích
-Tải ảnh selfie trực tiếp lên server và lưu vào database. Endpoint này được sử dụng bởi mobile app để upload selfie.
+Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
+- POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
+- POST `/faceswap` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
+- POST `/background` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
 
-**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true` (chỉ áp dụng cho `type=selfie`).
+| Error Code | Category | Mô tả |
+|------------|----------|-------|
+| **1001** | ADULT | Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục. |
+| **1002** | VIOLENCE | Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân. |
+| **1003** | RACY | Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể. |
+| **1004** | MEDICAL | Rất có thể đây là hình ảnh y tế. |
+| **1005** | SPOOF | Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm. |
 
-### Request
+#### Tìm kiếm An toàn (Safe Search)
+
+Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính trên các lĩnh vực tìm kiếm an toàn (ví dụ: người lớn, giả mạo, y tế, bạo lực).
+
+**Các trường (Fields):**
+
+- **adult** (Likelihood): Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục.
+
+- **spoof** (Likelihood): Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
+
+- **medical** (Likelihood): Rất có thể đây là hình ảnh y tế.
+
+- **violence** (Likelihood): Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân.
+
+- **racy** (Likelihood): Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể.
+
+#### Severity Levels (Độ nghiêm trọng)
+
+Google Vision API SafeSearch trả về các mức độ nghiêm trọng cho mỗi category. App sử dụng các mức độ này để quyết định có chặn ảnh hay không:
+
+| Severity Level | Giá trị | Mô tả | Có bị chặn? |
+|----------------|---------|-------|-------------|
+| **VERY_UNLIKELY** | -1 | Không có nội dung nhạy cảm, chắc chắn | ❌ Không |
+| **UNLIKELY** | 0 | Không có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ Không |
+| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ✅ Có (chỉ trong strict mode) |
+| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (chỉ trong strict mode) |
+| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (cả strict và lenient mode) |
+
+#### Strictness Modes (Chế độ kiểm tra)
+
+App hỗ trợ 2 chế độ kiểm tra, được cấu hình qua biến môi trường `SAFETY_STRICTNESS`:
+
+**Strict Mode (Mặc định):**
+- Chặn: `POSSIBLE`, `LIKELY`, và `VERY_LIKELY`
+- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`
+- Sử dụng khi: `SAFETY_STRICTNESS=strict` hoặc không set (default)
+
+**Lenient Mode:**
+- Chặn: `VERY_LIKELY` only
+- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`
+- Sử dụng khi: `SAFETY_STRICTNESS=lenient`
+
+**Lưu ý:**
+- `statusCode` (1001-1005) chỉ được trả về khi nội dung thực sự bị chặn
+- Trong strict mode, `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` đều bị chặn
+- Trong lenient mode, chỉ `VERY_LIKELY` bị chặn
+
+**Ví dụ Response:**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
+  "code": 1001
+}
+```
+
+---
+
+### Vertex AI Safety Error Codes (2001-2004)
+
+Các error codes này được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Được sử dụng cho:
+- POST `/faceswap` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/background` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/enhance` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/beauty` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/filter` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/restore` - Khi Vertex AI chặn prompt hoặc generated image
+- POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
+
+#### Các loại tác hại
+
+Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại sau:
+
+| Error Code | Loại nguy hiểm | Sự định nghĩa |
+|------------|----------------|---------------|
+| **2001** | Lời lẽ kích động thù hận | Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ. |
+| **2002** | Quấy rối | Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác. |
+| **2003** | Nội dung khiêu dâm | Có chứa nội dung liên quan đến hành vi tình dục hoặc các nội dung khiêu dâm khác. |
+| **2004** | Nội dung nguy hiểm | Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại. |
+
+#### So sánh điểm xác suất và điểm mức độ nghiêm trọng (Probability Scores and Severity Scores)
+
+Điểm an toàn xác suất phản ánh khả năng phản hồi của mô hình có liên quan đến tác hại tương ứng. Nó có một điểm tin cậy tương ứng nằm trong khoảng từ **0.0 đến 1.0**, được làm tròn đến một chữ số thập phân.
+
+Điểm tin cậy được chia thành bốn mức độ tin cậy:
+
+| Mức độ tin cậy | Mô tả |
+|----------------|-------|
+| **NEGLIGIBLE** | Rất thấp - Khả năng có nội dung gây hại là không đáng kể |
+| **LOW** | Thấp - Khả năng có nội dung gây hại là thấp |
+| **MEDIUM** | Trung bình - Khả năng có nội dung gây hại là trung bình |
+| **HIGH** | Cao - Khả năng có nội dung gây hại là cao |
+
+**Lưu ý:**
+- App chặn nội dung khi Vertex AI trả về `HIGH` hoặc `MEDIUM` probability
+- Nội dung với `LOW` hoặc `NEGLIGIBLE` probability thường được cho phép
+- Chi tiết về probability level có thể được tìm thấy trong `debug.provider` hoặc `debug.vertex` của response
+
+**Ví dụ Response (Input Blocked):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: hate speech - Input blocked: SAFETY",
+  "code": 2001
+}
+```
+
+**Ví dụ Response (Output Blocked):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Content blocked: sexually explicit - Output blocked: SAFETY - HARM_CATEGORY_SEXUALLY_EXPLICIT (HIGH)",
+  "code": 2003
+}
+```
+
+---
+
+### HTTP Status Codes
+
+Ngoài các error codes trên, API cũng trả về các HTTP status codes chuẩn:
+
+| Status Code | Mô tả |
+|-------------|-------|
+| **200** | Success |
+| **400** | Bad Request - Request không hợp lệ |
+| **401** | Unauthorized - API key không hợp lệ hoặc thiếu (khi `ENABLE_MOBILE_API_KEY_AUTH=true`) |
+| **422** | Unprocessable Entity - Content bị chặn (sử dụng error codes 1001-1005 hoặc 2001-2004) |
+| **429** | Rate Limit Exceeded - Vượt quá giới hạn request |
+| **500** | Internal Server Error - Lỗi server |
+
+**Lưu ý:**
+- Error codes 1001-1005 và 2001-2004 được trả về trong trường `code` của response body
+- HTTP status code có thể là 422 hoặc chính error code (1001-1005, 2001-2004) tùy thuộc vào implementation
+- Chi tiết về violation có thể được tìm thấy trong `debug.vision` (cho Vision API) hoặc `debug.provider` (cho Vertex AI)
+
+---
+
+## API Endpoints (Chi tiết)
+
+### 1. Upload & Quản lý File
+
+#### 1.1. POST `/upload-url` (type=selfie) - Upload selfie
+
+**Mục đích:** Tải ảnh selfie trực tiếp lên server và lưu vào database. Endpoint này được sử dụng bởi mobile app để upload selfie.
+
+**Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true` (chỉ áp dụng cho `type=selfie`).
+
+**Request:**
 
 **Upload selfie với action:**
 ```bash
@@ -163,20 +347,18 @@ curl -X POST https://api.d.shotpix.app/upload-url \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `files` (file[], required nếu dùng multipart): Mảng file ảnh selfie cần upload (hỗ trợ nhiều file).
 - `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh selfie trực tiếp.
 - `type` (string, required): Phải là `"selfie"` cho mobile app.
 - `profile_id` (string, required): ID profile người dùng.
-- `action` (string, optional, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"default"`. 
+- `action` (string, optional, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"faceswap"`. 
   - `"faceswap"`: Tối đa 8 ảnh (có thể cấu hình), tự động xóa ảnh cũ khi upload ảnh mới (giữ lại số ảnh mới nhất theo giới hạn). **Không kiểm tra Vision API.**
   - `"wedding"`: Tối đa 2 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 1 ảnh mới nhất). **Không kiểm tra Vision API.**
   - `"4k"` hoặc `"4K"`: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Ảnh sẽ được kiểm tra bằng Vision API trước khi lưu vào database.**
   - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Không kiểm tra Vision API.**
 
-### Response
-
-**Success (200):**
+**Response (Success 200):**
 ```json
 {
   "data": {
@@ -197,7 +379,7 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 }
 ```
 
-**Error - Vision API Blocked:**
+**Response (Error - Vision API Blocked):**
 Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoint sẽ trả về error code tương ứng với loại vi phạm:
 
 ```json
@@ -209,7 +391,7 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 }
 ```
 
-**Lưu ý:**
+**Lưu ý quan trọng:**
 - **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API. Xem chi tiết error codes tại [Vision API Safety Error Codes](#vision-api-safety-error-codes-1001-1005).
 - **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`. Xem chi tiết error codes tại [Vertex AI Safety Error Codes](#vertex-ai-safety-error-codes-2001-2004).
 - Scan level mặc định: `strict` (chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` violations)
@@ -221,23 +403,165 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
   - `4k`/`4K`: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_4K`)
   - Các action khác: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_OTHER`)
 
-**Testing:**
-- Test với ảnh không phù hợp để verify 422 response
-- Verify message chỉ là "Upload failed" (generic, không có details)
-- Verify file không được lưu vào database khi bị block
+---
+
+#### 1.2. POST `/upload-url` (type=preset) - Upload preset (backend only)
+
+**Mục đích:** Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation sử dụng Gemini 3 Flash Preview). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
+
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
+
+**Multipart/form-data:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -F "files=@/path/to/image1.jpg" \
+  -F "files=@/path/to/image2.jpg" \
+  -F "type=preset" \
+  -F "profile_id=profile_1234567890" \
+  -F "enableVertexPrompt=true"
+```
+
+**JSON với image_url:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_url": "https://example.com/image.jpg",
+    "type": "preset",
+    "profile_id": "profile_1234567890",
+    "enableVertexPrompt": true
+  }'
+```
+
+**Request Parameters:**
+- `files` (file[], required nếu dùng multipart): Mảng file ảnh preset cần upload (hỗ trợ nhiều file).
+- `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh preset trực tiếp.
+- `type` (string, required): Phải là `"preset"` cho backend upload.
+- `profile_id` (string, required): ID profile người dùng.
+- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset. Sử dụng Gemini 3 Flash Preview để phân tích ảnh và tạo prompt_json tự động.
+
+**Response:**
+```json
+{
+  "data": {
+    "results": [
+      {
+        "id": "preset_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
+        "filename": "example.jpg"
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200,
+  "debug": {
+    "vertex": [
+      {
+        "hasPrompt": true,
+        "prompt_json": {
+          "prompt": "...",
+          "style": "...",
+          "lighting": "..."
+        },
+        "vertex_info": {
+          "success": true,
+          "promptKeys": ["prompt", "style", "lighting"],
+          "debug": {
+            "endpoint": "https://.../generateContent",
+            "status": 200,
+            "responseTimeMs": 4200
+          }
+        }
+      }
+    ],
+    "filesProcessed": 1,
+    "resultsCount": 1
+  }
+}
+```
 
 ---
 
-### 2. POST `/faceswap`
+#### 1.3. POST `/upload-thumbnails` - Upload thumbnails (backend only)
 
-### Mục đích
-Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
+**Mục đích:** Tải lên thư mục chứa thumbnails (WebP và Lottie JSON) và original presets. Hỗ trợ batch upload nhiều file cùng lúc.
+
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-thumbnails \
+  -F "files=@/path/to/webp_1x/face-swap/wedding_both_1.webp" \
+  -F "path_webp_1x_face-swap_wedding_both_1.webp=webp_1x/face-swap/" \
+  -F "files=@/path/to/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp" \
+  -F "path_original_preset_face-swap_wedding_both_1.webp=original_preset/face-swap/wedding_both_1/webp/"
+```
+
+**Quy tắc đặt tên file:**
+- Format: `[type]_[sub_category]_[gender]_[position].[webp|json]`
+- Ví dụ: `face-swap_wedding_both_1.webp`
+- Type có thể chứa dấu gạch ngang (face-swap, packs, filters)
+- Metadata được parse từ tên file và lưu trong R2 path
+
+**Response:**
+```json
+{
+  "data": {
+    "total": 2,
+    "successful": 2,
+    "failed": 0,
+    "presets_created": 1,
+    "thumbnails_created": 1,
+    "results": [
+      {
+        "filename": "face-swap_wedding_both_1.webp",
+        "success": true,
+        "type": "preset",
+        "preset_id": "preset_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp"
+      },
+      {
+        "filename": "wedding_both_1.webp",
+        "success": true,
+        "type": "thumbnail",
+        "preset_id": "preset_1234567890_abc123",
+        "url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "metadata": {
+          "format": "webp",
+          "resolution": "1x"
+        }
+      }
+    ]
+  },
+  "status": "success",
+  "message": "Processed 2 of 2 files",
+  "code": 200,
+  "debug": {
+    "filesProcessed": 2,
+    "resultsCount": 2
+  }
+}
+```
+
+---
+
+### 2. AI Processing
+
+#### 2.1. POST `/faceswap` - Face Swap
+
+**Mục đích:** Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
 
 **Lưu ý:** 
 - Khác với `/background`: FaceSwap thay đổi khuôn mặt trong preset, còn AI Background merge selfie vào preset scene.
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
+**Request:**
 
 **Sử dụng selfie_ids (từ database):**
 ```bash
@@ -269,18 +593,17 @@ curl -X POST https://api.d.shotpix.app/faceswap \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `preset_image_id` (string, required): ID ảnh preset đã lưu trong database (format: `preset_...`).
 - `selfie_ids` (array of strings, optional): Mảng các ID ảnh selfie đã lưu trong database (hỗ trợ multiple selfies). Thứ tự: [selfie_chính, selfie_phụ] - selfie đầu tiên sẽ được face swap vào preset, selfie thứ hai (nếu có) sẽ được sử dụng làm tham chiếu bổ sung.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "3:4"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `selfie_image_urls` (array of strings, optional): Mảng các URL ảnh selfie trực tiếp (thay thế cho `selfie_ids`). Hỗ trợ multiple selfies. Phải cung cấp `selfie_ids` HOẶC `selfie_image_urls` (không phải cả hai).
 - `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "3:4"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 - `character_gender` (string, optional): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -342,87 +665,17 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 }
 ```
 
-### Error Response
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-**Lỗi kiểm duyệt (Google Vision API) - Error Codes 1001-1005:**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
-  "code": 1001,
-  "debug": {
-    "provider": { "...": "..." },
-    "vision": {
-      "checked": true,
-      "isSafe": false,
-      "statusCode": 1001,
-      "violationCategory": "adult",
-      "violationLevel": "VERY_LIKELY",
-      "debug": {
-        "endpoint": "https://vision.googleapis.com/v1/images:annotate",
-        "status": 200
-      }
-    }
-  }
-}
-```
+---
 
-**Lỗi kiểm duyệt (Vertex AI Safety Filters) - Error Codes 2001-2004:**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Content blocked: hate speech - Input blocked: SAFETY",
-  "code": 2001,
-  "debug": {
-    "provider": {
-      "success": false,
-      "statusCode": 2001,
-      "message": "Content blocked: hate speech - Input blocked: SAFETY",
-      "error": "Input blocked: SAFETY"
-    }
-  }
-}
-```
+#### 2.2. POST `/background` - AI Background
 
-**Lỗi 400 (Bad Request):**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Bad Request",
-  "code": 400,
-  "debug": {
-    "error": "Detailed error information here",
-    "path": "/faceswap"
-  }
-}
-```
-
-**Lỗi 500 (Internal Server Error):**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Internal Server Error",
-  "code": 500,
-  "debug": {
-    "error": "Detailed error information here",
-    "path": "/faceswap",
-    "stack": "Stack trace (truncated)"
-  }
-}
-```
-
-### 3. POST `/background`
-
-### Mục đích
-Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động. Hỗ trợ 3 cách cung cấp nền: preset_image_id (từ database), preset_image_url (URL trực tiếp), hoặc custom_prompt (tạo nền từ text prompt sử dụng Vertex AI). Hỗ trợ ba cách cung cấp nền: sử dụng preset từ database (`preset_image_id`), sử dụng URL preset (`preset_image_url`), hoặc tạo nền từ text prompt (`custom_prompt`).
+**Mục đích:** Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động. Hỗ trợ 3 cách cung cấp nền: preset_image_id (từ database), preset_image_url (URL trực tiếp), hoặc custom_prompt (tạo nền từ text prompt sử dụng Vertex AI).
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
+**Request:**
 
 **Sử dụng selfie_id (từ database):**
 ```bash
@@ -488,7 +741,7 @@ curl -X POST https://api.d.shotpix.app/background \
 - `aspect_ratio` và `model` sẽ được áp dụng cho cả việc tạo nền và merge
 - `additional_prompt` chỉ ảnh hưởng đến bước merge, không ảnh hưởng đến việc tạo nền
 
-**Các trường:**
+**Request Parameters:**
 - `preset_image_id` (string, optional): ID ảnh preset (landscape scene) đã lưu trong database (format: `preset_...`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `preset_image_url` (string, optional): URL ảnh preset trực tiếp (thay thế cho `preset_image_id`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `custom_prompt` (string, optional): Prompt tùy chỉnh để tạo ảnh nền từ text sử dụng Vertex AI (thay thế cho preset image). Khi sử dụng `custom_prompt`, hệ thống sẽ:
@@ -502,8 +755,7 @@ curl -X POST https://api.d.shotpix.app/background \
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"3:4"`. Khi sử dụng `custom_prompt`, tỷ lệ này sẽ được áp dụng cho cả việc tạo nền và merge.
 - `model` (string | number, optional): Model để sử dụng cho cả việc tạo nền (nếu dùng `custom_prompt`) và merge. "2.5" hoặc 2.5 cho Gemini 2.5 Flash Image (mặc định), "3" hoặc 3 cho Gemini 3 Pro Image Preview.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -545,14 +797,16 @@ curl -X POST https://api.d.shotpix.app/background \
 }
 ```
 
-### 4. POST `/enhance`
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-### Mục đích
-AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
+---
 
-**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+#### 2.3. POST `/enhance` - AI Enhance
 
-**Lưu ý về Aspect Ratio:**
+**Mục đích:** AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
+
+**Lưu ý:** 
+- Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 - Các endpoints không phải faceswap (`/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`, `/background`) hỗ trợ giá trị `"original"` cho `aspect_ratio`.
 - Khi `aspect_ratio` là `"original"` hoặc không được cung cấp, hệ thống sẽ tự động:
   1. Lấy kích thước (width/height) từ ảnh input
@@ -562,8 +816,7 @@ AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương ph�
 - Điều này đảm bảo ảnh kết quả giữ được tỷ lệ gần với ảnh gốc thay vì mặc định về 1:1.
 - **Các giá trị hỗ trợ:** `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"`.
 
-### Request
-
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/enhance \
   -H "Content-Type: application/json" \
@@ -576,14 +829,13 @@ curl -X POST https://api.d.shotpix.app/enhance \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `image_url` (string, required): URL ảnh cần enhance.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -603,15 +855,17 @@ curl -X POST https://api.d.shotpix.app/enhance \
 }
 ```
 
-### 5. POST `/beauty`
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-### Mục đích
-AI beautify ảnh - cải thiện thẩm mỹ khuôn mặt (lý tưởng cho selfies và chân dung). Làm mịn da, xóa mụn, làm sáng mắt, tinh chỉnh khuôn mặt một cách tự nhiên.
+---
+
+#### 2.4. POST `/beauty` - AI Beauty
+
+**Mục đích:** AI beautify ảnh - cải thiện thẩm mỹ khuôn mặt (lý tưởng cho selfies và chân dung). Làm mịn da, xóa mụn, làm sáng mắt, tinh chỉnh khuôn mặt một cách tự nhiên.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
-
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/beauty \
   -H "Content-Type: application/json" \
@@ -624,14 +878,13 @@ curl -X POST https://api.d.shotpix.app/beauty \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `image_url` (string, required): URL ảnh cần beautify.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -664,15 +917,17 @@ curl -X POST https://api.d.shotpix.app/beauty \
 
 **Lưu ý:** AI Beauty tập trung vào cải thiện thẩm mỹ khuôn mặt, khác với AI Enhance (cải thiện chất lượng kỹ thuật như độ sắc nét, giảm nhiễu).
 
-### 6. POST `/filter`
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-### Mục đích
-AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt. Sử dụng prompt_json từ preset để áp dụng style.
+---
+
+#### 2.5. POST `/filter` - AI Filter (Styles)
+
+**Mục đích:** AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt. Sử dụng prompt_json từ preset để áp dụng style.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
-
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/filter \
   -H "Content-Type: application/json" \
@@ -698,17 +953,16 @@ curl -X POST https://api.d.shotpix.app/filter \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `preset_image_id` (string, required): ID preset đã lưu trong database (format: `preset_...`). Preset phải có prompt_json.
 - `selfie_id` (string, optional): ID selfie đã lưu trong database. Bắt buộc nếu không có `selfie_image_url`.
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp. Bắt buộc nếu không có `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -740,15 +994,17 @@ curl -X POST https://api.d.shotpix.app/filter \
 - Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image sử dụng Gemini 3 Flash Preview
 - Khác với `/faceswap`: Filter giữ nguyên khuôn mặt và chỉ áp dụng style, không thay đổi khuôn mặt
 
-### 7. POST `/restore`
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-### Mục đích
-AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
+---
+
+#### 2.6. POST `/restore` - AI Restore
+
+**Mục đích:** AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
-
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/restore \
   -H "Content-Type: application/json" \
@@ -761,14 +1017,13 @@ curl -X POST https://api.d.shotpix.app/restore \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `image_url` (string, required): URL ảnh cần khôi phục (ảnh cũ, bị hư hỏng, mờ, hoặc đen trắng).
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -797,15 +1052,17 @@ curl -X POST https://api.d.shotpix.app/restore \
 - Retouching chuyên nghiệp cấp Photoshop
 - High dynamic range, ultra-HD, lifelike textures
 
-### 8. POST `/aging`
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-### Mục đích
-AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
+---
+
+#### 2.7. POST `/aging` - AI Aging
+
+**Mục đích:** AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
-
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/aging \
   -H "Content-Type: application/json" \
@@ -817,15 +1074,14 @@ curl -X POST https://api.d.shotpix.app/aging \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `image_url` (string, required): URL ảnh chứa khuôn mặt cần lão hóa.
 - `age_years` (number, optional): Số năm muốn lão hóa (mặc định: 20).
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#4-post-enhance) cho chi tiết. Mặc định: `"original"`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -845,15 +1101,17 @@ curl -X POST https://api.d.shotpix.app/aging \
 }
 ```
 
-### 9. POST `/upscaler4k`
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
-### Mục đích
-Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
+---
+
+#### 2.8. POST `/upscaler4k` - AI Upscale 4K
+
+**Mục đích:** Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-### Request
-
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upscaler4k \
   -H "Content-Type: application/json" \
@@ -864,12 +1122,11 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `image_url` (string, required): URL ảnh cần upscale.
 - `profile_id` (string, required): ID profile người dùng.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -905,16 +1162,19 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
 }
 ```
 
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
+
 ---
 
-### 10. POST `/profiles`
+### 3. Quản lý Profile
 
-### Mục đích
-Tạo profile mới.
+#### 3.1. POST `/profiles` - Tạo profile
 
-**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+**Mục đích:** Tạo profile mới.
 
-### Request
+**Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Request:**
 
 **Minimal (chỉ cần device_id):**
 ```bash
@@ -970,7 +1230,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `device_id` (string, optional): ID thiết bị. Có thể gửi trong body hoặc header `x-device-id`. Nếu không có, sẽ là `null`.
 - `userID` hoặc `id` (string, optional): ID profile. Nếu không có, hệ thống tự tạo bằng `nanoid(16)`.
 - `name` (string, optional): tên profile.
@@ -978,8 +1238,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
 - `avatar_url` (string, optional): URL avatar.
 - `preferences` (string hoặc object, optional): preferences dạng JSON string hoặc object. Nếu là object, hệ thống tự động chuyển thành JSON string trước khi lưu vào D1 database (vì D1 không hỗ trợ JSON object trực tiếp).
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -998,22 +1257,21 @@ curl -X POST https://api.d.shotpix.app/profiles \
 }
 ```
 
-### 11. GET `/profiles/{id}`
+---
 
-### Mục đích
-Lấy thông tin profile theo ID.
+#### 3.2. GET `/profiles/{id}` - Lấy profile
 
-**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+**Mục đích:** Lấy thông tin profile theo ID.
 
-### Request
+**Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/profiles/profile_1234567890 \
   -H "X-API-Key: your_api_key_here"
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1034,15 +1292,13 @@ curl https://api.d.shotpix.app/profiles/profile_1234567890 \
 
 ---
 
-## APIs không cần test mobile performance
+#### 3.3. PUT `/profiles/{id}` - Cập nhật profile
 
-### 12. PUT `/profiles/{id}`
+**Mục đích:** Cập nhật thông tin profile.
 
-### Mục đích
-Cập nhật thông tin profile.
+**Authentication:** Không yêu cầu API key.
 
-### Request
-
+**Request:**
 ```bash
 curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
   -H "Content-Type: application/json" \
@@ -1057,7 +1313,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
   }'
 ```
 
-**Các trường:**
+**Request Parameters:**
 - `name` (string, optional): tên profile.
 - `email` (string, optional): email.
 - `avatar_url` (string, optional): URL avatar.
@@ -1065,8 +1321,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 
 **Lưu ý:** ID profile phải được cung cấp trong URL path (`/profiles/{id}`), không cần gửi trong body.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1085,19 +1340,20 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 }
 ```
 
-### 13. GET `/profiles`
+---
 
-### Mục đích
-Liệt kê tất cả profiles (dùng cho admin/debugging).
+#### 3.4. GET `/profiles` - Liệt kê profiles
 
-### Request
+**Mục đích:** Liệt kê tất cả profiles (dùng cho admin/debugging).
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/profiles
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1122,96 +1378,15 @@ curl https://api.d.shotpix.app/profiles
 
 ---
 
-### 12. POST `/upload-url` (type=preset) - Upload preset (backend only)
+### 4. Truy vấn Dữ liệu
 
-### Mục đích
-Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation sử dụng Gemini 3 Flash Preview). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
+#### 4.1. GET `/presets` - Liệt kê presets
 
-### Request
+**Mục đích:** Trả về danh sách preset trong database.
 
-**Multipart/form-data:**
-```bash
-curl -X POST https://api.d.shotpix.app/upload-url \
-  -F "files=@/path/to/image1.jpg" \
-  -F "files=@/path/to/image2.jpg" \
-  -F "type=preset" \
-  -F "profile_id=profile_1234567890" \
-  -F "enableVertexPrompt=true"
-```
+**Authentication:** Không yêu cầu API key.
 
-**JSON với image_url:**
-```bash
-curl -X POST https://api.d.shotpix.app/upload-url \
-  -H "Content-Type: application/json" \
-  -d '{
-    "image_url": "https://example.com/image.jpg",
-    "type": "preset",
-    "profile_id": "profile_1234567890",
-    "enableVertexPrompt": true
-  }'
-```
-
-**Các trường:**
-- `files` (file[], required nếu dùng multipart): Mảng file ảnh preset cần upload (hỗ trợ nhiều file).
-- `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh preset trực tiếp.
-- `type` (string, required): Phải là `"preset"` cho backend upload.
-- `profile_id` (string, required): ID profile người dùng.
-- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset. Sử dụng Gemini 3 Flash Preview để phân tích ảnh và tạo prompt_json tự động.
-
-### Response
-
-```json
-{
-  "data": {
-    "results": [
-      {
-        "id": "preset_1234567890_abc123",
-        "url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-        "filename": "example.jpg"
-      }
-    ],
-    "count": 1,
-    "successful": 1,
-    "failed": 0
-  },
-  "status": "success",
-  "message": "Processing successful",
-  "code": 200,
-  "debug": {
-    "vertex": [
-      {
-        "hasPrompt": true,
-        "prompt_json": {
-          "prompt": "...",
-          "style": "...",
-          "lighting": "..."
-        },
-        "vertex_info": {
-          "success": true,
-          "promptKeys": ["prompt", "style", "lighting"],
-          "debug": {
-            "endpoint": "https://.../generateContent",
-            "status": 200,
-            "responseTimeMs": 4200
-          }
-        }
-      }
-    ],
-    "filesProcessed": 1,
-    "resultsCount": 1
-  }
-}
-```
-
----
-
-### 13. GET `/presets`
-
-### Mục đích
-Trả về danh sách preset trong database.
-
-### Request
-
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/presets
 curl https://api.d.shotpix.app/presets?include_thumbnails=true
@@ -1220,8 +1395,7 @@ curl https://api.d.shotpix.app/presets?include_thumbnails=true
 **Query Parameters:**
 - `include_thumbnails` (optional): `true` để bao gồm cả presets có thumbnail. Mặc định chỉ trả về presets không có thumbnail.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1248,19 +1422,20 @@ curl https://api.d.shotpix.app/presets?include_thumbnails=true
 }
 ```
 
-### 14. GET `/presets/{id}`
+---
 
-### Mục đích
-Lấy thông tin chi tiết của một preset theo ID (bao gồm `prompt_json`).
+#### 4.2. GET `/presets/{id}` - Lấy preset theo ID
 
-### Request
+**Mục đích:** Lấy thông tin chi tiết của một preset theo ID (bao gồm `prompt_json`).
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/presets/preset_1234567890_abc123
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1288,19 +1463,20 @@ curl https://api.d.shotpix.app/presets/preset_1234567890_abc123
 }
 ```
 
-### 15. DELETE `/presets/{id}`
+---
 
-### Mục đích
-Xóa preset khỏi D1 và R2.
+#### 4.3. DELETE `/presets/{id}` - Xóa preset
 
-### Request
+**Mục đích:** Xóa preset khỏi D1 và R2.
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl -X DELETE https://api.d.shotpix.app/presets/preset_1234567890_abc123
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": null,
@@ -1310,13 +1486,15 @@ curl -X DELETE https://api.d.shotpix.app/presets/preset_1234567890_abc123
 }
 ```
 
-### 16. GET `/selfies`
+---
 
-### Mục đích
-Trả về tối đa 50 selfie gần nhất của một profile.
+#### 4.4. GET `/selfies` - Liệt kê selfies
 
-### Request
+**Mục đích:** Trả về tối đa 50 selfie gần nhất của một profile.
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
 ```
@@ -1325,8 +1503,7 @@ curl https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
 - `profile_id` (required): ID profile.
 - `limit` (optional): Số lượng selfies tối đa trả về (1-50). Mặc định: 50.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1345,19 +1522,20 @@ curl https://api.d.shotpix.app/selfies?profile_id=profile_1234567890
 }
 ```
 
-### 17. DELETE `/selfies/{id}`
+---
 
-### Mục đích
-Xóa selfie khỏi D1 và R2.
+#### 4.5. DELETE `/selfies/{id}` - Xóa selfie
 
-### Request
+**Mục đích:** Xóa selfie khỏi D1 và R2.
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl -X DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": null,
@@ -1372,13 +1550,15 @@ curl -X DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
 }
 ```
 
-### 18. GET `/results`
+---
 
-### Mục đích
-Trả về tối đa 50 kết quả face swap gần nhất.
+#### 4.6. GET `/results` - Liệt kê results
 
-### Request
+**Mục đích:** Trả về tối đa 50 kết quả face swap gần nhất.
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/results
 curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
@@ -1389,8 +1569,7 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 - `limit` (optional): Số lượng results tối đa trả về (1-50). Mặc định: 50.
 - `gender` (optional): Lọc theo giới tính. Giá trị: `male` hoặc `female`.
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1410,19 +1589,20 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 }
 ```
 
-### 19. DELETE `/results/{id}`
+---
 
-### Mục đích
-Xóa kết quả khỏi D1 và R2.
+#### 4.7. DELETE `/results/{id}` - Xóa result
 
-### Request
+**Mục đích:** Xóa kết quả khỏi D1 và R2.
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl -X DELETE https://api.d.shotpix.app/results/result_1234567890_abc123
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": null,
@@ -1439,75 +1619,15 @@ curl -X DELETE https://api.d.shotpix.app/results/result_1234567890_abc123
 }
 ```
 
-### 20. POST `/upload-thumbnails`
+---
 
-### Mục đích
-Tải lên thư mục chứa thumbnails (WebP và Lottie JSON) và original presets. Hỗ trợ batch upload nhiều file cùng lúc.
+#### 4.8. GET `/thumbnails` - Liệt kê thumbnails
 
-### Request
+**Mục đích:** Lấy danh sách thumbnails từ database. Trả về tất cả presets có thumbnail (bất kỳ cột thumbnail nào không null).
 
-```bash
-curl -X POST https://api.d.shotpix.app/upload-thumbnails \
-  -F "files=@/path/to/webp_1x/face-swap/wedding_both_1.webp" \
-  -F "path_webp_1x_face-swap_wedding_both_1.webp=webp_1x/face-swap/" \
-  -F "files=@/path/to/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp" \
-  -F "path_original_preset_face-swap_wedding_both_1.webp=original_preset/face-swap/wedding_both_1/webp/"
-```
+**Authentication:** Không yêu cầu API key.
 
-**Quy tắc đặt tên file:**
-- Format: `[type]_[sub_category]_[gender]_[position].[webp|json]`
-- Ví dụ: `face-swap_wedding_both_1.webp`
-- Type có thể chứa dấu gạch ngang (face-swap, packs, filters)
-- Metadata được parse từ tên file và lưu trong R2 path
-
-### Response
-
-```json
-{
-  "data": {
-    "total": 2,
-    "successful": 2,
-    "failed": 0,
-    "presets_created": 1,
-    "thumbnails_created": 1,
-    "results": [
-      {
-        "filename": "face-swap_wedding_both_1.webp",
-        "success": true,
-        "type": "preset",
-        "preset_id": "preset_1234567890_abc123",
-        "url": "https://resources.d.shotpix.app/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp"
-      },
-      {
-        "filename": "wedding_both_1.webp",
-        "success": true,
-        "type": "thumbnail",
-        "preset_id": "preset_1234567890_abc123",
-        "url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
-        "metadata": {
-          "format": "webp",
-          "resolution": "1x"
-        }
-      }
-    ]
-  },
-  "status": "success",
-  "message": "Processed 2 of 2 files",
-  "code": 200,
-  "debug": {
-    "filesProcessed": 2,
-    "resultsCount": 2
-  }
-}
-```
-
-### 21. GET `/thumbnails`
-
-### Mục đích
-Lấy danh sách thumbnails từ database. Trả về tất cả presets có thumbnail (bất kỳ cột thumbnail nào không null).
-
-### Request
-
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/thumbnails
 ```
@@ -1517,8 +1637,7 @@ curl https://api.d.shotpix.app/thumbnails
 
 **Lưu ý:** Endpoint này query từ bảng `presets` với điều kiện có bất kỳ cột thumbnail nào không null (`thumbnail_url`, `thumbnail_url_1x`, `thumbnail_url_1_5x`, `thumbnail_url_2x`, `thumbnail_url_3x`).
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1543,19 +1662,20 @@ curl https://api.d.shotpix.app/thumbnails
 
 **Lưu ý:** Response trả về tất cả các cột thumbnail resolution (1x, 1.5x, 2x, 3x) từ database. `thumbnail_url` là alias của `thumbnail_url_1x` cho backward compatibility.
 
-### 22. GET `/thumbnails/{id}/preset`
+---
 
-### Mục đích
-Lấy preset_id từ thumbnail_id (dùng cho mobile app).
+#### 4.9. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
 
-### Request
+**Mục đích:** Lấy preset_id từ thumbnail_id (dùng cho mobile app).
 
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/thumbnails/preset_1234567890_abc123/preset
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1567,19 +1687,22 @@ curl https://api.d.shotpix.app/thumbnails/preset_1234567890_abc123/preset
 }
 ```
 
-### 23. GET `/config`
+---
 
-### Mục đích
-Lấy cấu hình public của Worker (custom domains).
+### 5. Hệ thống & Cấu hình
 
-### Request
+#### 5.1. GET `/config` - Lấy config
 
+**Mục đích:** Lấy cấu hình public của Worker (custom domains).
+
+**Authentication:** Không yêu cầu API key.
+
+**Request:**
 ```bash
 curl https://api.d.shotpix.app/config
 ```
 
-### Response
-
+**Response:**
 ```json
 {
   "data": {
@@ -1600,12 +1723,15 @@ curl https://api.d.shotpix.app/config
 }
 ```
 
-### 24. OPTIONS `/*`
+---
 
-### Mục đích
-Xử lý CORS preflight requests cho tất cả các endpoints. Tự động được gọi bởi trình duyệt khi thực hiện cross-origin requests.
+#### 5.2. OPTIONS `/*` - CORS preflight requests
 
-### Response
+**Mục đích:** Xử lý CORS preflight requests cho tất cả các endpoints. Tự động được gọi bởi trình duyệt khi thực hiện cross-origin requests.
+
+**Authentication:** Không yêu cầu API key.
+
+**Response:**
 
 Trả về HTTP 204 (No Content) với các headers CORS:
 - `Access-Control-Allow-Origin`: Cho phép tất cả origins
@@ -1617,200 +1743,13 @@ Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
 
 ---
 
-## Error Codes Reference
-
-### Vision API Safety Error Codes (1001-1005)
-
-Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
-- POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
-- POST `/faceswap` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
-- POST `/background` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
-
-| Error Code | Category | Mô tả |
-|------------|----------|-------|
-| **1001** | ADULT | Ảnh người lớn, nude, gợi dục, porn, ... |
-| **1002** | VIOLENCE | Ảnh bạo lực, chiến tranh, tử vong, ... |
-| **1003** | RACY | Ảnh nhạy cảm sexy, gợi dục, khiêu gợi, ... |
-| **1004** | MEDICAL | Ảnh máu me, phẫu thuật, y tế, nạn nhân, ... |
-| **1005** | SPOOF | Lừa bịp, ảnh copy của người khác, ... |
-
-### Tìm kiếm An toàn (Safe Search)
-
-Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính trên các lĩnh vực tìm kiếm an toàn (ví dụ: người lớn, giả mạo, y tế, bạo lực).
-
-#### Các trường (Fields)
-
-**adult** (Likelihood)
-- Thể hiện khả năng nội dung dành cho người lớn của hình ảnh. Nội dung dành cho người lớn có thể bao gồm các yếu tố như khỏa thân, hình ảnh hoặc phim hoạt hình khiêu dâm, hoặc các hoạt động tình dục.
-
-**spoof** (Likelihood)
-- Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
-
-**medical** (Likelihood)
-- Rất có thể đây là hình ảnh y tế.
-
-**violence** (Likelihood)
-- Hình ảnh này có khả năng chứa nội dung bạo lực. Nội dung bạo lực có thể bao gồm cái chết, thương tích nghiêm trọng hoặc tổn hại đến cá nhân hoặc nhóm cá nhân.
-
-**racy** (Likelihood)
-- Khả năng cao hình ảnh được yêu cầu chứa nội dung khiêu dâm. Nội dung khiêu dâm có thể bao gồm (nhưng không giới hạn) quần áo mỏng manh hoặc xuyên thấu, khỏa thân được che đậy một cách khéo léo, tư thế tục tĩu hoặc khiêu khích, hoặc cận cảnh các vùng nhạy cảm trên cơ thể.
-
-### Severity Levels (Độ nghiêm trọng)
-
-Google Vision API SafeSearch trả về các mức độ nghiêm trọng cho mỗi category. App sử dụng các mức độ này để quyết định có chặn ảnh hay không:
-
-| Severity Level | Giá trị | Mô tả | Có bị chặn? |
-|----------------|---------|-------|-------------|
-| **VERY_UNLIKELY** | -1 | Không có nội dung nhạy cảm, chắc chắn | ❌ Không |
-| **UNLIKELY** | 0 | Không có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ Không |
-| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ✅ Có (chỉ trong strict mode) |
-| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (chỉ trong strict mode) |
-| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (cả strict và lenient mode) |
-
-### Strictness Modes (Chế độ kiểm tra)
-
-App hỗ trợ 2 chế độ kiểm tra, được cấu hình qua biến môi trường `SAFETY_STRICTNESS`:
-
-**Strict Mode (Mặc định):**
-- Chặn: `POSSIBLE`, `LIKELY`, và `VERY_LIKELY`
-- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`
-- Sử dụng khi: `SAFETY_STRICTNESS=strict` hoặc không set (default)
-
-**Lenient Mode:**
-- Chặn: `VERY_LIKELY` only
-- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`
-- Sử dụng khi: `SAFETY_STRICTNESS=lenient`
-
-**Lưu ý:**
-- `statusCode` (1001-1005) chỉ được trả về khi nội dung thực sự bị chặn
-- Trong strict mode, `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` đều bị chặn
-- Trong lenient mode, chỉ `VERY_LIKELY` bị chặn
-
-**Ví dụ Response:**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
-  "code": 1001
-}
-```
-
-### Vertex AI Safety Error Codes (2001-2004)
-
-Các error codes này được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Được sử dụng cho:
-- POST `/faceswap` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/background` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/enhance` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/beauty` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/filter` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/restore` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
-
-#### Các loại tác hại
-
-Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại sau:
-
-| Error Code | Loại nguy hiểm | Sự định nghĩa |
-|------------|----------------|---------------|
-| **2001** | Lời lẽ kích động thù hận | Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ. |
-| **2002** | Quấy rối | Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác. |
-| **2003** | Nội dung khiêu dâm | Có chứa nội dung liên quan đến hành vi tình dục hoặc các nội dung khiêu dâm khác. |
-| **2004** | Nội dung nguy hiểm | Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại. |
-
-### So sánh điểm xác suất và điểm mức độ nghiêm trọng (Probability Scores and Severity Scores)
-
-Điểm an toàn xác suất phản ánh khả năng phản hồi của mô hình có liên quan đến tác hại tương ứng. Nó có một điểm tin cậy tương ứng nằm trong khoảng từ **0.0 đến 1.0**, được làm tròn đến một chữ số thập phân.
-
-Điểm tin cậy được chia thành bốn mức độ tin cậy:
-
-| Mức độ tin cậy | Mô tả |
-|----------------|-------|
-| **NEGLIGIBLE** | Rất thấp - Khả năng có nội dung gây hại là không đáng kể |
-| **LOW** | Thấp - Khả năng có nội dung gây hại là thấp |
-| **MEDIUM** | Trung bình - Khả năng có nội dung gây hại là trung bình |
-| **HIGH** | Cao - Khả năng có nội dung gây hại là cao |
-
-**Lưu ý:**
-- App chặn nội dung khi Vertex AI trả về `HIGH` hoặc `MEDIUM` probability
-- Nội dung với `LOW` hoặc `NEGLIGIBLE` probability thường được cho phép
-- Chi tiết về probability level có thể được tìm thấy trong `debug.provider` hoặc `debug.vertex` của response
-
-**Ví dụ Response (Input Blocked):**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Content blocked: hate speech - Input blocked: SAFETY",
-  "code": 2001
-}
-```
-
-**Ví dụ Response (Output Blocked):**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Content blocked: sexually explicit - Output blocked: SAFETY - HARM_CATEGORY_SEXUALLY_EXPLICIT (HIGH)",
-  "code": 2003
-}
-```
-
-### HTTP Status Codes
-
-Ngoài các error codes trên, API cũng trả về các HTTP status codes chuẩn:
-
-| Status Code | Mô tả |
-|-------------|-------|
-| **200** | Success |
-| **400** | Bad Request - Request không hợp lệ |
-| **401** | Unauthorized - API key không hợp lệ hoặc thiếu (khi `ENABLE_MOBILE_API_KEY_AUTH=true`) |
-| **422** | Unprocessable Entity - Content bị chặn (sử dụng error codes 1001-1005 hoặc 2001-2004) |
-| **429** | Rate Limit Exceeded - Vượt quá giới hạn request |
-| **500** | Internal Server Error - Lỗi server |
-
-**Lưu ý:**
-- Error codes 1001-1005 và 2001-2004 được trả về trong trường `code` của response body
-- HTTP status code có thể là 422 hoặc chính error code (1001-1005, 2001-2004) tùy thuộc vào implementation
-- Chi tiết về violation có thể được tìm thấy trong `debug.vision` (cho Vision API) hoặc `debug.provider` (cho Vertex AI)
-
----
-
 ## Tổng kết
 
 **Tổng số API endpoints: 26**
 
-### APIs cần test mobile performance (11 APIs)
+Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-11-apis) ở đầu tài liệu.
 
-1. POST `/upload-url` (type=selfie) - Upload selfie
-2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
-3. POST `/background` - Tạo nền AI (AI Background)
-4. POST `/enhance` - AI enhance ảnh (cải thiện chất lượng kỹ thuật)
-5. POST `/beauty` - AI beautify ảnh (cải thiện thẩm mỹ khuôn mặt)
-6. POST `/filter` - AI Filter (Styles) - Áp dụng style từ preset lên selfie
-7. POST `/restore` - AI khôi phục và nâng cấp ảnh
-8. POST `/aging` - AI lão hóa khuôn mặt
-9. POST `/upscaler4k` - AI upscale ảnh lên 4K
-10. POST `/profiles` - Tạo profile
-11. GET `/profiles/{id}` - Lấy profile
-
-### APIs không cần test mobile performance (15 APIs)
-
-12. PUT `/profiles/{id}` - Cập nhật profile
-13. GET `/profiles` - Liệt kê profiles
-14. POST `/upload-url` (type=preset) - Upload preset (backend only)
-15. GET `/presets` - Liệt kê presets
-16. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-17. DELETE `/presets/{id}` - Xóa preset
-18. GET `/selfies` - Liệt kê selfies
-19. DELETE `/selfies/{id}` - Xóa selfie
-20. GET `/results` - Liệt kê results
-21. DELETE `/results/{id}` - Xóa result
-22. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
-23. GET `/thumbnails` - Liệt kê thumbnails
-24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
-25. GET `/config` - Lấy config
-26. OPTIONS `/*` - CORS preflight requests
+---
 
 ## Custom Domain
 

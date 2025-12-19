@@ -835,7 +835,7 @@ export default {
           // Scan selfie uploads with vision API before saving to database (only for 4k/4K action)
           let visionCheckResult: any = null;
           if (type === 'selfie') {
-            const actionValue = action || 'default';
+            const actionValue = action || 'faceswap';
             const needsVisionCheck = actionValue.toLowerCase() === '4k';
             const disableVisionApi = env.DISABLE_VISION_API === 'true';
             
@@ -1020,7 +1020,7 @@ export default {
             
             return response;
           } else if (type === 'selfie') {
-            let actionValue = action || 'default';
+            let actionValue = action || 'faceswap';
             const actionLower = actionValue.toLowerCase();
             
             // Normalize 4k action to lowercase for consistency

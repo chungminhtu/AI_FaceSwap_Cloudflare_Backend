@@ -1796,7 +1796,7 @@
                 if (labelEl) {
                     if (Array.isArray(selected) && selected.length > 0) {
                         const actions = selected.map(s => {
-                            const action = s.action?.toLowerCase() || 'default';
+                            const action = s.action?.toLowerCase() || 'faceswap';
                             if (action === '4k') return '4K';
                             if (action === 'faceswap') return 'Faceswap';
                             if (action === 'wedding') return 'Wedding';
@@ -1815,9 +1815,9 @@
                             : ' - Tối đa 1';
                         labelEl.textContent = `Ảnh Tự Sướng (Selfie) - ${actionText}${maxText}`;
                     } else if (selected && !Array.isArray(selected)) {
-                        const action = selected.action?.toLowerCase() || 'default';
-                        let actionText = 'Default';
-                        let maxText = ' - Tối đa 1';
+                        const action = selected.action?.toLowerCase() || 'faceswap';
+                        let actionText = 'Faceswap';
+                        let maxText = ' - Tối đa 8 cho Faceswap';
                         if (action === '4k') {
                             actionText = '4K';
                             maxText = ' - Tối đa 1 cho 4K';
@@ -1827,6 +1827,9 @@
                         } else if (action === 'wedding') {
                             actionText = 'Wedding';
                             maxText = ' - Tối đa 2 cho Wedding';
+                        } else {
+                            actionText = 'Default';
+                            maxText = ' - Tối đa 1';
                         }
                         labelEl.textContent = `Ảnh Tự Sướng (Selfie) - ${actionText}${maxText}`;
                     } else {
@@ -1845,7 +1848,7 @@
                 // Display both selfies side by side
                 const imagesHtml = selected.map((item, index) => {
                     const imageUrl = item.image_url || item.result_url || '';
-                    const action = item.action?.toLowerCase() || 'default';
+                    const action = item.action?.toLowerCase() || 'faceswap';
                     const actionBadge = `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`;
                     return `<div style="flex: 1; padding: 4px; position: relative;"><img src="${imageUrl}" alt="Selfie ${index + 1}" style="width: 100%; height: 100%; object-fit: contain; cursor: pointer; border: 2px solid #4CAF50; border-radius: 4px;" onclick="openPreviewLightbox('selfie', ${index})">${actionBadge}</div>`;
                 }).join('');
@@ -1861,7 +1864,7 @@
                 return;
             }
             const imageUrl = selected.image_url || selected.result_url || '';
-            const action = selected.action?.toLowerCase() || 'default';
+            const action = selected.action?.toLowerCase() || 'faceswap';
             const actionBadge = type === 'selfie' && selected.action 
                 ? `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`
                 : '';
@@ -2046,7 +2049,7 @@
                     formData.append('enableVertexPrompt', 'true');
                 } else if (type === 'selfie') {
                     const actionSelect = document.getElementById('selfie-action-select');
-                    const action = actionSelect?.value || 'default';
+                    const action = actionSelect?.value || 'faceswap';
                     formData.append('action', action);
                 }
 
@@ -2758,7 +2761,7 @@
                 
                 if (type === 'selfie') {
                     const actionSelect = document.getElementById('selfie-action-select');
-                    const action = actionSelect?.value || 'default';
+                    const action = actionSelect?.value || 'faceswap';
                     requestBody.action = action;
                 }
 
