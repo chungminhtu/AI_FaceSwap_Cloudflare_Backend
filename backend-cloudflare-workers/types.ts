@@ -14,7 +14,6 @@ export interface FaceSwapRequest {
   selfie_image_urls?: string[]; // Optional: Array of selfie image URLs (alternative to selfie_ids)
   profile_id: string; // Required: Profile ID for the operation
   additional_prompt?: string;
-  character_gender?: 'male' | 'female';
   aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)
   model?: string | number; // Optional: Model parameter ("2.5" for gemini-2.5-flash-image, "3" for gemini-3-pro-image-preview). Default: "2.5"
 }

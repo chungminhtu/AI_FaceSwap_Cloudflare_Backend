@@ -269,8 +269,6 @@
         }
         .action-ratio { display: flex; gap: 6px; align-items: center; }
         .action-model { display: flex; gap: 6px; align-items: center; }
-        .action-gender { display: flex; gap: 8px; align-items: center; }
-        .action-gender label { font-size: 13px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
         .action-aging { display: flex; gap: 6px; align-items: center; }
         .action-aging input { width: 50px; height: 36px; padding: 0 8px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); text-align: center; font-size: 14px; border-radius: 12px; }
 
@@ -719,7 +717,7 @@
                 max-width: 100%;
                 min-width: 100%;
             }
-            .action-ratio, .action-model, .action-gender {
+            .action-ratio, .action-model {
                 width: 100%;
                 max-width: 100%;
             }
@@ -926,11 +924,6 @@
                                 <option value="3p">3 Pro</option>
                                 <option value="3f">3 Flash</option>
                             </select>
-                        </div>
-                        <div class="action-gender">
-                            <label><input type="radio" name="character-gender" value="none" checked> Không</label>
-                            <label><input type="radio" name="character-gender" value="male"> Nam</label>
-                            <label><input type="radio" name="character-gender" value="female"> Nữ</label>
                         </div>
                     </div>
                 </div>
@@ -2127,7 +2120,6 @@
             showLoading('Đang tạo đổi mặt...');
 
             try {
-                const genderRadio = document.querySelector('input[name="character-gender"]:checked');
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
                 if (!aspectRatioSelect) {
                     console.error('[Frontend] Aspect ratio select element not found!');
@@ -2159,7 +2151,6 @@
                     ),
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
-                    character_gender: genderRadio?.value === 'none' ? '' : (genderRadio?.value || ''),
                     aspect_ratio: selectedAspectRatio,
                     model: selectedModel
                 };

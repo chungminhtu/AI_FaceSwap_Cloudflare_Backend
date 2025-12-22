@@ -3012,6 +3012,30 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
           tempFrontendDir = createTempFrontendCopy(cwd, envName);
           config._tempFrontendDir = tempFrontendDir;
           shouldCleanupTemp = true;
+          
+          // Build docs in temp directory to ensure latest generated HTML is included
+          const docsBuildScript = path.join(tempFrontendDir, 'docs', 'build-static.js');
+          const docsIndexPath = path.join(tempFrontendDir, 'docs', 'index.html');
+          if (fs.existsSync(docsBuildScript)) {
+            try {
+              report('Building docs', 'running', 'Generating static documentation');
+              execSync(`node "${docsBuildScript}"`, { cwd: tempFrontendDir, stdio: 'inherit' });
+              // Verify docs were built
+              if (fs.existsSync(docsIndexPath)) {
+                const stat = fs.statSync(docsIndexPath);
+                report('Building docs', 'completed', `Documentation built (${Math.round(stat.size / 1024)}KB)`);
+                console.log(`${colors.green}✓ Docs built successfully: ${docsIndexPath}${colors.reset}`);
+              } else {
+                throw new Error('Docs build completed but index.html not found');
+              }
+            } catch (error) {
+              console.error(`${colors.red}Error building docs: ${error.message}${colors.reset}`);
+              console.warn(`${colors.yellow}Warning: Continuing deployment without updated docs${colors.reset}`);
+              report('Building docs', 'failed', `Documentation build failed: ${error.message}`);
+            }
+          } else {
+            console.warn(`${colors.yellow}Warning: Docs build script not found at ${docsBuildScript}${colors.reset}`);
+          }
         } else {
           tempFrontendDir = config._tempFrontendDir;
         }
@@ -3023,6 +3047,21 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         const htmlPath = path.join(tempFrontendDir, 'index.html');
         const sourceDir = tempFrontendDir;
         updateWorkerUrlInHtml(cwd, backendUrl, config, htmlPath);
+        
+        // Verify docs folder exists before deploying
+        const docsFolder = path.join(tempFrontendDir, 'docs');
+        const docsIndex = path.join(docsFolder, 'index.html');
+        if (fs.existsSync(docsFolder)) {
+          if (fs.existsSync(docsIndex)) {
+            const stat = fs.statSync(docsIndex);
+            console.log(`${colors.green}✓ Docs folder ready for deployment (${Math.round(stat.size / 1024)}KB)${colors.reset}`);
+          } else {
+            console.warn(`${colors.yellow}⚠ Docs folder exists but index.html is missing${colors.reset}`);
+          }
+        } else {
+          console.warn(`${colors.yellow}⚠ Docs folder not found in deployment directory${colors.reset}`);
+        }
+        
         pagesUrl = await utils.deployPages(cwd, config.pagesProjectName, sourceDir, config.pagesProjectName);
         report('Deploying frontend', 'completed', 'Frontend deployed');
         
@@ -3400,6 +3439,30 @@ async function main() {
         tempFrontendDir = createTempFrontendCopy(process.cwd(), envName);
         config._tempFrontendDir = tempFrontendDir;
         
+        // Build docs in temp directory to ensure latest generated HTML is included
+        const docsBuildScript = path.join(tempFrontendDir, 'docs', 'build-static.js');
+        const docsIndexPath = path.join(tempFrontendDir, 'docs', 'index.html');
+        if (fs.existsSync(docsBuildScript)) {
+          try {
+            logger.startStep('Building docs');
+            execSync(`node "${docsBuildScript}"`, { cwd: tempFrontendDir, stdio: 'inherit' });
+            // Verify docs were built
+            if (fs.existsSync(docsIndexPath)) {
+              const stat = fs.statSync(docsIndexPath);
+              logger.completeStep('Building docs', `Documentation built (${Math.round(stat.size / 1024)}KB)`);
+              console.log(`${colors.green}✓ Docs built successfully: ${docsIndexPath}${colors.reset}`);
+            } else {
+              throw new Error('Docs build completed but index.html not found');
+            }
+          } catch (error) {
+            console.error(`${colors.red}Error building docs: ${error.message}${colors.reset}`);
+            console.warn(`${colors.yellow}Warning: Continuing deployment without updated docs${colors.reset}`);
+            logger.completeStep('Building docs', `Documentation build failed: ${error.message}`);
+          }
+        } else {
+          console.warn(`${colors.yellow}Warning: Docs build script not found at ${docsBuildScript}${colors.reset}`);
+        }
+        
         // Update HTML with correct backend URL before deploying Pages
         const backendUrl = config.BACKEND_DOMAIN 
           ? (config.BACKEND_DOMAIN.startsWith('http') ? config.BACKEND_DOMAIN : `https://${config.BACKEND_DOMAIN}`)
@@ -3407,6 +3470,21 @@ async function main() {
         const htmlPath = path.join(tempFrontendDir, 'index.html');
         const sourceDir = tempFrontendDir;
         updateWorkerUrlInHtml(process.cwd(), backendUrl, config, htmlPath);
+        
+        // Verify docs folder exists before deploying
+        const docsFolder = path.join(tempFrontendDir, 'docs');
+        const docsIndex = path.join(docsFolder, 'index.html');
+        if (fs.existsSync(docsFolder)) {
+          if (fs.existsSync(docsIndex)) {
+            const stat = fs.statSync(docsIndex);
+            console.log(`${colors.green}✓ Docs folder ready for deployment (${Math.round(stat.size / 1024)}KB)${colors.reset}`);
+          } else {
+            console.warn(`${colors.yellow}⚠ Docs folder exists but index.html is missing${colors.reset}`);
+          }
+        } else {
+          console.warn(`${colors.yellow}⚠ Docs folder not found in deployment directory${colors.reset}`);
+        }
+        
         pagesUrl = await utils.deployPages(process.cwd(), config.pagesProjectName, sourceDir, config.pagesProjectName);
         logger.completeStep('Deploying frontend', 'Frontend deployed');
         

@@ -37,7 +37,13 @@ function buildStatic() {
   const html = generateStaticHTML(files, sidebarContent, searchIndex);
   
   fs.writeFileSync(outputFile, html, 'utf8');
+  
+  // Also copy to index.html so Cloudflare Pages serves the latest static version
+  const indexHtmlPath = path.join(docsDir, 'index.html');
+  fs.writeFileSync(indexHtmlPath, html, 'utf8');
+  
   console.log('✅ Static documentation generated:', outputFile);
+  console.log('✅ Copied to index.html for Cloudflare Pages');
   console.log(`📄 ${Object.keys(files).length} markdown files embedded`);
   console.log(`🔍 ${searchIndex.length} search index entries`);
 }

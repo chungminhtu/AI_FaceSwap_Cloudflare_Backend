@@ -9,7 +9,7 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ## Mục lục
 
 - [Xác thực API](#xác-thực-api-api-authentication)
-- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-11-apis)
+- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-13-apis)
 - [Error Codes Reference](#error-codes-reference)
 - [API Endpoints (Chi tiết)](#api-endpoints-chi-tiết)
   - [1. Upload & Quản lý File](#1-upload--quản-lý-file)
@@ -108,11 +108,11 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (11 APIs)
+## APIs cần tích hợp với mobile (13 APIs)
 
 **Tổng số API endpoints: 26**
 
-### APIs cần tích hợp với mobile (11 APIs)
+### APIs cần tích hợp với mobile (13 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
@@ -125,18 +125,18 @@ Khi API key không hợp lệ hoặc thiếu:
 9. POST `/upscaler4k` - AI upscale ảnh lên 4K
 10. POST `/profiles` - Tạo profile
 11. GET `/profiles/{id}` - Lấy profile
+12. GET `/selfies` - Liệt kê selfies
+13. GET `/results` - Liệt kê results (generated images)
 
-### APIs không cần tích hợp với mobile (15 APIs)
+### APIs không cần tích hợp với mobile (13 APIs)
 
-12. PUT `/profiles/{id}` - Cập nhật profile
-13. GET `/profiles` - Liệt kê profiles
-14. POST `/upload-url` (type=preset) - Upload preset (backend only)
-15. GET `/presets` - Liệt kê presets
-16. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-17. DELETE `/presets/{id}` - Xóa preset
-18. GET `/selfies` - Liệt kê selfies
-19. DELETE `/selfies/{id}` - Xóa selfie
-20. GET `/results` - Liệt kê results
+14. PUT `/profiles/{id}` - Cập nhật profile
+15. GET `/profiles` - Liệt kê profiles
+16. POST `/upload-url` (type=preset) - Upload preset (backend only)
+17. GET `/presets` - Liệt kê presets
+18. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
+19. DELETE `/presets/{id}` - Xóa preset
+20. DELETE `/selfies/{id}` - Xóa selfie
 21. DELETE `/results/{id}` - Xóa result
 22. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
 23. GET `/thumbnails` - Liệt kê thumbnails
@@ -152,8 +152,6 @@ Khi API key không hợp lệ hoặc thiếu:
 
 Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
 - POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
-- POST `/faceswap` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
-- POST `/background` - Kiểm tra ảnh kết quả (nếu Vision scan được bật)
 
 | Error Code | Category | Mô tả |
 |------------|----------|-------|
@@ -326,12 +324,14 @@ curl -X POST https://api.d.shotpix.app/upload-url \
   -F "action=faceswap"
 ```
 
-**Multipart/form-data:**
+**Multipart/form-data (với action):**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
+  -H "X-API-Key: your_api_key_here" \
   -F "files=@/path/to/selfie.jpg" \
   -F "type=selfie" \
-  -F "profile_id=profile_1234567890"
+  -F "profile_id=profile_1234567890" \
+  -F "action=faceswap"
 ```
 
 **JSON với image_url:**
@@ -352,7 +352,7 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 - `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh selfie trực tiếp.
 - `type` (string, required): Phải là `"selfie"` cho mobile app.
 - `profile_id` (string, required): ID profile người dùng.
-- `action` (string, optional, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Mặc định: `"faceswap"`. 
+- `action` (string, required, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Phải được chỉ định rõ ràng. Các giá trị hỗ trợ: 
   - `"faceswap"`: Tối đa 8 ảnh (có thể cấu hình), tự động xóa ảnh cũ khi upload ảnh mới (giữ lại số ảnh mới nhất theo giới hạn). **Không kiểm tra Vision API.**
   - `"wedding"`: Tối đa 2 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 1 ảnh mới nhất). **Không kiểm tra Vision API.**
   - `"4k"` hoặc `"4K"`: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Ảnh sẽ được kiểm tra bằng Vision API trước khi lưu vào database.**
@@ -573,7 +573,6 @@ curl -X POST https://api.d.shotpix.app/faceswap \
     "selfie_ids": ["selfie_1234567890_xyz789"],
     "profile_id": "profile_1234567890",
     "additional_prompt": "Add dramatic lighting and cinematic atmosphere",
-    "character_gender": "male",
     "aspect_ratio": "16:9"
   }'
 ```
@@ -588,7 +587,6 @@ curl -X POST https://api.d.shotpix.app/faceswap \
     "selfie_image_urls": ["https://example.com/selfie1.jpg", "https://example.com/selfie2.jpg"],
     "profile_id": "profile_1234567890",
     "additional_prompt": "Add dramatic lighting and cinematic atmosphere",
-    "character_gender": "male",
     "aspect_ratio": "16:9"
   }'
 ```
@@ -601,7 +599,6 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "3:4"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
 - `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
-- `character_gender` (string, optional): `male`, `female` hoặc bỏ trống. Nếu truyền, hệ thống chèn mô tả giới tính tương ứng vào cuối `prompt`.
 
 **Response:**
 ```json
@@ -1490,9 +1487,9 @@ curl -X DELETE https://api.d.shotpix.app/presets/preset_1234567890_abc123
 
 #### 4.4. GET `/selfies` - Liệt kê selfies
 
-**Mục đích:** Trả về tối đa 50 selfie gần nhất của một profile.
+**Mục đích:** Trả về tối đa 50 selfie gần nhất của một profile. Endpoint này được sử dụng bởi mobile app để lấy danh sách selfies đã upload.
 
-**Authentication:** Không yêu cầu API key.
+**Authentication:** Không yêu cầu API key (có thể được bật trong tương lai).
 
 **Request:**
 ```bash
@@ -1554,9 +1551,9 @@ curl -X DELETE https://api.d.shotpix.app/selfies/selfie_1234567890_xyz789
 
 #### 4.6. GET `/results` - Liệt kê results
 
-**Mục đích:** Trả về tối đa 50 kết quả face swap gần nhất.
+**Mục đích:** Trả về tối đa 50 kết quả generated images (face swap, background, enhance, beauty, filter, restore, aging, upscaler4k) gần nhất. Endpoint này được sử dụng bởi mobile app để lấy danh sách các ảnh đã được tạo.
 
-**Authentication:** Không yêu cầu API key.
+**Authentication:** Không yêu cầu API key (có thể được bật trong tương lai).
 
 **Request:**
 ```bash
@@ -1747,7 +1744,7 @@ Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
 
 **Tổng số API endpoints: 26**
 
-Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-11-apis) ở đầu tài liệu.
+Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-13-apis) ở đầu tài liệu.
 
 ---
 

@@ -511,12 +511,9 @@ const buildVisionDebug = (vision?: SafetyCheckDebug | null): Record<string, any>
   });
 };
 
-const GENDER_PROMPT_HINTS: Record<'male' | 'female', string> = API_PROMPTS.GENDER_HINTS;
-
 const augmentVertexPrompt = (
   promptPayload: any,
-  additionalPrompt?: string,
-  characterGender?: 'male' | 'female'
+  additionalPrompt?: string
 ) => {
   if (!promptPayload || typeof promptPayload !== 'object') {
     return promptPayload;
@@ -527,10 +524,6 @@ const augmentVertexPrompt = (
     ? { ...promptPayload } 
     : promptPayload;
   const additions: string[] = [];
-
-  if (characterGender && GENDER_PROMPT_HINTS[characterGender]) {
-    additions.push(GENDER_PROMPT_HINTS[characterGender]);
-  }
 
   const extra = additionalPrompt?.trim();
   if (extra) {
@@ -2626,7 +2619,6 @@ export default {
           presetName: presetName,
           selfieIds: selfieIds,
           additionalPrompt: body.additional_prompt,
-          characterGender: body.character_gender,
         });
 
 
@@ -2707,8 +2699,7 @@ export default {
         }
         const augmentedPromptPayload = augmentVertexPrompt(
           storedPromptPayload,
-          body.additional_prompt,
-          body.character_gender
+          body.additional_prompt
         );
         const vertexPromptPayload = augmentedPromptPayload;
 
@@ -2818,68 +2809,12 @@ export default {
           }, httpStatus);
         }
 
-        const disableVisionApi = env.DISABLE_VISION_API === 'true';
-        let safetyDebug: SafetyCheckDebug | null = null;
-
-        // Skip Vision API call if disabled
-        if (disableVisionApi) {
-          safetyDebug = {
-            checked: false,
-            isSafe: true,
-            error: 'Safety check skipped (Vision API disabled)',
-          };
-        } else {
-          const safeSearchResult = await checkSafeSearch(faceSwapResult.ResultImageUrl, env);
-
-          safetyDebug = {
-            checked: true,
-            isSafe: !!safeSearchResult.isSafe,
-            statusCode: safeSearchResult.statusCode,
-            violationCategory: safeSearchResult.violationCategory,
-            violationLevel: safeSearchResult.violationLevel,
-            details: safeSearchResult.details,
-            error: safeSearchResult.error,
-            rawResponse: safeSearchResult.rawResponse,
-            debug: safeSearchResult.debug,
-          };
-
-          if (safeSearchResult.error) {
-            const debugPayload = debugEnabled ? compact({
-              request: requestDebug,
-              provider: buildProviderDebug(faceSwapResult),
-              vertex: undefined,
-              vision: buildVisionDebug(safetyDebug),
-            }) : undefined;
-            return jsonResponse({
-              data: null,
-              status: 'error',
-              message: `Safe search validation failed: ${safeSearchResult.error}`,
-              code: 500,
-              ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 500);
-          }
-
-          if (!safeSearchResult.isSafe) {
-            const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
-            const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            const violationCode = safeSearchResult.statusCode || 1001;
-            console.warn('[FaceSwap] Content blocked:', violationCategory, violationLevel, violationCode);
-            const debugPayload = debugEnabled ? compact({
-              request: requestDebug,
-              provider: buildProviderDebug(faceSwapResult),
-              vertex: undefined,
-              vision: buildVisionDebug(safetyDebug),
-            }) : undefined;
-            // HTTP status must be 422, code field contains Vision API error code (1001-1005)
-            return jsonResponse({
-              data: null,
-              status: 'error',
-              message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
-              code: violationCode,
-              ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 422);
-          }
-        }
+        // Vision API scanning on result images is disabled - only used for 4k action on selfie uploads
+        const safetyDebug: SafetyCheckDebug = {
+          checked: false,
+          isSafe: true,
+          error: 'Safety check skipped for Vertex AI mode',
+        };
 
         const storageDebug: {
           attemptedDownload: boolean;
@@ -3196,69 +3131,12 @@ export default {
           mergeResult.ResultImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const disableVisionApi = env.DISABLE_VISION_API === 'true';
-        let safetyDebug: SafetyCheckDebug | null = null;
-
-        // Skip Vision API call if disabled
-        if (disableVisionApi) {
-          safetyDebug = {
-            checked: false,
-            isSafe: true,
-            error: 'Safety check skipped (Vision API disabled)',
-          };
-        } else {
-          const safeSearchResult = await checkSafeSearch(mergeResult.ResultImageUrl, env);
-
-          safetyDebug = {
-            checked: true,
-            isSafe: !!safeSearchResult.isSafe,
-            statusCode: safeSearchResult.statusCode,
-            violationCategory: safeSearchResult.violationCategory,
-            violationLevel: safeSearchResult.violationLevel,
-            details: safeSearchResult.details,
-            error: safeSearchResult.error,
-            rawResponse: safeSearchResult.rawResponse,
-            debug: safeSearchResult.debug,
-          };
-
-          if (safeSearchResult.error) {
-            const debugEnabled = isDebugEnabled(env);
-            const debugPayload = debugEnabled ? compact({
-              request: requestDebug,
-              provider: buildProviderDebug(mergeResult),
-              vertex: undefined,
-              vision: buildVisionDebug(safetyDebug),
-            }) : undefined;
-            return jsonResponse({
-              data: null,
-              status: 'error',
-              message: '',
-              code: 500,
-              ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 500);
-          }
-
-          if (!safeSearchResult.isSafe) {
-            const violationCategory = safeSearchResult.violationCategory || 'unsafe content';
-            const violationLevel = safeSearchResult.violationLevel || 'LIKELY';
-            const violationCode = safeSearchResult.statusCode || 1001;
-            const debugEnabled = isDebugEnabled(env);
-            const debugPayload = debugEnabled ? compact({
-              request: requestDebug,
-              provider: buildProviderDebug(mergeResult),
-              vertex: undefined,
-              vision: buildVisionDebug(safetyDebug),
-            }) : undefined;
-            // HTTP status must be 422, code field contains Vision API error code (1001-1005)
-            return jsonResponse({
-              data: null,
-              status: 'error',
-              message: `Content blocked: Image contains ${violationCategory} content (${violationLevel})`,
-              code: violationCode,
-              ...(debugPayload ? { debug: debugPayload } : {}),
-            }, 422);
-          }
-        }
+        // Vision API scanning on result images is disabled - only used for 4k action on selfie uploads
+        const safetyDebug: SafetyCheckDebug = {
+          checked: false,
+          isSafe: true,
+          error: 'Safety check skipped for Vertex AI mode',
+        };
 
         const storageDebug: {
           attemptedDownload: boolean;
@@ -3836,8 +3714,7 @@ export default {
         const transformedPrompt = transformPromptForFilter(storedPromptPayload);
         const augmentedPrompt = augmentVertexPrompt(
           transformedPrompt,
-          body.additional_prompt,
-          undefined
+          body.additional_prompt
         );
 
         const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, selfieUrl, env);
