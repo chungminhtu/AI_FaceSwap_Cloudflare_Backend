@@ -9,7 +9,7 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ## Mục lục
 
 - [Xác thực API](#xác-thực-api-api-authentication)
-- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-13-apis)
+- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-14-apis)
 - [Error Codes Reference](#error-codes-reference)
 - [API Endpoints (Chi tiết)](#api-endpoints-chi-tiết)
   - [1. Upload & Quản lý File](#1-upload--quản-lý-file)
@@ -45,6 +45,7 @@ Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính n
 - POST `/upscaler4k`
 - POST `/profiles` - Chỉ khi tạo profile mới
 - GET `/profiles/{id}` - Chỉ khi lấy profile theo ID
+- DELETE `/results/{id}` - Xóa result
 
 **Lưu ý:**
 - POST `/upload-url` (type=preset) không yêu cầu API key (backend only)
@@ -108,11 +109,11 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (13 APIs)
+## APIs cần tích hợp với mobile (14 APIs)
 
 **Tổng số API endpoints: 26**
 
-### APIs cần tích hợp với mobile (13 APIs)
+### APIs cần tích hợp với mobile (14 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
@@ -127,17 +128,17 @@ Khi API key không hợp lệ hoặc thiếu:
 11. GET `/profiles/{id}` - Lấy profile
 12. GET `/selfies` - Liệt kê selfies
 13. GET `/results` - Liệt kê results (generated images)
+14. DELETE `/results/{id}` - Xóa result
 
-### APIs không cần tích hợp với mobile (13 APIs)
+### APIs không cần tích hợp với mobile (12 APIs)
 
-14. PUT `/profiles/{id}` - Cập nhật profile
-15. GET `/profiles` - Liệt kê profiles
-16. POST `/upload-url` (type=preset) - Upload preset (backend only)
-17. GET `/presets` - Liệt kê presets
-18. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-19. DELETE `/presets/{id}` - Xóa preset
-20. DELETE `/selfies/{id}` - Xóa selfie
-21. DELETE `/results/{id}` - Xóa result
+15. PUT `/profiles/{id}` - Cập nhật profile
+16. GET `/profiles` - Liệt kê profiles
+17. POST `/upload-url` (type=preset) - Upload preset (backend only)
+18. GET `/presets` - Liệt kê presets
+19. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
+20. DELETE `/presets/{id}` - Xóa preset
+21. DELETE `/selfies/{id}` - Xóa selfie
 22. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
 23. GET `/thumbnails` - Liệt kê thumbnails
 24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
@@ -407,7 +408,7 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 
 #### 1.2. POST `/upload-url` (type=preset) - Upload preset (backend only)
 
-**Mục đích:** Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation sử dụng Gemini 3 Flash Preview). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
+**Mục đích:** Tải ảnh preset trực tiếp lên server và lưu vào database với xử lý tự động (Vision scan, Vertex prompt generation). Endpoint này chỉ được sử dụng bởi backend, không cần test trên mobile.
 
 **Authentication:** Không yêu cầu API key.
 
@@ -440,7 +441,7 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 - `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh preset trực tiếp.
 - `type` (string, required): Phải là `"preset"` cho backend upload.
 - `profile_id` (string, required): ID profile người dùng.
-- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset. Sử dụng Gemini 3 Flash Preview để phân tích ảnh và tạo prompt_json tự động.
+- `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset. Sử dụng Vertex AI để phân tích ảnh và tạo prompt_json tự động.
 
 **Response:**
 ```json
@@ -597,7 +598,6 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 - `selfie_image_urls` (array of strings, optional): Mảng các URL ảnh selfie trực tiếp (thay thế cho `selfie_ids`). Hỗ trợ multiple selfies. Phải cung cấp `selfie_ids` HOẶC `selfie_image_urls` (không phải cả hai).
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "3:4"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 
 **Response:**
@@ -712,8 +712,7 @@ curl -X POST https://api.d.shotpix.app/background \
     "selfie_id": "selfie_1234567890_xyz789",
     "profile_id": "profile_1234567890",
     "additional_prompt": "Make the person look happy and relaxed",
-    "aspect_ratio": "16:9",
-    "model": "2.5"
+    "aspect_ratio": "16:9"
   }'
 ```
 
@@ -732,7 +731,7 @@ curl -X POST https://api.d.shotpix.app/background \
 
 **Lưu ý về custom_prompt:**
 - Khi sử dụng `custom_prompt`, hệ thống sẽ thực hiện 2 bước:
-  1. **Tạo ảnh nền**: Sử dụng Vertex AI Gemini (gemini-2.5-flash-image hoặc gemini-3-pro-image-preview) để tạo ảnh nền từ text prompt
+  1. **Tạo ảnh nền**: Sử dụng Vertex AI Gemini để tạo ảnh nền từ text prompt
   2. **Merge selfie**: Tự động merge selfie vào ảnh nền vừa tạo với lighting và color grading phù hợp
 - `custom_prompt` không thể kết hợp với `preset_image_id` hoặc `preset_image_url` (chỉ chọn một trong ba)
 - `aspect_ratio` và `model` sẽ được áp dụng cho cả việc tạo nền và merge
@@ -742,7 +741,7 @@ curl -X POST https://api.d.shotpix.app/background \
 - `preset_image_id` (string, optional): ID ảnh preset (landscape scene) đã lưu trong database (format: `preset_...`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `preset_image_url` (string, optional): URL ảnh preset trực tiếp (thay thế cho `preset_image_id`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `custom_prompt` (string, optional): Prompt tùy chỉnh để tạo ảnh nền từ text sử dụng Vertex AI (thay thế cho preset image). Khi sử dụng `custom_prompt`, hệ thống sẽ:
-  1. Tạo ảnh nền từ text prompt bằng Vertex AI Gemini (gemini-2.5-flash-image hoặc gemini-3-pro-image-preview)
+  1. Tạo ảnh nền từ text prompt bằng Vertex AI Gemini
   2. Merge selfie vào ảnh nền đã tạo
   Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `selfie_id` (string, optional): ID ảnh selfie đã lưu trong database (người). Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
@@ -750,7 +749,6 @@ curl -X POST https://api.d.shotpix.app/background \
 - `profile_id` (string, required): ID profile người dùng.
 - `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset"). Chỉ áp dụng cho bước merge, không ảnh hưởng đến việc tạo nền từ `custom_prompt`.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"3:4"`. Khi sử dụng `custom_prompt`, tỷ lệ này sẽ được áp dụng cho cả việc tạo nền và merge.
-- `model` (string | number, optional): Model để sử dụng cho cả việc tạo nền (nếu dùng `custom_prompt`) và merge. "2.5" hoặc 2.5 cho Gemini 2.5 Flash Image (mặc định), "3" hoặc 3 cho Gemini 3 Pro Image Preview.
 
 **Response:**
 ```json
@@ -822,7 +820,6 @@ curl -X POST https://api.d.shotpix.app/enhance \
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890",
     "aspect_ratio": "1:1",
-    "model": "2.5"
   }'
 ```
 
@@ -830,7 +827,6 @@ curl -X POST https://api.d.shotpix.app/enhance \
 - `image_url` (string, required): URL ảnh cần enhance.
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 **Response:**
 ```json
@@ -871,7 +867,6 @@ curl -X POST https://api.d.shotpix.app/beauty \
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890",
     "aspect_ratio": "1:1",
-    "model": "2.5"
   }'
 ```
 
@@ -879,7 +874,6 @@ curl -X POST https://api.d.shotpix.app/beauty \
 - `image_url` (string, required): URL ảnh cần beautify.
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 **Response:**
 ```json
@@ -956,7 +950,6 @@ curl -X POST https://api.d.shotpix.app/filter \
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp. Bắt buộc nếu không có `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
 
 **Response:**
@@ -987,8 +980,8 @@ curl -X POST https://api.d.shotpix.app/filter \
 - Hỗ trợ additional_prompt để tùy chỉnh thêm
 
 **Lưu ý:**
-- Preset phải có prompt_json (được tạo tự động khi upload preset với `enableVertexPrompt=true` sử dụng Gemini 3 Flash Preview)
-- Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image sử dụng Gemini 3 Flash Preview
+- Preset phải có prompt_json (được tạo tự động khi upload preset với `enableVertexPrompt=true`)
+- Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image
 - Khác với `/faceswap`: Filter giữ nguyên khuôn mặt và chỉ áp dụng style, không thay đổi khuôn mặt
 
 **Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
@@ -1010,7 +1003,6 @@ curl -X POST https://api.d.shotpix.app/restore \
     "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
     "profile_id": "profile_1234567890",
     "aspect_ratio": "1:1",
-    "model": "2.5"
   }'
 ```
 
@@ -1018,7 +1010,6 @@ curl -X POST https://api.d.shotpix.app/restore \
 - `image_url` (string, required): URL ảnh cần khôi phục (ảnh cũ, bị hư hỏng, mờ, hoặc đen trắng).
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 **Response:**
 ```json
@@ -1076,7 +1067,6 @@ curl -X POST https://api.d.shotpix.app/aging \
 - `age_years` (number, optional): Số năm muốn lão hóa (mặc định: 20).
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
-- `model` (string | number, optional): Model để sử dụng. "2.5" hoặc 2.5 cho Gemini 2.5 Flash (mặc định), "3" hoặc 3 cho Gemini 3 Pro.
 
 **Response:**
 ```json
@@ -1592,7 +1582,7 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 
 **Mục đích:** Xóa kết quả khỏi D1 và R2.
 
-**Authentication:** Không yêu cầu API key.
+**Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Request:**
 ```bash
@@ -1744,7 +1734,7 @@ Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
 
 **Tổng số API endpoints: 26**
 
-Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-13-apis) ở đầu tài liệu.
+Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-14-apis) ở đầu tài liệu.
 
 ---
 

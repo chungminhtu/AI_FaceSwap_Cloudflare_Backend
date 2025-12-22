@@ -19,9 +19,11 @@ function buildStatic() {
     }
   });
   
-  // Read sidebar if exists
+  // Generate sidebar from API documentation structure (prioritize API docs)
   let sidebarContent = '';
-  if (fs.existsSync(path.join(docsDir, '_sidebar.md'))) {
+  if (files['API_TONG_QUAN_VI.md']) {
+    sidebarContent = generateSidebarFromAPI(files);
+  } else if (fs.existsSync(path.join(docsDir, '_sidebar.md'))) {
     sidebarContent = fs.readFileSync(path.join(docsDir, '_sidebar.md'), 'utf8');
   } else {
     // Generate sidebar from files
@@ -51,6 +53,103 @@ function buildStatic() {
 function extractTitle(content) {
   const match = content.match(/^#\s+(.+)$/m);
   return match ? match[1].trim() : 'Untitled';
+}
+
+function generateSidebarFromAPI(files) {
+  const apiFile = files['API_TONG_QUAN_VI.md'];
+  if (!apiFile) {
+    return sidebarItems.map(item => 
+      `* [${item.title}](${item.file})`
+    ).join('\n');
+  }
+  
+  const lines = apiFile.split('\n');
+  const sidebar = [];
+  let inMobileAPIs = false;
+  let mobileAPIs = [];
+  let inAPIEndpoints = false;
+  let currentCategory = '';
+  
+  sidebar.push('* [📚 Tổng quan API](API_TONG_QUAN_VI.md)');
+  sidebar.push('');
+  
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    
+    if (trimmed.includes('### APIs cần tích hợp với mobile (14 APIs)')) {
+      inMobileAPIs = true;
+      return;
+    }
+    
+    if (inMobileAPIs && trimmed.match(/^\d+\.\s+(POST|GET|PUT|DELETE|PATCH|OPTIONS)/)) {
+      const apiMatch = trimmed.match(/^\d+\.\s+(POST|GET|PUT|DELETE|PATCH|OPTIONS)\s+`(.+?)`(?:\s*\(.+?\))?\s*-\s*(.+)$/);
+      if (apiMatch) {
+        const method = apiMatch[1];
+        const path = apiMatch[2];
+        const description = apiMatch[3];
+        mobileAPIs.push({ method, path, description });
+      }
+    }
+    
+    if (inMobileAPIs && trimmed.startsWith('### APIs không cần tích hợp')) {
+      inMobileAPIs = false;
+    }
+    
+    if (trimmed === '## API Endpoints (Chi tiết)') {
+      inAPIEndpoints = true;
+      return;
+    }
+    
+    if (inAPIEndpoints) {
+      const h3Match = trimmed.match(/^###\s+(\d+)\.\s+(.+)$/);
+      const h4Match = trimmed.match(/^####\s+(\d+\.\d+)\.\s+(.+)$/);
+      
+      if (h3Match) {
+        const categoryNum = h3Match[1];
+        const categoryName = h3Match[2];
+        currentCategory = categoryName;
+        sidebar.push(`* **${categoryNum}. ${categoryName}**`);
+      } else if (h4Match && currentCategory) {
+        const endpointTitle = h4Match[2].replace(/`/g, '');
+        const anchor = slugify(endpointTitle);
+        sidebar.push(`  * [${endpointTitle}](API_TONG_QUAN_VI.md#${anchor})`);
+      }
+    }
+  });
+  
+  if (mobileAPIs.length > 0) {
+    const mobileSectionIndex = sidebar.findIndex(line => line.includes('📚 Tổng quan API'));
+    const insertIndex = mobileSectionIndex + 2;
+    
+    sidebar.splice(insertIndex, 0, '* **APIs cần tích hợp với mobile (14 APIs)**');
+    
+    const anchorMap = {
+      'POST /upload-url': '11-post-upload-url-typeselfie---upload-selfie',
+      'POST /faceswap': '21-post-faceswap---face-swap',
+      'POST /background': '22-post-background---ai-background',
+      'POST /enhance': '23-post-enhance---ai-enhance',
+      'POST /beauty': '24-post-beauty---ai-beauty',
+      'POST /filter': '25-post-filter---ai-filter-styles',
+      'POST /restore': '26-post-restore---ai-restore',
+      'POST /aging': '27-post-aging---ai-aging',
+      'POST /upscaler4k': '28-post-upscaler4k---ai-upscale-4k',
+      'POST /profiles': '31-post-profiles---tạo-profile',
+      'GET /profiles/{id}': '32-get-profilesid---lấy-profile',
+      'GET /selfies': '44-get-selfies---liệt-kê-selfies',
+      'GET /results': '46-get-results---liệt-kê-results',
+      'DELETE /results/{id}': '47-delete-resultsid---xóa-result'
+    };
+    
+    mobileAPIs.forEach((api, index) => {
+      const pathKey = `${api.method} ${api.path.replace(/\(.+?\)/g, '').trim()}`;
+      const anchor = anchorMap[pathKey] || slugify(`${api.method} ${api.path} - ${api.description}`);
+      sidebar.splice(insertIndex + 1 + index, 0, `  * [${api.method} ${api.path} - ${api.description}](API_TONG_QUAN_VI.md#${anchor})`);
+    });
+    
+    sidebar.splice(insertIndex + mobileAPIs.length + 1, 0, '');
+  }
+  
+  return sidebar.join('\n');
 }
 
 function buildSearchIndex(files) {
@@ -372,7 +471,7 @@ function generateStaticHTML(files, sidebar, searchIndex) {
       name: 'Face Swap AI API',
       repo: '',
       loadSidebar: true,
-      subMaxLevel: 3,
+      subMaxLevel: 4,
       auto2top: true,
       homepage: '${firstFile}',
       coverpage: false,
