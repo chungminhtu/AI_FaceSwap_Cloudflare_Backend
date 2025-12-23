@@ -418,19 +418,29 @@ export const getVertexSafetyViolation = (responseData: any): { code: number; cat
   // Check for prompt feedback blocked reason (input blocked)
   const promptFeedback = responseData.promptFeedback;
   if (promptFeedback) {
-    // Check blockedReason
+    // Check blockedReason (any block reason indicates safety violation)
     if (promptFeedback.blockedReason) {
       const blockedReason = promptFeedback.blockedReason;
       // Map blocked reason to category (if it's a harm category)
       const category = blockedReason.replace('BLOCKED_REASON_', '').replace('SAFETY_', '');
-      const code = VERTEX_HARM_CATEGORY_MAP[`HARM_CATEGORY_${category}`] || null;
-      if (code) {
-        return {
-          code,
-          category: category.toLowerCase().replace(/_/g, ' '),
-          reason: `Input blocked: ${blockedReason}`,
-        };
-      }
+      const code = VERTEX_HARM_CATEGORY_MAP[`HARM_CATEGORY_${category}`] || VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT;
+      return {
+        code,
+        category: category.toLowerCase().replace(/_/g, ' ') || 'safety violation',
+        reason: `Input blocked: ${blockedReason}`,
+      };
+    }
+
+    // Check blockReason (alternative field name)
+    if (promptFeedback.blockReason) {
+      const blockedReason = promptFeedback.blockReason;
+      const category = blockedReason.replace('BLOCKED_REASON_', '').replace('SAFETY_', '');
+      const code = VERTEX_HARM_CATEGORY_MAP[`HARM_CATEGORY_${category}`] || VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT;
+      return {
+        code,
+        category: category.toLowerCase().replace(/_/g, ' ') || 'safety violation',
+        reason: `Input blocked: ${blockedReason}`,
+      };
     }
     
     // Check safetyRatings in promptFeedback (input safety ratings)
@@ -442,14 +452,12 @@ export const getVertexSafetyViolation = (responseData: any): { code: number; cat
       
       // Check if blocked or high/medium probability
       if (blocked === true || probability === 'HIGH' || probability === 'MEDIUM') {
-        const code = VERTEX_HARM_CATEGORY_MAP[category];
-        if (code) {
-          return {
-            code,
-            category: category.replace('HARM_CATEGORY_', '').toLowerCase().replace(/_/g, ' '),
-            reason: `Input blocked: ${category} (${probability || 'blocked'})`,
-          };
-        }
+        const code = VERTEX_HARM_CATEGORY_MAP[category] || VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT;
+        return {
+          code,
+          category: (category || 'HARM_CATEGORY_UNKNOWN').replace('HARM_CATEGORY_', '').toLowerCase().replace(/_/g, ' '),
+          reason: `Input blocked: ${category || 'safety'} (${probability || 'blocked'})`,
+        };
       }
     }
   }
@@ -457,7 +465,16 @@ export const getVertexSafetyViolation = (responseData: any): { code: number; cat
   // Check for candidate finish reason (output blocked)
   const candidates = responseData.candidates || [];
   for (const candidate of candidates) {
-    if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
+    // Check for any safety-related finish reasons
+    const finishReason = candidate.finishReason;
+    const isSafetyBlock = finishReason === 'SAFETY' || 
+                          finishReason === 'RECITATION' || 
+                          finishReason === 'BLOCKED' ||
+                          finishReason === 'PROHIBITED_CONTENT' ||
+                          finishReason === 'BLOCKLIST' ||
+                          finishReason === 'SPII';
+    
+    if (isSafetyBlock) {
       // Check safety ratings to find which category was violated
       const safetyRatings = candidate.safetyRatings || [];
       for (const rating of safetyRatings) {
@@ -467,69 +484,197 @@ export const getVertexSafetyViolation = (responseData: any): { code: number; cat
         
         // Check if blocked or high/medium probability
         if (blocked === true || probability === 'HIGH' || probability === 'MEDIUM') {
-          const code = VERTEX_HARM_CATEGORY_MAP[category];
-          if (code) {
-            return {
-              code,
-              category: category.replace('HARM_CATEGORY_', '').toLowerCase().replace(/_/g, ' '),
-              reason: `Output blocked: ${candidate.finishReason} - ${category} (${probability || 'blocked'})`,
-            };
-          }
+          const code = VERTEX_HARM_CATEGORY_MAP[category] || VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT;
+          return {
+            code,
+            category: (category || 'HARM_CATEGORY_UNKNOWN').replace('HARM_CATEGORY_', '').toLowerCase().replace(/_/g, ' '),
+            reason: `Output blocked: ${finishReason} - ${category || 'safety'} (${probability || 'blocked'})`,
+          };
         }
       }
       
-      // If no specific category found but finishReason is SAFETY, return generic
-      if (candidate.finishReason === 'SAFETY') {
-        return {
-          code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT, // Default to dangerous content
-          category: 'safety violation',
-          reason: `Output blocked: SAFETY`,
-        };
-      }
+      // If no specific category found but finishReason indicates safety block, return default
+      return {
+        code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+        category: 'safety violation',
+        reason: `Output blocked: ${finishReason}`,
+      };
     }
   }
 
-  // Check error response for support codes in message
-  if (responseData.error?.message) {
-    const message = responseData.error.message;
-    // Extract support codes from message (format: "Support codes: 58061214")
-    const supportCodeMatch = message.match(/Support codes?:\s*(\d+)/i);
-    if (supportCodeMatch) {
-      // Support codes are different from our custom codes, but we can check for safety-related patterns
-      // For now, check message content for category keywords
-      const lowerMessage = message.toLowerCase();
+  // Check error response for safety-related patterns
+  const errorMessage = responseData.error?.message || '';
+  const errorStatus = responseData.error?.status || '';
+  const errorCode = responseData.error?.code;
+  
+  // Check for safety-related error status
+  if (errorStatus === 'INVALID_ARGUMENT' || errorStatus === 'FAILED_PRECONDITION' || errorCode === 400) {
+    const lowerMessage = errorMessage.toLowerCase();
+    const lowerStatus = errorStatus.toLowerCase();
+    
+    // Check for any safety/content blocking indicators
+    const safetyKeywords = ['safety', 'blocked', 'prohibited', 'violat', 'harm', 'inappropriate', 'offensive', 'policy'];
+    const hasSafetyKeyword = safetyKeywords.some(kw => lowerMessage.includes(kw) || lowerStatus.includes(kw));
+    
+    if (hasSafetyKeyword) {
+      // Try to identify specific category
       if (lowerMessage.includes('hate') || lowerMessage.includes('hate speech')) {
         return {
           code: VERTEX_SAFETY_STATUS_CODES.HATE_SPEECH,
           category: 'hate speech',
-          reason: message,
+          reason: errorMessage || 'Content blocked due to hate speech',
+        };
+      }
+      if (lowerMessage.includes('harassment') || lowerMessage.includes('harass') || lowerMessage.includes('bully')) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.HARASSMENT,
+          category: 'harassment',
+          reason: errorMessage || 'Content blocked due to harassment',
+        };
+      }
+      if (lowerMessage.includes('sexual') || lowerMessage.includes('explicit') || lowerMessage.includes('adult') || lowerMessage.includes('nude') || lowerMessage.includes('nsfw')) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.SEXUALLY_EXPLICIT,
+          category: 'sexually explicit',
+          reason: errorMessage || 'Content blocked due to sexually explicit content',
+        };
+      }
+      if (lowerMessage.includes('dangerous') || lowerMessage.includes('danger') || lowerMessage.includes('weapon') || lowerMessage.includes('drug') || lowerMessage.includes('illegal')) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+          category: 'dangerous content',
+          reason: errorMessage || 'Content blocked due to dangerous content',
+        };
+      }
+      // Default safety violation
+      return {
+        code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+        category: 'content policy violation',
+        reason: errorMessage || 'Content blocked by safety filters',
+      };
+    }
+  }
+
+  // Check for support codes pattern (format: "Support codes: 58061214")
+  if (errorMessage) {
+    const supportCodeMatch = errorMessage.match(/Support codes?:\s*(\d+)/i);
+    if (supportCodeMatch) {
+      const lowerMessage = errorMessage.toLowerCase();
+      if (lowerMessage.includes('hate') || lowerMessage.includes('hate speech')) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.HATE_SPEECH,
+          category: 'hate speech',
+          reason: errorMessage,
         };
       }
       if (lowerMessage.includes('harassment') || lowerMessage.includes('harass')) {
         return {
           code: VERTEX_SAFETY_STATUS_CODES.HARASSMENT,
           category: 'harassment',
-          reason: message,
+          reason: errorMessage,
         };
       }
       if (lowerMessage.includes('sexual') || lowerMessage.includes('sexually explicit') || lowerMessage.includes('explicit')) {
         return {
           code: VERTEX_SAFETY_STATUS_CODES.SEXUALLY_EXPLICIT,
           category: 'sexually explicit',
-          reason: message,
+          reason: errorMessage,
         };
       }
       if (lowerMessage.includes('dangerous') || lowerMessage.includes('danger')) {
         return {
           code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
           category: 'dangerous content',
-          reason: message,
+          reason: errorMessage,
         };
       }
+      // If support code present but no specific category, assume safety violation
+      return {
+        code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+        category: 'content policy violation',
+        reason: errorMessage,
+      };
+    }
+  }
+
+  // Final fallback: check responseData itself for safety-related text
+  const responseStr = JSON.stringify(responseData).toLowerCase();
+  const safetyPatterns = [
+    { pattern: /content.*block/i, code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT },
+    { pattern: /safety.*filter/i, code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT },
+    { pattern: /policy.*violat/i, code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT },
+    { pattern: /prohibited.*content/i, code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT },
+    { pattern: /sexually.*explicit/i, code: VERTEX_SAFETY_STATUS_CODES.SEXUALLY_EXPLICIT },
+    { pattern: /hate.*speech/i, code: VERTEX_SAFETY_STATUS_CODES.HATE_SPEECH },
+    { pattern: /harassment/i, code: VERTEX_SAFETY_STATUS_CODES.HARASSMENT },
+    { pattern: /dangerous.*content/i, code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT },
+  ];
+
+  for (const { pattern, code } of safetyPatterns) {
+    if (pattern.test(responseStr)) {
+      return {
+        code,
+        category: 'content policy violation',
+        reason: `Content blocked by Vertex AI safety filters`,
+      };
     }
   }
 
   return null;
+};
+
+// Check raw response text for safety-related keywords
+// Used as fallback when JSON parsing fails or getVertexSafetyViolation returns null
+export const getVertexSafetyViolationFromText = (responseText: string): { code: number; category: string; reason: string } | null => {
+  if (!responseText) return null;
+  
+  const lowerText = responseText.toLowerCase();
+  
+  // Check for safety-related patterns in text
+  const safetyIndicators = [
+    'blocked', 'safety', 'prohibited', 'policy violation', 'content filter',
+    'harmful', 'inappropriate', 'offensive', 'violates', 'rejected'
+  ];
+  
+  const hasSafetyIndicator = safetyIndicators.some(indicator => lowerText.includes(indicator));
+  if (!hasSafetyIndicator) return null;
+  
+  // Try to identify specific category
+  if (lowerText.includes('hate') || lowerText.includes('hate_speech') || lowerText.includes('hate speech')) {
+    return {
+      code: VERTEX_SAFETY_STATUS_CODES.HATE_SPEECH,
+      category: 'hate speech',
+      reason: 'Content blocked: hate speech detected',
+    };
+  }
+  if (lowerText.includes('harassment') || lowerText.includes('harass') || lowerText.includes('bullying') || lowerText.includes('bully')) {
+    return {
+      code: VERTEX_SAFETY_STATUS_CODES.HARASSMENT,
+      category: 'harassment',
+      reason: 'Content blocked: harassment detected',
+    };
+  }
+  if (lowerText.includes('sexual') || lowerText.includes('explicit') || lowerText.includes('adult') || lowerText.includes('nude') || lowerText.includes('nsfw') || lowerText.includes('pornograph')) {
+    return {
+      code: VERTEX_SAFETY_STATUS_CODES.SEXUALLY_EXPLICIT,
+      category: 'sexually explicit',
+      reason: 'Content blocked: sexually explicit content detected',
+    };
+  }
+  if (lowerText.includes('dangerous') || lowerText.includes('danger') || lowerText.includes('weapon') || lowerText.includes('drug') || lowerText.includes('illegal') || lowerText.includes('violence')) {
+    return {
+      code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+      category: 'dangerous content',
+      reason: 'Content blocked: dangerous content detected',
+    };
+  }
+  
+  // Default safety violation if indicators found but no specific category
+  return {
+    code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+    category: 'content policy violation',
+    reason: 'Content blocked by Vertex AI safety filters',
+  };
 };
 
 // Base64 URL encoding (for JWT)

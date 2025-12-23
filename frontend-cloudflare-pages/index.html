@@ -358,13 +358,6 @@
         }
         .gallery-upload-btn:hover { background: var(--accent-hover); transform: scale(1.1); }
 
-        .gender-filter-btn {
-            height: 26px; padding: 0 10px; border: none; background: var(--bg-primary);
-            cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-secondary);
-            border-radius: 12px; transition: all 0.2s;
-        }
-        .gender-filter-btn.active { background: var(--accent); color: #fff; }
-        .gender-filter-btn:hover { background: var(--bg-tertiary); }
 
         /* Pagination */
         .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; }
@@ -781,11 +774,6 @@
                     <div class="sidebar-header">
                         <div class="gallery-title-row">
                             <span>Mẫu (Presets)</span>
-                            <div class="gender-filter">
-                                <button class="gender-filter-btn active" data-gender="" data-type="preset">Tất Cả</button>
-                                <button class="gender-filter-btn" data-gender="male" data-type="preset">Nam</button>
-                                <button class="gender-filter-btn" data-gender="female" data-type="preset">Nữ</button>
-                            </div>
                         </div>
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
                         <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
@@ -1147,13 +1135,13 @@
                 key: 'preset', responseKey: 'presets', endpoints: { list: '/presets', delete: '/presets' },
                 logName: 'Thư Viện Mẫu', labels: { selectSuccess: 'Đã chọn mẫu thành công', deleteSuccess: 'Đã xóa mẫu thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?' },
                 elements: { input: presetInput, preview: presetPreview, gallery: presetGallery, pagination: $('preset-pagination'), prevBtn: $('preset-prev'), nextBtn: $('preset-next') },
-                state: { items: [], selected: null, page: 1, genderFilter: '' }
+                state: { items: [], selected: null, page: 1 }
             },
             selfie: {
                 key: 'selfie', responseKey: 'selfies', endpoints: { list: '/selfies', delete: '/selfies' },
                 logName: 'Thư Viện Selfie', labels: { selectSuccess: 'Đã chọn selfie thành công', deleteSuccess: 'Đã xóa selfie thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa selfie này không?' },
                 elements: { input: selfieInput, preview: selfiePreview, gallery: selfieGallery, pagination: $('selfie-pagination'), prevBtn: $('selfie-prev'), nextBtn: $('selfie-next') },
-                state: { items: [], selected: [], page: 1, genderFilter: '' }
+                state: { items: [], selected: [], page: 1 }
             },
             results: {
                 key: 'results', responseKey: 'results', endpoints: { list: '/results', delete: '/results' },
@@ -1574,10 +1562,10 @@
 
         // Gallery Functions
         const loadingGalleries = new Set();
-        async function loadGallery(type, genderFilter = '') {
+        async function loadGallery(type) {
             const config = galleries[type];
-            const loadKey = `${type}-${genderFilter}`;
-            
+            const loadKey = type;
+
             // Prevent duplicate simultaneous calls - check and add atomically
             if (loadingGalleries.has(loadKey)) {
                 return;
@@ -1631,7 +1619,6 @@
                     return normalized;
                 });
                 config.state.page = 1;
-                config.state.genderFilter = genderFilter;
                 renderGallery(type);
             } catch (error) {
                 // Only log error if it wasn't already logged (e.g., network errors, JSON parse errors)
@@ -2077,7 +2064,7 @@
                     // Add all new images to gallery
                     config.state.items = [...newImages, ...config.state.items.filter(e => !newImages.some(ni => ni.id === e.id))];
                     config.state.page = 1;
-                    await loadGallery(type, config.state.genderFilter);
+                    await loadGallery(type);
                     
                     // Select the first uploaded image
                     if (newImages.length > 0) {
@@ -2801,7 +2788,7 @@
                 };
                 config.state.items = [newImage, ...config.state.items.filter(e => e.id !== newImage.id)];
                 config.state.page = 1;
-                await loadGallery(type, config.state.genderFilter);
+                await loadGallery(type);
                 setSelectedItem(type, newImage);
                 showStatusMessage(`Đã chọn làm ${type === 'preset' ? 'mẫu' : 'selfie'} thành công!`, 'success');
                 closeLightbox();
@@ -3310,20 +3297,6 @@
             setTimeout(() => div.remove(), 4000);
         }
 
-        // Gender Filter
-        function setupGenderFilterListeners() {
-            document.querySelectorAll('.gender-filter-btn').forEach(btn => {
-                btn.addEventListener('click', e => {
-                    const gender = e.target.dataset.gender || '';
-                    const type = e.target.dataset.type;
-                    if (!type) return;
-                    const container = e.target.closest('.gender-filter');
-                    container?.querySelectorAll('.gender-filter-btn').forEach(b => b.classList.remove('active'));
-                    e.target.classList.add('active');
-                    loadGallery(type, gender);
-                });
-            });
-        }
 
         // Initialize
         async function init() {
@@ -3492,7 +3465,6 @@
         // Startup
         document.addEventListener('DOMContentLoaded', async () => {
             initAccessGate();
-            setupGenderFilterListeners();
             setupDragDrop('preset');
             setupDragDrop('selfie');
 

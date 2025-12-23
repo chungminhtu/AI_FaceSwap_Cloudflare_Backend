@@ -644,7 +644,6 @@ export default {
         let profileId: string = '';
         let presetName: string = '';
         let enableVertexPrompt: boolean = false;
-        let gender: 'male' | 'female' | null = null;
         let action: string | null = null;
 
         // Support both multipart/form-data (file upload) and application/json (URL upload)
@@ -676,17 +675,15 @@ export default {
           profileId = formData.get('profile_id') as string;
           presetName = formData.get('presetName') as string;
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
-          gender = (formData.get('gender') as 'male' | 'female') || null;
           action = formData.get('action') as string | null;
         } else if (contentType.toLowerCase().includes('application/json')) {
-          const body = await request.json() as { 
+          const body = await request.json() as {
             image_urls?: string[];
             image_url?: string;
-            type?: string; 
-            profile_id?: string; 
-            presetName?: string; 
-            enableVertexPrompt?: boolean; 
-            gender?: 'male' | 'female';
+            type?: string;
+            profile_id?: string;
+            presetName?: string;
+            enableVertexPrompt?: boolean;
             action?: string;
           };
           imageUrls = body.image_urls || (body.image_url ? [body.image_url] : []);
@@ -694,7 +691,6 @@ export default {
           profileId = body.profile_id || '';
           presetName = body.presetName || '';
           enableVertexPrompt = body.enableVertexPrompt === true;
-          gender = body.gender || null;
           action = body.action || null;
         } else {
           const debugEnabled = isDebugEnabled(env);
@@ -2318,17 +2314,6 @@ export default {
         const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
 
-        const genderParam = url.searchParams.get('gender');
-        let genderFilter: 'male' | 'female' | null = null;
-
-        if (genderParam) {
-          if (genderParam === 'male' || genderParam === 'female') {
-            genderFilter = genderParam;
-          } else {
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('', 400, debugEnabled ? { genderParam, path } : undefined, request, env);
-        }
-        }
 
         let query = 'SELECT id, ext, profile_id, created_at FROM results';
         const params: any[] = [];

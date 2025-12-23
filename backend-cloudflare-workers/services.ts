@@ -5,7 +5,7 @@ import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } fr
 
 // Generate unique mock ID for performance testing mode to avoid database conflicts
 const generateMockId = () => `mock-${nanoid(16)}`;
-import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, getVertexSafetyViolationFromText } from './utils';
 import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
@@ -345,21 +345,25 @@ export const callNanoBanana = async (
       }
 
       // Check for Vertex AI safety violations in error response
-      if (parsedError) {
-        const safetyViolation = getVertexSafetyViolation(parsedError);
-        if (safetyViolation) {
-          console.warn('[Vertex-NanoBanana] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
-          return {
-            Success: false,
-            Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
-            StatusCode: safetyViolation.code,
-            Error: safetyViolation.reason,
-            FullResponse: rawResponse,
-            ParsedError: parsedError,
-            CurlCommand: curlCommand,
-            Debug: debugInfo,
-          } as any;
-        }
+      let safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
+      
+      // Fallback: check raw response text for safety patterns
+      if (!safetyViolation) {
+        safetyViolation = getVertexSafetyViolationFromText(rawResponse);
+      }
+      
+      if (safetyViolation) {
+        console.warn('[Vertex-NanoBanana] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+        return {
+          Success: false,
+          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+          FullResponse: rawResponse,
+          ParsedError: parsedError,
+          CurlCommand: curlCommand,
+          Debug: debugInfo,
+        } as any;
       }
 
       // Keep message simple - detailed error is in ParsedError/FullResponse for debug
@@ -665,21 +669,26 @@ export const generateBackgroundFromPrompt = async (
         }
       }
 
-      if (parsedError) {
-        const safetyViolation = getVertexSafetyViolation(parsedError);
-        if (safetyViolation) {
-          console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
-          return {
-            Success: false,
-            Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
-            StatusCode: safetyViolation.code,
-            Error: safetyViolation.reason,
-            FullResponse: rawResponse,
-            ParsedError: parsedError,
-            CurlCommand: curlCommand,
-            Debug: debugInfo,
-          } as any;
-        }
+      // Check for Vertex AI safety violations in error response
+      let safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
+      
+      // Fallback: check raw response text for safety patterns
+      if (!safetyViolation) {
+        safetyViolation = getVertexSafetyViolationFromText(rawResponse);
+      }
+      
+      if (safetyViolation) {
+        console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+        return {
+          Success: false,
+          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+          FullResponse: rawResponse,
+          ParsedError: parsedError,
+          CurlCommand: curlCommand,
+          Debug: debugInfo,
+        } as any;
       }
 
       const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
@@ -1009,21 +1018,25 @@ export const callNanoBananaMerge = async (
       }
 
       // Check for Vertex AI safety violations in error response
-      if (parsedError) {
-        const safetyViolation = getVertexSafetyViolation(parsedError);
-        if (safetyViolation) {
-          console.warn('[Vertex-NanoBananaMerge] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
-          return {
-            Success: false,
-            Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
-            StatusCode: safetyViolation.code,
-            Error: safetyViolation.reason,
-            FullResponse: rawResponse,
-            ParsedError: parsedError,
-            CurlCommand: curlCommand,
-            Debug: debugInfo,
-          } as any;
-        }
+      let safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
+      
+      // Fallback: check raw response text for safety patterns
+      if (!safetyViolation) {
+        safetyViolation = getVertexSafetyViolationFromText(rawResponse);
+      }
+      
+      if (safetyViolation) {
+        console.warn('[Vertex-NanoBananaMerge] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
+        return {
+          Success: false,
+          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+          FullResponse: rawResponse,
+          ParsedError: parsedError,
+          CurlCommand: curlCommand,
+          Debug: debugInfo,
+        } as any;
       }
 
       // Keep message simple - detailed error is in ParsedError/FullResponse for debug

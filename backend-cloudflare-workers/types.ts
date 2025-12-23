@@ -95,7 +95,6 @@ export interface UploadUrlRequest {
   profile_id: string; // Required: Profile ID for the upload
   presetName?: string; // Optional: Name for preset collection
   enableVertexPrompt?: boolean; // Optional: Generate Vertex AI prompt automatically
-  gender?: 'male' | 'female'; // Optional: Gender classification for the asset
 }
 
 export interface Profile {

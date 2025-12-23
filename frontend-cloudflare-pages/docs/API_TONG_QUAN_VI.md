@@ -260,6 +260,7 @@ Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại 
 - App chặn nội dung khi Vertex AI trả về `HIGH` hoặc `MEDIUM` probability
 - Nội dung với `LOW` hoặc `NEGLIGIBLE` probability thường được cho phép
 - Chi tiết về probability level có thể được tìm thấy trong `debug.provider` hoặc `debug.vertex` của response
+- Vertex AI safety violations luôn trả về HTTP 422 với internal error codes 2001-2004 trong trường `code`
 
 **Ví dụ Response (Input Blocked):**
 ```json
@@ -298,7 +299,7 @@ Ngoài các error codes trên, API cũng trả về các HTTP status codes chu�
 
 **Lưu ý:**
 - Error codes 1001-1005 và 2001-2004 được trả về trong trường `code` của response body
-- HTTP status code có thể là 422 hoặc chính error code (1001-1005, 2001-2004) tùy thuộc vào implementation
+- HTTP status code luôn là 422 cho các safety violations (content bị chặn)
 - Chi tiết về violation có thể được tìm thấy trong `debug.vision` (cho Vision API) hoặc `debug.provider` (cho Vertex AI)
 
 ---
@@ -1554,7 +1555,6 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 **Query Parameters:**
 - `profile_id` (optional): ID profile để lọc kết quả.
 - `limit` (optional): Số lượng results tối đa trả về (1-50). Mặc định: 50.
-- `gender` (optional): Lọc theo giới tính. Giá trị: `male` hoặc `female`.
 
 **Response:**
 ```json
