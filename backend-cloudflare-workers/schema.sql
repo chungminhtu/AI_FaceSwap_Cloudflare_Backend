@@ -15,10 +15,11 @@ CREATE TABLE IF NOT EXISTS profiles (
 -- Presets table: Store preset images with optional thumbnails
 -- Metadata (type, sub_category, gender, position) is stored in R2 bucket path, not in DB
 -- prompt_json is stored in R2 object metadata, not in D1
+-- thumbnail_r2 stores JSON array of all thumbnail URLs by resolution
 CREATE TABLE IF NOT EXISTS presets (
   id TEXT PRIMARY KEY,
   ext TEXT NOT NULL, -- File extension (e.g., 'jpg', 'png', etc.)
-  thumbnail_r2 TEXT, -- R2 key for thumbnail (e.g., 'webp_1x/face-swap/portrait_female_1.webp')
+  thumbnail_r2 TEXT, -- JSON array of thumbnail URLs: {"webp_1x": "url", "lottie_2x": "url", ...}
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 

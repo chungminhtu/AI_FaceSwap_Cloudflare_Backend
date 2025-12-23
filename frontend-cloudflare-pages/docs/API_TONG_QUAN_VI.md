@@ -492,61 +492,129 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 
 #### 1.3. POST `/upload-thumbnails` - Upload thumbnails (backend only)
 
-**Mục đích:** Tải lên thư mục chứa thumbnails (WebP và Lottie JSON) và original presets. Hỗ trợ batch upload nhiều file cùng lúc.
+**Mục đích:** Tải lên thumbnails (WebP và Lottie JSON) và tự động tạo presets. Hỗ trợ upload file zip chứa tất cả assets hoặc upload từng file riêng lẻ. Mỗi file sẽ trở thành một preset với filename làm preset_id. Vertex AI sẽ tự động phân tích ảnh WebP từ thư mục preset và tạo prompt_json metadata.
 
 **Authentication:** Không yêu cầu API key.
 
-**Request:**
+**Upload individual files:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-thumbnails \
-  -F "files=@/path/to/webp_1x/face-swap/wedding_both_1.webp" \
-  -F "path_webp_1x_face-swap_wedding_both_1.webp=webp_1x/face-swap/" \
-  -F "files=@/path/to/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp" \
-  -F "path_original_preset_face-swap_wedding_both_1.webp=original_preset/face-swap/wedding_both_1/webp/"
+  -F "files=@/path/to/preset/fs_wonder_f_3.png" \
+  -F "path_preset_fs_wonder_f_3.png=preset/" \
+  -F "files=@/path/to/lottie_1x/fs_wonder_f_3.json" \
+  -F "path_lottie_1x_fs_wonder_f_3.json=lottie_1x/" \
+  -F "files=@/path/to/lottie_avif_2x/fs_wonder_f_3.json" \
+  -F "path_lottie_avif_2x_fs_wonder_f_3.json=lottie_avif_2x/"
+```
+
+**Upload zip file containing all assets:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-thumbnails \
+  -F "files=@/path/to/thumbnails.zip"
+```
+
+**Cấu trúc thư mục:**
+```
+├── preset/
+│   ├── fs_wonder_f_3.png    # Files here get Vertex AI prompt generation
+│   └── fs_wonder_m_2.png
+├── lottie_1x/
+│   ├── fs_wonder_f_3.json   # Thumbnails at 1x resolution
+│   └── fs_wonder_m_2.json
+├── lottie_1.5x/
+│   ├── fs_wonder_f_3.json   # Thumbnails at 1.5x resolution
+│   └── fs_wonder_m_2.json
+├── lottie_2x/
+│   ├── fs_wonder_f_3.json   # Thumbnails at 2x resolution
+│   └── fs_wonder_m_2.json
+├── lottie_avif_1x/
+│   ├── fs_wonder_f_3.json   # AVIF thumbnails at 1x resolution
+│   └── fs_wonder_m_2.json
+└── [other resolution folders...]
 ```
 
 **Quy tắc đặt tên file:**
-- Format: `[type]_[sub_category]_[gender]_[position].[webp|json]`
-- Ví dụ: `face-swap_wedding_both_1.webp`
-- Type có thể chứa dấu gạch ngang (face-swap, packs, filters)
-- Metadata được parse từ tên file và lưu trong R2 path
+- Format: `[preset_id].[png|webp|json]`
+- Ví dụ: `fs_wonder_f_3.png`, `fs_wonder_m_2.webp`, `fireworks_animation.json`
+- Tên file (không bao gồm extension) sẽ trở thành `preset_id`
+- Vertex AI chỉ phân tích file ảnh từ thư mục "preset" để tạo `prompt_json` metadata
+- File từ các thư mục resolution khác (lottie_*, lottie_avif_*) là thumbnails, KHÔNG được gửi đến Vertex AI
+
+**Tính năng Vertex AI:**
+- Tự động gọi Vertex AI Gemini để phân tích file ảnh từ thư mục "preset"
+- Sử dụng `Promise.all` để xử lý batch upload và tạo prompt song song
+- `prompt_json` được lưu trong R2 custom metadata của preset files
+- Thumbnails được lưu ở nhiều resolution (1x, 1.5x, 2x, 3x, 4x) trong database
+- Chỉ áp dụng cho file ảnh từ thư mục "preset", bỏ qua thumbnails
 
 **Response:**
 ```json
 {
   "data": {
-    "total": 2,
-    "successful": 2,
+    "total": 3,
+    "successful": 3,
     "failed": 0,
-    "presets_created": 1,
-    "thumbnails_created": 1,
+    "thumbnails_processed": 3,
     "results": [
       {
-        "filename": "face-swap_wedding_both_1.webp",
+        "filename": "fs_wonder_f_3.png",
         "success": true,
         "type": "preset",
-        "preset_id": "preset_1234567890_abc123",
-        "url": "https://resources.d.shotpix.app/original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp"
+        "preset_id": "fs_wonder_f_3",
+        "url": "https://resources.d.shotpix.app/presets/fs_wonder_f_3.png",
+        "hasPrompt": true,
+        "prompt_json": {
+          "scene": "wonder woman portrait",
+          "style": "heroic",
+          "mood": "confident",
+          "colors": ["red", "blue", "gold"]
+        },
+        "vertex_info": {
+          "success": true,
+          "promptKeys": ["scene", "style", "mood", "colors"]
+        },
+        "metadata": {
+          "format": "webp"
+        }
       },
       {
-        "filename": "wedding_both_1.webp",
+        "filename": "fs_wonder_f_3.json",
         "success": true,
         "type": "thumbnail",
-        "preset_id": "preset_1234567890_abc123",
-        "url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "preset_id": "fs_wonder_f_3",
+        "url": "https://resources.d.shotpix.app/lottie_1x/fs_wonder_f_3.json",
+        "hasPrompt": false,
+        "vertex_info": {
+          "success": false
+        },
         "metadata": {
-          "format": "webp",
+          "format": "lottie",
           "resolution": "1x"
+        }
+      },
+      {
+        "filename": "fs_wonder_f_3.json",
+        "success": true,
+        "type": "thumbnail",
+        "preset_id": "fs_wonder_f_3",
+        "url": "https://resources.d.shotpix.app/lottie_avif_2x/fs_wonder_f_3.json",
+        "hasPrompt": false,
+        "vertex_info": {
+          "success": false
+        },
+        "metadata": {
+          "format": "lottie",
+          "resolution": "2x"
         }
       }
     ]
   },
   "status": "success",
-  "message": "Processed 2 of 2 files",
+  "message": "Processed 3 of 3 files",
   "code": 200,
   "debug": {
-    "filesProcessed": 2,
-    "resultsCount": 2
+    "filesProcessed": 3,
+    "resultsCount": 3
   }
 }
 ```
@@ -1622,7 +1690,7 @@ curl https://api.d.shotpix.app/thumbnails
 **Query Parameters:**
 - Không có query parameters. Endpoint trả về tất cả presets có thumbnail.
 
-**Lưu ý:** Endpoint này query từ bảng `presets` với điều kiện có bất kỳ cột thumbnail nào không null (`thumbnail_url`, `thumbnail_url_1x`, `thumbnail_url_1_5x`, `thumbnail_url_2x`, `thumbnail_url_3x`).
+**Lưu ý:** Endpoint này query từ bảng `presets` với điều kiện `thumbnail_r2` không null và không rỗng. Dữ liệu thumbnail được lưu dưới dạng JSON object trong trường `thumbnail_r2`.
 
 **Response:**
 ```json
@@ -1630,13 +1698,15 @@ curl https://api.d.shotpix.app/thumbnails
   "data": {
     "thumbnails": [
       {
-        "id": "preset_1234567890_abc123",
-        "preset_url": "https://resources.d.shotpix.app/faceswap-images/preset/example.jpg",
-        "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
-        "thumbnail_url_1x": "https://resources.d.shotpix.app/webp_1x/face-swap/wedding_both_1.webp",
+        "id": "fs_wonder_f_3",
+        "ext": "png",
+        "thumbnail_r2": "{\"webp_1x\":\"webp_1x/fs_wonder_f_3.webp\",\"lottie_1x\":\"lottie_1x/fs_wonder_f_3.json\",\"lottie_avif_2x\":\"lottie_avif_2x/fs_wonder_f_3.json\"}",
+        "thumbnail_url": "https://resources.d.shotpix.app/webp_1x/fs_wonder_f_3.webp",
+        "thumbnail_url_1x": "https://resources.d.shotpix.app/webp_1x/fs_wonder_f_3.webp",
         "thumbnail_url_1_5x": null,
         "thumbnail_url_2x": null,
         "thumbnail_url_3x": null,
+        "thumbnail_url_4x": null,
         "created_at": "2024-01-01T00:00:00.000Z"
       }
     ]

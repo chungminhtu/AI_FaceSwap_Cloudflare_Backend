@@ -2,6 +2,7 @@
 
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
+import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, BackgroundRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
@@ -1207,36 +1208,16 @@ export default {
     }
 
     // Parse thumbnail filename: [type]_[sub_category]_[gender]_[position].[ext]
-    // Type uses hyphens (face-swap), other parts use underscores
-    // Example: face-swap_wedding_both_1.webp -> type: face-swap, sub_category: wedding, gender: both, position: 1
-    // Returns remaining filename without type: wedding_both_1.webp
-    function parseThumbnailFilename(filename: string): { type: string; sub_category: string; gender: string; position: number; format: string; remainingFilename: string } | null {
+    // Parse thumbnail filename to extract preset_id (filename without extension)
+    // Example: "preset_123.webp" -> preset_id: "preset_123", format: "webp"
+    function parseThumbnailFilename(filename: string): { preset_id: string; format: string } | null {
       const extMatch = filename.match(/\.(webp|json)$/i);
       if (!extMatch) return null;
-      
+
       const format = extMatch[1].toLowerCase() === 'json' ? 'lottie' : 'webp';
-      const nameWithoutExt = filename.replace(/\.(webp|json)$/i, '');
-      const fileExtension = extMatch[1];
-      
-      // Format: [type]_[sub_category]_[gender]_[position]
-      // Type can contain hyphens (face-swap), so we need to split carefully
-      // Split by underscore and reconstruct: last part is position, second-to-last is gender, rest is type_sub_category
-      const parts = nameWithoutExt.split('_');
-      if (parts.length < 4) return null;
-      
-      const position = parseInt(parts[parts.length - 1], 10);
-      if (isNaN(position)) return null;
-      
-      const gender = parts[parts.length - 2];
-      // Everything before gender is type_sub_category, but type can have hyphens
-      // First part is type (can have hyphens), rest is sub_category
-      const type = parts[0]; // e.g., "face-swap"
-      const sub_category = parts.slice(1, parts.length - 2).join('_'); // e.g., "wedding"
-      
-      // Remaining filename without type prefix: [sub_category]_[gender]_[position].[ext]
-      const remainingFilename = `${sub_category}_${gender}_${position}.${fileExtension}`;
-      
-      return { type, sub_category, gender, position, format, remainingFilename };
+      const preset_id = filename.replace(/\.(webp|json)$/i, '');
+
+      return { preset_id, format };
     }
 
     // Handle thumbnail folder upload endpoint - processes both original presets and thumbnails
@@ -1249,18 +1230,61 @@ export default {
         }
 
         const formData = await request.formData();
-        const files: Array<{ file: File; path: string }> = [];
+        let files: Array<{ file: File; path: string }> = [];
         const fileEntries = formData.getAll('files');
-        
-        // Collect files with their paths
+
+        // Check if any uploaded files are zip files
+        const zipFiles: File[] = [];
+        const regularFiles: Array<{ file: File; path: string }> = [];
+
+        // First pass: separate zip files from regular files
         for (const entry of fileEntries) {
           if (entry && typeof entry !== 'string') {
             const file = entry as any as File;
-            const pathKey = Array.from(formData.keys()).find(k => k === `path_${file.name}`);
-            const filePath = pathKey ? (formData.get(pathKey) as string || '') : '';
-            files.push({ file, path: filePath });
+            if (file.type === 'application/zip' || file.type === 'application/x-zip-compressed' || file.name.toLowerCase().endsWith('.zip')) {
+              zipFiles.push(file);
+            } else {
+              const pathKey = Array.from(formData.keys()).find(k => k === `path_${file.name}`);
+              const filePath = pathKey ? (formData.get(pathKey) as string || '') : '';
+              regularFiles.push({ file, path: filePath });
+            }
           }
         }
+
+        // Process zip files: extract all files from them
+        for (const zipFile of zipFiles) {
+          try {
+            const zipData = await zipFile.arrayBuffer();
+            const zip = await JSZip.loadAsync(zipData);
+
+            // Extract all files from zip
+            const zipFilePromises: Promise<{ file: File; path: string }>[] = [];
+            zip.forEach((relativePath, zipEntry) => {
+              if (!zipEntry.dir) {
+                const promise = zipEntry.async('blob').then(blob => {
+                  // Create a File object from the blob with the path
+                  const fileName = relativePath.split('/').pop() || 'unknown';
+                  const file = new File([blob], fileName, { type: blob.type });
+                  return { file, path: relativePath };
+                });
+                zipFilePromises.push(promise);
+              }
+            });
+
+            const extractedFiles = await Promise.all(zipFilePromises);
+            files.push(...extractedFiles);
+          } catch (error) {
+            // If zip processing fails, add an error result
+            results.push({
+              filename: zipFile.name,
+              success: false,
+              error: `Failed to extract zip file: ${error instanceof Error ? error.message : String(error)}`
+            });
+          }
+        }
+
+        // Add regular files
+        files.push(...regularFiles);
 
         if (files.length === 0) {
           const debugEnabled = isDebugEnabled(env);
@@ -1271,111 +1295,217 @@ export default {
         const R2_BUCKET = getR2Bucket(env);
         const requestUrl = new URL(request.url);
         const results: any[] = [];
-        
-        // Separate original presets from thumbnails
-        const originalPresets: Array<{ file: File; path: string; parsed: any }> = [];
-        const thumbnails: Array<{ file: File; path: string; parsed: any }> = [];
 
-        // First pass: parse and categorize files
+        // Check if any uploaded files are zip files
+        const zipFiles: File[] = [];
+        const regularFiles: Array<{ file: File; path: string }> = [];
+
+        // First pass: separate zip files from regular files
+        for (const entry of fileEntries) {
+          if (entry && typeof entry !== 'string') {
+            const file = entry as any as File;
+            if (file.type === 'application/zip' || file.type === 'application/x-zip-compressed' || file.name.toLowerCase().endsWith('.zip')) {
+              zipFiles.push(file);
+            } else {
+              const pathKey = Array.from(formData.keys()).find(k => k === `path_${file.name}`);
+              const filePath = pathKey ? (formData.get(pathKey) as string || '') : '';
+              regularFiles.push({ file, path: filePath });
+            }
+          }
+        }
+
+        // Process zip files: extract all files from them
+        for (const zipFile of zipFiles) {
+          try {
+            const zipData = await zipFile.arrayBuffer();
+            const zip = await JSZip.loadAsync(zipData);
+
+            // Extract all files from zip
+            const zipFilePromises: Promise<{ file: File; path: string }>[] = [];
+            zip.forEach((relativePath: string, zipEntry: any) => {
+              if (!zipEntry.dir) {
+                const promise = zipEntry.async('blob').then((blob: Blob) => {
+                  // Create a File object from the blob with the path
+                  const fileName = relativePath.split('/').pop() || 'unknown';
+                  const file = new File([blob], fileName, { type: blob.type });
+                  return { file, path: relativePath };
+                });
+                zipFilePromises.push(promise);
+              }
+            });
+
+            const extractedFiles = await Promise.all(zipFilePromises);
+            files.push(...extractedFiles);
+          } catch (error) {
+            // If zip processing fails, add an error result
+            results.push({
+              filename: zipFile.name,
+              success: false,
+              error: `Failed to extract zip file: ${error instanceof Error ? error.message : String(error)}`
+            });
+          }
+        }
+
+        // Add regular files
+        files.push(...regularFiles);
+
+        // Process each file as a thumbnail that becomes a preset
+        const thumbnailFiles: Array<{ file: File; path: string; parsed: any }> = [];
+
+        // Parse all files
         for (const { file, path } of files) {
           const filename = file.name || '';
           const parsed = parseThumbnailFilename(filename);
-          
+
           if (!parsed) {
             results.push({
               filename,
               success: false,
-              error: 'Invalid filename format. Expected: [type]_[sub_category]_[gender]_[position].[webp|json]'
+              error: 'Invalid filename format. Expected: [preset_id].[webp|json]'
             });
             continue;
           }
 
-          // Check if it's an original preset (in original_preset folder)
-          if (path.includes('original_preset/')) {
-            originalPresets.push({ file, path, parsed });
-          } else {
-            thumbnails.push({ file, path, parsed });
-          }
+          thumbnailFiles.push({ file, path, parsed });
         }
 
-        // Process original presets first (create preset records)
-        // Map: R2 key -> preset_id (for linking thumbnails)
-        const presetMap = new Map<string, string>();
-        
-        // Step 1: Extract all potential IDs and batch check existing presets
-        const potentialIds: string[] = [];
-        const r2KeyToIdMap = new Map<string, string>();
-        
-        for (const { file, path, parsed } of originalPresets) {
-          const r2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
-          const keyParts = r2Key.replace('preset/', '').split('.');
-          if (keyParts.length >= 2) {
-            const extractedId = keyParts.slice(0, -1).join('.');
-            potentialIds.push(extractedId);
-            r2KeyToIdMap.set(r2Key, extractedId);
+        // Separate files that need Vertex AI prompt generation (images from preset folder) from thumbnail files
+        const filesNeedingPrompts: Array<{ file: File; path: string; parsed: any; index: number }> = [];
+        const thumbnailFilesOnly: Array<{ file: File; path: string; parsed: any; index: number }> = [];
+
+        thumbnailFiles.forEach((item, index) => {
+          const { file, path, parsed } = item;
+          const isFromPresetFolder = path.includes('preset');
+
+          if (isFromPresetFolder) {
+            // Files from preset folder need Vertex AI prompt generation (PNG/WebP images)
+            filesNeedingPrompts.push({ file, path, parsed, index });
+          } else {
+            // Other files (lottie JSON from resolution folders) are thumbnails only
+            thumbnailFilesOnly.push({ file, path, parsed, index });
           }
-        }
-        
-        // Batch check existing presets
-        const existingPresetsMap = new Map<string, string>();
-        if (potentialIds.length > 0) {
-          const uniqueIds = [...new Set(potentialIds)];
-          const placeholders = uniqueIds.map(() => '?').join(',');
-          const existingPresets = await DB.prepare(
-            `SELECT id FROM presets WHERE id IN (${placeholders})`
-          ).bind(...uniqueIds).all();
-          
-          if (existingPresets.results) {
-            for (const preset of existingPresets.results) {
-              existingPresetsMap.set((preset as any).id, (preset as any).id);
+        });
+
+        // Batch generate Vertex AI prompts for files that need them
+        const promptResults: Array<{ index: number; promptJson: string | null; vertexCallInfo: any }> = [];
+
+        if (filesNeedingPrompts.length > 0) {
+          // First upload all temp files in parallel
+          const tempUploads = await Promise.all(
+            filesNeedingPrompts.map(async ({ file, parsed, index }) => {
+              const presetId = parsed.preset_id;
+              const fileFormat = parsed.format;
+              const tempR2Key = `temp/${presetId}_${Date.now()}_${index}.${fileFormat === 'lottie' ? 'json' : 'webp'}`;
+              const fileData = await file.arrayBuffer();
+              const contentType = fileFormat === 'lottie' ? 'application/json' : 'image/webp';
+
+              await R2_BUCKET.put(tempR2Key, fileData, {
+                httpMetadata: {
+                  contentType,
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+
+              const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
+
+              return { tempR2Key, tempPublicUrl, fileData, index };
+            })
+          );
+
+          // Then generate prompts in parallel
+          const promptPromises = tempUploads.map(async ({ tempR2Key, tempPublicUrl, index }) => {
+            try {
+              const promptResult = await generateVertexPrompt(tempPublicUrl, env);
+              let promptJson: string | null = null;
+              let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };
+
+              if (promptResult.success && promptResult.prompt) {
+                promptJson = JSON.stringify(promptResult.prompt);
+                vertexCallInfo = {
+                  success: true,
+                  promptKeys: Object.keys(promptResult.prompt),
+                  debug: promptResult.debug
+                };
+              } else {
+                vertexCallInfo = {
+                  success: false,
+                  error: promptResult.error || 'Unknown error',
+                  debug: promptResult.debug
+                };
+              }
+
+              return { index, promptJson, vertexCallInfo };
+            } catch (vertexError) {
+              const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
+              const vertexCallInfo = {
+                success: false,
+                error: errorMsg.substring(0, 200),
+                debug: { errorDetails: errorMsg.substring(0, 200) }
+              };
+              return { index, promptJson: null, vertexCallInfo };
             }
-          }
+          });
+
+          // Wait for all prompt generations to complete
+          const promptGenerationResults = await Promise.all(promptPromises);
+          promptResults.push(...promptGenerationResults);
+
+          // Clean up temp files
+          await Promise.all(tempUploads.map(({ tempR2Key }) => R2_BUCKET.delete(tempR2Key)));
         }
-        
-        // Step 2: Process files and create/use presets
-        for (const { file, path, parsed } of originalPresets) {
+
+        // Create a map of prompt results by index
+        const promptMap = new Map<number, { promptJson: string | null; vertexCallInfo: any }>();
+        promptResults.forEach(({ index, promptJson, vertexCallInfo }) => {
+          promptMap.set(index, { promptJson, vertexCallInfo });
+        });
+
+        // Process preset files (with Vertex AI prompts)
+        for (const { file, path, parsed, index } of filesNeedingPrompts) {
           try {
             const filename = file.name;
-            
-            // Build R2 key: original_preset/[type]/[remainingFilename]/webp/[remainingFilename]
-            // Example: original_preset/face-swap/wedding_both_1/webp/wedding_both_1.webp
-            const r2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
-            
-            // Read and upload file
+            const presetId = parsed.preset_id;
+            const fileFormat = parsed.format; // This will be 'webp' for preset images
+            const isLottie = fileFormat === 'lottie';
+
+            // Build R2 key for preset image
+            const r2Key = `presets/${presetId}.${fileFormat === 'lottie' ? 'json' : 'webp'}`;
+
+            // Read file data
             const fileData = await file.arrayBuffer();
+            const contentType = isLottie ? 'application/json' : 'image/webp';
+
+            // Get prompt data from Vertex AI processing
+            const promptData = promptMap.get(index);
+            const promptJson = promptData?.promptJson || null;
+            const vertexCallInfo = promptData?.vertexCallInfo || { success: false };
+
+            // Upload file with metadata
             await R2_BUCKET.put(r2Key, fileData, {
               httpMetadata: {
-                contentType: 'image/webp',
+                contentType,
                 cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
+              customMetadata: promptJson ? {
+                prompt_json: promptJson
+              } : undefined
             });
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            
+
             // Check if preset already exists
-            let presetId: string | undefined = presetMap.get(r2Key);
-            
-            if (!presetId) {
-              const extractedId = r2KeyToIdMap.get(r2Key);
-              if (extractedId && existingPresetsMap.has(extractedId)) {
-                presetId = extractedId;
-                presetMap.set(r2Key, presetId);
-              }
-            }
-            
-            if (!presetId) {
-                // Create new preset
-                const newPresetId = nanoid(16);
-              const keyParts = r2Key.replace('preset/', '').split('.');
-              const ext = keyParts.length >= 2 ? keyParts[keyParts.length - 1] : 'jpg';
-              const createdAt = Math.floor(Date.now() / 1000);
-              
+            const existingPreset = await DB.prepare(
+              'SELECT id FROM presets WHERE id = ?'
+            ).bind(presetId).first();
+
+            const createdAt = Math.floor(Date.now() / 1000);
+            const ext = fileFormat === 'lottie' ? 'json' : 'webp';
+
+            if (!existingPreset) {
+              // Create new preset with prompt_json
               await DB.prepare(
                 'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
-              ).bind(newPresetId, ext, createdAt).run();
-              
-              presetId = newPresetId;
-              presetMap.set(r2Key, newPresetId);
+              ).bind(presetId, ext, createdAt).run();
             }
 
             results.push({
@@ -1383,7 +1513,13 @@ export default {
               success: true,
               type: 'preset',
               preset_id: presetId,
-              url: publicUrl
+              url: publicUrl,
+              hasPrompt: !!promptJson,
+              prompt_json: promptJson ? JSON.parse(promptJson) : null,
+              vertex_info: vertexCallInfo,
+              metadata: {
+                format: fileFormat
+              }
             });
           } catch (fileError) {
             results.push({
@@ -1394,41 +1530,36 @@ export default {
           }
         }
 
-        // Process thumbnails (UPDATE preset row with thumbnail fields - same row approach)
-        // Collect all updates first, then batch execute
-        const thumbnailUpdates: Array<{
-          presetId: string;
-          thumbnailKey: string;
-          resolution: string;
-          filename: string;
-          r2Key: string;
-          publicUrl: string;
-          fileFormat: string;
-        }> = [];
-        
-        for (const { file, path, parsed } of thumbnails) {
+        // Process thumbnail files (without Vertex AI prompts)
+        for (const { file, path, parsed } of thumbnailFilesOnly) {
           try {
             const filename = file.name;
-            
-            // Extract resolution from path (webp_1x/, lottie_2x/, etc.)
-            let resolution = '1x';
-            const resolutionMatch = path.match(/(webp|lottie)_([\d.]+x)/i);
+            const presetId = parsed.preset_id;
+            const fileFormat = parsed.format;
+            const isLottie = fileFormat === 'lottie';
+
+            // Extract resolution from path
+            let resolution = '1x'; // default
+            // Look for patterns like: lottie_1.5x/, lottie_avif_2x/, webp_1x/
+            const resolutionMatch = path.match(/\/(lottie_avif|lottie|webp)_([\d.]+x)\//i);
             if (resolutionMatch) {
               resolution = resolutionMatch[2];
             }
 
-            const fileFormat = parsed.format;
-            const isLottie = fileFormat === 'lottie';
-            
-            // Build R2 key: [format]_[resolution]/[type]/[remainingFilename]
-            // Example: webp_1.5x/face-swap/portrait_female_1.webp
-            // Example: lottie_2x/packs/autum_male_1.json
-            const r2Key = `${fileFormat}_${resolution}/${parsed.type}/${parsed.remainingFilename}`;
-            
-            // Read and upload file
+            // Build R2 key for thumbnail with resolution
+            let formatPrefix = 'webp'; // default
+            if (path.includes('lottie_avif')) {
+              formatPrefix = 'lottie_avif';
+            } else if (path.includes('lottie')) {
+              formatPrefix = 'lottie';
+            }
+            const r2Key = `${formatPrefix}_${resolution}/${presetId}.${fileFormat === 'lottie' ? 'json' : 'webp'}`;
+
+            // Read file data
             const fileData = await file.arrayBuffer();
             const contentType = isLottie ? 'application/json' : 'image/webp';
-            
+
+            // Upload thumbnail file (no custom metadata for thumbnails)
             await R2_BUCKET.put(r2Key, fileData, {
               httpMetadata: {
                 contentType,
@@ -1437,86 +1568,63 @@ export default {
             });
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            
-            // Find preset by matching original_preset R2 path
-            // Build expected original preset R2 key from thumbnail metadata
-            const originalPresetR2Key = `original_preset/${parsed.type}/${parsed.remainingFilename.replace(/\.(webp|json)$/i, '')}/webp/${parsed.remainingFilename}`;
-            
-            // Find preset by image_url
-            let presetId: string | undefined = presetMap.get(originalPresetR2Key);
-            
-            if (!presetId) {
+
+            // Check if preset exists (should have been created by preset file processing)
+            const presetExists = await DB.prepare(
+              'SELECT id FROM presets WHERE id = ?'
+            ).bind(presetId).first();
+
+            if (!presetExists) {
               results.push({
                 filename,
                 success: false,
-                error: 'Preset not found. Upload preset first before thumbnail.'
+                error: `Preset ${presetId} not found. Upload preset file first.`
               });
               continue;
             }
-            
-            // Store only keys, not full URLs
-            const thumbnailKey = extractR2KeyFromUrl(publicUrl) || publicUrl;
-            
-            thumbnailUpdates.push({
-              presetId,
-              thumbnailKey,
-              resolution,
+
+            // Update preset with thumbnail information in JSON format
+            // First get existing thumbnail_r2 data
+            const presetWithThumbnails = await DB.prepare(
+              'SELECT thumbnail_r2 FROM presets WHERE id = ?'
+            ).bind(presetId).first();
+
+            let thumbnailData: Record<string, string> = {};
+            if (presetWithThumbnails && presetWithThumbnails.thumbnail_r2) {
+              try {
+                thumbnailData = JSON.parse(presetWithThumbnails.thumbnail_r2 as string);
+              } catch (e) {
+                thumbnailData = {};
+              }
+            }
+
+            // Add/update the thumbnail URL for this resolution and format
+            const thumbnailKey = `${formatPrefix}_${resolution}`;
+            thumbnailData[thumbnailKey] = r2Key;
+
+            // Update the thumbnail_r2 field with the JSON data
+            await DB.prepare(
+              'UPDATE presets SET thumbnail_r2 = ? WHERE id = ?'
+            ).bind(JSON.stringify(thumbnailData), presetId).run();
+
+            results.push({
               filename,
-              r2Key,
-              publicUrl,
-              fileFormat
+              success: true,
+              type: 'thumbnail',
+              preset_id: presetId,
+              url: publicUrl,
+              hasPrompt: false,
+              vertex_info: { success: false },
+              metadata: {
+                format: fileFormat,
+                resolution
+              }
             });
           } catch (fileError) {
             results.push({
               filename: file.name || 'unknown',
               success: false,
               error: fileError instanceof Error ? fileError.message : String(fileError)
-            });
-          }
-        }
-        
-        // Batch execute updates grouped by resolution
-        const updatesByResolution = new Map<string, Array<{ presetId: string; thumbnailKey: string; filename: string; r2Key: string; publicUrl: string; fileFormat: string }>>();
-        
-        for (const update of thumbnailUpdates) {
-          const key = update.resolution;
-          if (!updatesByResolution.has(key)) {
-            updatesByResolution.set(key, []);
-          }
-          updatesByResolution.get(key)!.push({
-            presetId: update.presetId,
-            thumbnailKey: update.thumbnailKey,
-            filename: update.filename,
-            r2Key: update.r2Key,
-            publicUrl: update.publicUrl,
-            fileFormat: update.fileFormat
-          });
-        }
-        
-        // Execute updates - store R2 key in thumbnail_r2 (use 1x as primary if multiple resolutions)
-        for (const [resolution, updates] of updatesByResolution.entries()) {
-          // Use 1x resolution as primary thumbnail, or first available
-          const primaryResolution = resolution === '1x' ? resolution : (updatesByResolution.has('1x') ? '1x' : resolution);
-          
-          if (resolution === primaryResolution) {
-            // Execute updates in parallel - store R2 key in thumbnail_r2
-            await Promise.all(updates.map(update => 
-              DB.prepare('UPDATE presets SET thumbnail_r2 = ? WHERE id = ?').bind(update.thumbnailKey, update.presetId).run()
-            ));
-          }
-          
-          // Add successful results
-          for (const update of updates) {
-            results.push({
-              filename: update.filename,
-              success: true,
-              type: 'thumbnail',
-              preset_id: update.presetId,
-              url: update.publicUrl,
-              metadata: {
-                format: update.fileFormat,
-                resolution
-              }
             });
           }
         }
@@ -1527,8 +1635,7 @@ export default {
             total: files.length,
             successful: results.filter(r => r.success).length,
             failed: results.filter(r => !r.success).length,
-            presets_created: originalPresets.length,
-            thumbnails_created: thumbnails.length,
+            thumbnails_processed: thumbnailFiles.length,
             results
           },
           status: 'success',
@@ -1796,20 +1903,40 @@ export default {
         const storedKey = reconstructR2Key((result as any).id, (result as any).ext, 'preset');
         const presetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
         
-        // Reconstruct thumbnail URL from thumbnail_r2 if available
+        // Extract thumbnail information from thumbnail_r2 JSON
         let thumbnailUrl: string | null = null;
         let thumbnailFormat: string | null = null;
         let thumbnailResolution: string | null = null;
+        let thumbnailData: any = {};
+
         if ((result as any).thumbnail_r2) {
-          thumbnailUrl = getR2PublicUrl(env, (result as any).thumbnail_r2, requestUrl.origin);
-          // Extract format and resolution from R2 key
-          const r2KeyParts = (result as any).thumbnail_r2.split('/');
-          if (r2KeyParts.length > 0) {
-            const prefix = r2KeyParts[0];
-            const formatMatch = prefix.match(/^(webp|lottie)/i);
-            const resolutionMatch = prefix.match(/([\d.]+x)/i);
-            thumbnailFormat = formatMatch ? formatMatch[1].toLowerCase() : null;
-            thumbnailResolution = resolutionMatch ? resolutionMatch[1] : null;
+          try {
+            thumbnailData = JSON.parse((result as any).thumbnail_r2);
+            // Use webp_1x as primary thumbnail, fallback to lottie_1x
+            const primaryThumbnailKey = thumbnailData['webp_1x'] || thumbnailData['lottie_1x'];
+            if (primaryThumbnailKey) {
+              thumbnailUrl = getR2PublicUrl(env, primaryThumbnailKey, requestUrl.origin);
+              // Extract format and resolution from the key
+              const keyParts = primaryThumbnailKey.split('/');
+              if (keyParts.length > 0) {
+                const prefix = keyParts[0];
+                const formatMatch = prefix.match(/^(webp|lottie)/i);
+                const resolutionMatch = prefix.match(/([\d.]+x)/i);
+                thumbnailFormat = formatMatch ? formatMatch[1].toLowerCase() : null;
+                thumbnailResolution = resolutionMatch ? resolutionMatch[1] : null;
+              }
+            }
+          } catch (e) {
+            // Fallback: treat as single string for backward compatibility
+            thumbnailUrl = getR2PublicUrl(env, (result as any).thumbnail_r2, requestUrl.origin);
+            const r2KeyParts = (result as any).thumbnail_r2.split('/');
+            if (r2KeyParts.length > 0) {
+              const prefix = r2KeyParts[0];
+              const formatMatch = prefix.match(/^(webp|lottie)/i);
+              const resolutionMatch = prefix.match(/([\d.]+x)/i);
+              thumbnailFormat = formatMatch ? formatMatch[1].toLowerCase() : null;
+              thumbnailResolution = resolutionMatch ? resolutionMatch[1] : null;
+            }
           }
         }
         
@@ -1833,23 +1960,33 @@ export default {
           // R2 check failed, assume no prompt
         }
 
+        // Build response with all thumbnail URLs from JSON data
+        const responseData: any = {
+          id: (result as any).id,
+          preset_url: presetUrl,
+          image_url: presetUrl, // Alias for backward compatibility
+          hasPrompt,
+          prompt_json: promptJson,
+          thumbnail_url: thumbnailUrl, // Primary thumbnail (1x)
+          thumbnail_format: thumbnailFormat,
+          thumbnail_resolution: thumbnailResolution,
+          thumbnail_r2: (result as any).thumbnail_r2, // Full JSON data
+          created_at: (result as any).created_at ? new Date((result as any).created_at * 1000).toISOString() : new Date().toISOString()
+        };
+
+        // Add individual thumbnail URLs for each resolution/format
+        Object.keys(thumbnailData).forEach(key => {
+          const url = getR2PublicUrl(env, thumbnailData[key], requestUrl.origin);
+          responseData[key] = url;
+        });
+
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
-          data: {
-            id: (result as any).id,
-            preset_url: presetUrl,
-            image_url: presetUrl, // Alias for backward compatibility
-            hasPrompt,
-            prompt_json: promptJson,
-            thumbnail_url: thumbnailUrl,
-            thumbnail_format: thumbnailFormat,
-            thumbnail_resolution: thumbnailResolution,
-            created_at: (result as any).created_at ? new Date((result as any).created_at * 1000).toISOString() : new Date().toISOString()
-          },
+          data: responseData,
           status: 'success',
           message: 'Preset retrieved successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { presetId, hasPrompt } } : {})
+          ...(debugEnabled ? { debug: { presetId, hasPrompt, thumbnailCount: Object.keys(thumbnailData).length } } : {})
         }, 200, request, env);
       } catch (error) {
         const debugEnabled = isDebugEnabled(env);
@@ -2262,37 +2399,45 @@ export default {
       try {
         const DB = getD1Database(env);
         
-        let query = `SELECT 
-          id, 
-          preset_url, 
-          thumbnail_url,
-          thumbnail_url_1x,
-          thumbnail_url_1_5x,
-          thumbnail_url_2x,
-          thumbnail_url_3x,
-          created_at 
-        FROM presets 
-        WHERE thumbnail_url IS NOT NULL 
-           OR thumbnail_url_1x IS NOT NULL 
-           OR thumbnail_url_1_5x IS NOT NULL 
-           OR thumbnail_url_2x IS NOT NULL 
-           OR thumbnail_url_3x IS NOT NULL`;
+        let query = `SELECT
+          id,
+          ext,
+          thumbnail_r2,
+          created_at
+        FROM presets
+        WHERE thumbnail_r2 IS NOT NULL AND thumbnail_r2 != '{}'`;
         const bindings: any[] = [];
-        
+
         query += ' ORDER BY created_at DESC';
-        
+
         const stmt = DB.prepare(query);
-        const result = bindings.length > 0 
+        const result = bindings.length > 0
           ? await stmt.bind(...bindings).all()
           : await stmt.all();
-          
-        // Map results to include all thumbnail resolutions
-        const thumbnails = (result.results || []).map((row: any) => ({
-          ...row,
-          // Use 1x as primary thumbnail_url for backward compatibility
-          thumbnail_url: row.thumbnail_url_1x || row.thumbnail_url || null,
-          created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
-        }));
+
+        // Map results to include all thumbnail resolutions from JSON
+        const thumbnails = (result.results || []).map((row: any) => {
+          let thumbnailData: Record<string, string> = {};
+          try {
+            thumbnailData = row.thumbnail_r2 ? JSON.parse(row.thumbnail_r2) : {};
+          } catch (e) {
+            thumbnailData = {};
+          }
+
+          return {
+            id: row.id,
+            ext: row.ext,
+            thumbnail_r2: row.thumbnail_r2,
+            // Extract individual thumbnail URLs from JSON for backward compatibility
+            thumbnail_url: thumbnailData['webp_1x'] || thumbnailData['lottie_1x'] || null,
+            thumbnail_url_1x: thumbnailData['webp_1x'] || thumbnailData['lottie_1x'] || null,
+            thumbnail_url_1_5x: thumbnailData['webp_1_5x'] || thumbnailData['lottie_1_5x'] || null,
+            thumbnail_url_2x: thumbnailData['webp_2x'] || thumbnailData['lottie_2x'] || null,
+            thumbnail_url_3x: thumbnailData['webp_3x'] || thumbnailData['lottie_3x'] || null,
+            thumbnail_url_4x: thumbnailData['webp_4x'] || thumbnailData['lottie_4x'] || null,
+            created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
+          };
+        });
           
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
