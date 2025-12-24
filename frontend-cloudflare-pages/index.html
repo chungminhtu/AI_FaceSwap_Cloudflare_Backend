@@ -955,19 +955,15 @@
                                 </p>
                                 <div id="thumbnail-drop-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; background: var(--bg-primary); transition: all 0.2s; margin-bottom: 16px;">
                                     <div style="font-size: 48px; margin-bottom: 12px;">📁</div>
-                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip hoặc thư mục vào đây</div>
-                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">hoặc chọn bằng nút bên dưới</div>
+                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip vào đây</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Hỗ trợ nhiều file zip (WebP, JSON Lottie)</div>
                                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                                        <button class="action-btn" onclick="event.stopPropagation(); $('thumbnail-folder-input').click();" style="padding: 8px 16px; font-size: 13px;">
-                                            📂 Chọn Thư Mục
-                                        </button>
                                         <button class="action-btn" onclick="event.stopPropagation(); $('thumbnail-zip-input').click();" style="padding: 8px 16px; font-size: 13px;">
                                             📦 Chọn File Zip
                                         </button>
                                     </div>
                                 </div>
-                                <input type="file" id="thumbnail-folder-input" webkitdirectory directory multiple accept=".webp,.json,.zip" style="display: none;" onchange="handleThumbnailFolderSelect(event)">
-                                <input type="file" id="thumbnail-zip-input" accept=".zip" style="display: none;" onchange="handleThumbnailZipSelect(event)">
+                                <input type="file" id="thumbnail-zip-input" accept=".zip" multiple style="display: none;" onchange="handleThumbnailZipSelect(event)">
                                 <div id="thumbnail-upload-progress" style="display: none;">
                                     <div class="progress-bar">
                                         <div class="progress-fill" id="thumbnail-progress-fill"></div>
@@ -985,7 +981,7 @@
                                         🔄 Làm Mới
                                     </button>
                                 </div>
-                                <div id="thumbnail-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-top: 12px;"></div>
+                                <div id="thumbnail-list" style="margin-top: 12px;"></div>
                             </div>
                         </div>
                     </div>
@@ -2894,14 +2890,39 @@
         }
 
         async function loadThumbnails() {
+            const startTime = Date.now();
+            const url = `${WORKER_URL}/thumbnails`;
             try {
-                const response = await fetch(`${WORKER_URL}/thumbnails`, { headers: buildHeaders() });
+                const response = await fetch(url, { headers: buildHeaders() });
+                const duration = Date.now() - startTime;
                 const data = await response.json();
+                
+                logApiCall({
+                    label: 'Tải Danh Sách Thumbnails',
+                    method: 'GET',
+                    url: '/thumbnails',
+                    fullUrl: url,
+                    status: response.ok && data.status === 'success' ? 'success' : 'error',
+                    payload: data,
+                    duration
+                });
+                
                 if (data.status === 'success' && data.data?.thumbnails) {
                     renderThumbnails(data.data.thumbnails);
+                } else {
+                    showStatusMessage('Không thể tải danh sách thumbnails', 'error');
                 }
             } catch (error) {
+                const duration = Date.now() - startTime;
                 console.error('Failed to load thumbnails:', error);
+                logApiCall({
+                    label: 'Tải Danh Sách Thumbnails',
+                    method: 'GET',
+                    url: '/thumbnails',
+                    fullUrl: url,
+                    status: 'error',
+                    duration
+                });
                 showStatusMessage('Không thể tải danh sách thumbnails', 'error');
             }
         }
@@ -2915,42 +2936,8 @@
                 return;
             }
             
-            // Thumbnails are now stored in same row as presets
-            // Group by preset ID (each preset can have one thumbnail)
-            const grouped = {};
-            thumbnails.forEach(thumb => {
-                const presetId = thumb.id; // Thumbnail is in same row, so id is preset_id
-                if (!grouped[presetId]) {
-                    grouped[presetId] = {
-                        preset_id: presetId,
-                        image_url: thumb.preset_url || thumb.image_url,
-                        thumbnail_url: thumb.thumbnail_url,
-                        items: [thumb]
-                    };
-                } else {
-                    grouped[presetId].items.push(thumb);
-                }
-            });
-            
-            container.innerHTML = Object.values(grouped).map((group) => {
-                const displayUrl = group.thumbnail_url || group.image_url;
-                const hasThumbnail = !!group.thumbnail_url;
-                
-                return `
-                    <div class="thumbnail-item" style="cursor: pointer;" onclick="selectThumbnail('${group.preset_id}')">
-                        ${hasThumbnail
-                            ? `<img src="${displayUrl}" alt="Thumbnail" loading="lazy" style="width: 100%; height: 150px; object-fit: cover;">`
-                            : `<img src="${group.image_url}" alt="Preset" loading="lazy" style="width: 100%; height: 150px; object-fit: cover;">`
-                        }
-                        <div class="thumbnail-item-info">
-                            <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">
-                                ${hasThumbnail ? '🖼️ Thumbnail' : 'No thumbnail'}
-                            </div>
-                            <div style="font-size: 9px; color: var(--accent); margin-top: 2px;">Preset: ${group.preset_id.substring(0, 20)}...</div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            // Display raw JSON
+            container.innerHTML = `<pre style="background: var(--bg-primary); padding: 16px; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-primary); white-space: pre-wrap; word-wrap: break-word;">${JSON.stringify(thumbnails, null, 2)}</pre>`;
         }
 
         async function selectThumbnail(presetId) {
@@ -3068,20 +3055,6 @@
             }
         }
 
-        async function handleThumbnailFolderSelect(event) {
-            const inputFiles = Array.from(event.target.files || []);
-            if (inputFiles.length === 0) return;
-
-            // Check if any file is a zip
-            const zipFiles = inputFiles.filter(f => f.name.toLowerCase().endsWith('.zip'));
-            const regularFiles = inputFiles.filter(f => !f.name.toLowerCase().endsWith('.zip'));
-
-            await processThumbnailFiles(zipFiles, regularFiles);
-            
-            // Reset input
-            event.target.value = '';
-        }
-
         async function handleThumbnailZipSelect(event) {
             const zipFiles = Array.from(event.target.files || []);
             if (zipFiles.length === 0) return;
@@ -3170,9 +3143,7 @@
                     }
                     
                     // Reset inputs
-                    const folderInput = $('thumbnail-folder-input');
                     const zipInput = $('thumbnail-zip-input');
-                    if (folderInput) folderInput.value = '';
                     if (zipInput) zipInput.value = '';
                     
                     // Switch to view sub tab and reload thumbnails
@@ -3243,12 +3214,8 @@
                             if (file.name.toLowerCase().endsWith('.zip')) {
                                 zipFiles.push(file);
                             } else if (entry && entry.isDirectory) {
-                                // Directory - trigger folder input
-                                const folderInput = $('thumbnail-folder-input');
-                                if (folderInput) {
-                                    // Can't directly set directory, so show message
-                                    showStatusMessage('Vui lòng sử dụng nút "Chọn Thư Mục" để chọn thư mục', 'info');
-                                }
+                                // Directory not supported - show message
+                                showStatusMessage('Thư mục không được hỗ trợ. Vui lòng nén thành file zip.', 'info');
                             } else {
                                 regularFiles.push(file);
                             }
@@ -3265,7 +3232,6 @@
 
         window.switchMainTab = switchMainTab;
         window.switchThumbnailSubTab = switchThumbnailSubTab;
-        window.handleThumbnailFolderSelect = handleThumbnailFolderSelect;
         window.handleThumbnailZipSelect = handleThumbnailZipSelect;
         window.selectThumbnail = selectThumbnail;
 

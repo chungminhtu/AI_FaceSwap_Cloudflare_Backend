@@ -1490,7 +1490,7 @@ export default {
 
             // Check if preset already exists
             const existingPreset = await DB.prepare(
-              'SELECT id FROM presets WHERE id = ?'
+              'SELECT id, thumbnail_r2 FROM presets WHERE id = ?'
             ).bind(presetId).first();
 
             const createdAt = Math.floor(Date.now() / 1000);
@@ -1502,8 +1502,27 @@ export default {
               ext = 'json';
             }
 
-            if (!existingPreset) {
-              // Create new preset with prompt_json
+            if (existingPreset) {
+              // OVERRIDE: Delete old preset file from R2 if exists
+              const oldR2Key = `preset/${presetId}.${(existingPreset as any).ext || ext}`;
+              try { await R2_BUCKET.delete(oldR2Key); } catch (e) { /* ignore */ }
+              
+              // OVERRIDE: Delete old thumbnails from R2 if exists
+              if ((existingPreset as any).thumbnail_r2) {
+                try {
+                  const oldThumbnails = JSON.parse((existingPreset as any).thumbnail_r2);
+                  for (const key of Object.values(oldThumbnails)) {
+                    try { await R2_BUCKET.delete(key as string); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+              }
+              
+              // OVERRIDE: Update existing preset and reset thumbnail_r2
+              await DB.prepare(
+                'UPDATE presets SET ext = ?, thumbnail_r2 = NULL WHERE id = ?'
+              ).bind(ext, presetId).run();
+            } else {
+              // Create new preset
               await DB.prepare(
                 'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
               ).bind(presetId, ext, createdAt).run();
@@ -1515,12 +1534,7 @@ export default {
               type: 'preset',
               preset_id: presetId,
               url: publicUrl,
-              hasPrompt: !!promptJson,
-              prompt_json: promptJson ? JSON.parse(promptJson) : null,
-              vertex_info: vertexCallInfo,
-              metadata: {
-                format: fileFormat
-              }
+              hasPrompt: !!promptJson
             });
           } catch (fileError) {
             results.push({
@@ -1539,20 +1553,16 @@ export default {
             const fileFormat = parsed.format;
             const isLottie = fileFormat === 'lottie';
 
-            // Extract resolution from path
+            // Extract resolution and format prefix from path
             let resolution = '1x'; // default
-            // Look for patterns like: lottie_1.5x/, lottie_avif_2x/, webp_1x/
-            const resolutionMatch = path.match(/\/(lottie_avif|lottie|webp)_([\d.]+x)\//i);
-            if (resolutionMatch) {
-              resolution = resolutionMatch[2];
-            }
-
-            // Determine format prefix from path or file extension
             let formatPrefix = 'webp'; // default
-            if (path && path.includes('lottie_avif')) {
-              formatPrefix = 'lottie_avif';
-            } else if (path && path.includes('lottie')) {
-              formatPrefix = 'lottie';
+            
+            // Look for patterns like: webp_1x/, webp_1.5x/, lottie_2x/, lottie_avif_3x/
+            // Handle both with and without leading slash (zip paths don't have leading slash)
+            const resolutionMatch = path.match(/(?:^|\/)(lottie_avif|lottie|webp)_([\d.]+x)\//i);
+            if (resolutionMatch) {
+              formatPrefix = resolutionMatch[1].toLowerCase();
+              resolution = resolutionMatch[2];
             } else if (isLottie) {
               formatPrefix = 'lottie';
             }
@@ -1632,12 +1642,7 @@ export default {
               type: 'thumbnail',
               preset_id: presetId,
               url: publicUrl,
-              hasPrompt: false,
-              vertex_info: { success: false },
-              metadata: {
-                format: fileFormat,
-                resolution
-              }
+              resolution
             });
           } catch (fileError) {
             results.push({
@@ -2026,9 +2031,9 @@ export default {
         // Gender filter removed - metadata is in R2 path, not DB
         const url = new URL(request.url);
 
-        const includeThumbnails = url.searchParams.get('include_thumbnails') === 'true';
+        const excludeThumbnails = url.searchParams.get('exclude_thumbnails') === 'true';
         
-        // By default, exclude presets with thumbnails
+        // By default, include all presets. Use exclude_thumbnails=true to filter out presets with thumbnails
         let query = `
           SELECT
             id,
@@ -2036,7 +2041,7 @@ export default {
             thumbnail_r2,
             created_at
           FROM presets
-          WHERE ${includeThumbnails ? '1=1' : 'thumbnail_r2 IS NULL'}
+          WHERE ${excludeThumbnails ? 'thumbnail_r2 IS NULL' : '1=1'}
         `;
 
         const params: any[] = [];
@@ -2449,17 +2454,23 @@ export default {
             thumbnailData = {};
           }
 
+          // Build full URLs from R2 keys
+          const buildThumbnailUrl = (key: string | null | undefined): string | null => {
+            if (!key) return null;
+            return getR2PublicUrl(env, key, requestUrl.origin);
+          };
+
           return {
             id: row.id,
             ext: row.ext,
             thumbnail_r2: row.thumbnail_r2,
-            // Extract individual thumbnail URLs from JSON for backward compatibility
-            thumbnail_url: thumbnailData['webp_1x'] || thumbnailData['lottie_1x'] || null,
-            thumbnail_url_1x: thumbnailData['webp_1x'] || thumbnailData['lottie_1x'] || null,
-            thumbnail_url_1_5x: thumbnailData['webp_1_5x'] || thumbnailData['lottie_1_5x'] || null,
-            thumbnail_url_2x: thumbnailData['webp_2x'] || thumbnailData['lottie_2x'] || null,
-            thumbnail_url_3x: thumbnailData['webp_3x'] || thumbnailData['lottie_3x'] || null,
-            thumbnail_url_4x: thumbnailData['webp_4x'] || thumbnailData['lottie_4x'] || null,
+            // Extract individual thumbnail URLs from JSON and convert to full URLs
+            thumbnail_url: buildThumbnailUrl(thumbnailData['webp_1x'] || thumbnailData['lottie_1x']),
+            thumbnail_url_1x: buildThumbnailUrl(thumbnailData['webp_1x'] || thumbnailData['lottie_1x']),
+            thumbnail_url_1_5x: buildThumbnailUrl(thumbnailData['webp_1_5x'] || thumbnailData['lottie_1_5x']),
+            thumbnail_url_2x: buildThumbnailUrl(thumbnailData['webp_2x'] || thumbnailData['lottie_2x']),
+            thumbnail_url_3x: buildThumbnailUrl(thumbnailData['webp_3x'] || thumbnailData['lottie_3x']),
+            thumbnail_url_4x: buildThumbnailUrl(thumbnailData['webp_4x'] || thumbnailData['lottie_4x']),
             created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
           };
         });

@@ -257,17 +257,17 @@ Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại 
 | **HIGH** | Cao - Khả năng có nội dung gây hại là cao |
 
 **Lưu ý:**
-- App chặn nội dung khi Vertex AI trả về `HIGH` hoặc `MEDIUM` probability
+- App chặn nội dung khi phát hiện vi phạm với `HIGH` hoặc `MEDIUM` probability
 - Nội dung với `LOW` hoặc `NEGLIGIBLE` probability thường được cho phép
-- Chi tiết về probability level có thể được tìm thấy trong `debug.provider` hoặc `debug.vertex` của response
-- Vertex AI safety violations luôn trả về HTTP 422 với internal error codes 2001-2004 trong trường `code`
+- Safety violations trả về HTTP 422 với internal error codes 2001-2004 trong trường `code`
+- Message trả về là lý do cụ thể từ hệ thống (ví dụ: finishMessage từ Vertex AI)
 
 **Ví dụ Response (Input Blocked):**
 ```json
 {
   "data": null,
   "status": "error",
-  "message": "Content blocked: hate speech - Input blocked: SAFETY",
+  "message": "Unable to show the generated image. The image was filtered out because it violated usage guidelines. You will not be charged for blocked images. Try rephrasing the prompt. If you think this was an error, send feedback. Support code: 14952152.",
   "code": 2001
 }
 ```
@@ -277,7 +277,7 @@ Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại 
 {
   "data": null,
   "status": "error",
-  "message": "Content blocked: sexually explicit - Output blocked: SAFETY - HARM_CATEGORY_SEXUALLY_EXPLICIT (HIGH)",
+  "message": "Unable to show the generated image. The image was filtered out because it violated usage guidelines. You will not be charged for blocked images. Try rephrasing the prompt. If you think this was an error, send feedback. Support code: 14952152.",
   "code": 2003
 }
 ```

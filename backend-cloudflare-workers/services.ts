@@ -5,7 +5,7 @@ import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } fr
 
 // Generate unique mock ID for performance testing mode to avoid database conflicts
 const generateMockId = () => `mock-${nanoid(16)}`;
-import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, getVertexSafetyViolationFromText } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, VERTEX_SAFETY_STATUS_CODES } from './utils';
 import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
@@ -345,39 +345,24 @@ export const callNanoBanana = async (
       }
 
       // Check for Vertex AI safety violations in error response
-      let safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
-      
-      // Fallback: check raw response text for safety patterns
-      if (!safetyViolation) {
-        safetyViolation = getVertexSafetyViolationFromText(rawResponse);
-      }
+      const safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
       
       if (safetyViolation) {
         console.warn('[Vertex-NanoBanana] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
         return {
           Success: false,
-          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
-          FullResponse: rawResponse,
-          ParsedError: parsedError,
-          CurlCommand: curlCommand,
-          Debug: debugInfo,
         } as any;
       }
 
-      // Keep message simple - detailed error is in ParsedError/FullResponse for debug
-      const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-
+      // If no safety violation found but Vertex AI returned error, return unknown error (3000)
       return {
         Success: false,
-        Message: errorMessage,
-        StatusCode: response.status,
-        Error: rawResponse, // Include full response text, not truncated
-        FullResponse: rawResponse, // Also include in separate field for UI display
-        ParsedError: parsedError, // Include parsed error object for easier debugging
-        CurlCommand: curlCommand, // Include curl command for testing
-        Debug: debugInfo,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
       } as any;
     }
 
@@ -393,22 +378,29 @@ export const callNanoBanana = async (
         console.warn('[Vertex-NanoBanana] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
         return {
           Success: false,
-          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
-          Debug: debugInfo,
         };
       }
 
-      // Vertex AI Gemini API returns images in candidates[0].content.parts[] with inline_data
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
+        // Check for safety violations even when no candidates
+        const safetyViolationNoCandidates = getVertexSafetyViolation(data);
+        if (safetyViolationNoCandidates) {
+          return {
+            Success: false,
+            Message: safetyViolationNoCandidates.reason,
+            StatusCode: safetyViolationNoCandidates.code,
+            Error: safetyViolationNoCandidates.reason,
+          };
+        }
         return {
           Success: false,
-          Message: 'Vertex AI Gemini API did not return any candidates',
-          StatusCode: 500,
-          Error: 'No candidates found in response',
-          Debug: debugInfo,
+          Message: 'Processing failed',
+          StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          Error: 'Processing failed',
         };
       }
 
@@ -434,12 +426,21 @@ export const callNanoBanana = async (
       }
 
       if (!base64Image) {
+        // Check for safety violations when no image is returned
+        const safetyViolationNoImage = getVertexSafetyViolation(data);
+        if (safetyViolationNoImage) {
+          return {
+            Success: false,
+            Message: safetyViolationNoImage.reason,
+            StatusCode: safetyViolationNoImage.code,
+            Error: safetyViolationNoImage.reason,
+          };
+        }
         return {
           Success: false,
-          Message: 'Vertex AI Gemini API did not return an image in the response',
-          StatusCode: 500,
-          Error: 'No inline_data found in response parts',
-          Debug: debugInfo,
+          Message: 'Processing failed',
+          StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          Error: 'Processing failed',
         };
       }
 
@@ -466,61 +467,42 @@ export const callNanoBanana = async (
       // Get public URL (will be converted by caller)
       const resultImageUrl = `r2://${resultKey}`;
 
-      // Sanitize response data for UI - replace base64 with "..."
-      const sanitizedData = sanitizeObject(data);
-
-      // Generate curl command for testing (with sanitized base64)
-      const sanitizedRequestBody = sanitizeObject(requestBody);
-
-      const curlCommand = `curl -X POST \\
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
-      if (debugInfo) {
-        debugInfo.requestPayload = sanitizedRequestBody;
-        debugInfo.curlCommand = curlCommand;
-        debugInfo.response = sanitizedData;
-        if (data.usageMetadata) {
-          debugInfo.usageMetadata = data.usageMetadata;
-        }
-      }
-
       return {
         Success: true,
         ResultImageUrl: resultImageUrl,
-        Message: 'Vertex AI image generation completed',
-        StatusCode: response.status,
-        VertexResponse: sanitizedData, // Include sanitized Vertex AI response JSON (base64 replaced with "...")
-        Prompt: prompt, // Include the prompt that was used
-        CurlCommand: curlCommand, // Include curl command for testing
-        Debug: debugInfo,
+        Message: 'Processing successful',
+        StatusCode: 200,
       };
     } catch (parseError) {
-      if (debugInfo) {
-        debugInfo.rawResponse = rawResponse.substring(0, 200);
-        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      // Try to parse and check for safety violations even on parse error
+      try {
+        const data = JSON.parse(rawResponse);
+        const safetyViolation = getVertexSafetyViolation(data);
+        if (safetyViolation) {
+          return {
+            Success: false,
+            Message: safetyViolation.reason,
+            StatusCode: safetyViolation.code,
+            Error: safetyViolation.reason,
+          };
+        }
+      } catch {
+        // If parse fails, continue with unknown error
       }
       return {
         Success: false,
-        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-        StatusCode: 500,
-        Error: rawResponse.substring(0, 200),
-        Debug: debugInfo,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
       };
     }
   } catch (error) {
     console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-    const debugPayload = debugInfo;
-    if (debugPayload) {
-      debugPayload.error = error instanceof Error ? error.message : String(error);
-    }
     return {
       Success: false,
-      Message: `Vertex AI face swap request failed: ${error instanceof Error ? error.message : String(error)}`,
-      StatusCode: 500,
-      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
-      Debug: debugPayload,
+      Message: 'Processing failed',
+      StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+      Error: 'Processing failed',
     };
   }
 };
@@ -670,38 +652,24 @@ export const generateBackgroundFromPrompt = async (
       }
 
       // Check for Vertex AI safety violations in error response
-      let safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
-      
-      // Fallback: check raw response text for safety patterns
-      if (!safetyViolation) {
-        safetyViolation = getVertexSafetyViolationFromText(rawResponse);
-      }
+      const safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
       
       if (safetyViolation) {
         console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
         return {
           Success: false,
-          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
-          FullResponse: rawResponse,
-          ParsedError: parsedError,
-          CurlCommand: curlCommand,
-          Debug: debugInfo,
         } as any;
       }
 
-      const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-
+      // If no safety violation found but Vertex AI returned error, return unknown error (3000)
       return {
         Success: false,
-        Message: errorMessage,
-        StatusCode: response.status,
-        Error: rawResponse,
-        FullResponse: rawResponse,
-        ParsedError: parsedError,
-        CurlCommand: curlCommand,
-        Debug: debugInfo,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
       } as any;
     }
 
@@ -716,21 +684,29 @@ export const generateBackgroundFromPrompt = async (
         console.warn('[Vertex-GenerateBackground] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
         return {
           Success: false,
-          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
-          Debug: debugInfo,
         };
       }
 
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
+        // Check for safety violations even when no candidates
+        const safetyViolationNoCandidates = getVertexSafetyViolation(data);
+        if (safetyViolationNoCandidates) {
+          return {
+            Success: false,
+            Message: safetyViolationNoCandidates.reason,
+            StatusCode: safetyViolationNoCandidates.code,
+            Error: safetyViolationNoCandidates.reason,
+          };
+        }
         return {
           Success: false,
-          Message: 'Vertex AI Gemini API did not return any candidates',
-          StatusCode: 500,
-          Error: 'No candidates found in response',
-          Debug: debugInfo,
+          Message: 'Processing failed',
+          StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          Error: 'Processing failed',
         };
       }
 
@@ -752,12 +728,21 @@ export const generateBackgroundFromPrompt = async (
       }
 
       if (!base64Image) {
+        // Check for safety violations when no image is returned
+        const safetyViolationNoImage = getVertexSafetyViolation(data);
+        if (safetyViolationNoImage) {
+          return {
+            Success: false,
+            Message: safetyViolationNoImage.reason,
+            StatusCode: safetyViolationNoImage.code,
+            Error: safetyViolationNoImage.reason,
+          };
+        }
         return {
           Success: false,
-          Message: 'Vertex AI Gemini API did not return an image in the response',
-          StatusCode: 500,
-          Error: 'No inline_data found in response parts',
-          Debug: debugInfo,
+          Message: 'Processing failed',
+          StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          Error: 'Processing failed',
         };
       }
 
@@ -810,30 +795,35 @@ export const generateBackgroundFromPrompt = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      if (debugInfo) {
-        debugInfo.rawResponse = rawResponse.substring(0, 200);
-        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      // Try to parse and check for safety violations even on parse error
+      try {
+        const data = JSON.parse(rawResponse);
+        const safetyViolation = getVertexSafetyViolation(data);
+        if (safetyViolation) {
+          return {
+            Success: false,
+            Message: safetyViolation.reason,
+            StatusCode: safetyViolation.code,
+            Error: safetyViolation.reason,
+          };
+        }
+      } catch {
+        // If parse fails, continue with unknown error
       }
       return {
         Success: false,
-        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-        StatusCode: 500,
-        Error: rawResponse.substring(0, 200),
-        Debug: debugInfo,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
       };
     }
   } catch (error) {
     console.error('[Vertex-GenerateBackground] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-    const debugPayload = debugInfo;
-    if (debugPayload) {
-      debugPayload.error = error instanceof Error ? error.message : String(error);
-    }
     return {
       Success: false,
-      Message: `Vertex AI background generation failed: ${error instanceof Error ? error.message : String(error)}`,
-      StatusCode: 500,
-      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
-      Debug: debugPayload,
+      Message: 'Processing failed',
+      StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+      Error: 'Processing failed',
     };
   }
 };
@@ -1018,39 +1008,24 @@ export const callNanoBananaMerge = async (
       }
 
       // Check for Vertex AI safety violations in error response
-      let safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
-      
-      // Fallback: check raw response text for safety patterns
-      if (!safetyViolation) {
-        safetyViolation = getVertexSafetyViolationFromText(rawResponse);
-      }
+      const safetyViolation = parsedError ? getVertexSafetyViolation(parsedError) : null;
       
       if (safetyViolation) {
         console.warn('[Vertex-NanoBananaMerge] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
         return {
           Success: false,
-          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
-          FullResponse: rawResponse,
-          ParsedError: parsedError,
-          CurlCommand: curlCommand,
-          Debug: debugInfo,
         } as any;
       }
 
-      // Keep message simple - detailed error is in ParsedError/FullResponse for debug
-      const errorMessage = `Vertex AI Gemini API error: ${response.status} ${response.statusText}`;
-
+      // If no safety violation found but Vertex AI returned error, return unknown error (3000)
       return {
         Success: false,
-        Message: errorMessage,
-        StatusCode: response.status,
-        Error: rawResponse, // Include full response text, not truncated
-        FullResponse: rawResponse, // Also include in separate field for UI display
-        ParsedError: parsedError, // Include parsed error object for easier debugging
-        CurlCommand: curlCommand,
-        Debug: debugInfo,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
       } as any;
     }
 
@@ -1066,21 +1041,29 @@ export const callNanoBananaMerge = async (
         console.warn('[Vertex-NanoBananaMerge] Content blocked by Vertex AI safety filters:', safetyViolation.category, safetyViolation.reason);
         return {
           Success: false,
-          Message: `Content blocked: ${safetyViolation.category} - ${safetyViolation.reason}`,
+          Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
-          Debug: debugInfo,
         };
       }
 
       const candidates = data.candidates || [];
       if (candidates.length === 0) {
+        // Check for safety violations even when no candidates
+        const safetyViolationNoCandidates = getVertexSafetyViolation(data);
+        if (safetyViolationNoCandidates) {
+          return {
+            Success: false,
+            Message: safetyViolationNoCandidates.reason,
+            StatusCode: safetyViolationNoCandidates.code,
+            Error: safetyViolationNoCandidates.reason,
+          };
+        }
         return {
           Success: false,
-          Message: 'Vertex AI Gemini API did not return any candidates',
-          StatusCode: 500,
-          Error: 'No candidates found in response',
-          Debug: debugInfo,
+          Message: 'Processing failed',
+          StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          Error: 'Processing failed',
         };
       }
 
@@ -1102,12 +1085,21 @@ export const callNanoBananaMerge = async (
       }
 
       if (!base64Image) {
+        // Check for safety violations when no image is returned
+        const safetyViolationNoImage = getVertexSafetyViolation(data);
+        if (safetyViolationNoImage) {
+          return {
+            Success: false,
+            Message: safetyViolationNoImage.reason,
+            StatusCode: safetyViolationNoImage.code,
+            Error: safetyViolationNoImage.reason,
+          };
+        }
         return {
           Success: false,
-          Message: 'Vertex AI Gemini API did not return an image in the response',
-          StatusCode: 500,
-          Error: 'No inline_data found in response parts',
-          Debug: debugInfo,
+          Message: 'Processing failed',
+          StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          Error: 'Processing failed',
         };
       }
 
@@ -1160,30 +1152,35 @@ export const callNanoBananaMerge = async (
         Debug: debugInfo,
       };
     } catch (parseError) {
-      if (debugInfo) {
-        debugInfo.rawResponse = rawResponse.substring(0, 200);
-        debugInfo.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      // Try to parse and check for safety violations even on parse error
+      try {
+        const data = JSON.parse(rawResponse);
+        const safetyViolation = getVertexSafetyViolation(data);
+        if (safetyViolation) {
+          return {
+            Success: false,
+            Message: safetyViolation.reason,
+            StatusCode: safetyViolation.code,
+            Error: safetyViolation.reason,
+          };
+        }
+      } catch {
+        // If parse fails, continue with unknown error
       }
       return {
         Success: false,
-        Message: `Failed to parse Vertex AI Gemini API response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-        StatusCode: 500,
-        Error: rawResponse.substring(0, 200),
-        Debug: debugInfo,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
       };
     }
   } catch (error) {
     console.error('[Vertex-NanoBananaMerge] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-    const debugPayload = debugInfo;
-    if (debugPayload) {
-      debugPayload.error = error instanceof Error ? error.message : String(error);
-    }
     return {
       Success: false,
-      Message: `Vertex AI merge request failed: ${error instanceof Error ? error.message : String(error)}`,
-      StatusCode: 500,
-      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
-      Debug: debugPayload,
+      Message: 'Processing failed',
+      StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+      Error: 'Processing failed',
     };
   }
 };
