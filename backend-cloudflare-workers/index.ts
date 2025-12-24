@@ -1207,15 +1207,27 @@ export default {
       }
     }
 
-    // Parse thumbnail filename: [type]_[sub_category]_[gender]_[position].[ext]
     // Parse thumbnail filename to extract preset_id (filename without extension)
-    // Example: "preset_123.webp" -> preset_id: "preset_123", format: "webp"
+    // Example: "preset_123.webp" -> preset_id: "preset_123"
+    // Example: "fs_beach-day-selfie_f1_2b.left.png" -> preset_id: "fs_beach-day-selfie_f1_2b"
+    // Example: "fs_beach-day-selfie_f1_2b.left.webp" -> preset_id: "fs_beach-day-selfie_f1_2b"
     function parseThumbnailFilename(filename: string): { preset_id: string; format: string } | null {
-      const extMatch = filename.match(/\.(webp|json)$/i);
-      if (!extMatch) return null;
+      if (!filename || !filename.trim()) return null;
 
-      const format = extMatch[1].toLowerCase() === 'json' ? 'lottie' : 'webp';
-      const preset_id = filename.replace(/\.(webp|json)$/i, '');
+      // Remove .left.png, .right.png, .left.webp, or .right.webp suffix first
+      let preset_id = filename.replace(/\.(left|right)\.(png|webp)$/i, '');
+      
+      // If no change, try removing other common extensions
+      if (preset_id === filename) {
+        preset_id = filename.replace(/\.(webp|json|png)$/i, '');
+      }
+
+      // If still no change, return null
+      if (preset_id === filename || !preset_id) return null;
+
+      // Determine format based on original filename
+      const isJson = filename.toLowerCase().endsWith('.json');
+      const format = isJson ? 'lottie' : 'webp';
 
       return { preset_id, format };
     }
@@ -1232,68 +1244,6 @@ export default {
         const formData = await request.formData();
         let files: Array<{ file: File; path: string }> = [];
         const fileEntries = formData.getAll('files');
-
-        // Check if any uploaded files are zip files
-        const zipFiles: File[] = [];
-        const regularFiles: Array<{ file: File; path: string }> = [];
-
-        // First pass: separate zip files from regular files
-        for (const entry of fileEntries) {
-          if (entry && typeof entry !== 'string') {
-            const file = entry as any as File;
-            if (file.type === 'application/zip' || file.type === 'application/x-zip-compressed' || file.name.toLowerCase().endsWith('.zip')) {
-              zipFiles.push(file);
-            } else {
-              const pathKey = Array.from(formData.keys()).find(k => k === `path_${file.name}`);
-              const filePath = pathKey ? (formData.get(pathKey) as string || '') : '';
-              regularFiles.push({ file, path: filePath });
-            }
-          }
-        }
-
-        // Process zip files: extract all files from them
-        for (const zipFile of zipFiles) {
-          try {
-            const zipData = await zipFile.arrayBuffer();
-            const zip = await JSZip.loadAsync(zipData);
-
-            // Extract all files from zip
-            const zipFilePromises: Promise<{ file: File; path: string }>[] = [];
-            zip.forEach((relativePath, zipEntry) => {
-              if (!zipEntry.dir) {
-                const promise = zipEntry.async('blob').then(blob => {
-                  // Create a File object from the blob with the path
-                  const fileName = relativePath.split('/').pop() || 'unknown';
-                  const file = new File([blob], fileName, { type: blob.type });
-                  return { file, path: relativePath };
-                });
-                zipFilePromises.push(promise);
-              }
-            });
-
-            const extractedFiles = await Promise.all(zipFilePromises);
-            files.push(...extractedFiles);
-          } catch (error) {
-            // If zip processing fails, add an error result
-            results.push({
-              filename: zipFile.name,
-              success: false,
-              error: `Failed to extract zip file: ${error instanceof Error ? error.message : String(error)}`
-            });
-          }
-        }
-
-        // Add regular files
-        files.push(...regularFiles);
-
-        if (files.length === 0) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        const DB = getD1Database(env);
-        const R2_BUCKET = getR2Bucket(env);
-        const requestUrl = new URL(request.url);
         const results: any[] = [];
 
         // Check if any uploaded files are zip files
@@ -1349,6 +1299,15 @@ export default {
         // Add regular files
         files.push(...regularFiles);
 
+        if (files.length === 0) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const DB = getD1Database(env);
+        const R2_BUCKET = getR2Bucket(env);
+        const requestUrl = new URL(request.url);
+
         // Process each file as a thumbnail that becomes a preset
         const thumbnailFiles: Array<{ file: File; path: string; parsed: any }> = [];
 
@@ -1361,7 +1320,7 @@ export default {
             results.push({
               filename,
               success: false,
-              error: 'Invalid filename format. Expected: [preset_id].[webp|json]'
+              error: 'Invalid filename format. Could not extract preset_id from filename.'
             });
             continue;
           }
@@ -1375,7 +1334,29 @@ export default {
 
         thumbnailFiles.forEach((item, index) => {
           const { file, path, parsed } = item;
-          const isFromPresetFolder = path.includes('preset');
+          const filename = (file.name || '').toLowerCase();
+          // Normalize path separators (handle both / and \)
+          const normalizedPath = (path || '').replace(/\\/g, '/').toLowerCase();
+          
+          // Check if it's from preset folder - more comprehensive check
+          const pathParts = normalizedPath.split('/').filter(p => p);
+          const isFromPresetFolderByPath = 
+            normalizedPath.includes('preset/') || 
+            normalizedPath.startsWith('preset/') || 
+            normalizedPath.includes('/preset/') ||
+            normalizedPath === 'preset' ||
+            (pathParts.length > 0 && pathParts[0] === 'preset');
+          
+          // FALLBACK: If no path info, detect preset files by extension
+          // PNG files are typically from the preset folder (source images for Vertex AI)
+          // WebP/JSON files without preset path are thumbnails
+          const isPresetByFilename = !normalizedPath && filename.endsWith('.png');
+          
+          // Check if it's a thumbnail folder by path pattern (webp_*x, lottie_*x, etc.)
+          const isThumbnailFolderByPath = normalizedPath.match(/(webp|lottie|lottie_avif)_[\d.]+x\//);
+          
+          // Final decision: preset if from preset folder OR (no path AND is PNG)
+          const isFromPresetFolder = isFromPresetFolderByPath || (isPresetByFilename && !isThumbnailFolderByPath);
 
           if (isFromPresetFolder) {
             // Files from preset folder need Vertex AI prompt generation (PNG/WebP images)
@@ -1460,7 +1441,7 @@ export default {
           promptMap.set(index, { promptJson, vertexCallInfo });
         });
 
-        // Process preset files (with Vertex AI prompts)
+        // Process preset files (with Vertex AI prompts) - MUST be processed first before thumbnails
         for (const { file, path, parsed, index } of filesNeedingPrompts) {
           try {
             const filename = file.name;
@@ -1468,12 +1449,26 @@ export default {
             const fileFormat = parsed.format; // This will be 'webp' for preset images
             const isLottie = fileFormat === 'lottie';
 
-            // Build R2 key for preset image
-            const r2Key = `presets/${presetId}.${fileFormat === 'lottie' ? 'json' : 'webp'}`;
+            // Build R2 key preserving original folder structure (e.g., preset/fs_beach-day-selfie_f1_2b.left.png)
+            let r2Key: string;
+            if (path && path.trim()) {
+              // Preserve original folder structure from zip, normalize path separators
+              r2Key = path.replace(/\\/g, '/').replace(/^presets?\//i, 'preset/');
+            } else {
+              // Fallback if no path provided
+              const ext = isLottie ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
+              r2Key = `preset/${presetId}.${ext}`;
+            }
 
             // Read file data
             const fileData = await file.arrayBuffer();
-            const contentType = isLottie ? 'application/json' : 'image/webp';
+            // Determine content type from actual file extension
+            let contentType = 'image/webp';
+            if (filename.toLowerCase().endsWith('.png')) {
+              contentType = 'image/png';
+            } else if (filename.toLowerCase().endsWith('.json')) {
+              contentType = 'application/json';
+            }
 
             // Get prompt data from Vertex AI processing
             const promptData = promptMap.get(index);
@@ -1499,7 +1494,13 @@ export default {
             ).bind(presetId).first();
 
             const createdAt = Math.floor(Date.now() / 1000);
-            const ext = fileFormat === 'lottie' ? 'json' : 'webp';
+            // Determine ext from actual filename
+            let ext = 'webp';
+            if (filename.toLowerCase().endsWith('.png')) {
+              ext = 'png';
+            } else if (filename.toLowerCase().endsWith('.json')) {
+              ext = 'json';
+            }
 
             if (!existingPreset) {
               // Create new preset with prompt_json
@@ -1546,18 +1547,36 @@ export default {
               resolution = resolutionMatch[2];
             }
 
-            // Build R2 key for thumbnail with resolution
+            // Determine format prefix from path or file extension
             let formatPrefix = 'webp'; // default
-            if (path.includes('lottie_avif')) {
+            if (path && path.includes('lottie_avif')) {
               formatPrefix = 'lottie_avif';
-            } else if (path.includes('lottie')) {
+            } else if (path && path.includes('lottie')) {
+              formatPrefix = 'lottie';
+            } else if (isLottie) {
               formatPrefix = 'lottie';
             }
-            const r2Key = `${formatPrefix}_${resolution}/${presetId}.${fileFormat === 'lottie' ? 'json' : 'webp'}`;
+
+            // Build R2 key preserving original folder structure (e.g., webp_1x/fs_beach-day-selfie_f1_2b.left.webp)
+            let r2Key: string;
+            if (path && path.trim()) {
+              // Preserve original folder structure from zip, normalize path separators
+              r2Key = path.replace(/\\/g, '/');
+            } else {
+              // Fallback: build from resolution and format
+              const ext = fileFormat === 'lottie' ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
+              r2Key = `${formatPrefix}_${resolution}/${presetId}.${ext}`;
+            }
 
             // Read file data
             const fileData = await file.arrayBuffer();
-            const contentType = isLottie ? 'application/json' : 'image/webp';
+            // Determine content type from actual file extension
+            let contentType = 'image/webp';
+            if (filename.toLowerCase().endsWith('.png')) {
+              contentType = 'image/png';
+            } else if (filename.toLowerCase().endsWith('.json')) {
+              contentType = 'application/json';
+            }
 
             // Upload thumbnail file (no custom metadata for thumbnails)
             await R2_BUCKET.put(r2Key, fileData, {
@@ -1574,13 +1593,13 @@ export default {
               'SELECT id FROM presets WHERE id = ?'
             ).bind(presetId).first();
 
+            // Auto-create preset if it doesn't exist (fallback for when preset files weren't detected)
             if (!presetExists) {
-              results.push({
-                filename,
-                success: false,
-                error: `Preset ${presetId} not found. Upload preset file first.`
-              });
-              continue;
+              const createdAt = Math.floor(Date.now() / 1000);
+              const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
+              await DB.prepare(
+                'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+              ).bind(presetId, ext, createdAt).run();
             }
 
             // Update preset with thumbnail information in JSON format
@@ -1821,8 +1840,14 @@ export default {
           'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
+        if (!updatedResult) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found after update', 404, debugEnabled ? { profileId, path } : undefined, request, env);
+        }
+
         const profile: Profile = {
-          id: (updatedResult as any).id,
+          id: profileId,
+          device_id: (updatedResult as any).device_id || undefined,
           name: (updatedResult as any).name || undefined,
           email: (updatedResult as any).email || undefined,
           avatar_url: (updatedResult as any).avatar_url || undefined,

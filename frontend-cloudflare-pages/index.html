@@ -1099,7 +1099,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
-        let WORKER_URL = 'https://ai-faceswap-backend.Chungminhtu03.workers.dev'; // Injected during deployment - DO NOT MODIFY MANUALLY
+        let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
         // Mobile API Key for authentication (set when ENABLE_MOBILE_API_KEY_AUTH is enabled in backend)
         let MOBILE_API_KEY = 'MNfs5qUDz5jjmyZjjMC5zUgIVjpTBuZehq2_fDg9cYk'; // Injected during deployment - DO NOT MODIFY MANUALLY
         const ITEMS_PER_PAGE = 12;
@@ -3100,74 +3100,62 @@
             progressFill.style.width = '0%';
             statusText.textContent = 'Đang xử lý file...';
 
-            let files = [];
+            const formData = new FormData();
             
-            // Process zip files
+            // Send zip files DIRECTLY to backend (backend extracts and preserves folder paths)
             if (zipFiles.length > 0) {
-                statusText.textContent = `Đang giải nén ${zipFiles.length} file zip...`;
-                
+                statusText.textContent = `Đang chuẩn bị tải lên ${zipFiles.length} file zip...`;
                 for (const zipFile of zipFiles) {
-                    try {
-                        const zipData = await zipFile.arrayBuffer();
-                        const zip = await JSZip.loadAsync(zipData);
-                        
-                        // Extract all files from zip
-                        const zipFilePromises = [];
-                        zip.forEach((relativePath, zipEntry) => {
-                            if (!zipEntry.dir) {
-                                zipFilePromises.push(
-                                    zipEntry.async('blob').then(blob => {
-                                        // Create a File object from the blob with the path
-                                        const fileName = relativePath.split('/').pop();
-                                        const file = new File([blob], fileName, { type: blob.type });
-                                        // Store the relative path for resolution detection
-                                        file.webkitRelativePath = relativePath;
-                                        return file;
-                                    })
-                                );
-                            }
-                        });
-                        
-                        const extractedFiles = await Promise.all(zipFilePromises);
-                        files.push(...extractedFiles);
-                    } catch (error) {
-                        console.error('Error extracting zip:', error);
-                        showStatusMessage(`Lỗi giải nén file ${zipFile.name}: ${error.message}`, 'error');
+                    formData.append('files', zipFile);
+                }
+            }
+            
+            // Add regular files with their folder paths if available
+            if (regularFiles.length > 0) {
+                for (const file of regularFiles) {
+                    formData.append('files', file);
+                    // If file has webkitRelativePath (from folder upload), include it
+                    if (file.webkitRelativePath) {
+                        formData.append(`path_${file.name}`, file.webkitRelativePath);
                     }
                 }
             }
             
-            // Add regular files
-            files.push(...regularFiles);
-            
-            if (files.length === 0) {
+            const totalFiles = zipFiles.length + regularFiles.length;
+            if (totalFiles === 0) {
                 statusText.textContent = 'Không có file nào để tải lên';
                 progressContainer.style.display = 'none';
                 return;
             }
 
-            statusText.textContent = `Đang tải lên ${files.length} file...`;
+            statusText.textContent = zipFiles.length > 0 
+                ? `Đang tải lên ${zipFiles.length} file zip (backend sẽ giải nén và xử lý)...`
+                : `Đang tải lên ${regularFiles.length} file...`;
             progressFill.style.width = '10%';
 
-            const formData = new FormData();
-            files.forEach((file) => {
-                formData.append('files', file);
-                // Extract folder path from file's webkitRelativePath to determine resolution
-                if (file.webkitRelativePath) {
-                    // Store path with filename as key for backend to match
-                    formData.append(`path_${file.name}`, file.webkitRelativePath);
-                }
-            });
-
+            const uploadUrl = `${WORKER_URL}/upload-thumbnails`;
+            const startTime = Date.now();
             try {
                 progressFill.style.width = '30%';
-                const response = await fetch(`${WORKER_URL}/upload-thumbnails`, {
+                const response = await fetch(uploadUrl, {
                     method: 'POST',
                     headers: buildHeaders(),
                     body: formData
                 });
 
                 const data = await response.json();
+                const duration = Date.now() - startTime;
+                
+                logApiCall({
+                    label: `Tải Lên Thumbnails (${zipFiles.length > 0 ? zipFiles.length + ' zip' : regularFiles.length + ' files'})`,
+                    method: 'POST',
+                    url: '/upload-thumbnails',
+                    fullUrl: uploadUrl,
+                    status: response.ok && data.status === 'success' ? 'success' : 'error',
+                    payload: data,
+                    duration,
+                    body: formData
+                });
                 
                 if (data.status === 'success') {
                     progressFill.style.width = '100%';
@@ -3196,6 +3184,16 @@
                     throw new Error(data.message || 'Upload failed');
                 }
             } catch (error) {
+                const duration = Date.now() - startTime;
+                logApiCall({
+                    label: `Tải Lên Thumbnails (${zipFiles.length > 0 ? zipFiles.length + ' zip' : regularFiles.length + ' files'})`,
+                    method: 'POST',
+                    url: '/upload-thumbnails',
+                    fullUrl: uploadUrl,
+                    status: 'error',
+                    payload: { error: error.message },
+                    duration
+                });
                 progressFill.style.width = '100%';
                 progressFill.style.background = 'var(--danger)';
                 statusText.textContent = `Lỗi: ${error.message}`;
