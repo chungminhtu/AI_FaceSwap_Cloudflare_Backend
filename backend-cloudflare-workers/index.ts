@@ -4,10 +4,10 @@ import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, BackgroundRequest } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio } from './utils';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, promisePoolWithConcurrency } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
-import { API_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
+import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
 
 const checkRateLimit = async (env: Env, request: Request, path: string): Promise<boolean> => {
   if (!env.RATE_LIMITER) return true;
@@ -627,7 +627,10 @@ export default {
     }
 
     if (request.method === 'POST' || request.method === 'PUT') {
-      const maxSize = path === '/upload-url' || path === '/upload-thumbnails' ? 10 * 1024 * 1024 : 1024 * 1024;
+      // Large file upload endpoints: 100MB limit (Cloudflare Workers Pro/Free plan limit)
+      // For files >100MB, use presigned URL flow: /upload-thumbnails-url → /r2-upload → /process-thumbnails
+      const isLargeUploadEndpoint = path === '/upload-url' || path === '/upload-thumbnails' || path.startsWith('/r2-upload/');
+      const maxSize = isLargeUploadEndpoint ? 100 * 1024 * 1024 : 1024 * 1024;
       const sizeCheck = checkRequestSize(request, maxSize);
       if (!sizeCheck.valid) {
         const debugEnabled = isDebugEnabled(env);
@@ -645,6 +648,7 @@ export default {
         let profileId: string = '';
         let presetName: string = '';
         let enableVertexPrompt: boolean = false;
+        let isFilterMode: boolean = false;
         let action: string | null = null;
 
         // Support both multipart/form-data (file upload) and application/json (URL upload)
@@ -676,6 +680,7 @@ export default {
           profileId = formData.get('profile_id') as string;
           presetName = formData.get('presetName') as string;
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
+          isFilterMode = formData.get('is_filter_mode') === 'true';
           action = formData.get('action') as string | null;
         } else if (contentType.toLowerCase().includes('application/json')) {
           const body = await request.json() as {
@@ -685,6 +690,7 @@ export default {
             profile_id?: string;
             presetName?: string;
             enableVertexPrompt?: boolean;
+            is_filter_mode?: boolean;
             action?: string;
           };
           imageUrls = body.image_urls || (body.image_url ? [body.image_url] : []);
@@ -692,6 +698,7 @@ export default {
           profileId = body.profile_id || '';
           presetName = body.presetName || '';
           enableVertexPrompt = body.enableVertexPrompt === true;
+          isFilterMode = body.is_filter_mode === true;
           action = body.action || null;
         } else {
           const debugEnabled = isDebugEnabled(env);
@@ -910,6 +917,7 @@ export default {
                       details: safeSearchResult.details,
                       rawResponse: safeSearchResult.rawResponse,
                       debug: safeSearchResult.debug,
+                      fullResult: safeSearchResult, // Complete Vision API result
                     }
                   } : {})
                 };
@@ -935,7 +943,7 @@ export default {
 
             if (enableVertexPrompt) {
               try {
-                const promptResult = await generateVertexPrompt(publicUrl, env);
+                const promptResult = await generateVertexPrompt(publicUrl, env, isFilterMode);
                 if (promptResult.success && promptResult.prompt) {
                   promptJson = JSON.stringify(promptResult.prompt);
                   vertexCallInfo = {
@@ -1126,7 +1134,8 @@ export default {
               violationLevel: visionDetails.violationLevel,
               details: visionDetails.details,
               rawResponse: visionDetails.rawResponse,
-              debug: visionDetails.debug,
+              apiDebug: visionDetails.debug,
+              fullResult: visionDetails.fullSafeSearchResult,
             },
           }) : undefined;
           
@@ -1162,6 +1171,18 @@ export default {
             })
           : undefined;
 
+        // Determine response status based on success/failure counts
+        const allFailed = successful.length === 0 && failed.length > 0;
+        const partialSuccess = successful.length > 0 && failed.length > 0;
+        const httpStatus = allFailed ? 422 : 200;
+        const responseStatus = allFailed ? 'error' : (partialSuccess ? 'partial' : 'success');
+        const responseCode = allFailed ? 422 : 200;
+        const responseMessage = allFailed
+          ? `Upload failed: ${failed.length} file${failed.length !== 1 ? 's' : ''} failed`
+          : (partialSuccess
+            ? `Partial success: ${successful.length} of ${results.length} file${results.length !== 1 ? 's' : ''} uploaded`
+            : 'Processing successful');
+
         return jsonResponse({
           data: {
             results: results.map(r => {
@@ -1183,13 +1204,11 @@ export default {
             successful: successful.length,
             failed: failed.length
           },
-          status: 'success',
-          message: failed.length === 0 
-            ? 'Processing successful'
-            : `Uploaded ${successful.length} of ${results.length} file${results.length !== 1 ? 's' : ''}`,
-          code: 200,
+          status: responseStatus,
+          message: responseMessage,
+          code: responseCode,
           ...(debugPayload ? { debug: debugPayload } : {})
-        });
+        }, httpStatus, request, env);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         const debugEnabled = isDebugEnabled(env);
@@ -1245,7 +1264,10 @@ export default {
         let files: Array<{ file: File; path: string }> = [];
         const fileEntries = formData.getAll('files');
         const results: any[] = [];
-
+        
+        // Parse is_filter_mode from formData
+        const isFilterMode = formData.get('is_filter_mode') === 'true';
+        
         // Check if any uploaded files are zip files
         const zipFiles: File[] = [];
         const regularFiles: Array<{ file: File; path: string }> = [];
@@ -1264,28 +1286,27 @@ export default {
           }
         }
 
-        // Process zip files: extract all files from them
+        // Process zip files: extract files incrementally to avoid memory exhaustion
         for (const zipFile of zipFiles) {
           try {
             const zipData = await zipFile.arrayBuffer();
             const zip = await JSZip.loadAsync(zipData);
 
-            // Extract all files from zip
-            const zipFilePromises: Promise<{ file: File; path: string }>[] = [];
+            // Extract files one at a time to avoid loading all into memory
+            const zipEntries: Array<{ relativePath: string; zipEntry: any }> = [];
             zip.forEach((relativePath: string, zipEntry: any) => {
               if (!zipEntry.dir) {
-                const promise = zipEntry.async('blob').then((blob: Blob) => {
-                  // Create a File object from the blob with the path
-                  const fileName = relativePath.split('/').pop() || 'unknown';
-                  const file = new File([blob], fileName, { type: blob.type });
-                  return { file, path: relativePath };
-                });
-                zipFilePromises.push(promise);
+                zipEntries.push({ relativePath, zipEntry });
               }
             });
 
-            const extractedFiles = await Promise.all(zipFilePromises);
-            files.push(...extractedFiles);
+            // Process entries sequentially to avoid memory issues
+            for (const { relativePath, zipEntry } of zipEntries) {
+              const blob = await zipEntry.async('blob');
+              const fileName = relativePath.split('/').pop() || 'unknown';
+              const file = new File([blob], fileName, { type: blob.type });
+              files.push({ file, path: relativePath });
+            }
           } catch (error) {
             // If zip processing fails, add an error result
             results.push({
@@ -1371,68 +1392,81 @@ export default {
         const promptResults: Array<{ index: number; promptJson: string | null; vertexCallInfo: any }> = [];
 
         if (filesNeedingPrompts.length > 0) {
-          // First upload all temp files in parallel
-          const tempUploads = await Promise.all(
-            filesNeedingPrompts.map(async ({ file, parsed, index }) => {
+          // Process files incrementally: upload → Vertex AI → cleanup, one at a time
+          // This prevents memory exhaustion from keeping all files in memory
+          const VERTEX_CONCURRENCY_LIMIT = 2;
+          
+          const promptGenerationResults = await promisePoolWithConcurrency(
+            filesNeedingPrompts,
+            async ({ file, parsed, index }) => {
               const presetId = parsed.preset_id;
               const fileFormat = parsed.format;
               const tempR2Key = `temp/${presetId}_${Date.now()}_${index}.${fileFormat === 'lottie' ? 'json' : 'webp'}`;
+              
+              // Upload temp file to R2 (only this file in memory now)
               const fileData = await file.arrayBuffer();
               const contentType = fileFormat === 'lottie' ? 'application/json' : 'image/webp';
-
+              
               await R2_BUCKET.put(tempR2Key, fileData, {
                 httpMetadata: {
                   contentType,
                   cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
                 },
               });
-
+              
+              // fileData can be garbage collected now
               const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
+              
+              try {
+                // Generate Vertex AI prompt
+                const promptResult = await generateVertexPrompt(tempPublicUrl, env, isFilterMode);
+                let promptJson: string | null = null;
+                let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };
 
-              return { tempR2Key, tempPublicUrl, fileData, index };
-            })
-          );
+                if (promptResult.success && promptResult.prompt) {
+                  promptJson = JSON.stringify(promptResult.prompt);
+                  vertexCallInfo = {
+                    success: true,
+                    promptKeys: Object.keys(promptResult.prompt),
+                    debug: promptResult.debug
+                  };
+                } else {
+                  vertexCallInfo = {
+                    success: false,
+                    error: promptResult.error || 'Unknown error',
+                    debug: promptResult.debug
+                  };
+                }
 
-          // Then generate prompts in parallel
-          const promptPromises = tempUploads.map(async ({ tempR2Key, tempPublicUrl, index }) => {
-            try {
-              const promptResult = await generateVertexPrompt(tempPublicUrl, env);
-              let promptJson: string | null = null;
-              let vertexCallInfo: { success: boolean; error?: string; promptKeys?: string[]; debug?: any } = { success: false };
+                // Clean up temp file immediately after processing
+                try {
+                  await R2_BUCKET.delete(tempR2Key);
+                } catch (e) {
+                  // Ignore cleanup errors
+                }
 
-              if (promptResult.success && promptResult.prompt) {
-                promptJson = JSON.stringify(promptResult.prompt);
-                vertexCallInfo = {
-                  success: true,
-                  promptKeys: Object.keys(promptResult.prompt),
-                  debug: promptResult.debug
-                };
-              } else {
-                vertexCallInfo = {
+                return { index, promptJson, vertexCallInfo };
+              } catch (vertexError) {
+                // Clean up temp file on error
+                try {
+                  await R2_BUCKET.delete(tempR2Key);
+                } catch (e) {
+                  // Ignore cleanup errors
+                }
+                
+                const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
+                const vertexCallInfo = {
                   success: false,
-                  error: promptResult.error || 'Unknown error',
-                  debug: promptResult.debug
+                  error: errorMsg.substring(0, 200),
+                  debug: { errorDetails: errorMsg.substring(0, 200) }
                 };
+                return { index, promptJson: null, vertexCallInfo };
               }
-
-              return { index, promptJson, vertexCallInfo };
-            } catch (vertexError) {
-              const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
-              const vertexCallInfo = {
-                success: false,
-                error: errorMsg.substring(0, 200),
-                debug: { errorDetails: errorMsg.substring(0, 200) }
-              };
-              return { index, promptJson: null, vertexCallInfo };
-            }
-          });
-
-          // Wait for all prompt generations to complete
-          const promptGenerationResults = await Promise.all(promptPromises);
+            },
+            VERTEX_CONCURRENCY_LIMIT
+          );
+          
           promptResults.push(...promptGenerationResults);
-
-          // Clean up temp files
-          await Promise.all(tempUploads.map(({ tempR2Key }) => R2_BUCKET.delete(tempR2Key)));
         }
 
         // Create a map of prompt results by index
@@ -1442,6 +1476,7 @@ export default {
         });
 
         // Process preset files (with Vertex AI prompts) - MUST be processed first before thumbnails
+        // Process sequentially to avoid loading all files into memory at once
         for (const { file, path, parsed, index } of filesNeedingPrompts) {
           try {
             const filename = file.name;
@@ -1460,7 +1495,7 @@ export default {
               r2Key = `preset/${presetId}.${ext}`;
             }
 
-            // Read file data
+            // Read file data (only one file in memory at a time now)
             const fileData = await file.arrayBuffer();
             // Determine content type from actual file extension
             let contentType = 'image/webp';
@@ -1674,7 +1709,436 @@ export default {
       }
     }
 
+    // ============================================================================
+    // MULTIPART UPLOAD API for large files (>100MB, up to 5GB)
+    // Cloudflare Workers have 100MB request limit (Pro plan), so use chunked upload
+    // ============================================================================
 
+    // Step 1: Create multipart upload session
+    // POST /upload-multipart/create
+    // Body: { key: string, contentType?: string }
+    // Returns: { uploadId: string, key: string }
+    if (path === '/upload-multipart/create' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { key: string; contentType?: string };
+        
+        if (!body.key) {
+          return errorResponse('key is required', 400, undefined, request, env);
+        }
+
+        const R2_BUCKET = getR2Bucket(env);
+        const key = `temp/multipart_${nanoid(16)}_${body.key.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        
+        const multipartUpload = await R2_BUCKET.createMultipartUpload(key, {
+          httpMetadata: {
+            contentType: body.contentType || 'application/octet-stream',
+          },
+        });
+
+        return successResponse({
+          uploadId: multipartUpload.uploadId,
+          key: multipartUpload.key
+        }, 200, request, env);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('Failed to create multipart upload', 500, { error: errorMsg.substring(0, 200) }, request, env);
+      }
+    }
+
+    // Step 2: Upload a part (max 100MB per part, call multiple times for large files)
+    // PUT /upload-multipart/part?key=...&uploadId=...&partNumber=1
+    // Body: binary chunk data
+    // Returns: { partNumber: number, etag: string }
+    if (path === '/upload-multipart/part' && request.method === 'PUT') {
+      try {
+        const url = new URL(request.url);
+        const key = url.searchParams.get('key');
+        const uploadId = url.searchParams.get('uploadId');
+        const partNumber = parseInt(url.searchParams.get('partNumber') || '0', 10);
+
+        if (!key || !uploadId || partNumber < 1) {
+          return errorResponse('key, uploadId, and partNumber (>=1) are required', 400, undefined, request, env);
+        }
+
+        const R2_BUCKET = getR2Bucket(env);
+        const multipartUpload = R2_BUCKET.resumeMultipartUpload(key, uploadId);
+        
+        const body = request.body;
+        if (!body) {
+          return errorResponse('No body provided', 400, undefined, request, env);
+        }
+
+        const uploadedPart = await multipartUpload.uploadPart(partNumber, body);
+
+        return successResponse({
+          partNumber: uploadedPart.partNumber,
+          etag: uploadedPart.etag
+        }, 200, request, env);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('Failed to upload part', 500, { error: errorMsg.substring(0, 200) }, request, env);
+      }
+    }
+
+    // Step 3: Complete multipart upload (assembles all parts)
+    // POST /upload-multipart/complete
+    // Body: { key: string, uploadId: string, parts: [{ partNumber: number, etag: string }, ...] }
+    // Returns: { key: string, completed: true }
+    if (path === '/upload-multipart/complete' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { 
+          key: string; 
+          uploadId: string; 
+          parts: Array<{ partNumber: number; etag: string }> 
+        };
+
+        if (!body.key || !body.uploadId || !body.parts?.length) {
+          return errorResponse('key, uploadId, and parts array are required', 400, undefined, request, env);
+        }
+
+        const R2_BUCKET = getR2Bucket(env);
+        const multipartUpload = R2_BUCKET.resumeMultipartUpload(body.key, body.uploadId);
+        
+        await multipartUpload.complete(body.parts);
+
+        return successResponse({
+          key: body.key,
+          completed: true
+        }, 200, request, env);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('Failed to complete multipart upload', 500, { error: errorMsg.substring(0, 200) }, request, env);
+      }
+    }
+
+    // Cancel/abort multipart upload
+    // POST /upload-multipart/abort
+    // Body: { key: string, uploadId: string }
+    if (path === '/upload-multipart/abort' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { key: string; uploadId: string };
+
+        if (!body.key || !body.uploadId) {
+          return errorResponse('key and uploadId are required', 400, undefined, request, env);
+        }
+
+        const R2_BUCKET = getR2Bucket(env);
+        const multipartUpload = R2_BUCKET.resumeMultipartUpload(body.key, body.uploadId);
+        await multipartUpload.abort();
+
+        return successResponse({ aborted: true }, 200, request, env);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('Failed to abort multipart upload', 500, { error: errorMsg.substring(0, 200) }, request, env);
+      }
+    }
+
+    // ============================================================================
+    // SIMPLE UPLOAD API (for files <100MB that still want presigned-style flow)
+    // ============================================================================
+
+    // Handle presigned URL generation for thumbnail uploads
+    // Endpoint: POST /upload-thumbnails-url
+    if (path === '/upload-thumbnails-url' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { files: Array<{ filename: string; path?: string; contentType?: string; size?: number }> };
+        
+        if (!body.files || !Array.isArray(body.files) || body.files.length === 0) {
+          return errorResponse('files array is required', 400, undefined, request, env);
+        }
+
+        const requestUrl = new URL(request.url);
+        const uploadId = nanoid(16);
+        const results: Array<{ filename: string; uploadKey: string; uploadUrl: string; processPath: string; useMultipart: boolean }> = [];
+        const CHUNK_SIZE = 95 * 1024 * 1024; // 95MB to stay under 100MB limit
+
+        for (const fileInfo of body.files) {
+          const { filename, path: filePath = '', contentType = 'application/octet-stream', size = 0 } = fileInfo;
+          
+          if (!filename) continue;
+
+          const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const uploadKey = `temp/upload_${uploadId}_${sanitizedFilename}`;
+          const processPath = filePath || '';
+
+          // Files >95MB need multipart upload
+          if (size > CHUNK_SIZE) {
+            results.push({
+              filename,
+              uploadKey,
+              uploadUrl: `${requestUrl.origin}/upload-multipart/create`,
+              processPath,
+              useMultipart: true
+            });
+          } else {
+            results.push({
+              filename,
+              uploadKey,
+              uploadUrl: `${requestUrl.origin}/r2-upload/${encodeURIComponent(uploadKey)}?contentType=${encodeURIComponent(contentType)}`,
+              processPath,
+              useMultipart: false
+            });
+          }
+        }
+
+        return successResponse({
+          uploadId,
+          files: results,
+          processEndpoint: `${requestUrl.origin}/process-thumbnails`,
+          multipartEndpoints: {
+            create: `${requestUrl.origin}/upload-multipart/create`,
+            part: `${requestUrl.origin}/upload-multipart/part`,
+            complete: `${requestUrl.origin}/upload-multipart/complete`,
+            abort: `${requestUrl.origin}/upload-multipart/abort`
+          },
+          limits: {
+            directUploadMax: '95MB',
+            partSize: '95MB',
+            totalMax: '5GB'
+          },
+          expiresIn: 3600
+        }, 200, request, env);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, { error: errorMsg }, request, env);
+      }
+    }
+
+    // Handle direct R2 upload for files <100MB
+    // Endpoint: PUT /r2-upload/:key
+    if (path.startsWith('/r2-upload/') && request.method === 'PUT') {
+      try {
+        const uploadKey = decodeURIComponent(path.replace('/r2-upload/', ''));
+        const url = new URL(request.url);
+        const contentType = url.searchParams.get('contentType') || 'application/octet-stream';
+        
+        if (!uploadKey || !uploadKey.startsWith('temp/')) {
+          return errorResponse('Invalid upload key', 400, { uploadKey }, request, env);
+        }
+
+        const R2_BUCKET = getR2Bucket(env);
+        
+        const body = request.body;
+        if (!body) {
+          return errorResponse('No body provided', 400, undefined, request, env);
+        }
+
+        await R2_BUCKET.put(uploadKey, body, {
+          httpMetadata: {
+            contentType,
+            cacheControl: 'private, max-age=3600',
+          },
+        });
+
+        return successResponse({
+          key: uploadKey,
+          uploaded: true
+        }, 200, request, env);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, { error: errorMsg }, request, env);
+      }
+    }
+
+    // Handle processing of uploaded thumbnails from R2
+    // Endpoint: POST /process-thumbnails
+    // This processes files that were uploaded via presigned URLs
+    if (path === '/process-thumbnails' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { 
+          uploadId: string;
+          files: Array<{ uploadKey: string; processPath: string; filename: string }>;
+          is_filter_mode?: boolean;
+        };
+        
+        const isFilterMode = body.is_filter_mode === true;
+        
+        if (!body.files || !Array.isArray(body.files) || body.files.length === 0) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('files array is required', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const DB = getD1Database(env);
+        const R2_BUCKET = getR2Bucket(env);
+        const requestUrl = new URL(request.url);
+        const results: any[] = [];
+
+        // Process each uploaded file
+        for (const fileInfo of body.files) {
+          const { uploadKey, processPath, filename } = fileInfo;
+          
+          try {
+            // Get the file from R2
+            const r2Object = await R2_BUCKET.get(uploadKey);
+            if (!r2Object) {
+              results.push({
+                filename,
+                success: false,
+                error: 'File not found in R2. Upload may have expired or failed.'
+              });
+              continue;
+            }
+
+            const parsed = parseThumbnailFilename(filename);
+            if (!parsed) {
+              results.push({
+                filename,
+                success: false,
+                error: 'Invalid filename format. Could not extract preset_id from filename.'
+              });
+              // Clean up temp file
+              await R2_BUCKET.delete(uploadKey);
+              continue;
+            }
+
+            const { preset_id: presetId, format } = parsed;
+            const normalizedPath = (processPath || '').replace(/\\/g, '/').toLowerCase();
+            
+            // Determine if this is a preset image or thumbnail
+            const pathParts = normalizedPath.split('/').filter((p: string) => p);
+            const isFromPresetFolder = 
+              normalizedPath.includes('preset/') || 
+              normalizedPath.startsWith('preset/') || 
+              normalizedPath.includes('/preset/') ||
+              normalizedPath === 'preset' ||
+              (pathParts.length > 0 && pathParts[0] === 'preset') ||
+              (!normalizedPath && filename.toLowerCase().endsWith('.png'));
+
+            const fileData = await r2Object.arrayBuffer();
+            const contentType = r2Object.httpMetadata?.contentType || 'application/octet-stream';
+
+            if (isFromPresetFolder) {
+              // This is a preset image - needs Vertex AI prompt generation
+              const r2Key = `presets/${presetId}.${filename.split('.').pop()}`;
+              
+              await R2_BUCKET.put(r2Key, fileData, {
+                httpMetadata: {
+                  contentType,
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+
+              const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+
+              // Generate Vertex AI prompt
+              let promptJson: string | null = null;
+              let vertexCallInfo: any = { success: false };
+
+              try {
+                const promptResult = await generateVertexPrompt(publicUrl, env, isFilterMode);
+                if (promptResult.success && promptResult.prompt) {
+                  promptJson = JSON.stringify(promptResult.prompt);
+                  vertexCallInfo = { success: true, promptKeys: Object.keys(promptResult.prompt) };
+                } else {
+                  vertexCallInfo = { success: false, error: promptResult.error || 'Unknown error' };
+                }
+              } catch (vertexError) {
+                vertexCallInfo = { 
+                  success: false, 
+                  error: vertexError instanceof Error ? vertexError.message.substring(0, 200) : String(vertexError).substring(0, 200)
+                };
+              }
+
+              // Upsert preset in database
+              const existingPreset = await DB.prepare('SELECT preset_id FROM presets WHERE preset_id = ?').bind(presetId).first();
+              
+              if (existingPreset) {
+                await DB.prepare(`
+                  UPDATE presets SET preset_url = ?, prompt_json = ?, updated_at = datetime('now') WHERE preset_id = ?
+                `).bind(publicUrl, promptJson, presetId).run();
+              } else {
+                await DB.prepare(`
+                  INSERT INTO presets (preset_id, preset_url, prompt_json, created_at, updated_at) 
+                  VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                `).bind(presetId, publicUrl, promptJson).run();
+              }
+
+              results.push({
+                filename,
+                success: true,
+                type: 'preset',
+                preset_id: presetId,
+                url: publicUrl,
+                hasPrompt: !!promptJson,
+                vertex_info: vertexCallInfo
+              });
+            } else {
+              // This is a thumbnail file
+              const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)/);
+              let folderType = 'webp';
+              let resolution = '1x';
+
+              if (folderMatch) {
+                folderType = folderMatch[1];
+                resolution = folderMatch[2];
+              }
+
+              const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
+              const thumbnailFolder = `${folderType}_${resolution}`;
+              const thumbnailR2Key = `${thumbnailFolder}/${presetId}.${ext}`;
+
+              await R2_BUCKET.put(thumbnailR2Key, fileData, {
+                httpMetadata: {
+                  contentType,
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+
+              const thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
+
+              // Update preset's thumbnail_r2 JSON
+              const existingPreset = await DB.prepare('SELECT preset_id, thumbnail_r2 FROM presets WHERE preset_id = ?').bind(presetId).first() as { preset_id: string; thumbnail_r2: string | null } | null;
+
+              if (existingPreset) {
+                let thumbnailR2: Record<string, string> = {};
+                try {
+                  thumbnailR2 = existingPreset.thumbnail_r2 ? JSON.parse(existingPreset.thumbnail_r2) : {};
+                } catch {}
+                thumbnailR2[thumbnailFolder] = thumbnailR2Key;
+
+                await DB.prepare(`
+                  UPDATE presets SET thumbnail_r2 = ?, updated_at = datetime('now') WHERE preset_id = ?
+                `).bind(JSON.stringify(thumbnailR2), presetId).run();
+              }
+
+              results.push({
+                filename,
+                success: true,
+                type: 'thumbnail',
+                preset_id: presetId,
+                url: thumbnailUrl,
+                hasPrompt: false,
+                metadata: { format: folderType, resolution }
+              });
+            }
+
+            // Clean up temp file
+            await R2_BUCKET.delete(uploadKey);
+          } catch (fileError) {
+            results.push({
+              filename,
+              success: false,
+              error: fileError instanceof Error ? fileError.message.substring(0, 200) : String(fileError).substring(0, 200)
+            });
+          }
+        }
+
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+
+        const debugEnabled = isDebugEnabled(env);
+        return successResponse({
+          total: results.length,
+          successful,
+          failed,
+          results
+        }, 200, request, env);
+      } catch (error) {
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path } : undefined, request, env);
+      }
+    }
 
     // Handle profile creation
     if (path === '/profiles' && request.method === 'POST') {
@@ -3260,7 +3724,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const defaultMergePrompt = API_PROMPTS.MERGE_PROMPT_DEFAULT;
+        const defaultMergePrompt = VERTEX_AI_PROMPTS.MERGE_PROMPT_DEFAULT;
 
         let mergePrompt = defaultMergePrompt;
         if (body.additional_prompt) {
@@ -3508,6 +3972,7 @@ export default {
         const debugPayload = debugEnabled ? compact({
           provider: providerDebug,
           vertex: vertexDebug,
+          wavespeedDebug: (upscalerResult as any).Debug,
         }) : undefined;
 
         return jsonResponse({
@@ -3656,7 +4121,7 @@ export default {
         const modelParam = body.model;
 
         const beautyResult = await callNanoBanana(
-          'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure.',
+          IMAGE_PROCESSING_PROMPTS.ENHANCE,
           body.image_url,
           body.image_url,
           env,
@@ -3729,24 +4194,18 @@ export default {
 
       try {
         const body = await request.json() as { 
-          preset_image_id: string; 
-          selfie_id?: string; 
-          selfie_image_url?: string;
-          profile_id: string; 
+          preset_image_url: string; 
+          selfie_image_url: string;
           aspect_ratio?: string; 
           model?: string | number;
           additional_prompt?: string;
         };
 
-        if (!body.preset_image_id) {
+        if (!body.preset_image_url) {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        if (!body.selfie_id && !body.selfie_image_url) {
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        if (!body.profile_id) {
+        if (!body.selfie_image_url) {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
@@ -3755,126 +4214,66 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
-
-        if (hasSelfieUrl && !validateImageUrl(body.selfie_image_url!, env)) {
+        if (!validateImageUrl(body.selfie_image_url, env)) {
           return errorResponse('', 400, undefined, request, env);
         }
 
-        // Optimize database queries with JOINs to validate ownership
-        const queries: Promise<any>[] = [
-          DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first(),
-          DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first()
-        ];
-
-        if (hasSelfieId) {
-          // Use JOIN to validate selfie belongs to profile
-          queries.push(
-            DB.prepare(`
-              SELECT s.id, s.ext, p.id as profile_exists
-              FROM selfies s
-              INNER JOIN profiles p ON s.profile_id = p.id
-              WHERE s.id = ? AND p.id = ?
-            `).bind(body.selfie_id, body.profile_id).first()
-          );
-        }
-
-        const results = await Promise.all(queries);
-
-        const profileCheck = results[0];
-        if (!profileCheck) {
-          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
-        }
-
-        const presetResult = results[1];
-        if (!presetResult) {
-          return errorResponse('Preset image not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
-        }
-
-        let selfieUrl: string;
-        if (hasSelfieId) {
-          const selfieResult = results[2];
-          if (!selfieResult) {
-            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+        // Extract R2 key from preset_image_url if it's an R2 URL
+        let r2Key: string | null = null;
+        try {
+          const presetUrl = new URL(body.preset_image_url);
+          // R2 URLs are like: https://domain.com/preset/id.ext or https://domain.com/selfie/id.ext
+          const pathParts = presetUrl.pathname.split('/').filter(p => p);
+          if (pathParts.length >= 2 && ['preset', 'selfie', 'results'].includes(pathParts[0])) {
+            r2Key = `${pathParts[0]}/${pathParts[1]}`;
           }
-          const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
-          selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
-        } else {
-          selfieUrl = body.selfie_image_url!;
+        } catch {
+          // Not an R2 URL or invalid URL, continue
         }
 
-        const presetImageId = body.preset_image_id;
-        const r2Key = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
-        
-        const promptCacheKV = env.PROMPT_CACHE_KV;
-        const cacheKey = `prompt:${presetImageId}`;
+        // Read prompt_json from R2 metadata (assume it always exists)
         let storedPromptPayload: any = null;
+        if (r2Key) {
+          const promptCacheKV = env.PROMPT_CACHE_KV;
+          const cacheKey = `prompt:${r2Key}`;
 
-        if (promptCacheKV) {
-          try {
-            const cachedPrompt = await getCachedAsync(cacheKey, async () =>
-              await promptCacheKV.get(cacheKey)
-            );
-            if (cachedPrompt) {
-              try {
-                storedPromptPayload = JSON.parse(cachedPrompt);
-              } catch {
-                // Invalid JSON in cache, continue
-              }
-            }
-          } catch {
-            // Cache read failed, continue
-          }
-        }
-
-        if (!storedPromptPayload) {
-          try {
-            const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
-              await R2_BUCKET.head(r2Key)
-            );
-            const promptJson = r2Object?.customMetadata?.prompt_json;
-            if (promptJson?.trim()) {
-              storedPromptPayload = JSON.parse(promptJson);
-              if (promptCacheKV) {
-                promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
-              }
-            }
-          } catch {
-            // R2 metadata read failed, continue
-          }
-        }
-
-        if (!storedPromptPayload) {
-          const presetImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-          const generateResult = await generateVertexPrompt(presetImageUrl, env);
-          if (generateResult.success && generateResult.prompt) {
-            storedPromptPayload = generateResult.prompt;
-            const promptJsonString = JSON.stringify(storedPromptPayload);
-            
-            if (promptCacheKV) {
-              promptCacheKV.put(cacheKey, promptJsonString, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
-            }
-            
+          if (promptCacheKV) {
             try {
-              const existingObject = await getCachedAsync(`r2head:${r2Key}`, async () =>
-                await R2_BUCKET.head(r2Key)
+              const cachedPrompt = await getCachedAsync(cacheKey, async () =>
+                await promptCacheKV.get(cacheKey)
               );
-              if (existingObject) {
-                const objectBody = await R2_BUCKET.get(r2Key);
-                if (objectBody) {
-                  await R2_BUCKET.put(r2Key, objectBody.body, {
-                    httpMetadata: existingObject.httpMetadata,
-                    customMetadata: { ...existingObject.customMetadata, prompt_json: promptJsonString }
-                  });
+              if (cachedPrompt) {
+                try {
+                  storedPromptPayload = JSON.parse(cachedPrompt);
+                } catch {
+                  // Invalid JSON in cache, continue to R2
                 }
               }
-            } catch (error) {
-              console.error(`[R2 Metadata] Write failed for preset ${presetImageId}:`, error);
+            } catch {
+              // Cache read failed, continue to R2
             }
-          } else {
-            return errorResponse('', 400, debugEnabled ? { error: 'Failed to generate prompt', path } : undefined, request, env);
           }
+
+          if (!storedPromptPayload) {
+            try {
+              const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
+                await R2_BUCKET.head(r2Key)
+              );
+              const promptJson = r2Object?.customMetadata?.prompt_json;
+              if (promptJson?.trim()) {
+                storedPromptPayload = JSON.parse(promptJson);
+                if (promptCacheKV) {
+                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+                }
+              }
+            } catch {
+              // R2 metadata read failed
+            }
+          }
+        }
+
+        if (!storedPromptPayload) {
+          return errorResponse('', 400, debugEnabled ? { error: 'Prompt JSON not found in preset image metadata', path } : undefined, request, env);
         }
 
         const transformedPrompt = transformPromptForFilter(storedPromptPayload);
@@ -3883,13 +4282,13 @@ export default {
           body.additional_prompt
         );
 
-        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, selfieUrl, env);
+        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.selfie_image_url, env);
         const modelParam = body.model;
 
         const filterResult = await callNanoBanana(
           augmentedPrompt,
-          selfieUrl,
-          selfieUrl,
+          body.selfie_image_url,
+          body.selfie_image_url,
           env,
           validAspectRatio,
           modelParam
@@ -3897,7 +4296,6 @@ export default {
 
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
           const failureCode = filterResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugPayload = debugEnabled ? compact({
             provider: buildProviderDebug(filterResult),
@@ -3918,14 +4316,11 @@ export default {
           resultUrl = getR2PublicUrl(env, r2ResultKey, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
-
         const providerDebug = debugEnabled ? buildProviderDebug(filterResult, resultUrl) : undefined;
         const vertexDebug = debugEnabled ? mergeVertexDebug(filterResult, undefined) : undefined;
 
         return jsonResponse({
           data: {
-            id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
           },
           status: 'success',
@@ -3977,7 +4372,7 @@ export default {
         const modelParam = body.model;
 
         const restoredResult = await callNanoBanana(
-          'Restore and enhance this damaged photo to a hyper-realistic, ultra-detailed image, 16K DSLR quality. Fix scratches, tears, noise, and blurriness. Enhance colors to vivid, vibrant tones while keeping natural skin tones. Perfectly sharpen details in face, eyes, hair, and clothing. Add realistic lighting, shadows, and depth of field. Photoshop-level professional retouching. High dynamic range, ultra-HD, lifelike textures, cinematic finish, crisp and clean background, fully restored and enhanced version of the original photo.',
+          IMAGE_PROCESSING_PROMPTS.FILTER,
           body.image_url,
           body.image_url,
           env,

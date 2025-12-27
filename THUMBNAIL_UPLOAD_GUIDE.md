@@ -66,14 +66,28 @@ The thumbnail upload system processes preset images and multi-resolution thumbna
 
 ## API Usage
 
+### Endpoints
+
+| Endpoint | Method | Max Size | Description |
+|----------|--------|----------|-------------|
+| `/upload-thumbnails` | POST | 100MB* | Direct upload (files in request body) |
+| `/upload-thumbnails-url` | POST | - | Get presigned URLs for large uploads |
+| `/r2-upload/:key` | PUT | 100MB* | Direct R2 upload endpoint |
+| `/process-thumbnails` | POST | - | Process files uploaded via presigned URLs |
+
+> **\*Cloudflare Workers Limits**: Free/Pro = 100MB, Business = 200MB, Enterprise = 500MB.  
+> For uploads >100MB, use the **Presigned URL flow** (Method 2).
+
+---
+
+## Method 1: Direct Upload (Up to 100MB)
+
 ### Endpoint
 ```
 POST https://api.d.shotpix.app/upload-thumbnails
 ```
 
-### Upload Methods
-
-#### Method 1: Upload Individual Files
+### Upload Individual Files
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-thumbnails \
   -F "files=@/path/to/preset/fs_wonder_f_3.png" \
@@ -83,13 +97,15 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
   -F "files=@/path/to/lottie_1x/fs_wonder_f_3.json" \
   -F "path_lottie_1x_fs_wonder_f_3.json=lottie_1x/" \
   -F "files=@/path/to/lottie_avif_2x/fs_wonder_f_3.json" \
-  -F "path_lottie_avif_2x_fs_wonder_f_3.json=lottie_avif_2x/"
+  -F "path_lottie_avif_2x_fs_wonder_f_3.json=lottie_avif_2x/" \
+  -F "is_filter_mode=true"  # Optional: Enable art style filter mode
 ```
 
-#### Method 2: Upload Zip File (Recommended)
+### Upload Zip File (Recommended for multiple files)
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-thumbnails \
-  -F "files=@/path/to/thumbnails.zip"
+  -F "files=@/path/to/thumbnails.zip" \
+  -F "is_filter_mode=true"  # Optional: Enable art style filter mode
 ```
 
 **Zip file structure should match the folder structure above.**
@@ -99,6 +115,144 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 - **Structure**: Files organized in folders as shown in the folder structure above
 - **Contents**: Can contain preset images, WebP thumbnails, Lottie JSON files, and AVIF files
 - **Processing**: Server automatically extracts and processes all files based on their folder paths
+- **Max Size**: 100MB per request (Cloudflare Workers limit)
+
+---
+
+## Method 2: Multipart Upload (For Large Files 100MB - 5GB)
+
+For files larger than 100MB, use **R2 Multipart Upload** which splits files into chunks.  
+**Supports uploads up to 5GB per file.**
+
+### Multipart Upload Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/upload-multipart/create` | POST | Create upload session |
+| `/upload-multipart/part` | PUT | Upload a chunk (max 95MB) |
+| `/upload-multipart/complete` | POST | Finalize upload |
+| `/upload-multipart/abort` | POST | Cancel upload |
+
+### Step 1: Create Multipart Upload Session
+
+```bash
+curl -X POST https://api.d.shotpix.app/upload-multipart/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key": "thumbnails.zip",
+    "contentType": "application/zip"
+  }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "uploadId": "ABC123XYZ",
+    "key": "temp/multipart_abc123_thumbnails.zip"
+  }
+}
+```
+
+### Step 2: Upload Parts (Chunks)
+
+Split your file into chunks of max 95MB each, then upload each part:
+
+```bash
+# Part 1 (first 95MB)
+curl -X PUT "https://api.d.shotpix.app/upload-multipart/part?key=temp/multipart_abc123_thumbnails.zip&uploadId=ABC123XYZ&partNumber=1" \
+  --data-binary @chunk1.bin
+
+# Part 2 (next 95MB)
+curl -X PUT "https://api.d.shotpix.app/upload-multipart/part?key=temp/multipart_abc123_thumbnails.zip&uploadId=ABC123XYZ&partNumber=2" \
+  --data-binary @chunk2.bin
+
+# ... continue for all parts
+```
+
+**Response (save etag for each part):**
+```json
+{
+  "data": {
+    "partNumber": 1,
+    "etag": "abc123def456"
+  }
+}
+```
+
+### Step 3: Complete Multipart Upload
+
+```bash
+curl -X POST https://api.d.shotpix.app/upload-multipart/complete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key": "temp/multipart_abc123_thumbnails.zip",
+    "uploadId": "ABC123XYZ",
+    "parts": [
+      {"partNumber": 1, "etag": "abc123def456"},
+      {"partNumber": 2, "etag": "ghi789jkl012"}
+    ]
+  }'
+```
+
+### Step 4: Process Uploaded File
+
+```bash
+curl -X POST https://api.d.shotpix.app/process-thumbnails \
+  -H "Content-Type: application/json" \
+  -d '{
+    "uploadId": "abc123",
+    "files": [
+      {
+        "uploadKey": "temp/multipart_abc123_thumbnails.zip",
+        "processPath": "",
+        "filename": "thumbnails.zip"
+      }
+    ]
+  }'
+```
+
+---
+
+## Method 3: Simple Upload Flow (For Files <95MB)
+
+For smaller files, use the simpler direct upload flow:
+
+### Step 1: Get Upload URL
+
+```bash
+curl -X POST https://api.d.shotpix.app/upload-thumbnails-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      {"filename": "fs_wonder_f_3.png", "path": "preset/", "contentType": "image/png", "size": 5242880}
+    ]
+  }'
+```
+
+### Step 2: Upload File
+
+```bash
+curl -X PUT "https://api.d.shotpix.app/r2-upload/temp%2Fupload_abc123_fs_wonder_f_3.png?contentType=image%2Fpng" \
+  --data-binary @/path/to/preset/fs_wonder_f_3.png
+```
+
+### Step 3: Process File
+
+```bash
+curl -X POST https://api.d.shotpix.app/process-thumbnails \
+  -H "Content-Type: application/json" \
+  -d '{
+    "uploadId": "abc123",
+    "files": [
+      {
+        "uploadKey": "temp/upload_abc123_fs_wonder_f_3.png",
+        "processPath": "preset/",
+        "filename": "fs_wonder_f_3.png"
+      }
+    ]
+  }'
+```
 
 ### File Naming
 - **Format**: `[preset_id].[extension]`
@@ -209,11 +363,33 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 ## Key Features
 
 - ✅ **Smart AI Processing**: Only preset images get expensive Vertex AI calls
+- ✅ **Filter Mode**: Optional art style analysis for preset images
 - ✅ **Batch Efficiency**: Parallel processing with Promise.all
 - ✅ **Multi-Resolution**: Supports 1x, 1.5x, 2x, 3x, 4x resolutions
 - ✅ **Format Support**: Handles WebP, PNG, JSON, AVIF formats
 - ✅ **Error Handling**: Proper validation and error reporting
 - ✅ **Database Integrity**: Ensures presets exist before storing thumbnails
+
+---
+
+## Filter Mode
+
+The system supports two modes for Vertex AI prompt generation:
+
+### Default Mode (Unchecked)
+Uses detailed face-swap prompt with HDR lighting, composition, and face preservation instructions. This is the standard mode for creating realistic face-swap presets.
+
+### Filter Mode (Checked)
+Uses art style analysis prompt that identifies specific artistic styles like:
+- Figurine style
+- Pop Mart unique style
+- Clay style
+- Disney style
+- And other artistic aesthetics
+
+**When to use Filter Mode**: When your preset images have distinct artistic or thematic styles that need to be preserved in the reimagined image.
+
+**How to enable**: Add `is_filter_mode=true` parameter to your upload request.
 
 ## Supported Resolutions
 

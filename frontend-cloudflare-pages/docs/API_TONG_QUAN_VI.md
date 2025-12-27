@@ -443,6 +443,7 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 - `type` (string, required): Phải là `"preset"` cho backend upload.
 - `profile_id` (string, required): ID profile người dùng.
 - `enableVertexPrompt` (boolean/string, optional): `true` hoặc `"true"` để bật tạo prompt Vertex khi upload preset. Sử dụng Vertex AI để phân tích ảnh và tạo prompt_json tự động.
+- `art_style` (string, optional): Filter art style cho prompt generation. Giá trị: `auto` (mặc định), `photorealistic`, `figurine`, `popmart`, `clay`, `disney`, `anime`, `chibi`, `watercolor`, `oil_painting`, `sketch`, `comic`, `pixel_art`, `cyberpunk`, `fantasy`, `vintage`, `minimalist`, `ghibli`, `lego`, `cartoon`.
 
 **Response:**
 ```json
@@ -504,14 +505,48 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
   -F "files=@/path/to/lottie_1x/fs_wonder_f_3.json" \
   -F "path_lottie_1x_fs_wonder_f_3.json=lottie_1x/" \
   -F "files=@/path/to/lottie_avif_2x/fs_wonder_f_3.json" \
-  -F "path_lottie_avif_2x_fs_wonder_f_3.json=lottie_avif_2x/"
+  -F "path_lottie_avif_2x_fs_wonder_f_3.json=lottie_avif_2x/" \
+  -F "art_style=auto"
+```
+
+**Upload with Art Style Filter (e.g., Pop Mart style):**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-thumbnails \
+  -F "files=@/path/to/preset/popmart_figure.png" \
+  -F "path_popmart_figure.png=preset/" \
+  -F "art_style=popmart"
 ```
 
 **Upload zip file containing all assets:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-thumbnails \
-  -F "files=@/path/to/thumbnails.zip"
+  -F "files=@/path/to/thumbnails.zip" \
+  -F "art_style=disney"
 ```
+
+**Supported Art Styles:**
+| Style | Description |
+|-------|-------------|
+| `auto` | Auto-detect style (default) |
+| `photorealistic` | Real photography |
+| `figurine` | 3D figurine/toy |
+| `popmart` | Pop Mart blind box |
+| `clay` | Clay/plasticine animation |
+| `disney` | Disney/Pixar 3D animation |
+| `anime` | Japanese anime/manga |
+| `chibi` | Chibi/super-deformed |
+| `watercolor` | Watercolor painting |
+| `oil_painting` | Classical oil painting |
+| `sketch` | Pencil/charcoal sketch |
+| `comic` | Western comic book |
+| `pixel_art` | Retro pixel art |
+| `cyberpunk` | Cyberpunk/neon futuristic |
+| `fantasy` | Fantasy/magical illustration |
+| `vintage` | Vintage/retro photography |
+| `minimalist` | Minimalist/flat design |
+| `ghibli` | Studio Ghibli animation |
+| `lego` | LEGO minifigure |
+| `cartoon` | General cartoon |
 
 **Cấu trúc thư mục:**
 ```

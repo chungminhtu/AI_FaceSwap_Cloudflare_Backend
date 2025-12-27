@@ -778,6 +778,15 @@
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
                         <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                     </div>
+                    <div style="padding: 8px 12px; border-bottom: 1px solid var(--border);">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                            <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
+                            <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
+                        </label>
+                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px; margin-left: 20px;">
+                            Enable for artistic presets (figurine, pop mart, clay, disney)
+                        </div>
+                    </div>
                     <div class="sidebar-content" id="preset-sidebar-content">
                         <div class="gallery-drop-zone" id="preset-drop-zone">
                             <div id="preset-gallery" class="sidebar-gallery"></div>
@@ -953,6 +962,15 @@
                                     Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code><br>
                                     Zip file sẽ được tự động giải nén và tải lên.
                                 </p>
+                                <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border);">
+                                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
+                                        <input type="checkbox" id="thumbnail-filter-mode" style="cursor: pointer; width: 16px; height: 16px;">
+                                        <span style="color: var(--text-primary);">🎨 Art Style Filter Mode</span>
+                                    </label>
+                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; margin-left: 24px;">
+                                        Enable if presets in this ZIP have distinct artistic styles (figurine, pop mart, clay, disney, etc.)
+                                    </div>
+                                </div>
                                 <div id="thumbnail-drop-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; background: var(--bg-primary); transition: all 0.2s; margin-bottom: 16px;">
                                     <div style="font-size: 48px; margin-bottom: 12px;">📁</div>
                                     <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip vào đây</div>
@@ -2023,6 +2041,11 @@
                 
                 if (type === 'preset') {
                     formData.append('enableVertexPrompt', 'true');
+                    // Check if filter mode is enabled
+                    const filterModeCheckbox = document.getElementById('preset-filter-mode');
+                    if (filterModeCheckbox && filterModeCheckbox.checked) {
+                        formData.append('is_filter_mode', 'true');
+                    }
                 } else if (type === 'selfie') {
                     const actionSelect = document.getElementById('selfie-action-select');
                     const action = actionSelect?.value || 'faceswap';
@@ -3081,6 +3104,12 @@
                 for (const zipFile of zipFiles) {
                     formData.append('files', zipFile);
                 }
+            }
+            
+            // Check if filter mode is enabled for thumbnails
+            const filterModeCheckbox = document.getElementById('thumbnail-filter-mode');
+            if (filterModeCheckbox && filterModeCheckbox.checked) {
+                formData.append('is_filter_mode', 'true');
             }
             
             // Add regular files with their folder paths if available

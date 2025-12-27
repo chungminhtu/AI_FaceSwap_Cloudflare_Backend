@@ -6,7 +6,7 @@ import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } fr
 // Generate unique mock ID for performance testing mode to avoid database conflicts
 const generateMockId = () => `mock-${nanoid(16)}`;
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, VERTEX_SAFETY_STATUS_CODES } from './utils';
-import { API_PROMPTS, API_CONFIG, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, MODEL_CONFIG, SAFETY_SETTINGS } from './config';
+import { VERTEX_AI_CONFIG, VERTEX_AI_PROMPTS, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
 
@@ -177,17 +177,17 @@ export const callNanoBanana = async (
 
       if (enhancedPrompt.prompt && typeof enhancedPrompt.prompt === 'string') {
         if (!enhancedPrompt.prompt.includes('100% identical facial features')) {
-          enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
+          enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${VERTEX_AI_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
         }
       } else {
-        enhancedPrompt.prompt = API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION;
+        enhancedPrompt.prompt = VERTEX_AI_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION;
       }
 
       // Convert the enhanced prompt object to a formatted text string
       promptText = JSON.stringify(enhancedPrompt, null, 2);
     } else if (typeof prompt === 'string') {
       if (!prompt.includes('100% identical facial features')) {
-        promptText = `${prompt} ${API_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
+        promptText = `${prompt} ${VERTEX_AI_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
       } else {
         promptText = prompt;
       }
@@ -261,13 +261,13 @@ export const callNanoBanana = async (
         ]
       }],
       generationConfig: {
-        ...API_CONFIG.IMAGE_GENERATION,
+        ...VERTEX_AI_CONFIG.IMAGE_GENERATION,
         imageConfig: {
-          ...API_CONFIG.IMAGE_GENERATION.imageConfig,
+          ...VERTEX_AI_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
         },
       },
-      safetySettings: SAFETY_SETTINGS,
+      safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
     // Generate curl command for testing (with sanitized base64)
@@ -569,13 +569,13 @@ export const generateBackgroundFromPrompt = async (
         ]
       }],
       generationConfig: {
-        ...API_CONFIG.IMAGE_GENERATION,
+        ...VERTEX_AI_CONFIG.IMAGE_GENERATION,
         imageConfig: {
-          ...API_CONFIG.IMAGE_GENERATION.imageConfig,
+          ...VERTEX_AI_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
 
         },
-      }, safetySettings: SAFETY_SETTINGS,
+      }, safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
@@ -862,7 +862,7 @@ export const callNanoBananaMerge = async (
       promptText = JSON.stringify(prompt);
     }
 
-    const mergePrompt = promptText || API_PROMPTS.MERGE_PROMPT_DEFAULT;
+    const mergePrompt = promptText || VERTEX_AI_PROMPTS.MERGE_PROMPT_DEFAULT;
 
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
       console.error('[Vertex-NanoBananaMerge] Missing service account credentials');
@@ -920,14 +920,14 @@ export const callNanoBananaMerge = async (
         ]
       }],
       generationConfig: {
-        ...API_CONFIG.IMAGE_GENERATION,
+        ...VERTEX_AI_CONFIG.IMAGE_GENERATION,
         imageConfig: {
-          ...API_CONFIG.IMAGE_GENERATION.imageConfig,
+          ...VERTEX_AI_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
 
         },
       },
-      safetySettings: SAFETY_SETTINGS,
+      safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
     const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
       if (key === 'data' && typeof value === 'string' && value.length > 100) {
@@ -1310,9 +1310,11 @@ export const checkSafeSearch = async (
 
 // Vertex AI API integration for automatic prompt generation
 // Note: Prompts are cached in database (prompt_json column), so no in-memory cache needed
+// artStyle parameter: filter for specialized art style analysis (auto, photorealistic, figurine, popmart, clay, disney, anime, etc.)
 export const generateVertexPrompt = async (
   imageUrl: string,
-  env: Env
+  env: Env,
+  isFilterMode: boolean = false
 ): Promise<{
   success: boolean;
   prompt?: any;
@@ -1365,7 +1367,7 @@ export const generateVertexPrompt = async (
       };
     }
 
-    const geminiModel = MODEL_CONFIG.PROMPT_GENERATION_MODEL;
+    const geminiModel = VERTEX_AI_CONFIG.MODELS.PROMPT_GENERATION;
     const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
     const location = getVertexAILocation(env);
 
@@ -1376,7 +1378,10 @@ export const generateVertexPrompt = async (
     debugInfo.endpoint = vertexEndpoint;
     debugInfo.model = geminiModel;
 
-    const prompt = API_PROMPTS.VERTEX_PROMPT_GENERATION;
+    // Choose prompt based on filter mode
+    const prompt = isFilterMode 
+      ? VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER 
+      : VERTEX_AI_PROMPTS.PROMPT_GENERATION_DEFAULT;
 
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(imageUrl, env);
@@ -1394,8 +1399,8 @@ export const generateVertexPrompt = async (
           }
         ]
       }],
-      generationConfig: API_CONFIG.PROMPT_GENERATION,
-      safetySettings: SAFETY_SETTINGS,
+      generationConfig: VERTEX_AI_CONFIG.PROMPT_GENERATION,
+      safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
     debugInfo.requestSent = true;
@@ -1438,7 +1443,7 @@ export const generateVertexPrompt = async (
         'Authorization': `Bearer ${accessToken}`
       },
       body: JSON.stringify(requestBody),
-    }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
+    }, TIMEOUT_CONFIG.VERTEX_AI);
 
     const responseTime = Date.now() - startTime;
     debugInfo.httpStatus = response.status;

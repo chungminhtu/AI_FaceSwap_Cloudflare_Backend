@@ -95,6 +95,31 @@ export interface UploadUrlRequest {
   profile_id: string; // Required: Profile ID for the upload
   presetName?: string; // Optional: Name for preset collection
   enableVertexPrompt?: boolean; // Optional: Generate Vertex AI prompt automatically
+  is_filter_mode?: boolean; // Optional: Use art style filter prompt instead of default face-swap prompt
+}
+
+export interface ThumbnailUploadRequest {
+  files: File[] | FormData;
+  is_filter_mode?: boolean; // Optional: Use art style filter prompt for presets in this batch
+}
+
+export interface ProcessThumbnailsRequest {
+  uploadId: string;
+  files: Array<{
+    uploadKey: string;
+    processPath: string;
+    filename: string;
+  }>;
+  is_filter_mode?: boolean; // Optional: Use art style filter prompt for presets in this batch
+}
+
+export interface PromptJson {
+  prompt: string;
+  style: string;
+  lighting: string;
+  composition: string;
+  camera: string;
+  background: string;
 }
 
 export interface Profile {

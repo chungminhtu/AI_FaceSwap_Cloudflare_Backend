@@ -11,8 +11,9 @@ export const SAFETY_STATUS_CODES = {
   SPOOF: 1005, // Xác suất chế giễu. Xác suất xảy ra việc chỉnh sửa phiên bản gốc của hình ảnh để làm cho nó trông hài hước hoặc phản cảm.
 } as const;
 
-// Vertex AI safety violation status codes (2000+) - Vertex AI Gemini safety filters
-// Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại sau:
+// Vertex AI safety configuration - Using centralized config
+// Note: Status codes in utils.ts are maintained for backward compatibility
+// but should be migrated to use VERTEX_AI_CONFIG.SAFETY_STATUS_CODES
 export const VERTEX_SAFETY_STATUS_CODES = {
   HATE_SPEECH: 2001, // Lời lẽ kích động thù hận: Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ.
   HARASSMENT: 2002, // Quấy rối: Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác.
@@ -92,34 +93,17 @@ export const CORS_HEADERS = {
   ...COMMON_CORS_HEADERS,
 };
 
-// Vertex AI Configuration
-// Supported regions: us-central1, us-east1, us-west1, europe-west1, asia-southeast1, etc.
-// Use 'global' for global endpoint (higher availability, no region prefix in URL)
-export const VERTEX_AI_DEFAULT_LOCATION = 'us-central1';
+import { VERTEX_AI_CONFIG } from './config';
 
+// Vertex AI Configuration - Using centralized config
 export const getVertexAILocation = (env: any): string => {
-  const location = env.GOOGLE_VERTEX_LOCATION || VERTEX_AI_DEFAULT_LOCATION;
+  const location = env.GOOGLE_VERTEX_LOCATION || VERTEX_AI_CONFIG.LOCATIONS.DEFAULT;
   return location;
 };
 
 export const getVertexModelId = (modelParam?: string | number): string => {
-  // Map frontend model parameter to Vertex AI model ID
-  // "2.5" or 2.5 => "gemini-2.5-flash-image" (default)
-  // "3p" => "gemini-3-pro-image-preview"
-  // "3f" => "gemini-3-flash-preview"
-  const modelStr = String(modelParam || '2.5').trim();
-  if (modelStr === '3p') {
-    return 'gemini-3-pro-image-preview';
-  }
-  if (modelStr === '3f') {
-    return 'gemini-3-flash-preview';
-  }
-  // Legacy support: "3" maps to "3p" (pro)
-  if (modelStr === '3') {
-    return 'gemini-3-pro-image-preview';
-  }
-  // Default to 2.5
-  return 'gemini-2.5-flash-image';
+  const modelStr = String(modelParam || VERTEX_AI_CONFIG.MODELS.DEFAULT).trim();
+  return VERTEX_AI_CONFIG.MODELS.MAPPING[modelStr as keyof typeof VERTEX_AI_CONFIG.MODELS.MAPPING] || VERTEX_AI_CONFIG.MODELS.MAPPING[VERTEX_AI_CONFIG.MODELS.DEFAULT as keyof typeof VERTEX_AI_CONFIG.MODELS.MAPPING];
 };
 
 export const getVertexAIEndpoint = (
@@ -127,13 +111,12 @@ export const getVertexAIEndpoint = (
   location: string,
   model: string
 ): string => {
-  // Global endpoint uses different URL format (no region prefix in domain)
+  // Use centralized endpoint builders
   if (location.toLowerCase() === 'global') {
-    return `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model}:generateContent`;
+    return VERTEX_AI_CONFIG.ENDPOINTS.GLOBAL(projectId, model);
   }
-  
-  // Regional endpoint format: https://{location}-aiplatform.googleapis.com/...
-  return `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateContent`;
+
+  return VERTEX_AI_CONFIG.ENDPOINTS.REGIONAL(location, projectId, model);
 };
 
 export const jsonResponse = (data: any, status = 200, request?: Request, env?: any): Response => {
@@ -173,6 +156,15 @@ export const errorResponse = (message: string, status = 500, debug?: Record<stri
     message: sanitizedMessage, 
     code: status,
     ...(debug ? { debug } : {})
+  }, status, request, env);
+};
+
+export const successResponse = (data: any, status = 200, request?: Request, env?: any): Response => {
+  return jsonResponse({ 
+    data,
+    status: 'success', 
+    message: 'Processing successful', 
+    code: status
   }, status, request, env);
 };
 
@@ -259,6 +251,40 @@ export const fetchWithTimeout = async (
     }
     throw error;
   }
+};
+
+// Concurrency-limited promise pool for batch operations
+// Prevents overwhelming external APIs (like Vertex AI) with too many parallel requests
+export const promisePoolWithConcurrency = async <T, R>(
+  items: T[],
+  asyncFn: (item: T, index: number) => Promise<R>,
+  concurrency: number = 2
+): Promise<R[]> => {
+  const results: R[] = [];
+  const executing: Promise<void>[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    
+    // Create promise that stores result at correct index
+    const promise = asyncFn(item, i).then(result => {
+      results[i] = result;
+    });
+
+    const executingPromise = promise.then(() => {
+      executing.splice(executing.indexOf(executingPromise), 1);
+    });
+    executing.push(executingPromise);
+
+    // If concurrency limit reached, wait for one to complete
+    if (executing.length >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+
+  // Wait for remaining promises
+  await Promise.all(executing);
+  return results;
 };
 
 // Get image dimensions from URL by parsing image headers
