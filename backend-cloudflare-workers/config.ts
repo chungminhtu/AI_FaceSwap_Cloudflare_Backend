@@ -9,6 +9,15 @@ export const VERTEX_AI_PROMPTS = {
 
   // Filter mode prompt for art style analysis (when checkbox is checked)
   PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender. Return a detailed JSON object with these keys: "prompt", "style", "lighting", "composition", "camera", "background". For "prompt", write a detailed scene description that captures the aesthetic. Include: character pose, outfit/costume, environment, atmosphere, and visual mood. The generated prompt must be fully compliant with Google Play Store content policies: no sexual, explicit, suggestive, or adult content. The JSON should fully describe the image following the style characteristics, without any extra commentary outside the JSON.`,
+
+  // Filter endpoint instruction - MUST be added to all filter prompts
+  FILTER_SELFIE_PRESERVATION: 'Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
+
+  // Complete filter style application instruction (includes selfie preservation)
+  FILTER_STYLE_APPLICATION_INSTRUCTION: 'Apply this creative style, lighting, composition, and visual atmosphere to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood to match the described scene. Maintain natural appearance and professional quality with 1:1 aspect ratio, 8K ultra-high detail, and ultra-sharp facial features. Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
+
+  // Default filter prompt (when prompt is not a string)
+  FILTER_DEFAULT_PROMPT: 'Apply the creative style, lighting, composition, and visual atmosphere described in this preset to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood. Maintain natural appearance and professional quality. Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
 };
 
 // Image Processing Prompts Configuration

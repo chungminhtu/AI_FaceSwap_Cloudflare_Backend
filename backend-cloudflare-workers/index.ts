@@ -604,17 +604,15 @@ const transformPromptForFilter = (promptPayload: any): any => {
   if (typeof clone.prompt === 'string') {
     let promptText = clone.prompt;
     
-    const styleApplicationInstruction = 'Apply this creative style, lighting, composition, and visual atmosphere to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood to match the described scene. Maintain natural appearance and professional quality with 1:1 aspect ratio, 8K ultra-high detail, and ultra-sharp facial features.';
-    
     if (promptText.includes('Replace the original face')) {
-      promptText = promptText.replace(/Replace the original face with the face from the image I will upload later\.[^.]*/g, styleApplicationInstruction);
+      promptText = promptText.replace(/Replace the original face with the face from the image I will upload later\.[^.]*/g, VERTEX_AI_PROMPTS.FILTER_STYLE_APPLICATION_INSTRUCTION);
     } else if (!promptText.includes('Apply this creative style')) {
-      promptText = `${promptText} ${styleApplicationInstruction}`;
+      promptText = `${promptText} ${VERTEX_AI_PROMPTS.FILTER_STYLE_APPLICATION_INSTRUCTION}`;
     }
     
     clone.prompt = promptText;
   } else {
-    clone.prompt = 'Apply the creative style, lighting, composition, and visual atmosphere described in this preset to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood. Maintain natural appearance and professional quality.';
+    clone.prompt = VERTEX_AI_PROMPTS.FILTER_DEFAULT_PROMPT;
   }
   
   return clone;
