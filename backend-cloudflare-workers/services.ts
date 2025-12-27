@@ -1314,7 +1314,8 @@ export const checkSafeSearch = async (
 export const generateVertexPrompt = async (
   imageUrl: string,
   env: Env,
-  isFilterMode: boolean = false
+  isFilterMode: boolean = false,
+  customPromptText: string | null = null
 ): Promise<{
   success: boolean;
   prompt?: any;
@@ -1378,10 +1379,15 @@ export const generateVertexPrompt = async (
     debugInfo.endpoint = vertexEndpoint;
     debugInfo.model = geminiModel;
 
-    // Choose prompt based on filter mode
-    const prompt = isFilterMode 
-      ? VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER 
-      : VERTEX_AI_PROMPTS.PROMPT_GENERATION_DEFAULT;
+    // Choose prompt: custom > filter > default
+    let prompt: string;
+    if (customPromptText && customPromptText.trim()) {
+      prompt = customPromptText.trim();
+    } else if (isFilterMode) {
+      prompt = VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER;
+    } else {
+      prompt = VERTEX_AI_PROMPTS.PROMPT_GENERATION_DEFAULT;
+    }
 
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(imageUrl, env);

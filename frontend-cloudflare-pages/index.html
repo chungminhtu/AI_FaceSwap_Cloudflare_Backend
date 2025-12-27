@@ -786,6 +786,9 @@
                         <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px; margin-left: 20px;">
                             Enable for artistic presets (figurine, pop mart, clay, disney)
                         </div>
+                        <button onclick="openPromptCustomizer()" style="margin-top: 8px; padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; width: 100%; font-weight: 500;">
+                            ⚙️ Customize Prompts
+                        </button>
                     </div>
                     <div class="sidebar-content" id="preset-sidebar-content">
                         <div class="gallery-drop-zone" id="preset-drop-zone">
@@ -1099,6 +1102,56 @@
         </div>
     </div>
 
+    <!-- Prompt Customizer Modal -->
+    <div id="prompt-customizer-modal" class="modal-overlay" style="display: none;" onclick="if(event.target.id === 'prompt-customizer-modal') closePromptCustomizer()">
+        <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>⚙️ Customize Vertex AI Prompts</h2>
+                <button class="modal-close" onclick="closePromptCustomizer()">×</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <div style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label style="display: block; font-size: 14px; color: var(--text-primary); font-weight: 600;">
+                            📝 Default Mode Prompt (Normal Face-Swap)
+                        </label>
+                        <button onclick="resetPrompt('default')" style="padding: 4px 12px; font-size: 11px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text-secondary);">
+                            🔄 Reset to Original
+                        </button>
+                    </div>
+                    <textarea id="prompt-default" rows="8" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: 'Courier New', monospace; resize: vertical; line-height: 1.5;"></textarea>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        Used when "Art Style Filter Mode" checkbox is <strong>unchecked</strong>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label style="display: block; font-size: 14px; color: var(--text-primary); font-weight: 600;">
+                            🎨 Filter Mode Prompt (Art Style Analysis)
+                        </label>
+                        <button onclick="resetPrompt('filter')" style="padding: 4px 12px; font-size: 11px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text-secondary);">
+                            🔄 Reset to Original
+                        </button>
+                    </div>
+                    <textarea id="prompt-filter" rows="8" style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; font-family: 'Courier New', monospace; resize: vertical; line-height: 1.5;"></textarea>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                        Used when "Art Style Filter Mode" checkbox is <strong>checked</strong>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button onclick="closePromptCustomizer()" style="padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 14px; font-weight: 500;">
+                        Cancel
+                    </button>
+                    <button onclick="saveCustomPrompts()" style="padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; font-weight: 600;">
+                        💾 Save Custom Prompts
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="loading-overlay" class="loading-overlay" style="display: none;">
         <div class="loading-content">
             <div class="spinner"></div>
@@ -1119,6 +1172,85 @@
         const ITEMS_PER_PAGE = 12;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
+        
+        // Default Vertex AI Prompts (from backend config.ts)
+        const DEFAULT_PROMPTS = {
+            DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
+            
+            FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender. Return a detailed JSON object with these keys: "prompt", "style", "lighting", "composition", "camera", "background". For "prompt", write a detailed scene description that captures the aesthetic. Include: character pose, outfit/costume, environment, atmosphere, and visual mood. The generated prompt must be fully compliant with Google Play Store content policies: no sexual, explicit, suggestive, or adult content. The JSON should fully describe the image following the style characteristics, without any extra commentary outside the JSON.`
+        };
+        
+        // Load custom prompts from localStorage
+        function loadCustomPrompts() {
+            const defaultPrompt = localStorage.getItem('custom_prompt_default') || DEFAULT_PROMPTS.DEFAULT;
+            const filterPrompt = localStorage.getItem('custom_prompt_filter') || DEFAULT_PROMPTS.FILTER;
+            return { defaultPrompt, filterPrompt };
+        }
+        
+        // Save custom prompts to localStorage
+        function saveCustomPromptsToStorage(defaultPrompt, filterPrompt) {
+            localStorage.setItem('custom_prompt_default', defaultPrompt);
+            localStorage.setItem('custom_prompt_filter', filterPrompt);
+        }
+        
+        // Open prompt customizer modal
+        function openPromptCustomizer() {
+            const modal = document.getElementById('prompt-customizer-modal');
+            const defaultTextarea = document.getElementById('prompt-default');
+            const filterTextarea = document.getElementById('prompt-filter');
+            
+            if (!modal || !defaultTextarea || !filterTextarea) return;
+            
+            // Load current prompts
+            const { defaultPrompt, filterPrompt } = loadCustomPrompts();
+            defaultTextarea.value = defaultPrompt;
+            filterTextarea.value = filterPrompt;
+            
+            modal.style.display = 'flex';
+        }
+        
+        // Close prompt customizer modal
+        function closePromptCustomizer() {
+            const modal = document.getElementById('prompt-customizer-modal');
+            if (modal) modal.style.display = 'none';
+        }
+        
+        // Reset prompt to original
+        function resetPrompt(type) {
+            const textarea = type === 'default' 
+                ? document.getElementById('prompt-default')
+                : document.getElementById('prompt-filter');
+            
+            if (!textarea) return;
+            
+            textarea.value = type === 'default' ? DEFAULT_PROMPTS.DEFAULT : DEFAULT_PROMPTS.FILTER;
+            showStatusMessage(`Reset ${type === 'default' ? 'Default' : 'Filter'} prompt to original`, 'success');
+        }
+        
+        // Save custom prompts
+        function saveCustomPrompts() {
+            const defaultTextarea = document.getElementById('prompt-default');
+            const filterTextarea = document.getElementById('prompt-filter');
+            
+            if (!defaultTextarea || !filterTextarea) return;
+            
+            const defaultPrompt = defaultTextarea.value.trim();
+            const filterPrompt = filterTextarea.value.trim();
+            
+            if (!defaultPrompt || !filterPrompt) {
+                showStatusMessage('Prompts cannot be empty', 'error');
+                return;
+            }
+            
+            saveCustomPromptsToStorage(defaultPrompt, filterPrompt);
+            closePromptCustomizer();
+            showStatusMessage('Custom prompts saved successfully!', 'success');
+        }
+        
+        window.openPromptCustomizer = openPromptCustomizer;
+        window.closePromptCustomizer = closePromptCustomizer;
+        window.resetPrompt = resetPrompt;
+        window.saveCustomPrompts = saveCustomPrompts;
         
         // Helper function to build headers object with API key for authenticated requests
         // Returns a new headers object (does not modify anything)
@@ -2043,8 +2175,20 @@
                     formData.append('enableVertexPrompt', 'true');
                     // Check if filter mode is enabled
                     const filterModeCheckbox = document.getElementById('preset-filter-mode');
-                    if (filterModeCheckbox && filterModeCheckbox.checked) {
+                    const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
+                    
+                    if (isFilterMode) {
                         formData.append('is_filter_mode', 'true');
+                    }
+                    
+                    // Add custom prompt if user has customized it
+                    const { defaultPrompt, filterPrompt } = loadCustomPrompts();
+                    const currentPrompt = isFilterMode ? filterPrompt : defaultPrompt;
+                    
+                    // Only send custom prompt if it's different from default
+                    const originalPrompt = isFilterMode ? DEFAULT_PROMPTS.FILTER : DEFAULT_PROMPTS.DEFAULT;
+                    if (currentPrompt !== originalPrompt) {
+                        formData.append('custom_prompt_text', currentPrompt);
                     }
                 } else if (type === 'selfie') {
                     const actionSelect = document.getElementById('selfie-action-select');
@@ -3161,7 +3305,25 @@
                 
                 if (data.status === 'success') {
                     progressFill.style.width = '100%';
-                    statusText.textContent = `Hoàn thành: ${data.data.successful}/${data.data.total} file thành công`;
+                    
+                    // Show detailed progress information
+                    const presetsProcessed = data.data.presets_processed || 0;
+                    const presetsWithPrompts = data.data.presets_with_prompts || 0;
+                    const thumbnailsProcessed = data.data.thumbnails_processed || 0;
+                    const successful = data.data.successful || 0;
+                    const total = data.data.total || 0;
+                    const failed = data.data.failed || 0;
+                    
+                    let statusParts = [];
+                    statusParts.push(`✓ ${successful}/${total} files`);
+                    if (presetsProcessed > 0) {
+                        statusParts.push(`${presetsProcessed} presets (${presetsWithPrompts} with AI prompts)`);
+                    }
+                    if (thumbnailsProcessed > 0) {
+                        statusParts.push(`${thumbnailsProcessed} thumbnails`);
+                    }
+                    
+                    statusText.textContent = statusParts.join(' | ');
                     
                     if (data.data.failed > 0) {
                         const failedFiles = data.data.results.filter(r => !r.success);

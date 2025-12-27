@@ -3155,6 +3155,28 @@ async function main() {
     
     try {
       const result = await deployMultipleEnvironments(envsToDeploy, process.cwd(), flags);
+      
+      // Run tests after successful deployment (skip if --skip-tests flag is set or if already in test mode)
+      if (result.success && !args.includes('--skip-tests') && !process.env.SKIP_POST_DEPLOY_TESTS) {
+        console.log(`\n${colors.cyan}${colors.bright}Running post-deployment tests...${colors.reset}\n`);
+        try {
+          // Set flag to prevent recursion
+          process.env.SKIP_POST_DEPLOY_TESTS = '1';
+          execSync('npm run deploy:parallel:test', { 
+            stdio: 'inherit',
+            cwd: process.cwd(),
+            env: { ...process.env, SKIP_POST_DEPLOY_TESTS: '1' }
+          });
+          console.log(`\n${colors.green}${colors.bright}✓ Post-deployment tests completed successfully${colors.reset}\n`);
+        } catch (testError) {
+          console.error(`\n${colors.yellow}⚠ Post-deployment tests failed, but deployment was successful${colors.reset}`);
+          console.error(`${colors.red}Test error: ${testError.message}${colors.reset}\n`);
+          // Don't fail deployment if tests fail
+        } finally {
+          delete process.env.SKIP_POST_DEPLOY_TESTS;
+        }
+      }
+      
       process.exit(result.success ? 0 : 1);
     } catch (error) {
       console.error(`${colors.red}Parallel deployment failed: ${error.message}${colors.reset}`);
