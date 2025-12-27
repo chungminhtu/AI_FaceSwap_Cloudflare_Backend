@@ -861,7 +861,23 @@ export default {
         // Process all files in parallel
         const processFile = async (fileData: FileData, index: number): Promise<any> => {
           const id = nanoid(16);
-          const ext = fileData.contentType.split('/')[1] || 'jpg';
+          // Extract extension from content type, with proper fallback
+          let ext = 'jpg'; // Default fallback
+          if (fileData.contentType && typeof fileData.contentType === 'string') {
+            const parts = fileData.contentType.split('/');
+            if (parts.length > 1 && parts[1] && parts[1].trim()) {
+              ext = parts[1].trim().toLowerCase();
+              // Normalize common extensions
+              if (ext === 'jpeg') ext = 'jpg';
+            }
+          }
+          // Fallback: try to extract from filename
+          if (ext === 'jpg' && fileData.filename) {
+            const filenameExt = fileData.filename.split('.').pop()?.toLowerCase();
+            if (filenameExt && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(filenameExt)) {
+              ext = filenameExt === 'jpeg' ? 'jpg' : filenameExt;
+            }
+          }
           const key = `${type}/${id}.${ext}`;
 
           // Upload to R2
@@ -1072,12 +1088,18 @@ export default {
             
             return response;
           } else if (type === 'selfie') {
-            let actionValue = action || 'faceswap';
+            // Ensure actionValue is always a valid non-empty string
+            let actionValue: string = (action && typeof action === 'string' && action.trim()) ? action.trim() : 'faceswap';
             const actionLower = actionValue.toLowerCase();
             
             // Normalize 4k action to lowercase for consistency
             if (actionLower === '4k') {
               actionValue = '4k';
+            }
+            
+            // Ensure actionValue is never empty or null for database insert
+            if (!actionValue || actionValue.trim() === '') {
+              actionValue = 'faceswap';
             }
 
             // Optimized: Use LIMIT to fetch only what we need (faster than COUNT on large tables)
@@ -1133,10 +1155,42 @@ export default {
               await Promise.all(r2Deletions);
             }
 
-            // Insert new selfie
+            // Insert new selfie - ensure all values are correct types
+            // Validate all values before insert to prevent SQLITE_MISMATCH
+            if (!id || typeof id !== 'string' || id.trim() === '') {
+              return {
+                success: false,
+                error: 'Invalid id generated',
+                filename: fileData.filename
+              };
+            }
+            if (!ext || typeof ext !== 'string' || ext.trim() === '') {
+              return {
+                success: false,
+                error: 'Invalid file extension',
+                filename: fileData.filename
+              };
+            }
+            if (!profileId || typeof profileId !== 'string' || profileId.trim() === '') {
+              return {
+                success: false,
+                error: 'Invalid profile_id',
+                filename: fileData.filename
+              };
+            }
+            if (!actionValue || typeof actionValue !== 'string' || actionValue.trim() === '') {
+              actionValue = 'faceswap'; // Final fallback
+            }
+            
+            // Ensure createdAt is a valid integer
+            let validCreatedAt = createdAt;
+            if (typeof createdAt !== 'number' || isNaN(createdAt) || createdAt <= 0) {
+              validCreatedAt = Math.floor(Date.now() / 1000); // Regenerate if invalid
+            }
+            
             const dbResult = await DB.prepare(
               'INSERT INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(id, ext, profileId, actionValue, createdAt).run();
+            ).bind(id.trim(), ext.trim(), profileId.trim(), actionValue.trim(), validCreatedAt).run();
 
             if (!dbResult.success) {
               return {
@@ -2231,6 +2285,244 @@ export default {
           failed,
           results
         }, 200, request, env);
+      } catch (error) {
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path } : undefined, request, env);
+      }
+    }
+
+    // Handle single thumbnail file processing - for client-side sequential uploads
+    // Endpoint: POST /process-thumbnail-file
+    // Client extracts zip, then calls this endpoint for each file sequentially to avoid timeouts
+    if (path === '/process-thumbnail-file' && request.method === 'POST') {
+      try {
+        const contentType = request.headers.get('Content-Type') || '';
+        const DB = getD1Database(env);
+        const R2_BUCKET = getR2Bucket(env);
+        const requestUrl = new URL(request.url);
+        
+        let file: File;
+        let filePath: string = '';
+        let isFilterMode: boolean = false;
+        let customPromptText: string | null = null;
+        
+        if (contentType.toLowerCase().includes('multipart/form-data')) {
+          const formData = await request.formData();
+          const fileEntry = formData.get('file');
+          if (!fileEntry || typeof fileEntry === 'string') {
+            return errorResponse('File is required', 400, undefined, request, env);
+          }
+          file = fileEntry as File;
+          filePath = (formData.get('path') as string) || '';
+          isFilterMode = formData.get('is_filter_mode') === 'true';
+          customPromptText = formData.get('custom_prompt_text') as string | null;
+        } else if (contentType.toLowerCase().includes('application/json')) {
+          const body = await request.json() as {
+            file: string; // base64 encoded
+            filename: string;
+            path?: string;
+            is_filter_mode?: boolean;
+            custom_prompt_text?: string;
+          };
+          
+          if (!body.file || !body.filename) {
+            return errorResponse('file and filename are required', 400, undefined, request, env);
+          }
+          
+          // Decode base64
+          const base64Data = body.file.replace(/^data:.*?;base64,/, '');
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          file = new File([bytes], body.filename, { type: 'application/octet-stream' });
+          filePath = body.path || '';
+          isFilterMode = body.is_filter_mode === true;
+          customPromptText = body.custom_prompt_text || null;
+        } else {
+          return errorResponse('Content-Type must be multipart/form-data or application/json', 400, undefined, request, env);
+        }
+        
+        const filename = file.name || '';
+        const parsed = parseThumbnailFilename(filename);
+        
+        if (!parsed) {
+          return errorResponse('Invalid filename format. Could not extract preset_id from filename.', 400, undefined, request, env);
+        }
+        
+        const { preset_id: presetId, format } = parsed;
+        const normalizedPath = (filePath || '').replace(/\\/g, '/').toLowerCase();
+        const pathParts = normalizedPath.split('/').filter((p: string) => p);
+        
+        // Determine if this is a preset image or thumbnail
+        const isFromPresetFolder = 
+          normalizedPath.includes('preset/') || 
+          normalizedPath.startsWith('preset/') || 
+          normalizedPath.includes('/preset/') ||
+          normalizedPath === 'preset' ||
+          (pathParts.length > 0 && pathParts[0] === 'preset') ||
+          (!normalizedPath && filename.toLowerCase().endsWith('.png'));
+        
+        const fileData = await file.arrayBuffer();
+        let contentTypeHeader = 'application/octet-stream';
+        if (filename.toLowerCase().endsWith('.png')) {
+          contentTypeHeader = 'image/png';
+        } else if (filename.toLowerCase().endsWith('.webp')) {
+          contentTypeHeader = 'image/webp';
+        } else if (filename.toLowerCase().endsWith('.json')) {
+          contentTypeHeader = 'application/json';
+        }
+        
+        if (isFromPresetFolder) {
+          // This is a preset image - needs Vertex AI prompt generation
+          const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
+          
+          // Upload to temp location first for prompt generation
+          await R2_BUCKET.put(tempR2Key, fileData, {
+            httpMetadata: {
+              contentType: contentTypeHeader,
+              cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+            },
+          });
+          
+          const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
+          
+          // Generate Vertex AI prompt with retry - MUST succeed before final upload
+          const promptResult = await generateVertexPromptWithRetry(tempPublicUrl, env, isFilterMode, customPromptText);
+          
+          // Clean up temp file
+          try {
+            await R2_BUCKET.delete(tempR2Key);
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+          
+          // CRITICAL: Only proceed if prompt generation succeeded
+          if (!promptResult.success || !promptResult.prompt) {
+            return errorResponse(
+              `Vertex AI prompt generation failed after retries: ${promptResult.error || 'Unknown error'}`,
+              500,
+              undefined,
+              request,
+              env
+            );
+          }
+          
+          const promptJson = JSON.stringify(promptResult.prompt);
+          
+          // Build final R2 key
+          let r2Key: string;
+          if (filePath && filePath.trim()) {
+            r2Key = filePath.replace(/\\/g, '/').replace(/^presets?\//i, 'preset/');
+          } else {
+            const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
+            r2Key = `preset/${presetId}.${ext}`;
+          }
+          
+          // Upload to final location WITH metadata (promptJson is guaranteed to exist)
+          await R2_BUCKET.put(r2Key, fileData, {
+            httpMetadata: {
+              contentType: contentTypeHeader,
+              cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+            },
+            customMetadata: {
+              prompt_json: promptJson
+            }
+          });
+          
+          const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          
+          // Determine ext from filename
+          let ext = 'webp';
+          if (filename.toLowerCase().endsWith('.png')) {
+            ext = 'png';
+          } else if (filename.toLowerCase().endsWith('.json')) {
+            ext = 'json';
+          }
+          
+          const createdAt = Math.floor(Date.now() / 1000);
+          
+          // Upsert preset in database
+          const existingPreset = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(presetId).first();
+          
+          if (existingPreset) {
+            // Delete old preset file if exists
+            const oldR2Key = `preset/${presetId}.${(existingPreset as any).ext || ext}`;
+            try { await R2_BUCKET.delete(oldR2Key); } catch (e) { /* ignore */ }
+            
+            await DB.prepare('UPDATE presets SET ext = ?, thumbnail_r2 = NULL WHERE id = ?').bind(ext, presetId).run();
+          } else {
+            await DB.prepare('INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)').bind(presetId, ext, createdAt).run();
+          }
+          
+          return jsonResponse({
+            data: {
+              filename,
+              success: true,
+              type: 'preset',
+              preset_id: presetId,
+              url: publicUrl,
+              hasPrompt: true
+            },
+            status: 'success',
+            message: 'Preset processed successfully',
+            code: 200
+          }, 200, request, env);
+        } else {
+          // This is a thumbnail file
+          const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)/);
+          let folderType = 'webp';
+          let resolution = '1x';
+          
+          if (folderMatch) {
+            folderType = folderMatch[1];
+            resolution = folderMatch[2];
+          }
+          
+          const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
+          const thumbnailFolder = `${folderType}_${resolution}`;
+          const thumbnailR2Key = `${thumbnailFolder}/${presetId}.${ext}`;
+          
+          await R2_BUCKET.put(thumbnailR2Key, fileData, {
+            httpMetadata: {
+              contentType: contentTypeHeader,
+              cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+            },
+          });
+          
+          const thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
+          
+          // Update preset's thumbnail_r2 JSON
+          const existingPreset = await DB.prepare('SELECT id, thumbnail_r2 FROM presets WHERE id = ?').bind(presetId).first() as { id: string; thumbnail_r2: string | null } | null;
+          
+          if (existingPreset) {
+            let thumbnailR2: Record<string, string> = {};
+            try {
+              thumbnailR2 = existingPreset.thumbnail_r2 ? JSON.parse(existingPreset.thumbnail_r2) : {};
+            } catch {}
+            thumbnailR2[thumbnailFolder] = thumbnailR2Key;
+            
+            await DB.prepare('UPDATE presets SET thumbnail_r2 = ? WHERE id = ?').bind(JSON.stringify(thumbnailR2), presetId).run();
+          }
+          
+          return jsonResponse({
+            data: {
+              filename,
+              success: true,
+              type: 'thumbnail',
+              preset_id: presetId,
+              url: thumbnailUrl,
+              hasPrompt: false,
+              metadata: { format: folderType, resolution }
+            },
+            status: 'success',
+            message: 'Thumbnail processed successfully',
+            code: 200
+          }, 200, request, env);
+        }
       } catch (error) {
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);

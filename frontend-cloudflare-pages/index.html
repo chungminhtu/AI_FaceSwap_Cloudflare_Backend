@@ -3240,117 +3240,202 @@
             progressFill.style.width = '0%';
             statusText.textContent = 'Đang xử lý file...';
 
-            const formData = new FormData();
-            
-            // Send zip files DIRECTLY to backend (backend extracts and preserves folder paths)
-            if (zipFiles.length > 0) {
-                statusText.textContent = `Đang chuẩn bị tải lên ${zipFiles.length} file zip...`;
-                for (const zipFile of zipFiles) {
-                    formData.append('files', zipFile);
-                }
-            }
-            
             // Check if filter mode is enabled for thumbnails
             const filterModeCheckbox = document.getElementById('thumbnail-filter-mode');
-            if (filterModeCheckbox && filterModeCheckbox.checked) {
-                formData.append('is_filter_mode', 'true');
-            }
+            const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
             
-            // Add regular files with their folder paths if available
-            if (regularFiles.length > 0) {
-                for (const file of regularFiles) {
-                    formData.append('files', file);
-                    // If file has webkitRelativePath (from folder upload), include it
-                    if (file.webkitRelativePath) {
-                        formData.append(`path_${file.name}`, file.webkitRelativePath);
+            // Extract all files from zip files client-side
+            const allFiles = [];
+            
+            // Extract files from zip archives
+            if (zipFiles.length > 0) {
+                statusText.textContent = `Đang giải nén ${zipFiles.length} file zip...`;
+                progressFill.style.width = '5%';
+                
+                for (let i = 0; i < zipFiles.length; i++) {
+                    const zipFile = zipFiles[i];
+                    try {
+                        statusText.textContent = `Đang giải nén zip ${i + 1}/${zipFiles.length}...`;
+                        const zip = await JSZip.loadAsync(zipFile);
+                        
+                        // Extract all files from zip (await all promises)
+                        const zipEntries = [];
+                        zip.forEach((relativePath, zipEntry) => {
+                            if (!zipEntry.dir) {
+                                zipEntries.push({ relativePath, zipEntry });
+                            }
+                        });
+                        
+                        // Process all entries in parallel for faster extraction
+                        const extractedFiles = await Promise.all(
+                            zipEntries.map(async ({ relativePath, zipEntry }) => {
+                                const fileData = await zipEntry.async('blob');
+                                const file = new File([fileData], zipEntry.name, { type: 'application/octet-stream' });
+                                return {
+                                    file: file,
+                                    path: relativePath
+                                };
+                            })
+                        );
+                        
+                        allFiles.push(...extractedFiles);
+                    } catch (zipError) {
+                        console.error(`Error extracting zip ${zipFile.name}:`, zipError);
+                        showStatusMessage(`Lỗi giải nén ${zipFile.name}: ${zipError.message}`, 'error');
                     }
                 }
             }
             
-            const totalFiles = zipFiles.length + regularFiles.length;
+            // Add regular files
+            if (regularFiles.length > 0) {
+                for (const file of regularFiles) {
+                    allFiles.push({
+                        file: file,
+                        path: file.webkitRelativePath || ''
+                    });
+                }
+            }
+            
+            const totalFiles = allFiles.length;
             if (totalFiles === 0) {
                 statusText.textContent = 'Không có file nào để tải lên';
                 progressContainer.style.display = 'none';
                 return;
             }
 
-            statusText.textContent = zipFiles.length > 0 
-                ? `Đang tải lên ${zipFiles.length} file zip (backend sẽ giải nén và xử lý)...`
-                : `Đang tải lên ${regularFiles.length} file...`;
+            statusText.textContent = `Đang xử lý ${totalFiles} file (tuần tự để tránh timeout)...`;
             progressFill.style.width = '10%';
 
-            const uploadUrl = `${WORKER_URL}/upload-thumbnails`;
+            // Process files sequentially using single-file endpoint
+            const results = [];
+            let successful = 0;
+            let failed = 0;
+            let presetsProcessed = 0;
+            let thumbnailsProcessed = 0;
+            let presetsWithPrompts = 0;
+            
+            const uploadUrl = `${WORKER_URL}/process-thumbnail-file`;
             const startTime = Date.now();
+            
             try {
-                progressFill.style.width = '30%';
-                const response = await fetch(uploadUrl, {
-                    method: 'POST',
-                    headers: buildHeaders(),
-                    body: formData
-                });
-
-                const data = await response.json();
-                const duration = Date.now() - startTime;
-                
-                logApiCall({
-                    label: `Tải Lên Thumbnails (${zipFiles.length > 0 ? zipFiles.length + ' zip' : regularFiles.length + ' files'})`,
-                    method: 'POST',
-                    url: '/upload-thumbnails',
-                    fullUrl: uploadUrl,
-                    status: response.ok && data.status === 'success' ? 'success' : 'error',
-                    payload: data,
-                    duration,
-                    body: formData
-                });
-                
-                if (data.status === 'success') {
-                    progressFill.style.width = '100%';
+                for (let i = 0; i < allFiles.length; i++) {
+                    const { file, path } = allFiles[i];
+                    const progress = Math.floor(10 + (i / totalFiles) * 80);
+                    progressFill.style.width = `${progress}%`;
+                    statusText.textContent = `Đang xử lý file ${i + 1}/${totalFiles}: ${file.name}...`;
                     
-                    // Show detailed progress information
-                    const presetsProcessed = data.data.presets_processed || 0;
-                    const presetsWithPrompts = data.data.presets_with_prompts || 0;
-                    const thumbnailsProcessed = data.data.thumbnails_processed || 0;
-                    const successful = data.data.successful || 0;
-                    const total = data.data.total || 0;
-                    const failed = data.data.failed || 0;
-                    
-                    let statusParts = [];
-                    statusParts.push(`✓ ${successful}/${total} files`);
-                    if (presetsProcessed > 0) {
-                        statusParts.push(`${presetsProcessed} presets (${presetsWithPrompts} with AI prompts)`);
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    if (path) {
+                        formData.append('path', path);
                     }
-                    if (thumbnailsProcessed > 0) {
-                        statusParts.push(`${thumbnailsProcessed} thumbnails`);
+                    if (isFilterMode) {
+                        formData.append('is_filter_mode', 'true');
                     }
                     
-                    statusText.textContent = statusParts.join(' | ');
-                    
-                    if (data.data.failed > 0) {
-                        const failedFiles = data.data.results.filter(r => !r.success);
-                        console.warn('Failed files:', failedFiles);
-                        showStatusMessage(`${data.data.failed} file thất bại. Kiểm tra console để xem chi tiết.`, 'error');
-                    } else {
-                        showStatusMessage('Tải lên thành công!', 'success');
+                    try {
+                        const response = await fetch(uploadUrl, {
+                            method: 'POST',
+                            headers: buildHeaders(),
+                            body: formData
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.status === 'success' && data.data.success) {
+                            successful++;
+                            results.push(data.data);
+                            
+                            if (data.data.type === 'preset') {
+                                presetsProcessed++;
+                                if (data.data.hasPrompt) {
+                                    presetsWithPrompts++;
+                                }
+                            } else if (data.data.type === 'thumbnail') {
+                                thumbnailsProcessed++;
+                            }
+                        } else {
+                            failed++;
+                            results.push({
+                                filename: file.name,
+                                success: false,
+                                error: data.message || data.data?.error || 'Unknown error'
+                            });
+                            console.warn(`Failed to process ${file.name}:`, data);
+                        }
+                    } catch (fileError) {
+                        failed++;
+                        results.push({
+                            filename: file.name,
+                            success: false,
+                            error: fileError.message || 'Network error'
+                        });
+                        console.error(`Error processing ${file.name}:`, fileError);
                     }
                     
-                    // Reset inputs
-                    const zipInput = $('thumbnail-zip-input');
-                    if (zipInput) zipInput.value = '';
-                    
-                    // Switch to view sub tab and reload thumbnails
-                    setTimeout(() => {
-                        progressContainer.style.display = 'none';
-                        switchThumbnailSubTab('view');
-                    }, 1000);
-                } else {
-                    throw new Error(data.message || 'Upload failed');
+                    // Small delay between requests to avoid overwhelming the server
+                    if (i < allFiles.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
                 }
+                
+                const duration = Date.now() - startTime;
+                progressFill.style.width = '100%';
+                
+                // Log API call summary
+                logApiCall({
+                    label: `Tải Lên Thumbnails (${totalFiles} files)`,
+                    method: 'POST',
+                    url: '/process-thumbnail-file',
+                    fullUrl: uploadUrl,
+                    status: failed === 0 ? 'success' : 'error',
+                    payload: {
+                        total: totalFiles,
+                        successful: successful,
+                        failed: failed,
+                        presets_processed: presetsProcessed,
+                        presets_with_prompts: presetsWithPrompts,
+                        thumbnails_processed: thumbnailsProcessed,
+                        results: results
+                    },
+                    duration
+                });
+                
+                // Show detailed progress information
+                let statusParts = [];
+                statusParts.push(`✓ ${successful}/${totalFiles} files`);
+                if (presetsProcessed > 0) {
+                    statusParts.push(`${presetsProcessed} presets (${presetsWithPrompts} with AI prompts)`);
+                }
+                if (thumbnailsProcessed > 0) {
+                    statusParts.push(`${thumbnailsProcessed} thumbnails`);
+                }
+                
+                statusText.textContent = statusParts.join(' | ');
+                
+                if (failed > 0) {
+                    const failedFiles = results.filter(r => !r.success);
+                    console.warn('Failed files:', failedFiles);
+                    showStatusMessage(`${failed} file thất bại. Kiểm tra console để xem chi tiết.`, 'error');
+                } else {
+                    showStatusMessage('Tải lên thành công!', 'success');
+                }
+                
+                // Reset inputs
+                const zipInput = $('thumbnail-zip-input');
+                if (zipInput) zipInput.value = '';
+                
+                // Switch to view sub tab and reload thumbnails
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                    switchThumbnailSubTab('view');
+                }, 1000);
             } catch (error) {
                 const duration = Date.now() - startTime;
                 logApiCall({
-                    label: `Tải Lên Thumbnails (${zipFiles.length > 0 ? zipFiles.length + ' zip' : regularFiles.length + ' files'})`,
+                    label: `Tải Lên Thumbnails (${totalFiles} files)`,
                     method: 'POST',
-                    url: '/upload-thumbnails',
+                    url: '/process-thumbnail-file',
                     fullUrl: uploadUrl,
                     status: 'error',
                     payload: { error: error.message },
