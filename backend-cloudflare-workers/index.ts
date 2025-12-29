@@ -15,17 +15,43 @@ const generateVertexPromptWithRetry = async (
   env: Env,
   isFilterMode: boolean = false,
   customPromptText: string | null = null,
-  maxRetries: number = 5,
+  maxRetries: number = 8,
   initialDelay: number = 1000
 ): Promise<{ success: boolean; prompt?: any; error?: string; debug?: any }> => {
   let lastError: string | undefined;
   let lastDebug: any;
+  
+  // Check if error is retryable (transient errors that might succeed on retry)
+  const isRetryableError = (error: string, debug?: any): boolean => {
+    if (!error) return true; // Unknown errors are retryable
+    const errorLower = error.toLowerCase();
+    const httpStatus = debug?.httpStatus;
+    
+    // Don't retry on permanent errors (4xx except 429)
+    if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
+      return false; // Client errors (except rate limit) are not retryable
+    }
+    
+    // Retry on: network errors, timeouts, rate limits, server errors (5xx)
+    return errorLower.includes('timeout') ||
+           errorLower.includes('network') ||
+           errorLower.includes('429') ||
+           errorLower.includes('rate limit') ||
+           errorLower.includes('503') ||
+           errorLower.includes('502') ||
+           errorLower.includes('500') ||
+           httpStatus === undefined || // Unknown status, retry
+           (httpStatus >= 500 && httpStatus < 600); // Server errors
+  };
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await generateVertexPrompt(imageUrl, env, isFilterMode, customPromptText);
       
       if (result.success && result.prompt) {
+        if (attempt > 0) {
+          console.log(`[Vertex Prompt Retry] Success on attempt ${attempt + 1}/${maxRetries}`);
+        }
         return result;
       }
       
@@ -33,20 +59,44 @@ const generateVertexPromptWithRetry = async (
       lastError = result.error || 'Unknown error';
       lastDebug = result.debug;
       
-      // If not last attempt, wait before retrying (exponential backoff)
+      // Check if error is retryable
+      if (!isRetryableError(lastError, lastDebug)) {
+        console.warn(`[Vertex Prompt Retry] Non-retryable error on attempt ${attempt + 1}: ${lastError}`);
+        return {
+          success: false,
+          error: lastError,
+          debug: lastDebug
+        };
+      }
+      
+      // If not last attempt, wait before retrying (exponential backoff with jitter)
       if (attempt < maxRetries - 1) {
-        const delay = initialDelay * Math.pow(2, attempt);
-        console.warn(`[Vertex Prompt Retry] Attempt ${attempt + 1}/${maxRetries} failed: ${lastError}. Retrying in ${delay}ms...`);
+        const baseDelay = initialDelay * Math.pow(2, attempt);
+        const jitter = Math.random() * 0.3 * baseDelay; // Add up to 30% jitter
+        const delay = Math.min(baseDelay + jitter, 30000); // Cap at 30 seconds
+        console.warn(`[Vertex Prompt Retry] Attempt ${attempt + 1}/${maxRetries} failed: ${lastError}. Retrying in ${Math.round(delay)}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
       lastDebug = { errorDetails: lastError };
       
+      // Check if error is retryable
+      if (!isRetryableError(lastError, lastDebug)) {
+        console.warn(`[Vertex Prompt Retry] Non-retryable exception on attempt ${attempt + 1}: ${lastError}`);
+        return {
+          success: false,
+          error: lastError,
+          debug: lastDebug
+        };
+      }
+      
       // If not last attempt, wait before retrying
       if (attempt < maxRetries - 1) {
-        const delay = initialDelay * Math.pow(2, attempt);
-        console.warn(`[Vertex Prompt Retry] Attempt ${attempt + 1}/${maxRetries} threw error: ${lastError}. Retrying in ${delay}ms...`);
+        const baseDelay = initialDelay * Math.pow(2, attempt);
+        const jitter = Math.random() * 0.3 * baseDelay;
+        const delay = Math.min(baseDelay + jitter, 30000);
+        console.warn(`[Vertex Prompt Retry] Attempt ${attempt + 1}/${maxRetries} threw error: ${lastError}. Retrying in ${Math.round(delay)}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -1685,21 +1735,20 @@ export default {
             const promptJson = promptData?.promptJson || null;
             const vertexCallInfo = promptData?.vertexCallInfo || { success: false };
 
-            // CRITICAL: Only upload to R2 if prompt_json was successfully generated
-            if (!promptJson) {
-              throw new Error(`Vertex AI prompt generation failed for preset ${presetId}. Cannot upload without prompt_json metadata. Error: ${vertexCallInfo.error || 'Unknown error'}`);
-            }
-
-            // Upload file with metadata (promptJson is guaranteed to exist here)
-            await R2_BUCKET.put(r2Key, fileData, {
+            // Upload file to R2 (even if Vertex AI failed, we still create the preset)
+            // If prompt_json exists, include it in metadata; otherwise upload without it
+            const r2Metadata: any = {
               httpMetadata: {
                 contentType,
                 cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-              },
-              customMetadata: {
-                prompt_json: promptJson
               }
-            });
+            };
+            if (promptJson) {
+              r2Metadata.customMetadata = {
+                prompt_json: promptJson
+              };
+            }
+            await R2_BUCKET.put(r2Key, fileData, r2Metadata);
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
 
@@ -1717,30 +1766,28 @@ export default {
               ext = 'json';
             }
 
+            // OVERRIDE: Update existing preset or create new one
+            // R2_BUCKET.put() automatically overrides existing files, no need to delete first
             if (existingPreset) {
-              // OVERRIDE: Delete old preset file from R2 if exists
-              const oldR2Key = `preset/${presetId}.${(existingPreset as any).ext || ext}`;
-              try { await R2_BUCKET.delete(oldR2Key); } catch (e) { /* ignore */ }
-              
-              // OVERRIDE: Delete old thumbnails from R2 if exists
-              if ((existingPreset as any).thumbnail_r2) {
-                try {
-                  const oldThumbnails = JSON.parse((existingPreset as any).thumbnail_r2);
-                  for (const key of Object.values(oldThumbnails)) {
-                    try { await R2_BUCKET.delete(key as string); } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { /* ignore */ }
-              }
-              
               // OVERRIDE: Update existing preset and reset thumbnail_r2
-              await DB.prepare(
+              const updateResult = await DB.prepare(
                 'UPDATE presets SET ext = ?, thumbnail_r2 = NULL WHERE id = ?'
               ).bind(ext, presetId).run();
+              
+              if (!updateResult.success) {
+                console.error(`[Preset Upload] Failed to update preset ${presetId}:`, updateResult);
+                throw new Error(`Failed to update preset ${presetId} in database`);
+              }
             } else {
               // Create new preset
-              await DB.prepare(
+              const insertResult = await DB.prepare(
                 'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
               ).bind(presetId, ext, createdAt).run();
+              
+              if (!insertResult.success) {
+                console.error(`[Preset Upload] Failed to create preset ${presetId}:`, insertResult);
+                throw new Error(`Failed to create preset ${presetId} in database`);
+              }
             }
 
             results.push({
@@ -1749,7 +1796,8 @@ export default {
               type: 'preset',
               preset_id: presetId,
               url: publicUrl,
-              hasPrompt: !!promptJson
+              hasPrompt: !!promptJson,
+              vertexError: !promptJson ? (vertexCallInfo.error || 'Vertex AI prompt generation failed') : null
             });
           } catch (fileError) {
             results.push({
@@ -1786,7 +1834,13 @@ export default {
             let r2Key: string;
             if (path && path.trim()) {
               // Preserve original folder structure from zip, normalize path separators
-              r2Key = path.replace(/\\/g, '/');
+              let normalizedPath = path.replace(/\\/g, '/');
+              // Remove leading/trailing slashes
+              normalizedPath = normalizedPath.replace(/^\/+|\/+$/g, '');
+              // Fix duplicate folder patterns like lottie_4x/lottie_4x/file.json -> lottie_4x/file.json
+              // Match pattern: folder_name/folder_name/rest_of_path
+              normalizedPath = normalizedPath.replace(/^([^\/]+)\/\1(\/|$)/, '$1$2');
+              r2Key = normalizedPath;
             } else {
               // Fallback: build from resolution and format
               const ext = fileFormat === 'lottie' ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
@@ -1818,13 +1872,23 @@ export default {
               'SELECT id FROM presets WHERE id = ?'
             ).bind(presetId).first();
 
-            // Auto-create preset if it doesn't exist (fallback for when preset files weren't detected)
+            // Auto-create preset if it doesn't exist (fallback for when preset files weren't detected or failed)
+            // Use INSERT OR IGNORE to avoid errors if preset already exists
             if (!presetExists) {
-              const createdAt = Math.floor(Date.now() / 1000);
-              const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
-              await DB.prepare(
-                'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
-              ).bind(presetId, ext, createdAt).run();
+              try {
+                const createdAt = Math.floor(Date.now() / 1000);
+                const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
+                const insertResult = await DB.prepare(
+                  'INSERT OR IGNORE INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+                ).bind(presetId, ext, createdAt).run();
+                
+                if (!insertResult.success) {
+                  console.error(`[Thumbnail Upload] Failed to auto-create preset ${presetId}:`, insertResult);
+                }
+              } catch (dbError) {
+                console.error(`[Thumbnail Upload] Error auto-creating preset ${presetId}:`, dbError);
+                throw new Error(`Failed to create preset ${presetId} in database: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
+              }
             }
 
             // Update preset with thumbnail information in JSON format
@@ -1842,14 +1906,20 @@ export default {
               }
             }
 
-            // Add/update the thumbnail URL for this resolution and format
+            // OVERRIDE: Add/update the thumbnail URL for this resolution and format
+            // This will override existing thumbnail entry for the same resolution/format
             const thumbnailKey = `${formatPrefix}_${resolution}`;
             thumbnailData[thumbnailKey] = r2Key;
 
-            // Update the thumbnail_r2 field with the JSON data
-            await DB.prepare(
+            // Update the thumbnail_r2 field with the JSON data (overrides existing)
+            const updateResult = await DB.prepare(
               'UPDATE presets SET thumbnail_r2 = ? WHERE id = ?'
             ).bind(JSON.stringify(thumbnailData), presetId).run();
+            
+            if (!updateResult.success) {
+              console.error(`[Thumbnail Upload] Failed to update thumbnail_r2 for preset ${presetId}:`, updateResult);
+              throw new Error(`Failed to update thumbnail_r2 for preset ${presetId} in database`);
+            }
 
             results.push({
               filename,
