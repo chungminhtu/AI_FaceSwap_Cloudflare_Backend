@@ -16,6 +16,7 @@ export interface FaceSwapRequest {
   additional_prompt?: string;
   aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)
   model?: string | number; // Optional: Model parameter ("2.5" for gemini-2.5-flash-image, "3" for gemini-3-pro-image-preview). Default: "2.5"
+  action?: string; // Optional: Action type to validate selfies match (e.g., "faceswap", "wedding", "4k")
 }
 
 export interface BackgroundRequest {

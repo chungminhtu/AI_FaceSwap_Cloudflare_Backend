@@ -733,7 +733,9 @@ export default {
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
           isFilterMode = formData.get('is_filter_mode') === 'true';
           customPromptText = formData.get('custom_prompt_text') as string | null;
-          action = formData.get('action') as string | null;
+          // Ensure action is always a string (formData.get can return File if name collision)
+          const actionEntry = formData.get('action');
+          action = (actionEntry && typeof actionEntry === 'string') ? actionEntry : null;
         } else if (contentType.toLowerCase().includes('application/json')) {
           const body = await request.json() as {
             image_urls?: string[];
@@ -768,14 +770,22 @@ export default {
           }
         }
 
-        if (!type || !profileId) {
+        // Validate and normalize profileId - ensure it's always a valid string
+        if (!profileId || typeof profileId !== 'string' || profileId.trim() === '') {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { type, profileId, path } : undefined, request, env);
+          return errorResponse('profile_id is required and must be a non-empty string', 400, debugEnabled ? { type, profileId, path } : undefined, request, env);
         }
+        profileId = profileId.trim(); // Normalize
+        
+        if (!type || typeof type !== 'string' || type.trim() === '') {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('type is required and must be a non-empty string', 400, debugEnabled ? { type, profileId, path } : undefined, request, env);
+        }
+        type = type.trim(); // Normalize
 
         if (type !== 'preset' && type !== 'selfie') {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { type, path } : undefined, request, env);
+          return errorResponse('type must be either "preset" or "selfie"', 400, debugEnabled ? { type, path } : undefined, request, env);
         }
 
         // Log parsed parameters for debugging
@@ -1156,46 +1166,102 @@ export default {
             }
 
             // Insert new selfie - ensure all values are correct types
-            // Validate all values before insert to prevent SQLITE_MISMATCH
-            if (!id || typeof id !== 'string' || id.trim() === '') {
+            // Validate and explicitly convert all values to prevent SQLITE_MISMATCH
+            const validId = String(id || '').trim();
+            if (!validId) {
               return {
                 success: false,
                 error: 'Invalid id generated',
                 filename: fileData.filename
               };
             }
-            if (!ext || typeof ext !== 'string' || ext.trim() === '') {
+            
+            const validExt = String(ext || 'jpg').trim();
+            if (!validExt) {
               return {
                 success: false,
                 error: 'Invalid file extension',
                 filename: fileData.filename
               };
             }
-            if (!profileId || typeof profileId !== 'string' || profileId.trim() === '') {
+            
+            // Use profileId from outer scope (already validated and normalized)
+            const validProfileId = String(profileId || '').trim();
+            if (!validProfileId) {
+              console.error('[Selfie Upload] Invalid profileId:', { profileId, type: typeof profileId, filename: fileData.filename });
               return {
                 success: false,
                 error: 'Invalid profile_id',
                 filename: fileData.filename
               };
             }
-            if (!actionValue || typeof actionValue !== 'string' || actionValue.trim() === '') {
-              actionValue = 'faceswap'; // Final fallback
+            
+            // Ensure actionValue is always a valid string (action column is TEXT, nullable is OK but we use default)
+            const validAction = String(actionValue || 'faceswap').trim() || 'faceswap';
+            
+            // Ensure createdAt is a valid integer (created_at is INTEGER NOT NULL)
+            let validCreatedAt: number;
+            if (typeof createdAt === 'number' && !isNaN(createdAt) && createdAt > 0) {
+              validCreatedAt = Math.floor(createdAt);
+            } else {
+              validCreatedAt = Math.floor(Date.now() / 1000);
             }
             
-            // Ensure createdAt is a valid integer
-            let validCreatedAt = createdAt;
-            if (typeof createdAt !== 'number' || isNaN(createdAt) || createdAt <= 0) {
-              validCreatedAt = Math.floor(Date.now() / 1000); // Regenerate if invalid
+            // Explicitly bind with correct types - ensure all are primitive types
+            // Log values for debugging (in production, remove or make conditional)
+            const bindValues = [
+              String(validId),           // id: TEXT
+              String(validExt),          // ext: TEXT NOT NULL
+              String(validProfileId),    // profile_id: TEXT NOT NULL
+              String(validAction),       // action: TEXT (nullable)
+              Number(validCreatedAt)     // created_at: INTEGER NOT NULL
+            ];
+            
+            // Validate all bind values are correct types
+            if (typeof bindValues[0] !== 'string' || bindValues[0] === '') {
+              throw new Error(`Invalid id type: ${typeof bindValues[0]}, value: ${bindValues[0]}`);
+            }
+            if (typeof bindValues[1] !== 'string' || bindValues[1] === '') {
+              throw new Error(`Invalid ext type: ${typeof bindValues[1]}, value: ${bindValues[1]}`);
+            }
+            if (typeof bindValues[2] !== 'string' || bindValues[2] === '') {
+              throw new Error(`Invalid profile_id type: ${typeof bindValues[2]}, value: ${bindValues[2]}`);
+            }
+            if (typeof bindValues[3] !== 'string') {
+              throw new Error(`Invalid action type: ${typeof bindValues[3]}, value: ${bindValues[3]}`);
+            }
+            if (typeof bindValues[4] !== 'number' || isNaN(bindValues[4])) {
+              throw new Error(`Invalid created_at type: ${typeof bindValues[4]}, value: ${bindValues[4]}`);
             }
             
-            const dbResult = await DB.prepare(
-              'INSERT INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
-            ).bind(id.trim(), ext.trim(), profileId.trim(), actionValue.trim(), validCreatedAt).run();
+            try {
+              const dbResult = await DB.prepare(
+                'INSERT INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
+              ).bind(...bindValues).run();
 
-            if (!dbResult.success) {
+              if (!dbResult.success) {
+                return {
+                  success: false,
+                  error: 'Database insert failed',
+                  filename: fileData.filename
+                };
+              }
+            } catch (dbError) {
+              console.error('[Selfie Upload] Database insert error:', {
+                error: dbError instanceof Error ? dbError.message : String(dbError),
+                bindValues: {
+                  id: bindValues[0],
+                  ext: bindValues[1],
+                  profile_id: bindValues[2],
+                  action: bindValues[3],
+                  created_at: bindValues[4],
+                  types: bindValues.map(v => typeof v)
+                },
+                filename: fileData.filename
+              });
               return {
                 success: false,
-                error: 'Database insert failed',
+                error: `Database insert error: ${dbError instanceof Error ? dbError.message : String(dbError)}`,
                 filename: fileData.filename
               };
             }
@@ -3081,12 +3147,17 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId, path } : undefined, request, env);
         }
 
+        // Get optional action filter parameter
+        const actionFilter = url.searchParams.get('action');
+        
         // Check if new schema (ext column exists) or old schema (selfie_url exists)
         const schemaCheck = await DB.prepare('PRAGMA table_info(selfies)').all();
         const hasExt = schemaCheck.results?.some((col: any) => col.name === 'ext');
         const hasUrl = schemaCheck.results?.some((col: any) => col.name === 'selfie_url');
         
         let query: string;
+        const queryParams: any[] = [profileId];
+        
         const limitParam = url.searchParams.get('limit');
         let limit = 50;
         if (limitParam) {
@@ -3096,10 +3167,24 @@ export default {
           }
         }
         
+        // Build WHERE clause with optional action filter
+        let whereClause = 'WHERE profile_id = ?';
+        if (actionFilter && actionFilter.trim()) {
+          const normalizedAction = actionFilter.trim().toLowerCase();
+          // Support both '4k' and '4K' for backward compatibility
+          if (normalizedAction === '4k') {
+            whereClause += ' AND (action = ? OR action = ?)';
+            queryParams.push('4k', '4K');
+          } else {
+            whereClause += ' AND action = ?';
+            queryParams.push(normalizedAction);
+          }
+        }
+        
         if (hasExt) {
-          query = `SELECT id, ext, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT ${limit}`;
+          query = `SELECT id, ext, profile_id, action, created_at FROM selfies ${whereClause} ORDER BY created_at DESC LIMIT ${limit}`;
         } else if (hasUrl) {
-          query = `SELECT id, selfie_url, profile_id, action, created_at FROM selfies WHERE profile_id = ? ORDER BY created_at DESC LIMIT ${limit}`;
+          query = `SELECT id, selfie_url, profile_id, action, created_at FROM selfies ${whereClause} ORDER BY created_at DESC LIMIT ${limit}`;
         } else {
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
@@ -3111,7 +3196,7 @@ export default {
           }, 200, request, env);
         }
 
-        const result = await DB.prepare(query).bind(profileId).all();
+        const result = await DB.prepare(query).bind(...queryParams).all();
 
         if (!result || !result.results) {
           const debugEnabled = isDebugEnabled(env);
@@ -3556,11 +3641,11 @@ export default {
         }
 
         if (hasSelfieIds && body.selfie_ids) {
-          // Use JOIN to validate selfies belong to profile in single query per selfie
+          // Use JOIN to validate selfies belong to profile and include action for validation
           for (const selfieId of body.selfie_ids) {
             queries.push(
               DB.prepare(`
-                SELECT s.id, s.ext, p.id as profile_exists
+                SELECT s.id, s.ext, s.action, p.id as profile_exists
                 FROM selfies s
                 INNER JOIN profiles p ON s.profile_id = p.id
                 WHERE s.id = ? AND p.id = ?
@@ -3600,10 +3685,14 @@ export default {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        // Extract selfie results
+        // Extract selfie results and validate action match if specified
         const selfieUrls: string[] = [];
         const selfieIds: string[] = [];
+        const selfieActions: string[] = [];
         const selfieStartIndex = hasPresetId ? 2 : 1;
+        
+        // Get requested action for validation (if provided)
+        const requestedAction = body.action ? body.action.trim().toLowerCase() : null;
 
         if (hasSelfieIds && body.selfie_ids) {
           for (let i = 0; i < body.selfie_ids.length; i++) {
@@ -3611,13 +3700,45 @@ export default {
             if (!selfieResult) {
               return errorResponse(`Selfie with ID ${body.selfie_ids[i]} not found or does not belong to profile`, 404, debugEnabled ? { selfieId: body.selfie_ids[i], profileId: body.profile_id, path } : undefined, request, env);
             }
+            
+            // Validate action match if action is specified in request
+            const selfieActionRaw = (selfieResult as any).action ? String((selfieResult as any).action) : null;
+            const selfieAction = selfieActionRaw ? selfieActionRaw.toLowerCase() : null;
+            if (requestedAction) {
+              // Support both '4k' and '4K' for backward compatibility
+              if (requestedAction === '4k') {
+                if (selfieAction !== '4k') {
+                  return errorResponse(
+                    `Selfie with ID ${body.selfie_ids[i]} has action "${selfieActionRaw || 'null'}" but request requires action "4k"`,
+                    400,
+                    debugEnabled ? { selfieId: body.selfie_ids[i], selfieAction: selfieActionRaw, requestedAction, path } : undefined,
+                    request,
+                    env
+                  );
+                }
+              } else if (selfieAction !== requestedAction) {
+                return errorResponse(
+                  `Selfie with ID ${body.selfie_ids[i]} has action "${selfieActionRaw || 'null'}" but request requires action "${requestedAction}"`,
+                  400,
+                  debugEnabled ? { selfieId: body.selfie_ids[i], selfieAction: selfieActionRaw, requestedAction, path } : undefined,
+                  request,
+                  env
+                );
+              }
+            }
+            
             const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
             const fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
             selfieUrls.push(fullUrl);
             selfieIds.push(body.selfie_ids[i]);
+            selfieActions.push(selfieActionRaw || 'faceswap'); // Use raw value from DB, default to faceswap if null
           }
         } else if (hasSelfieUrls) {
           selfieUrls.push(...body.selfie_image_urls!);
+          // For URL-based selfies, action is unknown, use requested action or default
+          for (let i = 0; i < body.selfie_image_urls!.length; i++) {
+            selfieActions.push(requestedAction || 'faceswap');
+          }
         }
 
         // Support multiple selfies for wedding faceswap (e.g., bride and groom)
@@ -3932,6 +4053,11 @@ export default {
           data: {
             id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
+            selfies: hasSelfieIds && selfieIds.length > 0 ? selfieIds.map((id, idx) => ({
+              id,
+              action: selfieActions[idx] || null,
+              url: selfieUrls[idx] || null,
+            })) : undefined,
           },
           status: 'success',
           message: faceSwapResult.Message || 'Processing successful',
@@ -4664,10 +4790,11 @@ export default {
         // Resolve selfie image URL
         let selfieImageUrl: string = '';
 
+        let selfieAction: string | null = null;
         if (hasSelfieId) {
-          // Lookup selfie by ID and validate ownership
+          // Lookup selfie by ID and validate ownership, include action
           const selfieResult = await DB.prepare(`
-            SELECT s.id, s.ext, p.id as profile_exists
+            SELECT s.id, s.ext, s.action, p.id as profile_exists
             FROM selfies s
             INNER JOIN profiles p ON s.profile_id = p.id
             WHERE s.id = ? AND p.id = ?
@@ -4677,6 +4804,7 @@ export default {
             return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
           
+          selfieAction = (selfieResult as any).action || null;
           const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
           selfieImageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
         } else if (hasSelfieUrl) {
@@ -4782,6 +4910,10 @@ export default {
           data: {
             resultImageUrl: resultUrl,
             resultId: savedResultId,
+            selfie: hasSelfieId ? {
+              id: body.selfie_id,
+              action: selfieAction,
+            } : undefined,
           },
           status: 'success',
           message: filterResult.Message || 'Style filter applied successfully',
