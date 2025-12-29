@@ -669,7 +669,7 @@ const transformPromptForFilter = (promptPayload: any): any => {
 };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const DB = getD1Database(env);
     const R2_BUCKET = getR2Bucket(env);
     const requestUrl = new URL(request.url);
@@ -2478,186 +2478,209 @@ export default {
         const requestUrl = new URL(request.url);
         const results: any[] = [];
 
-        // Process each uploaded file
+        // Process each uploaded file with retry logic
         for (const fileInfo of body.files) {
           const { uploadKey, processPath, filename } = fileInfo;
           
-          try {
-            // Get the file from R2
-            const r2Object = await R2_BUCKET.get(uploadKey);
-            if (!r2Object) {
-              results.push({
-                filename,
-                success: false,
-                error: 'File not found in R2. Upload may have expired or failed.'
-              });
-              continue;
-            }
-
-            const parsed = parseThumbnailFilename(filename);
-            if (!parsed) {
-              results.push({
-                filename,
-                success: false,
-                error: 'Invalid filename format. Could not extract preset_id from filename.'
-              });
-              // Clean up temp file
-              await R2_BUCKET.delete(uploadKey);
-              continue;
-            }
-
-            const { preset_id: presetId, format } = parsed;
-            const normalizedPath = (processPath || '').replace(/\\/g, '/').toLowerCase();
-            
-            // Determine if this is a preset image or thumbnail
-            const pathParts = normalizedPath.split('/').filter((p: string) => p);
-            const isFromPresetFolder = 
-              normalizedPath.includes('preset/') || 
-              normalizedPath.startsWith('preset/') || 
-              normalizedPath.includes('/preset/') ||
-              normalizedPath === 'preset' ||
-              (pathParts.length > 0 && pathParts[0] === 'preset') ||
-              (!normalizedPath && filename.toLowerCase().endsWith('.png'));
-
-            const fileData = await r2Object.arrayBuffer();
-            const contentType = r2Object.httpMetadata?.contentType || 'application/octet-stream';
-
-            if (isFromPresetFolder) {
-              // This is a preset image - needs Vertex AI prompt generation
-              // CRITICAL: Generate prompt FIRST, then upload to R2 with metadata
-              const r2Key = `presets/${presetId}.${filename.split('.').pop()}`;
-              
-              // Upload to temp location first for prompt generation
-              const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
-              await R2_BUCKET.put(tempR2Key, fileData, {
-                httpMetadata: {
-                  contentType,
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-              });
-
-              const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
-
-              // Generate Vertex AI prompt with retry - MUST succeed before final upload
-              const promptResult = await generateVertexPromptWithRetry(tempPublicUrl, env, isFilterMode, null);
-              
-              // Clean up temp file
-              try {
-                await R2_BUCKET.delete(tempR2Key);
-              } catch (e) {
-                // Ignore cleanup errors
+          // Retry file processing until success
+          let processed = false;
+          let lastError: Error | null = null;
+          const maxRetries = 10;
+          
+          for (let attempt = 0; attempt < maxRetries && !processed; attempt++) {
+            try {
+              // Get the file from R2
+              const r2Object = await R2_BUCKET.get(uploadKey);
+              if (!r2Object) {
+                if (attempt === maxRetries - 1) {
+                  results.push({
+                    filename,
+                    success: false,
+                    error: 'File not found in R2. Upload may have expired or failed.'
+                  });
+                } else {
+                  await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 30000)));
+                  continue;
+                }
+                break;
               }
 
-              // CRITICAL: Only proceed if prompt generation succeeded
-              if (!promptResult.success || !promptResult.prompt) {
+              const parsed = parseThumbnailFilename(filename);
+              if (!parsed) {
                 results.push({
                   filename,
                   success: false,
-                  error: `Vertex AI prompt generation failed after retries: ${promptResult.error || 'Unknown error'}`,
+                  error: 'Invalid filename format. Could not extract preset_id from filename.'
+                });
+                // Clean up temp file
+                await R2_BUCKET.delete(uploadKey);
+                break;
+              }
+
+              const { preset_id: presetId, format } = parsed;
+              const normalizedPath = (processPath || '').replace(/\\/g, '/').toLowerCase();
+              
+              // Determine if this is a preset image or thumbnail
+              const pathParts = normalizedPath.split('/').filter((p: string) => p);
+              const isFromPresetFolder = 
+                normalizedPath.includes('preset/') || 
+                normalizedPath.startsWith('preset/') || 
+                normalizedPath.includes('/preset/') ||
+                normalizedPath === 'preset' ||
+                (pathParts.length > 0 && pathParts[0] === 'preset') ||
+                (!normalizedPath && filename.toLowerCase().endsWith('.png'));
+
+              const fileData = await r2Object.arrayBuffer();
+              const contentType = r2Object.httpMetadata?.contentType || 'application/octet-stream';
+
+              if (isFromPresetFolder) {
+                // This is a preset image - needs Vertex AI prompt generation
+                // CRITICAL: Generate prompt FIRST, then upload to R2 with metadata
+                const r2Key = `presets/${presetId}.${filename.split('.').pop()}`;
+                
+                // Upload to temp location first for prompt generation
+                const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
+                await R2_BUCKET.put(tempR2Key, fileData, {
+                  httpMetadata: {
+                    contentType,
+                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                  },
+                });
+
+                const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
+
+                // Generate Vertex AI prompt with retry - MUST succeed before final upload
+                const promptResult = await generateVertexPromptWithRetry(tempPublicUrl, env, isFilterMode, null);
+                
+                // Clean up temp file
+                try {
+                  await R2_BUCKET.delete(tempR2Key);
+                } catch (e) {
+                  // Ignore cleanup errors
+                }
+
+                // CRITICAL: Only proceed if prompt generation succeeded
+                if (!promptResult.success || !promptResult.prompt) {
+                  if (attempt === maxRetries - 1) {
+                    results.push({
+                      filename,
+                      success: false,
+                      error: `Vertex AI prompt generation failed after retries: ${promptResult.error || 'Unknown error'}`,
+                      type: 'preset',
+                      preset_id: presetId,
+                      vertex_info: { success: false, error: promptResult.error || 'Unknown error', debug: promptResult.debug }
+                    });
+                  } else {
+                    await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 30000)));
+                    continue;
+                  }
+                  break;
+                }
+
+                const promptJson = JSON.stringify(promptResult.prompt);
+                const vertexCallInfo = { success: true, promptKeys: Object.keys(promptResult.prompt) };
+
+                // Upload to final location WITH metadata (promptJson is guaranteed to exist)
+                await R2_BUCKET.put(r2Key, fileData, {
+                  httpMetadata: {
+                    contentType,
+                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                  },
+                  customMetadata: {
+                    prompt_json: promptJson
+                  }
+                });
+
+                const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+
+                // Upsert preset in database
+                const existingPreset = await DB.prepare('SELECT preset_id FROM presets WHERE preset_id = ?').bind(presetId).first();
+                
+                if (existingPreset) {
+                  await DB.prepare(`
+                    UPDATE presets SET preset_url = ?, prompt_json = ?, updated_at = datetime('now') WHERE preset_id = ?
+                  `).bind(publicUrl, promptJson, presetId).run();
+                } else {
+                  await DB.prepare(`
+                    INSERT INTO presets (preset_id, preset_url, prompt_json, created_at, updated_at) 
+                    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                  `).bind(presetId, publicUrl, promptJson).run();
+                }
+
+                results.push({
+                  filename,
+                  success: true,
                   type: 'preset',
                   preset_id: presetId,
-                  vertex_info: { success: false, error: promptResult.error || 'Unknown error', debug: promptResult.debug }
+                  url: publicUrl,
+                  hasPrompt: !!promptJson,
+                  vertex_info: vertexCallInfo
                 });
-                continue;
-              }
-
-              const promptJson = JSON.stringify(promptResult.prompt);
-              const vertexCallInfo = { success: true, promptKeys: Object.keys(promptResult.prompt) };
-
-              // Upload to final location WITH metadata (promptJson is guaranteed to exist)
-              await R2_BUCKET.put(r2Key, fileData, {
-                httpMetadata: {
-                  contentType,
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-                customMetadata: {
-                  prompt_json: promptJson
-                }
-              });
-
-              const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-
-              // Upsert preset in database
-              const existingPreset = await DB.prepare('SELECT preset_id FROM presets WHERE preset_id = ?').bind(presetId).first();
-              
-              if (existingPreset) {
-                await DB.prepare(`
-                  UPDATE presets SET preset_url = ?, prompt_json = ?, updated_at = datetime('now') WHERE preset_id = ?
-                `).bind(publicUrl, promptJson, presetId).run();
               } else {
-                await DB.prepare(`
-                  INSERT INTO presets (preset_id, preset_url, prompt_json, created_at, updated_at) 
-                  VALUES (?, ?, ?, datetime('now'), datetime('now'))
-                `).bind(presetId, publicUrl, promptJson).run();
+                // This is a thumbnail file
+                const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)/);
+                let folderType = 'webp';
+                let resolution = '1x';
+
+                if (folderMatch) {
+                  folderType = folderMatch[1];
+                  resolution = folderMatch[2];
+                }
+
+                const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
+                const thumbnailFolder = `${folderType}_${resolution}`;
+                const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
+
+                await R2_BUCKET.put(thumbnailR2Key, fileData, {
+                  httpMetadata: {
+                    contentType,
+                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                  },
+                });
+
+                const thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
+
+                // Update preset's thumbnail_r2 JSON
+                const existingPreset = await DB.prepare('SELECT preset_id, thumbnail_r2 FROM presets WHERE preset_id = ?').bind(presetId).first() as { preset_id: string; thumbnail_r2: string | null } | null;
+
+                if (existingPreset) {
+                  let thumbnailR2: Record<string, string> = {};
+                  try {
+                    thumbnailR2 = existingPreset.thumbnail_r2 ? JSON.parse(existingPreset.thumbnail_r2) : {};
+                  } catch {}
+                  thumbnailR2[thumbnailFolder] = thumbnailR2Key;
+
+                  await DB.prepare(`
+                    UPDATE presets SET thumbnail_r2 = ?, updated_at = datetime('now') WHERE preset_id = ?
+                  `).bind(JSON.stringify(thumbnailR2), presetId).run();
+                }
+
+                results.push({
+                  filename,
+                  success: true,
+                  type: 'thumbnail',
+                  preset_id: presetId,
+                  url: thumbnailUrl,
+                  hasPrompt: false,
+                  metadata: { format: folderType, resolution }
+                });
               }
 
-              results.push({
-                filename,
-                success: true,
-                type: 'preset',
-                preset_id: presetId,
-                url: publicUrl,
-                hasPrompt: !!promptJson,
-                vertex_info: vertexCallInfo
-              });
-            } else {
-              // This is a thumbnail file
-              const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)/);
-              let folderType = 'webp';
-              let resolution = '1x';
-
-              if (folderMatch) {
-                folderType = folderMatch[1];
-                resolution = folderMatch[2];
+              // Clean up temp file
+              await R2_BUCKET.delete(uploadKey);
+              processed = true;
+            } catch (fileError) {
+              lastError = fileError instanceof Error ? fileError : new Error(String(fileError));
+              if (attempt === maxRetries - 1) {
+                results.push({
+                  filename,
+                  success: false,
+                  error: lastError.message.substring(0, 200)
+                });
+              } else {
+                await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 30000)));
               }
-
-              const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
-              const thumbnailFolder = `${folderType}_${resolution}`;
-              const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
-
-              await R2_BUCKET.put(thumbnailR2Key, fileData, {
-                httpMetadata: {
-                  contentType,
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-              });
-
-              const thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
-
-              // Update preset's thumbnail_r2 JSON
-              const existingPreset = await DB.prepare('SELECT preset_id, thumbnail_r2 FROM presets WHERE preset_id = ?').bind(presetId).first() as { preset_id: string; thumbnail_r2: string | null } | null;
-
-              if (existingPreset) {
-                let thumbnailR2: Record<string, string> = {};
-                try {
-                  thumbnailR2 = existingPreset.thumbnail_r2 ? JSON.parse(existingPreset.thumbnail_r2) : {};
-                } catch {}
-                thumbnailR2[thumbnailFolder] = thumbnailR2Key;
-
-                await DB.prepare(`
-                  UPDATE presets SET thumbnail_r2 = ?, updated_at = datetime('now') WHERE preset_id = ?
-                `).bind(JSON.stringify(thumbnailR2), presetId).run();
-              }
-
-              results.push({
-                filename,
-                success: true,
-                type: 'thumbnail',
-                preset_id: presetId,
-                url: thumbnailUrl,
-                hasPrompt: false,
-                metadata: { format: folderType, resolution }
-              });
             }
-
-            // Clean up temp file
-            await R2_BUCKET.delete(uploadKey);
-          } catch (fileError) {
-            results.push({
-              filename,
-              success: false,
-              error: fileError instanceof Error ? fileError.message.substring(0, 200) : String(fileError).substring(0, 200)
-            });
           }
         }
 
@@ -2680,14 +2703,113 @@ export default {
 
     // Handle single thumbnail file processing - for client-side sequential uploads
     // Endpoint: POST /process-thumbnail-file
-    // Client extracts zip, then calls this endpoint for each file sequentially to avoid timeouts
+    // For presets: Accepts R2 key/URL, generates prompt JSON only (file must be uploaded first)
+    // For thumbnails: Accepts file upload, stores without prompt generation
     if (path === '/process-thumbnail-file' && request.method === 'POST') {
-      try {
+      return await retryUploadOperation(async () => {
         const contentType = request.headers.get('Content-Type') || '';
         const DB = getD1Database(env);
         const R2_BUCKET = getR2Bucket(env);
         const requestUrl = new URL(request.url);
         
+        // Check if this is a preset prompt generation request (R2 key/URL provided)
+        if (contentType.toLowerCase().includes('application/json')) {
+          const body = await request.json() as {
+            r2_key?: string;
+            r2_url?: string;
+            filename?: string;
+            preset_id?: string;
+            is_filter_mode?: boolean;
+            custom_prompt_text?: string;
+          };
+          
+          // For preset prompt generation: require R2 key or URL
+          if (body.r2_key || body.r2_url) {
+            const r2Key = body.r2_key || (body.r2_url ? extractR2KeyFromUrl(body.r2_url) : null);
+            if (!r2Key) {
+              return errorResponse('Invalid R2 key or URL', 400, undefined, request, env);
+            }
+            
+            // Extract preset_id from R2 key or body
+            let presetId = body.preset_id;
+            if (!presetId) {
+              const filename = body.filename || r2Key.split('/').pop() || '';
+              const parsed = parseThumbnailFilename(filename);
+              if (!parsed) {
+                return errorResponse('Could not extract preset_id from filename or R2 key', 400, undefined, request, env);
+              }
+              presetId = parsed.preset_id;
+            }
+            
+            // Verify file exists in R2
+            const existingObject = await R2_BUCKET.head(r2Key);
+            if (!existingObject) {
+              return errorResponse(`File not found in R2: ${r2Key}`, 404, undefined, request, env);
+            }
+            
+            // Get public URL for Vertex AI
+            const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            
+            // Generate Vertex AI prompt with retry
+            const isFilterMode = body.is_filter_mode === true;
+            const customPromptText = body.custom_prompt_text || null;
+            const promptResult = await generateVertexPromptWithRetry(publicUrl, env, isFilterMode, customPromptText);
+            
+            // CRITICAL: Only proceed if prompt generation succeeded
+            if (!promptResult.success || !promptResult.prompt) {
+              return errorResponse(
+                `Vertex AI prompt generation failed: ${promptResult.error || 'Unknown error'}`,
+                500,
+                undefined,
+                request,
+                env
+              );
+            }
+            
+            const promptJson = JSON.stringify(promptResult.prompt);
+            
+            // Update R2 object metadata with prompt JSON
+            const fileData = await R2_BUCKET.get(r2Key);
+            if (!fileData) {
+              return errorResponse(`Failed to read file from R2: ${r2Key}`, 500, undefined, request, env);
+            }
+            
+            await R2_BUCKET.put(r2Key, fileData.body, {
+              httpMetadata: fileData.httpMetadata,
+              customMetadata: {
+                ...fileData.customMetadata,
+                prompt_json: promptJson
+              }
+            });
+            
+            // Update database preset record
+            const ext = r2Key.split('.').pop() || 'png';
+            const existingPreset = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(presetId).first();
+            
+            if (existingPreset) {
+              await DB.prepare('UPDATE presets SET ext = ? WHERE id = ?').bind(ext, presetId).run();
+            } else {
+              const createdAt = Math.floor(Date.now() / 1000);
+              await DB.prepare('INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)').bind(presetId, ext, createdAt).run();
+            }
+            
+            return jsonResponse({
+              data: {
+                filename: body.filename || r2Key.split('/').pop() || '',
+                success: true,
+                type: 'preset',
+                preset_id: presetId,
+                url: publicUrl,
+                hasPrompt: true
+              },
+              status: 'success',
+              message: 'Preset prompt generated successfully',
+              code: 200
+            }, 200, request, env);
+          }
+        }
+        
+        // For file uploads: handle both preset and thumbnail files
         let file: File;
         let filePath: string = '';
         let isFilterMode: boolean = false;
@@ -2703,33 +2825,8 @@ export default {
           filePath = (formData.get('path') as string) || '';
           isFilterMode = formData.get('is_filter_mode') === 'true';
           customPromptText = formData.get('custom_prompt_text') as string | null;
-        } else if (contentType.toLowerCase().includes('application/json')) {
-          const body = await request.json() as {
-            file: string; // base64 encoded
-            filename: string;
-            path?: string;
-            is_filter_mode?: boolean;
-            custom_prompt_text?: string;
-          };
-          
-          if (!body.file || !body.filename) {
-            return errorResponse('file and filename are required', 400, undefined, request, env);
-          }
-          
-          // Decode base64
-          const base64Data = body.file.replace(/^data:.*?;base64,/, '');
-          const binaryString = atob(base64Data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          
-          file = new File([bytes], body.filename, { type: 'application/octet-stream' });
-          filePath = body.path || '';
-          isFilterMode = body.is_filter_mode === true;
-          customPromptText = body.custom_prompt_text || null;
         } else {
-          return errorResponse('Content-Type must be multipart/form-data or application/json', 400, undefined, request, env);
+          return errorResponse('Content-Type must be multipart/form-data for file uploads or application/json for preset prompt generation', 400, undefined, request, env);
         }
         
         const filename = file.name || '';
@@ -2763,43 +2860,7 @@ export default {
         }
         
         if (isFromPresetFolder) {
-          // This is a preset image - needs Vertex AI prompt generation
-          const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
-          
-          // Upload to temp location first for prompt generation
-          await R2_BUCKET.put(tempR2Key, fileData, {
-            httpMetadata: {
-              contentType: contentTypeHeader,
-              cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-            },
-          });
-          
-          const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
-          
-          // Generate Vertex AI prompt with retry - MUST succeed before final upload
-          const promptResult = await generateVertexPromptWithRetry(tempPublicUrl, env, isFilterMode, customPromptText);
-          
-          // Clean up temp file
-          try {
-            await R2_BUCKET.delete(tempR2Key);
-          } catch (e) {
-            // Ignore cleanup errors
-          }
-          
-          // CRITICAL: Only proceed if prompt generation succeeded
-          if (!promptResult.success || !promptResult.prompt) {
-            return errorResponse(
-              `Vertex AI prompt generation failed after retries: ${promptResult.error || 'Unknown error'}`,
-              500,
-              undefined,
-              request,
-              env
-            );
-          }
-          
-          const promptJson = JSON.stringify(promptResult.prompt);
-          
-          // Build final R2 key
+          // Preset file: upload first, return immediately, generate prompt in background
           let r2Key: string;
           if (filePath && filePath.trim()) {
             let normalizedPath = filePath.replace(/\\/g, '/');
@@ -2812,42 +2873,65 @@ export default {
             r2Key = `preset/${presetId}.${ext}`;
           }
           
-          // Upload to final location WITH metadata (promptJson is guaranteed to exist)
+          // Upload to final location (fast operation)
           await R2_BUCKET.put(r2Key, fileData, {
             httpMetadata: {
               contentType: contentTypeHeader,
               cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
             },
-            customMetadata: {
-              prompt_json: promptJson
-            }
           });
           
           const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
           
-          // Determine ext from filename
-          let ext = 'webp';
-          if (filename.toLowerCase().endsWith('.png')) {
-            ext = 'png';
-          } else if (filename.toLowerCase().endsWith('.json')) {
-            ext = 'json';
-          }
-          
+          // Update database (fast operation)
+          const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
           const createdAt = Math.floor(Date.now() / 1000);
-          
-          // Upsert preset in database
           const existingPreset = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(presetId).first();
           
           if (existingPreset) {
-            // Delete old preset file if exists
             const oldR2Key = `preset/${presetId}.${(existingPreset as any).ext || ext}`;
-            try { await R2_BUCKET.delete(oldR2Key); } catch (e) { /* ignore */ }
-            
-            await DB.prepare('UPDATE presets SET ext = ?, thumbnail_r2 = NULL WHERE id = ?').bind(ext, presetId).run();
+            if (oldR2Key !== r2Key) {
+              try { await R2_BUCKET.delete(oldR2Key); } catch (e) { /* ignore */ }
+            }
+            await DB.prepare('UPDATE presets SET ext = ? WHERE id = ?').bind(ext, presetId).run();
           } else {
             await DB.prepare('INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)').bind(presetId, ext, createdAt).run();
           }
           
+          // Generate prompt in background (non-blocking)
+          const promptTask = (async () => {
+            try {
+              const promptResult = await generateVertexPromptWithRetry(publicUrl, env, isFilterMode, customPromptText);
+              
+              if (promptResult.success && promptResult.prompt) {
+                const promptJson = JSON.stringify(promptResult.prompt);
+                const existingFile = await R2_BUCKET.get(r2Key);
+                if (existingFile) {
+                  await R2_BUCKET.put(r2Key, existingFile.body, {
+                    httpMetadata: existingFile.httpMetadata,
+                    customMetadata: {
+                      ...existingFile.customMetadata,
+                      prompt_json: promptJson
+                    }
+                  });
+                }
+              } else {
+                console.warn(`[Preset Prompt] Failed to generate prompt for ${r2Key}: ${promptResult.error || 'Unknown error'}`);
+              }
+            } catch (error) {
+              console.error(`[Preset Prompt] Error generating prompt for ${r2Key}:`, error);
+            }
+          })();
+          
+          // Use waitUntil to ensure prompt generation completes even after response is sent
+          if (ctx && ctx.waitUntil) {
+            ctx.waitUntil(promptTask);
+          } else {
+            // Fallback: fire and forget (prompt will still generate but may be interrupted)
+            promptTask.catch(err => console.error('[Preset Prompt] Background task error:', err));
+          }
+          
+          // Return success immediately (file is uploaded, prompt will be generated in background)
           return jsonResponse({
             data: {
               filename,
@@ -2855,14 +2939,14 @@ export default {
               type: 'preset',
               preset_id: presetId,
               url: publicUrl,
-              hasPrompt: true
+              hasPrompt: false // Will be updated when prompt generation completes
             },
             status: 'success',
-            message: 'Preset processed successfully',
+            message: 'Preset uploaded successfully, prompt generation in progress',
             code: 200
           }, 200, request, env);
         } else {
-          // This is a thumbnail file
+          // Thumbnail file: upload without prompt generation
           const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)/);
           let folderType = 'webp';
           let resolution = '1x';
@@ -2874,7 +2958,7 @@ export default {
           
           const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
           const thumbnailFolder = `${folderType}_${resolution}`;
-          const thumbnailR2Key = `${thumbnailFolder}/${presetId}.${ext}`;
+          const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
           
           await R2_BUCKET.put(thumbnailR2Key, fileData, {
             httpMetadata: {
@@ -2913,11 +2997,7 @@ export default {
             code: 200
           }, 200, request, env);
         }
-      } catch (error) {
-        const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path } : undefined, request, env);
-      }
+      }, 10);
     }
 
     // Handle profile creation
