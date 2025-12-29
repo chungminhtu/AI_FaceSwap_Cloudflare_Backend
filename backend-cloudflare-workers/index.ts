@@ -1592,7 +1592,29 @@ export default {
               const blob = await zipEntry.async('blob');
               const fileName = relativePath.split('/').pop() || 'unknown';
               const file = new File([blob], fileName, { type: blob.type });
-              files.push({ file, path: relativePath });
+              
+              // Clean path immediately when extracting from zip - remove duplicate folders
+              let cleanedPath = relativePath.replace(/\\/g, '/');
+              cleanedPath = cleanedPath.replace(/^\/+|\/+$/g, '');
+              
+              // Remove duplicate consecutive folder names aggressively (case-insensitive)
+              let pathParts = cleanedPath.split('/');
+              let changed = true;
+              while (changed) {
+                changed = false;
+                const cleanedParts: string[] = [];
+                for (let i = 0; i < pathParts.length; i++) {
+                  if (i === 0 || pathParts[i].toLowerCase() !== pathParts[i - 1].toLowerCase()) {
+                    cleanedParts.push(pathParts[i]);
+                  } else {
+                    changed = true;
+                  }
+                }
+                pathParts = cleanedParts;
+              }
+              cleanedPath = pathParts.join('/');
+              
+              files.push({ file, path: cleanedPath });
             }
           } catch (error) {
             // If zip processing fails, add an error result
@@ -1761,16 +1783,87 @@ export default {
             const isLottie = fileFormat === 'lottie';
 
             // Build R2 key preserving original folder structure
-            let r2Key: string;
+            let r2Key: string = '';
             if (path && path.trim()) {
               let normalizedPath = path.replace(/\\/g, '/');
               normalizedPath = normalizedPath.replace(/^\/+|\/+$/g, '');
               normalizedPath = normalizedPath.replace(/^presets?\//i, 'preset/');
-              normalizedPath = normalizedPath.replace(/^preset\/preset(\/|$)/, 'preset$1');
-              r2Key = normalizedPath;
+              
+              // Remove duplicate folder patterns - handle all cases aggressively (case-insensitive)
+              // Pattern: folder_name/folder_name/rest -> folder_name/rest
+              // Apply multiple passes to catch all duplicates
+              let pathParts = normalizedPath.split('/');
+              let changed = true;
+              while (changed) {
+                changed = false;
+                const cleanedParts: string[] = [];
+                for (let i = 0; i < pathParts.length; i++) {
+                  if (i === 0 || pathParts[i].toLowerCase() !== pathParts[i - 1].toLowerCase()) {
+                    cleanedParts.push(pathParts[i]);
+                  } else {
+                    changed = true;
+                  }
+                }
+                pathParts = cleanedParts;
+              }
+              normalizedPath = pathParts.join('/');
+              
+              // Remove any parent folders - keep only the actual folder structure at root level
+              pathParts = normalizedPath.split('/');
+              if (pathParts.length > 2) {
+                const expectedPatterns = [
+                  /^preset$/i,
+                  /^(lottie|lottie_avif|webp)_[\d.]+x$/i
+                ];
+                
+                let foundKey = false;
+                for (let i = 0; i < pathParts.length - 1; i++) {
+                  const folderName = pathParts[i];
+                  const matchesPattern = expectedPatterns.some(pattern => pattern.test(folderName));
+                  
+                  if (matchesPattern) {
+                    r2Key = pathParts.slice(i).join('/');
+                    foundKey = true;
+                    break;
+                  }
+                }
+                
+                if (!foundKey && pathParts.length >= 2) {
+                  r2Key = pathParts.slice(-2).join('/');
+                } else if (!foundKey) {
+                  r2Key = normalizedPath;
+                }
+              } else {
+                r2Key = normalizedPath;
+              }
             } else {
               const ext = isLottie ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
               r2Key = `preset/${presetId}.${ext}`;
+            }
+
+            // Final safety check: remove any remaining duplicate folders from r2Key
+            // Preserve preset_thumb/ and preset/ prefixes
+            if (r2Key) {
+              const isPresetThumb = r2Key.startsWith('preset_thumb/');
+              const isPreset = r2Key.startsWith('preset/');
+              const prefix = isPresetThumb ? 'preset_thumb/' : (isPreset ? 'preset/' : '');
+              let pathWithoutPrefix = isPresetThumb ? r2Key.replace(/^preset_thumb\//, '') : (isPreset ? r2Key.replace(/^preset\//, '') : r2Key);
+              
+              let r2KeyParts = pathWithoutPrefix.split('/');
+              let changed = true;
+              while (changed) {
+                changed = false;
+                const cleanedParts: string[] = [];
+                for (let i = 0; i < r2KeyParts.length; i++) {
+                  if (i === 0 || r2KeyParts[i].toLowerCase() !== r2KeyParts[i - 1].toLowerCase()) {
+                    cleanedParts.push(r2KeyParts[i]);
+                  } else {
+                    changed = true;
+                  }
+                }
+                r2KeyParts = cleanedParts;
+              }
+              r2Key = prefix + r2KeyParts.join('/');
             }
 
             const fileData = await file.arrayBuffer();
@@ -1899,16 +1992,24 @@ export default {
               // Remove leading/trailing slashes
               normalizedPath = normalizedPath.replace(/^\/+|\/+$/g, '');
               
-              // Remove duplicate folder patterns - handle all cases
+              // Remove duplicate folder patterns - handle all cases aggressively (case-insensitive)
               // Pattern: folder_name/folder_name/rest -> folder_name/rest
+              // Apply multiple passes to catch all duplicates
               let pathParts = normalizedPath.split('/');
-              const cleanedParts: string[] = [];
-              for (let i = 0; i < pathParts.length; i++) {
-                if (i === 0 || pathParts[i] !== pathParts[i - 1]) {
-                  cleanedParts.push(pathParts[i]);
+              let changed = true;
+              while (changed) {
+                changed = false;
+                const cleanedParts: string[] = [];
+                for (let i = 0; i < pathParts.length; i++) {
+                  if (i === 0 || pathParts[i].toLowerCase() !== pathParts[i - 1].toLowerCase()) {
+                    cleanedParts.push(pathParts[i]);
+                  } else {
+                    changed = true;
+                  }
                 }
+                pathParts = cleanedParts;
               }
-              normalizedPath = cleanedParts.join('/');
+              normalizedPath = pathParts.join('/');
               
               // Remove any parent folders - keep only the actual folder structure at root level
               // Expected folders: preset/, lottie_*x/, lottie_avif_*x/, webp_*x/
@@ -1928,6 +2029,10 @@ export default {
                   if (matchesPattern) {
                     // Found the actual folder, keep from here to end
                     r2Key = pathParts.slice(i).join('/');
+                    // Add preset_thumb/ prefix for thumbnail folders
+                    if (/^(lottie|lottie_avif|webp)_[\d.]+x$/i.test(pathParts[i])) {
+                      r2Key = `preset_thumb/${r2Key}`;
+                    }
                     foundKey = true;
                     break;
                   }
@@ -1936,16 +2041,53 @@ export default {
                 // If no pattern matched, use the last 2 parts (folder + filename)
                 if (!foundKey && pathParts.length >= 2) {
                   r2Key = pathParts.slice(-2).join('/');
+                  // Add preset_thumb/ prefix if it's a thumbnail folder
+                  if (/^(lottie|lottie_avif|webp)_[\d.]+x$/i.test(pathParts[pathParts.length - 2])) {
+                    r2Key = `preset_thumb/${r2Key}`;
+                  }
                 } else if (!foundKey) {
                   r2Key = normalizedPath;
+                  // Add preset_thumb/ prefix if it's a thumbnail folder
+                  if (/^(lottie|lottie_avif|webp)_[\d.]+x\//i.test(r2Key)) {
+                    r2Key = `preset_thumb/${r2Key}`;
+                  }
                 }
               } else {
                 r2Key = normalizedPath;
+                // Add preset_thumb/ prefix if it's a thumbnail folder
+                if (/^(lottie|lottie_avif|webp)_[\d.]+x\//i.test(r2Key)) {
+                  r2Key = `preset_thumb/${r2Key}`;
+                }
               }
             } else {
               // Fallback: build from resolution and format
               const ext = fileFormat === 'lottie' ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
-              r2Key = `${formatPrefix}_${resolution}/${presetId}.${ext}`;
+              r2Key = `preset_thumb/${formatPrefix}_${resolution}/${presetId}.${ext}`;
+            }
+
+            // Final safety check: remove any remaining duplicate folders from r2Key
+            // Preserve preset_thumb/ and preset/ prefixes
+            if (r2Key) {
+              const isPresetThumb = r2Key.startsWith('preset_thumb/');
+              const isPreset = r2Key.startsWith('preset/');
+              const prefix = isPresetThumb ? 'preset_thumb/' : (isPreset ? 'preset/' : '');
+              let pathWithoutPrefix = isPresetThumb ? r2Key.replace(/^preset_thumb\//, '') : (isPreset ? r2Key.replace(/^preset\//, '') : r2Key);
+              
+              let r2KeyParts = pathWithoutPrefix.split('/');
+              let changed = true;
+              while (changed) {
+                changed = false;
+                const cleanedParts: string[] = [];
+                for (let i = 0; i < r2KeyParts.length; i++) {
+                  if (i === 0 || r2KeyParts[i].toLowerCase() !== r2KeyParts[i - 1].toLowerCase()) {
+                    cleanedParts.push(r2KeyParts[i]);
+                  } else {
+                    changed = true;
+                  }
+                }
+                r2KeyParts = cleanedParts;
+              }
+              r2Key = prefix + r2KeyParts.join('/');
             }
 
             // Read file data
@@ -1974,21 +2116,28 @@ export default {
             ).bind(presetId).first();
 
             // Auto-create preset if it doesn't exist (fallback for when preset files weren't detected or failed)
-            // Use INSERT OR IGNORE to avoid errors if preset already exists
-            if (!presetExists) {
-              try {
-                const createdAt = Math.floor(Date.now() / 1000);
-                const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
-                const insertResult = await DB.prepare(
-                  'INSERT OR IGNORE INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
-                ).bind(presetId, ext, createdAt).run();
-                
-                if (!insertResult.success) {
-                  throw new Error(`Failed to auto-create preset ${presetId} in database`);
-                }
-              } catch (dbError) {
-                throw new Error(`Failed to create preset ${presetId} in database: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
+            // DELETE and RECREATE to ensure clean state
+            const createdAt = Math.floor(Date.now() / 1000);
+            const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
+            
+            if (presetExists) {
+              // Delete existing preset first
+              const deleteResult = await DB.prepare(
+                'DELETE FROM presets WHERE id = ?'
+              ).bind(presetId).run();
+              
+              if (!deleteResult.success) {
+                throw new Error(`Failed to delete preset ${presetId} in database`);
               }
+            }
+            
+            // Insert new preset (whether it existed or not)
+            const insertResult = await DB.prepare(
+              'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+            ).bind(presetId, ext, createdAt).run();
+            
+            if (!insertResult.success) {
+              throw new Error(`Failed to create preset ${presetId} in database`);
             }
 
             // Update preset with thumbnail information in JSON format
@@ -2464,7 +2613,7 @@ export default {
 
               const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
               const thumbnailFolder = `${folderType}_${resolution}`;
-              const thumbnailR2Key = `${thumbnailFolder}/${presetId}.${ext}`;
+              const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
 
               await R2_BUCKET.put(thumbnailR2Key, fileData, {
                 httpMetadata: {
