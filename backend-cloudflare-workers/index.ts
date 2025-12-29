@@ -1484,6 +1484,55 @@ export default {
       return { preset_id, format };
     }
 
+    // Retry wrapper for upload operations
+    const retryUploadOperation = async <T>(
+      operation: () => Promise<T>,
+      maxRetries: number = 10,
+      initialDelay: number = 1000
+    ): Promise<T> => {
+      let lastError: Error | null = null;
+      
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          const errorMsg = lastError.message.toLowerCase();
+          
+          // Check if error is retryable (transient errors)
+          const isRetryable = 
+            errorMsg.includes('timeout') ||
+            errorMsg.includes('network') ||
+            errorMsg.includes('connection') ||
+            errorMsg.includes('rate limit') ||
+            errorMsg.includes('429') ||
+            errorMsg.includes('503') ||
+            errorMsg.includes('502') ||
+            errorMsg.includes('500') ||
+            errorMsg.includes('internal server error') ||
+            errorMsg.includes('service unavailable');
+          
+          // Don't retry on permanent errors (4xx except 429)
+          if (!isRetryable && attempt === 0) {
+            throw lastError;
+          }
+          
+          // If not last attempt, wait before retrying (exponential backoff with jitter)
+          if (attempt < maxRetries - 1) {
+            const baseDelay = initialDelay * Math.pow(2, attempt);
+            const jitter = Math.random() * 0.3 * baseDelay;
+            const delay = Math.min(baseDelay + jitter, 30000); // Cap at 30 seconds
+            console.warn(`[Upload Retry] Attempt ${attempt + 1}/${maxRetries} failed: ${lastError.message}. Retrying in ${Math.round(delay)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+      }
+      
+      // All retries exhausted
+      console.error(`[Upload Retry] All ${maxRetries} attempts failed. Last error: ${lastError?.message}`);
+      throw lastError || new Error('Upload operation failed after all retries');
+    };
+
     // Handle thumbnail folder upload endpoint - processes both original presets and thumbnails
     if (path === '/upload-thumbnails' && request.method === 'POST') {
       try {
@@ -1493,7 +1542,11 @@ export default {
           return errorResponse('', 400, debugEnabled ? { contentType, path } : undefined, request, env);
         }
 
+        // Read formData once (request body can only be read once)
         const formData = await request.formData();
+        
+        // Wrap entire upload process in retry logic
+        return await retryUploadOperation(async () => {
         let files: Array<{ file: File; path: string }> = [];
         const fileEntries = formData.getAll('files');
         const results: any[] = [];
@@ -1587,7 +1640,6 @@ export default {
         const filesNeedingPrompts: Array<{ file: File; path: string; parsed: any; index: number }> = [];
         const thumbnailFilesOnly: Array<{ file: File; path: string; parsed: any; index: number }> = [];
 
-        console.log('[Thumbnail Upload] Total parsed files:', thumbnailFiles.length);
 
         thumbnailFiles.forEach((item, index) => {
           const { file, path, parsed } = item;
@@ -1615,7 +1667,6 @@ export default {
           // Final decision: preset if from preset folder OR (no path AND is PNG)
           const isFromPresetFolder = isFromPresetFolderByPath || (isPresetByFilename && !isThumbnailFolderByPath);
 
-          console.log(`[Thumbnail Upload] File: ${filename}, Path: "${normalizedPath}", IsPreset: ${isFromPresetFolder}, ByPath: ${isFromPresetFolderByPath}, ByFilename: ${isPresetByFilename}, IsThumbnailFolder: ${!!isThumbnailFolderByPath}`);
 
           if (isFromPresetFolder) {
             // Files from preset folder need Vertex AI prompt generation (PNG/WebP images)
@@ -1626,8 +1677,6 @@ export default {
           }
         });
 
-        console.log('[Thumbnail Upload] Files needing prompts (presets):', filesNeedingPrompts.length);
-        console.log('[Thumbnail Upload] Thumbnail files only:', thumbnailFilesOnly.length);
 
         // Batch generate Vertex AI prompts for files that need them
         const promptResults: Array<{ index: number; promptJson: string | null; vertexCallInfo: any }> = [];
@@ -1703,26 +1752,28 @@ export default {
         // Process preset files (with Vertex AI prompts) - MUST be processed first before thumbnails
         // Process sequentially to avoid loading all files into memory at once
         for (const { file, path, parsed, index } of filesNeedingPrompts) {
+          let presetCreated = false;
+          let presetId = '';
           try {
             const filename = file.name;
-            const presetId = parsed.preset_id;
-            const fileFormat = parsed.format; // This will be 'webp' for preset images
+            presetId = parsed.preset_id;
+            const fileFormat = parsed.format;
             const isLottie = fileFormat === 'lottie';
 
-            // Build R2 key preserving original folder structure (e.g., preset/fs_beach-day-selfie_f1_2b.left.png)
+            // Build R2 key preserving original folder structure
             let r2Key: string;
             if (path && path.trim()) {
-              // Preserve original folder structure from zip, normalize path separators
-              r2Key = path.replace(/\\/g, '/').replace(/^presets?\//i, 'preset/');
+              let normalizedPath = path.replace(/\\/g, '/');
+              normalizedPath = normalizedPath.replace(/^\/+|\/+$/g, '');
+              normalizedPath = normalizedPath.replace(/^presets?\//i, 'preset/');
+              normalizedPath = normalizedPath.replace(/^preset\/preset(\/|$)/, 'preset$1');
+              r2Key = normalizedPath;
             } else {
-              // Fallback if no path provided
               const ext = isLottie ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
               r2Key = `preset/${presetId}.${ext}`;
             }
 
-            // Read file data (only one file in memory at a time now)
             const fileData = await file.arrayBuffer();
-            // Determine content type from actual file extension
             let contentType = 'image/webp';
             if (filename.toLowerCase().endsWith('.png')) {
               contentType = 'image/png';
@@ -1730,13 +1781,10 @@ export default {
               contentType = 'application/json';
             }
 
-            // Get prompt data from Vertex AI processing
             const promptData = promptMap.get(index);
             const promptJson = promptData?.promptJson || null;
             const vertexCallInfo = promptData?.vertexCallInfo || { success: false };
 
-            // Upload file to R2 (even if Vertex AI failed, we still create the preset)
-            // If prompt_json exists, include it in metadata; otherwise upload without it
             const r2Metadata: any = {
               httpMetadata: {
                 contentType,
@@ -1752,13 +1800,11 @@ export default {
 
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
 
-            // Check if preset already exists
             const existingPreset = await DB.prepare(
               'SELECT id, thumbnail_r2 FROM presets WHERE id = ?'
             ).bind(presetId).first();
 
             const createdAt = Math.floor(Date.now() / 1000);
-            // Determine ext from actual filename
             let ext = 'webp';
             if (filename.toLowerCase().endsWith('.png')) {
               ext = 'png';
@@ -1766,29 +1812,27 @@ export default {
               ext = 'json';
             }
 
-            // OVERRIDE: Update existing preset or create new one
-            // R2_BUCKET.put() automatically overrides existing files, no need to delete first
+            // DELETE and RECREATE to ensure clean update
             if (existingPreset) {
-              // OVERRIDE: Update existing preset and reset thumbnail_r2
-              const updateResult = await DB.prepare(
-                'UPDATE presets SET ext = ?, thumbnail_r2 = NULL WHERE id = ?'
-              ).bind(ext, presetId).run();
+              // Delete existing preset first
+              const deleteResult = await DB.prepare(
+                'DELETE FROM presets WHERE id = ?'
+              ).bind(presetId).run();
               
-              if (!updateResult.success) {
-                console.error(`[Preset Upload] Failed to update preset ${presetId}:`, updateResult);
-                throw new Error(`Failed to update preset ${presetId} in database`);
-              }
-            } else {
-              // Create new preset
-              const insertResult = await DB.prepare(
-                'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
-              ).bind(presetId, ext, createdAt).run();
-              
-              if (!insertResult.success) {
-                console.error(`[Preset Upload] Failed to create preset ${presetId}:`, insertResult);
-                throw new Error(`Failed to create preset ${presetId} in database`);
+              if (!deleteResult.success) {
+                throw new Error(`Failed to delete preset ${presetId} in database`);
               }
             }
+            
+            // Insert new preset (whether it existed or not)
+            const insertResult = await DB.prepare(
+              'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+            ).bind(presetId, ext, createdAt).run();
+            
+            if (!insertResult.success) {
+              throw new Error(`Failed to create preset ${presetId} in database`);
+            }
+            presetCreated = true;
 
             results.push({
               filename,
@@ -1800,6 +1844,22 @@ export default {
               vertexError: !promptJson ? (vertexCallInfo.error || 'Vertex AI prompt generation failed') : null
             });
           } catch (fileError) {
+            if (!presetCreated && presetId) {
+              try {
+                const createdAt = Math.floor(Date.now() / 1000);
+                const filename = file.name || '';
+                let ext = 'webp';
+                if (filename.toLowerCase().endsWith('.png')) {
+                  ext = 'png';
+                } else if (filename.toLowerCase().endsWith('.json')) {
+                  ext = 'json';
+                }
+                await DB.prepare(
+                  'INSERT OR IGNORE INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+                ).bind(presetId, ext, createdAt).run();
+              } catch (dbError) {
+              }
+            }
             results.push({
               filename: file.name || 'unknown',
               success: false,
@@ -1831,16 +1891,57 @@ export default {
             }
 
             // Build R2 key preserving original folder structure (e.g., webp_1x/fs_beach-day-selfie_f1_2b.left.webp)
-            let r2Key: string;
+            // Upload to R2 root, not nested under parent folders
+            let r2Key: string = '';
             if (path && path.trim()) {
               // Preserve original folder structure from zip, normalize path separators
               let normalizedPath = path.replace(/\\/g, '/');
               // Remove leading/trailing slashes
               normalizedPath = normalizedPath.replace(/^\/+|\/+$/g, '');
-              // Fix duplicate folder patterns like lottie_4x/lottie_4x/file.json -> lottie_4x/file.json
-              // Match pattern: folder_name/folder_name/rest_of_path
-              normalizedPath = normalizedPath.replace(/^([^\/]+)\/\1(\/|$)/, '$1$2');
-              r2Key = normalizedPath;
+              
+              // Remove duplicate folder patterns - handle all cases
+              // Pattern: folder_name/folder_name/rest -> folder_name/rest
+              let pathParts = normalizedPath.split('/');
+              const cleanedParts: string[] = [];
+              for (let i = 0; i < pathParts.length; i++) {
+                if (i === 0 || pathParts[i] !== pathParts[i - 1]) {
+                  cleanedParts.push(pathParts[i]);
+                }
+              }
+              normalizedPath = cleanedParts.join('/');
+              
+              // Remove any parent folders - keep only the actual folder structure at root level
+              // Expected folders: preset/, lottie_*x/, lottie_avif_*x/, webp_*x/
+              pathParts = normalizedPath.split('/');
+              if (pathParts.length > 2) {
+                // Find the first part that matches expected folder pattern
+                const expectedPatterns = [
+                  /^preset$/i,
+                  /^(lottie|lottie_avif|webp)_[\d.]+x$/i
+                ];
+                
+                let foundKey = false;
+                for (let i = 0; i < pathParts.length - 1; i++) {
+                  const folderName = pathParts[i];
+                  const matchesPattern = expectedPatterns.some(pattern => pattern.test(folderName));
+                  
+                  if (matchesPattern) {
+                    // Found the actual folder, keep from here to end
+                    r2Key = pathParts.slice(i).join('/');
+                    foundKey = true;
+                    break;
+                  }
+                }
+                
+                // If no pattern matched, use the last 2 parts (folder + filename)
+                if (!foundKey && pathParts.length >= 2) {
+                  r2Key = pathParts.slice(-2).join('/');
+                } else if (!foundKey) {
+                  r2Key = normalizedPath;
+                }
+              } else {
+                r2Key = normalizedPath;
+              }
             } else {
               // Fallback: build from resolution and format
               const ext = fileFormat === 'lottie' ? 'json' : (filename.toLowerCase().endsWith('.png') ? 'png' : 'webp');
@@ -1883,10 +1984,9 @@ export default {
                 ).bind(presetId, ext, createdAt).run();
                 
                 if (!insertResult.success) {
-                  console.error(`[Thumbnail Upload] Failed to auto-create preset ${presetId}:`, insertResult);
+                  throw new Error(`Failed to auto-create preset ${presetId} in database`);
                 }
               } catch (dbError) {
-                console.error(`[Thumbnail Upload] Error auto-creating preset ${presetId}:`, dbError);
                 throw new Error(`Failed to create preset ${presetId} in database: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
               }
             }
@@ -1917,7 +2017,6 @@ export default {
             ).bind(JSON.stringify(thumbnailData), presetId).run();
             
             if (!updateResult.success) {
-              console.error(`[Thumbnail Upload] Failed to update thumbnail_r2 for preset ${presetId}:`, updateResult);
               throw new Error(`Failed to update thumbnail_r2 for preset ${presetId} in database`);
             }
 
@@ -1967,10 +2066,12 @@ export default {
             } 
           } : {})
         }, 200, request, env);
+        }, 10, 1000); // Retry up to 10 times with exponential backoff starting at 1 second
       } catch (error) {
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        console.error(`[Upload Thumbnails] Final error after all retries: ${errorMsg}`);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, retries_exhausted: true, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2552,7 +2653,11 @@ export default {
           // Build final R2 key
           let r2Key: string;
           if (filePath && filePath.trim()) {
-            r2Key = filePath.replace(/\\/g, '/').replace(/^presets?\//i, 'preset/');
+            let normalizedPath = filePath.replace(/\\/g, '/');
+            normalizedPath = normalizedPath.replace(/^\/+|\/+$/g, '');
+            normalizedPath = normalizedPath.replace(/^presets?\//i, 'preset/');
+            normalizedPath = normalizedPath.replace(/^preset\/preset(\/|$)/, 'preset$1');
+            r2Key = normalizedPath;
           } else {
             const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
             r2Key = `preset/${presetId}.${ext}`;
@@ -3468,15 +3573,24 @@ export default {
             return getR2PublicUrl(env, key, requestUrl.origin);
           };
 
-          return {
-            id: row.id,
-            // Extract individual thumbnail URLs from JSON and convert to full URLs
-            thumbnail_url_1x: buildThumbnailUrl(thumbnailData['webp_1x'] || thumbnailData['lottie_1x']),
-            thumbnail_url_1_5x: buildThumbnailUrl(thumbnailData['webp_1_5x'] || thumbnailData['lottie_1_5x']),
-            thumbnail_url_2x: buildThumbnailUrl(thumbnailData['webp_2x'] || thumbnailData['lottie_2x']),
-            thumbnail_url_3x: buildThumbnailUrl(thumbnailData['webp_3x'] || thumbnailData['lottie_3x']),
-            thumbnail_url_4x: buildThumbnailUrl(thumbnailData['webp_4x'] || thumbnailData['lottie_4x'])
-          };
+          // Build response object with only 4x thumbnails
+          const response: any = {};
+          
+          // Primary thumbnail_url_4x: prefer webp, then lottie, then lottie_avif
+          const primary4x = thumbnailData['webp_4x'] || thumbnailData['lottie_4x'] || thumbnailData['lottie_avif_4x'];
+          response.thumbnail_url_4x = buildThumbnailUrl(primary4x);
+          
+          // Add lottie_4x if exists (can coexist with webp_4x)
+          if (thumbnailData['lottie_4x']) {
+            response.thumbnail_url_4x_lottie = buildThumbnailUrl(thumbnailData['lottie_4x']);
+          }
+          
+          // Add lottie_avif_4x if exists (can coexist with lottie_4x and webp_4x)
+          if (thumbnailData['lottie_avif_4x']) {
+            response.thumbnail_url_4x_lottie_avif = buildThumbnailUrl(thumbnailData['lottie_avif_4x']);
+          }
+          
+          return response;
         });
           
         const debugEnabled = isDebugEnabled(env);
