@@ -1476,8 +1476,14 @@ export const generateVertexPrompt = async (
       debugInfo.usageMetadata = data.usageMetadata;
     }
 
-    // With structured outputs (responseMimeType: "application/json"), Vertex AI returns JSON directly
+    // Store full response for debugging
     const parts = data.candidates?.[0]?.content?.parts;
+    if (parts && parts.length > 0 && parts[0].text) {
+      debugInfo.fullResponse = parts[0].text;
+      debugInfo.responseLength = parts[0].text.length;
+    }
+
+    // With structured outputs (responseMimeType: "application/json"), Vertex AI returns JSON directly
     if (!parts || parts.length === 0) {
       debugInfo.errorDetails = 'Response received but no parts found in candidates[0].content.parts';
       debugInfo.responseStructure = JSON.stringify(data);
@@ -1492,29 +1498,97 @@ export const generateVertexPrompt = async (
 
     // Try to get JSON directly from structured output
     for (const part of parts) {
-      // Structured output returns text containing JSON
       if (part.text) {
+        let jsonText = part.text.trim();
+
+        // First, try to parse as direct JSON
         try {
-          promptJson = JSON.parse(part.text);
+          promptJson = JSON.parse(jsonText);
           break;
         } catch (e) {
-          // If parse fails, try extracting from markdown code blocks
-          let jsonText = part.text;
+          // If direct parse fails, try various extraction methods
+          console.log('[Vertex] Direct JSON parse failed, trying extraction methods');
+
+          // Method 1: Extract from markdown code blocks
           if (jsonText.includes('```json')) {
             const jsonMatch = jsonText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
             if (jsonMatch) {
-              jsonText = jsonMatch[1];
-            }
-          } else if (jsonText.includes('```')) {
-            const jsonMatch = jsonText.match(/```\s*(\{[\s\S]*?\})\s*```/);
-            if (jsonMatch) {
-              jsonText = jsonMatch[1];
+              try {
+                promptJson = JSON.parse(jsonMatch[1]);
+                break;
+              } catch (parseError) {
+                console.log('[Vertex] JSON extraction from ```json block failed');
+              }
             }
           }
-          try {
-            promptJson = JSON.parse(jsonText);
-            break;
-          } catch (parseError) {
+
+          // Method 2: Extract from any code block
+          if (jsonText.includes('```')) {
+            const jsonMatch = jsonText.match(/```\s*(\{[\s\S]*?\})\s*```/);
+            if (jsonMatch) {
+              try {
+                promptJson = JSON.parse(jsonMatch[1]);
+                break;
+              } catch (parseError) {
+                console.log('[Vertex] JSON extraction from ``` block failed');
+              }
+            }
+          }
+
+          // Method 3: Try to find and complete incomplete JSON
+          if (jsonText.startsWith('{') && !jsonText.endsWith('}')) {
+            console.log('[Vertex] Detected incomplete JSON, attempting to complete');
+            // Try to close unclosed objects/arrays
+            let completedJson = jsonText;
+            const openBraces = (jsonText.match(/\{/g) || []).length;
+            const closeBraces = (jsonText.match(/\}/g) || []).length;
+            const openBrackets = (jsonText.match(/\[/g) || []).length;
+            const closeBrackets = (jsonText.match(/\]/g) || []).length;
+
+            // Add missing closing braces
+            for (let i = 0; i < openBraces - closeBraces; i++) {
+              completedJson += '}';
+            }
+            // Add missing closing brackets
+            for (let i = 0; i < openBrackets - closeBrackets; i++) {
+              completedJson += ']';
+            }
+
+            try {
+              promptJson = JSON.parse(completedJson);
+              console.log('[Vertex] Successfully completed and parsed incomplete JSON');
+              break;
+          } catch (parseError: any) {
+            console.log('[Vertex] Failed to complete JSON:', parseError.message);
+            }
+          }
+
+          // Method 4: Try to extract JSON-like content and manually construct object
+          const promptMatch = jsonText.match(/"prompt"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+          if (promptMatch) {
+            console.log('[Vertex] Attempting manual JSON construction from text');
+            try {
+              // Extract basic fields that we can find
+              const prompt = promptMatch[1];
+              const styleMatch = jsonText.match(/"style"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+              const lightingMatch = jsonText.match(/"lighting"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+              const compositionMatch = jsonText.match(/"composition"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+              const cameraMatch = jsonText.match(/"camera"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+              const backgroundMatch = jsonText.match(/"background"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/);
+
+              promptJson = {
+                prompt: prompt || 'A professional portrait',
+                style: styleMatch ? styleMatch[1] : 'photorealistic',
+                lighting: lightingMatch ? lightingMatch[1] : 'natural',
+                composition: compositionMatch ? compositionMatch[1] : 'portrait',
+                camera: cameraMatch ? cameraMatch[1] : 'professional',
+                background: backgroundMatch ? backgroundMatch[1] : 'neutral'
+              };
+              console.log('[Vertex] Successfully constructed JSON manually');
+              break;
+            } catch (manualError) {
+              console.log('[Vertex] Manual JSON construction failed');
+            }
           }
         }
       }
@@ -1523,6 +1597,13 @@ export const generateVertexPrompt = async (
     if (!promptJson) {
       console.error('[Vertex] Could not extract JSON from response parts');
       debugInfo.errorDetails = 'Could not extract valid JSON from response parts';
+
+      // Include full response for debugging
+      if (parts && parts.length > 0 && parts[0].text) {
+        debugInfo.fullResponse = parts[0].text;
+        debugInfo.responseLength = parts[0].text.length;
+      }
+
       return {
         success: false,
         error: 'No valid JSON response from Vertex AI API',
@@ -1536,7 +1617,50 @@ export const generateVertexPrompt = async (
 
     if (missingKeys.length > 0) {
       console.error('[Vertex] Missing required keys:', missingKeys.join(', '));
-      return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}` };
+      // Include full response for debugging
+      if (parts && parts.length > 0 && parts[0].text) {
+        debugInfo.fullResponse = parts[0].text;
+        debugInfo.responseLength = parts[0].text.length;
+        debugInfo.parsedJson = promptJson;
+      }
+      return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}`, debug: debugInfo };
+    }
+
+    // Additional validation: Ensure prompt contains face-swap instruction
+    const promptText = String(promptJson.prompt || '').toLowerCase();
+    const hasFaceSwapInstruction = promptText.includes('replace the original face') ||
+                                   promptText.includes('face from the image') ||
+                                   promptText.includes('identical facial features');
+
+    if (!hasFaceSwapInstruction) {
+      console.error('[Vertex] Prompt missing face-swap instruction, likely incomplete response');
+      // Include full response for debugging
+      if (parts && parts.length > 0 && parts[0].text) {
+        debugInfo.fullResponse = parts[0].text;
+        debugInfo.responseLength = parts[0].text.length;
+        debugInfo.parsedJson = promptJson;
+      }
+      return {
+        success: false,
+        error: 'Incomplete prompt response - missing face-swap instruction',
+        debug: debugInfo
+      };
+    }
+
+    // Validate prompt length (should be substantial)
+    if (promptText.length < 50) {
+      console.error('[Vertex] Prompt too short, likely truncated response');
+      // Include full response for debugging
+      if (parts && parts.length > 0 && parts[0].text) {
+        debugInfo.fullResponse = parts[0].text;
+        debugInfo.responseLength = parts[0].text.length;
+        debugInfo.parsedJson = promptJson;
+      }
+      return {
+        success: false,
+        error: 'Prompt too short - likely truncated response',
+        debug: debugInfo
+      };
     }
 
     // Note: Prompt is stored in database (prompt_json column) by the caller

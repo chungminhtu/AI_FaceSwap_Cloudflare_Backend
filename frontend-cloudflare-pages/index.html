@@ -130,7 +130,7 @@
         /* Three Column Layout: Left Sidebar | Main Content | Log Panel */
         .app-layout {
             display: grid;
-            grid-template-columns: 320px 1fr 600px;
+            grid-template-columns: 50% 1fr 600px;
             gap: 20px;
             min-height: calc(100vh - 120px);
             transition: all 0.3s;
@@ -139,7 +139,7 @@
             overflow-x: hidden;
             position: relative;
         }
-        .app-layout.log-hidden { grid-template-columns: 320px 1fr 0; gap: 20px 0; }
+        .app-layout.log-hidden { grid-template-columns: 50% 1fr 0; gap: 20px 0; }
         .app-layout.log-hidden .log-panel { opacity: 0; transform: translateX(20px); pointer-events: none; overflow: hidden; padding: 0; width: 0; }
 
         /* Left Sidebar - Galleries */
@@ -161,7 +161,9 @@
         .sidebar-content.collapsed { display: none; }
 
         .sidebar-gallery {
-            display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+            display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px;
+            grid-auto-rows: minmax(140px, auto); /* Increased to accommodate padding and text */
+            /* Removed max-height and overflow-y to allow auto height and show all items */
         }
         .gallery-drop-zone {
             position: relative; border: 1px dashed var(--border); background: var(--bg-primary); padding: 8px;
@@ -206,9 +208,11 @@
         .preview-action-badge.action-wedding { background: rgba(236, 72, 153, 0.9); color: #fff; }
         .preview-action-badge.action-default { background: rgba(100, 116, 139, 0.9); color: #fff; }
         .preview-card.preset-card .preview-image {
+            aspect-ratio: 2 / 3;
             max-height: calc(320px - 50px);
         }
         .preview-card.selfie-card .preview-image {
+            aspect-ratio: 2 / 3;
             max-height: calc(320px - 50px);
         }
         .preview-card.result-card .preview-image { 
@@ -327,9 +331,15 @@
             border: 1px solid var(--border); cursor: pointer; position: relative;
             transition: transform 0.2s, box-shadow 0.2s;
         }
+        /* Preset and Selfie gallery items use 2:3 aspect ratio */
+        #preset-gallery .gallery-item,
+        #selfie-gallery .gallery-item {
+            aspect-ratio: 2 / 3;
+        }
         .gallery-item.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
         .gallery-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); }
         .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-item lottie-player { width: 100%; height: 100%; display: block; }
         .gallery-action-badge {
             position: absolute; bottom: 4px; left: 4px; z-index: 2;
             padding: 1px 3px; border-radius: 2px; font-size: 8px; font-weight: 600;
@@ -368,9 +378,15 @@
         }
         .pagination-btn:hover:not(:disabled) { background: var(--accent-hover); }
         .pagination-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .pagination-dots { display: flex; gap: 4px; }
-        .pagination-dot { width: 8px; height: 8px; background: var(--border); cursor: pointer; border-radius: 12px; }
-        .pagination-dot.active { background: var(--accent); }
+        .pagination-numbers { display: flex; gap: 4px; }
+        .pagination-number {
+            width: 32px; height: 32px; padding: 0; background: var(--bg-secondary);
+            color: var(--text-primary); font-size: 12px; font-weight: 600; cursor: pointer;
+            border: 1px solid var(--border); border-radius: 6px;
+            transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+        }
+        .pagination-number:hover:not(.active) { background: var(--bg-tertiary); border-color: var(--accent); }
+        .pagination-number.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
         /* Delete button in preview */
         .delete-btn {
@@ -615,12 +631,27 @@
         @keyframes toastSlideIn { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 
         /* Responsive */
+        @media (max-width: 1600px) {
+            .sidebar-gallery {
+                grid-template-columns: repeat(8, 1fr);
+                gap: 5px;
+            }
+        }
         @media (max-width: 1400px) {
-            .app-layout { grid-template-columns: 280px 1fr 500px; }
+            .app-layout { grid-template-columns: 45% 1fr 500px; }
+            .app-layout.log-hidden { grid-template-columns: 45% 1fr 0; }
+            .sidebar-gallery {
+                grid-template-columns: repeat(7, 1fr);
+                gap: 5px;
+            }
         }
         @media (max-width: 1200px) {
             .app-layout { grid-template-columns: 1fr; }
             .sidebar-column { max-height: none; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            .sidebar-gallery {
+                grid-template-columns: repeat(5, 1fr);
+                gap: 6px;
+            }
             .preview-panel { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
             .preview-card.preset-card { grid-column: 1; grid-row: 1; }
             .preview-card.selfie-card { grid-column: 1; grid-row: 2; }
@@ -675,6 +706,10 @@
             #profile-section #profile-status { font-size: 11px; }
             #profile-section #profile-id-display { font-size: 10px; }
             .sidebar-column { grid-template-columns: 1fr; }
+            .sidebar-gallery {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 4px;
+            }
             .preview-panel { grid-template-columns: 1fr; grid-template-rows: auto auto auto; }
             .preview-card.preset-card { grid-column: 1; grid-row: 1; min-height: 250px; }
             .preview-card.selfie-card { grid-column: 1; grid-row: 2; min-height: 250px; }
@@ -767,7 +802,7 @@
             </div>
         </div>
 
-        <div class="app-layout">
+        <div class="app-layout log-hidden">
             <!-- Left Sidebar - Galleries -->
             <div class="sidebar-column">
                 <div class="sidebar-section">
@@ -778,15 +813,12 @@
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
                         <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                     </div>
-                    <div style="padding: 8px 12px; border-bottom: 1px solid var(--border);">
-                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                    <div style="padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; flex: 1; min-width: 0;">
                             <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
                             <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
                         </label>
-                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px; margin-left: 20px;">
-                            Enable for artistic presets (figurine, pop mart, clay, disney)
-                        </div>
-                        <button onclick="openPromptCustomizer()" style="margin-top: 8px; padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; width: 100%; font-weight: 500;">
+                        <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
                             ⚙️ Customize Prompts
                         </button>
                     </div>
@@ -796,7 +828,7 @@
                         </div>
                         <div class="pagination" id="preset-pagination" style="display: none;">
                             <button class="pagination-btn" id="preset-prev" onclick="changePage('preset', -1)">◀</button>
-                            <div class="pagination-dots" id="preset-dots"></div>
+                            <div class="pagination-numbers" id="preset-dots"></div>
                             <button class="pagination-btn" id="preset-next" onclick="changePage('preset', 1)">▶</button>
                         </div>
                     </div>
@@ -822,7 +854,7 @@
                         </div>
                         <div class="pagination" id="selfie-pagination" style="display: none;">
                             <button class="pagination-btn" id="selfie-prev" onclick="changePage('selfie', -1)">◀</button>
-                            <div class="pagination-dots" id="selfie-dots"></div>
+                            <div class="pagination-numbers" id="selfie-dots"></div>
                             <button class="pagination-btn" id="selfie-next" onclick="changePage('selfie', 1)">▶</button>
                         </div>
                     </div>
@@ -936,7 +968,7 @@
                     <div id="results-gallery" class="results-grid"></div>
                     <div class="pagination" id="results-pagination" style="display: none;">
                         <button class="pagination-btn" id="results-prev" onclick="changePage('results', -1)">◀</button>
-                        <div class="pagination-dots" id="results-dots"></div>
+                        <div class="pagination-numbers" id="results-dots"></div>
                         <button class="pagination-btn" id="results-next" onclick="changePage('results', 1)">▶</button>
                     </div>
                 </div>
@@ -945,42 +977,46 @@
                 <!-- Thumbnails Tab Content -->
                 <div id="thumbnails-tab-content" class="main-tab-content" style="display: none;">
                     <div class="thumbnails-tab-container">
-                        <div class="thumbnails-tab-header">
-                            <div class="thumbnails-tabs">
-                                <button class="thumbnail-subtab active" onclick="switchThumbnailSubTab('upload')" id="thumbnail-subtab-upload">
-                                    📤 Tải Lên
-                                </button>
-                                <button class="thumbnail-subtab" onclick="switchThumbnailSubTab('view')" id="thumbnail-subtab-view">
-                                    👁️ Xem Thumbnails
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div id="thumbnails-upload-section" class="thumbnail-subtab-content active">
+                        <div id="thumbnails-upload-section" class="thumbnail-subtab-content active" style="display: block;">
                             <div class="thumbnail-upload-section" style="padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border);">
-                                <h3 style="margin-top: 0;">Tải Lên Thư Mục</h3>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                    <h3 style="margin-top: 0;">Tải Lên Thư Mục</h3>
+                                    <button class="action-btn" onclick="downloadThumbnailsJson()" style="padding: 6px 12px; font-size: 12px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.5); color: rgba(59, 130, 246, 1);">
+                                        📥 Tải JSON
+                                    </button>
+                                </div>
                                 <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                                    Kéo thả thư mục hoặc file zip vào đây, hoặc chọn thư mục. Tên file phải theo định dạng:<br>
-                                    <code>[type]_[sub_category]_[gender]_[position].[webp|json]</code><br>
-                                    Ví dụ: <code>face-swap_wedding_both_1.webp</code> hoặc <code>packs_autumn_male_1.json</code><br>
-                                    Zip file sẽ được tự động giải nén và tải lên.
+                                    Kéo thả file zip vào đây. Zip file phải chứa thư mục <code>preset</code> với các file PNG.<br>
+                                    Tên file preset phải theo định dạng: <code>[type]_[sub_category]_[gender]_[position].png</code><br>
+                                    Ví dụ: <code>face-swap_wedding_both_1.png</code><br>
+                                    Hệ thống sẽ tự động tạo thumbnail (WebP hoặc JSON Lottie) dựa trên preset.
                                 </p>
-                                <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border);">
+                                <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px;">
                                     <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
                                         <input type="checkbox" id="thumbnail-filter-mode" style="cursor: pointer; width: 16px; height: 16px;">
                                         <span style="color: var(--text-primary);">🎨 Art Style Filter Mode</span>
                                     </label>
-                                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; margin-left: 24px;">
+                                    <div style="font-size: 11px; color: var(--text-muted); margin-left: 24px;">
                                         Enable if presets in this ZIP have distinct artistic styles (figurine, pop mart, clay, disney, etc.)
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 12px; padding-top: 8px; border-top: 1px solid var(--border);">
+                                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
+                                            <input type="radio" name="thumbnail-format" id="thumbnail-format-webp" value="webp" checked style="cursor: pointer; width: 16px; height: 16px;">
+                                            <span style="color: var(--text-primary);">🖼️ WebP Thumbnail</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
+                                            <input type="radio" name="thumbnail-format" id="thumbnail-format-json" value="json" style="cursor: pointer; width: 16px; height: 16px;">
+                                            <span style="color: var(--text-primary);">🎬 JSON Lottie</span>
+                                        </label>
                                     </div>
                                 </div>
                                 <div id="thumbnail-drop-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; background: var(--bg-primary); transition: all 0.2s; margin-bottom: 16px;">
                                     <div style="font-size: 48px; margin-bottom: 12px;">📁</div>
-                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip vào đây</div>
-                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Hỗ trợ nhiều file zip (WebP, JSON Lottie)</div>
+                                    <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Kéo thả file zip preset vào đây</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Zip phải chứa thư mục "preset" với file PNG. Tự động tạo thumbnail tất cả độ phân giải WebP/JSON (1x, 1.5x, 2x, 3x, 4x).</div>
                                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                                         <button class="action-btn" onclick="event.stopPropagation(); $('thumbnail-zip-input').click();" style="padding: 8px 16px; font-size: 13px;">
-                                            📦 Chọn File Zip
+                                            📦 Chọn File Zip Preset
                                         </button>
                                     </div>
                                 </div>
@@ -991,18 +1027,6 @@
                                     </div>
                                     <div id="thumbnail-upload-status" style="margin-top: 8px; font-size: 12px;"></div>
                                 </div>
-                            </div>
-                        </div>
-                        
-                        <div id="thumbnails-view-section" class="thumbnail-subtab-content" style="display: none;">
-                            <div class="thumbnail-list-section" style="padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                                    <h3 style="margin: 0;">Danh Sách Thumbnails</h3>
-                                    <button class="action-btn" onclick="loadThumbnails()" style="padding: 6px 12px; font-size: 12px;">
-                                        🔄 Làm Mới
-                                    </button>
-                                </div>
-                                <div id="thumbnail-list" style="margin-top: 12px;"></div>
                             </div>
                         </div>
                     </div>
@@ -1164,12 +1188,13 @@
     <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký">📋</button>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
         let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
         // Mobile API Key for authentication (set when ENABLE_MOBILE_API_KEY_AUTH is enabled in backend)
         let MOBILE_API_KEY = 'MNfs5qUDz5jjmyZjjMC5zUgIVjpTBuZehq2_fDg9cYk'; // Injected during deployment - DO NOT MODIFY MANUALLY
-        const ITEMS_PER_PAGE = 12;
+        const ITEMS_PER_PAGE = 40;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
         
@@ -1278,7 +1303,7 @@
         // Gallery Configuration
         const galleries = {
             preset: {
-                key: 'preset', responseKey: 'presets', endpoints: { list: '/presets', delete: '/presets' },
+                key: 'preset', responseKey: 'thumbnails', endpoints: { list: '/thumbnails', delete: '/presets' },
                 logName: 'Thư Viện Mẫu', labels: { selectSuccess: 'Đã chọn mẫu thành công', deleteSuccess: 'Đã xóa mẫu thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?' },
                 elements: { input: presetInput, preview: presetPreview, gallery: presetGallery, pagination: $('preset-pagination'), prevBtn: $('preset-prev'), nextBtn: $('preset-next') },
                 state: { items: [], selected: null, page: 1 }
@@ -1746,11 +1771,23 @@
                 }
                 
                 const data = await response.json();
-                const items = data[config.responseKey] || data.data?.[config.responseKey] || [];
+                let items = data[config.responseKey] || data.data?.[config.responseKey] || [];
                 
                 // Only log success if we actually got data or it's a valid empty response
                 const status = (response.ok && data !== null && typeof data === 'object') ? 'success' : 'error';
                 logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status, duration, payload: data });
+                
+                // For presets, map thumbnails response to preset format
+                if (type === 'preset') {
+                    items = items.map((item) => ({
+                        id: item.preset_id,
+                        image_url: item.thumbnail_url_4x || item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif,
+                        preset_id: item.preset_id,
+                        thumbnail_url_4x: item.thumbnail_url_4x,
+                        thumbnail_url_4x_lottie: item.thumbnail_url_4x_lottie,
+                        thumbnail_url_4x_lottie_avif: item.thumbnail_url_4x_lottie_avif
+                    })).filter(item => item.image_url); // Only include items with valid thumbnail URLs
+                }
                 
                 // Normalize field names: map selfie_url/preset_url/result_url to image_url for backward compatibility
                 config.state.items = items.map((item) => {
@@ -1821,8 +1858,18 @@
                     const actionBadge = type === 'selfie' && item.action 
                         ? `<span class="gallery-action-badge action-${item.action.toLowerCase()}">${item.action.toLowerCase() === '4k' ? '4K' : item.action}</span>`
                         : '';
+                    
+                    // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
+                    const lottieUrl = item.thumbnail_url_4x_lottie || (item.image_url && (item.image_url.toLowerCase().endsWith('.json') || item.image_url.toLowerCase().includes('lottie')) ? item.image_url : null);
+                    const imageUrl = lottieUrl ? null : item.image_url;
+                    
+                    // Render Lottie player for Lottie files, img for regular images
+                    const mediaElement = lottieUrl
+                        ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
+                        : `<img src="${imageUrl}" alt="" loading="lazy">`;
+                    
                     return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
-                        <img src="${item.image_url}" alt="" loading="lazy">
+                        ${mediaElement}
                         ${actionBadge}
                         <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                     </div>`;
@@ -1832,14 +1879,15 @@
             if (prevBtn) prevBtn.disabled = config.state.page === 1;
             if (nextBtn) nextBtn.disabled = config.state.page === totalPages;
 
-            const dotsContainer = $(type + '-dots');
-            if (dotsContainer && totalPages > 1) {
-                dotsContainer.innerHTML = '';
+            const numbersContainer = $(type + '-dots');
+            if (numbersContainer && totalPages > 1) {
+                numbersContainer.innerHTML = '';
                 for (let i = 1; i <= totalPages; i++) {
-                    const dot = document.createElement('div');
-                    dot.className = 'pagination-dot' + (i === config.state.page ? ' active' : '');
-                    dot.onclick = () => { config.state.page = i; renderGallery(type); };
-                    dotsContainer.appendChild(dot);
+                    const numberBtn = document.createElement('button');
+                    numberBtn.className = 'pagination-number' + (i === config.state.page ? ' active' : '');
+                    numberBtn.textContent = i.toString();
+                    numberBtn.onclick = () => { config.state.page = i; renderGallery(type); };
+                    numbersContainer.appendChild(numberBtn);
                 }
             }
 
@@ -1990,11 +2038,18 @@
                 return;
             }
             const imageUrl = selected.image_url || selected.result_url || '';
+            const lottieUrl = selected.thumbnail_url_4x_lottie || (imageUrl && (imageUrl.toLowerCase().endsWith('.json') || imageUrl.toLowerCase().includes('lottie')) ? imageUrl : null);
             const action = selected.action?.toLowerCase() || 'faceswap';
             const actionBadge = type === 'selfie' && selected.action 
                 ? `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`
                 : '';
-            preview.innerHTML = `<div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"><img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">${actionBadge}</div>`;
+            
+            // Render Lottie player for Lottie files, img for regular images
+            const mediaElement = lottieUrl
+                ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`
+                : `<img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
+            
+            preview.innerHTML = `<div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">${mediaElement}${actionBadge}</div>`;
             if (clearBtn) clearBtn.style.display = 'block';
         }
 
@@ -3027,34 +3082,10 @@
                 $('thumbnails-tab-content').classList.add('active');
                 $('thumbnails-tab-content').style.display = 'block';
                 $('main-tab-thumbnails').classList.add('active');
-                switchThumbnailSubTab('view');
-                loadThumbnails();
+                $('thumbnails-upload-section').style.display = 'block';
             }
         }
 
-        // Thumbnail Sub Tab Switching
-        function switchThumbnailSubTab(tab) {
-            // Hide all sub tabs
-            document.querySelectorAll('.thumbnail-subtab-content').forEach(content => {
-                content.classList.remove('active');
-                content.style.display = 'none';
-            });
-            document.querySelectorAll('.thumbnail-subtab').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            
-            // Show selected sub tab
-            if (tab === 'upload') {
-                $('thumbnails-upload-section').classList.add('active');
-                $('thumbnails-upload-section').style.display = 'block';
-                $('thumbnail-subtab-upload').classList.add('active');
-            } else if (tab === 'view') {
-                $('thumbnails-view-section').classList.add('active');
-                $('thumbnails-view-section').style.display = 'block';
-                $('thumbnail-subtab-view').classList.add('active');
-                loadThumbnails();
-            }
-        }
 
         async function loadThumbnails() {
             const startTime = Date.now();
@@ -3094,17 +3125,101 @@
             }
         }
 
+        async function downloadThumbnailsJson() {
+            const startTime = Date.now();
+            const url = 'https://api.d.shotpix.app/thumbnails';
+            try {
+                showStatusMessage('Đang tải dữ liệu thumbnails...', 'info');
+                const response = await fetch(url, { headers: buildHeaders() });
+                const duration = Date.now() - startTime;
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                logApiCall({
+                    label: 'Tải JSON Thumbnails',
+                    method: 'GET',
+                    url: '/thumbnails',
+                    fullUrl: url,
+                    status: response.ok && data.status === 'success' ? 'success' : 'error',
+                    payload: data,
+                    duration
+                });
+                
+                // Create JSON blob and download
+                const jsonString = JSON.stringify(data, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = `thumbnails_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(downloadUrl);
+                
+                showStatusMessage('Đã tải JSON thumbnails thành công!', 'success');
+            } catch (error) {
+                const duration = Date.now() - startTime;
+                console.error('Failed to download thumbnails JSON:', error);
+                logApiCall({
+                    label: 'Tải JSON Thumbnails',
+                    method: 'GET',
+                    url: '/thumbnails',
+                    fullUrl: url,
+                    status: 'error',
+                    duration
+                });
+                showStatusMessage(`Không thể tải JSON: ${error.message}`, 'error');
+            }
+        }
+
         function renderThumbnails(thumbnails) {
             const container = $('thumbnail-list');
             if (!container) return;
-            
+
             if (thumbnails.length === 0) {
-                container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 40px;">Chưa có thumbnail nào. Hãy tải lên thư mục chứa thumbnails.</p>';
+                container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 40px;">No 4x thumbnails available. Upload thumbnail folders to see them here.</p>';
                 return;
             }
-            
-            // Display raw JSON
-            container.innerHTML = `<pre style="background: var(--bg-primary); padding: 16px; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-primary); white-space: pre-wrap; word-wrap: break-word;">${JSON.stringify(thumbnails, null, 2)}</pre>`;
+
+            // Display thumbnail images in a grid
+            container.innerHTML = thumbnails.map((thumbnail, index) => {
+                const presetId = thumbnail.preset_id;
+                const thumbnailUrl = thumbnail.thumbnail_url_4x;
+                const lottieUrl = thumbnail.thumbnail_url_4x_lottie;
+
+                if (!thumbnailUrl && !lottieUrl) {
+                    return `<div class="thumbnail-item" style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-primary); text-align: center;">
+                        <div style="color: var(--text-muted); font-size: 12px;">No 4x thumbnail available</div>
+                        <div style="color: var(--text-secondary); font-size: 10px; margin-top: 4px;">${presetId}</div>
+                    </div>`;
+                }
+
+                // Render Lottie player if Lottie URL is available, otherwise use image
+                const mediaElement = lottieUrl
+                    ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 80px;" loop autoplay></lottie-player>`
+                    : `<img src="${thumbnailUrl}" alt="Thumbnail ${presetId}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px;" loading="lazy">`;
+
+                return `<div class="thumbnail-item" onclick="selectThumbnailAsPreset('${presetId}')" style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-primary); cursor: pointer; transition: all 0.2s; position: relative;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                    ${mediaElement}
+                    <div class="thumbnail-item-info" style="margin-top: 8px; text-align: center;">
+                        <div style="color: var(--text-secondary); font-size: 11px; font-weight: 500;">${presetId}</div>
+                        <div style="color: var(--text-muted); font-size: 10px;">4x ${lottieUrl ? 'Lottie' : 'Thumbnail'}</div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Apply grid layout
+            container.style.cssText = `
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                gap: 12px;
+                margin-top: 12px;
+            `;
         }
 
         async function selectThumbnail(presetId) {
@@ -3129,6 +3244,43 @@
                 }
             } catch (error) {
                 showStatusMessage('Không thể tải preset', 'error');
+            }
+        }
+
+        async function selectThumbnailAsPreset(presetId) {
+            if (!presetId) {
+                showStatusMessage('Preset ID không hợp lệ', 'error');
+                return;
+            }
+
+            // Create a virtual preset object using the thumbnail name as preset_id
+            // The thumbnail 4x image serves as the preset image
+            try {
+                // Load thumbnail data to get the 4x image URL
+                const response = await fetch(`${WORKER_URL}/thumbnails`, { headers: buildHeaders() });
+                const data = await response.json();
+
+                if (data.status === 'success' && data.data?.thumbnails) {
+                    const thumbnail = data.data.thumbnails.find((t) => t.preset_id === presetId);
+                    if (thumbnail && thumbnail.thumbnail_url_4x) {
+                        const tempPreset = {
+                            id: presetId,
+                            image_url: thumbnail.thumbnail_url_4x,
+                            filename: `thumbnail_${presetId}`,
+                            created_at: new Date().toISOString(),
+                            from_thumbnail: true // Mark that this preset comes from a thumbnail
+                        };
+                        setSelectedItem('preset', tempPreset, { showMessage: true });
+                        showStatusMessage(`Đã chọn thumbnail ${presetId} làm preset`, 'success');
+                        switchMainTab('faceswap');
+                    } else {
+                        showStatusMessage('Không tìm thấy thumbnail 4x', 'error');
+                    }
+                } else {
+                    showStatusMessage('Không thể tải dữ liệu thumbnail', 'error');
+                }
+            } catch (error) {
+                showStatusMessage('Không thể tải thumbnail', 'error');
             }
         }
 
@@ -3225,10 +3377,137 @@
         async function handleThumbnailZipSelect(event) {
             const zipFiles = Array.from(event.target.files || []);
             if (zipFiles.length === 0) return;
-            await processThumbnailFiles(zipFiles, []);
-            
+
+            // Process each zip file individually (send to backend for extraction)
+            for (const zipFile of zipFiles) {
+                await processThumbnailZipFile(zipFile);
+            }
+
             // Reset input
             event.target.value = '';
+        }
+
+        async function processThumbnailZipFile(zipFile) {
+            const progressContainer = $('thumbnail-upload-progress');
+            const progressFill = $('thumbnail-progress-fill');
+            const statusText = $('thumbnail-upload-status');
+
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '0%';
+            statusText.textContent = `Đang xử lý file zip: ${zipFile.name}...`;
+
+            // Check if filter mode is enabled for thumbnails
+            const filterModeCheckbox = document.getElementById('thumbnail-filter-mode');
+            const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
+
+            // Get thumbnail format (webp or json)
+            const formatJson = document.getElementById('thumbnail-format-json');
+            const thumbnailFormat = formatJson && formatJson.checked ? 'json' : 'webp';
+
+            const uploadUrl = `${WORKER_URL}/process-thumbnail-file`;
+            const startTime = Date.now();
+
+            // CRITICAL: Preset uploads MUST succeed - use maximum retry attempts
+            const MAX_UPLOAD_RETRIES = 10;
+
+            try {
+                console.log(`[Preset Upload] Starting upload for ${zipFile.name} (${(zipFile.size / 1024 / 1024).toFixed(2)}MB)`);
+
+                const formData = new FormData();
+                formData.append('zip', zipFile);
+                formData.append('thumbnail_format', thumbnailFormat);
+                if (isFilterMode) {
+                    formData.append('is_filter_mode', 'true');
+                }
+
+                const response = await fetchWithRetry(uploadUrl, {
+                    method: 'POST',
+                    headers: buildHeaders(),
+                    body: formData
+                }, MAX_UPLOAD_RETRIES);
+
+                if (!response.ok) {
+                    const errorText = await response.text().catch(() => response.statusText);
+                    throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log(`[Preset Upload] Upload successful for ${zipFile.name}`);
+
+                if (data.status === 'success' && data.data.success) {
+                    const duration = Date.now() - startTime;
+                    const result = data.data;
+
+                    progressFill.style.width = '100%';
+                    statusText.textContent = `Hoàn thành xử lý ${zipFile.name}!`;
+
+                    // Log API call summary
+                    logApiCall({
+                        label: `Tải Lên Zip Preset: ${zipFile.name}`,
+                        method: 'POST',
+                        url: '/process-thumbnail-file',
+                        fullUrl: uploadUrl,
+                        status: 'success',
+                        payload: {
+                            zip_filename: zipFile.name,
+                            total: result.total,
+                            processed: result.processed,
+                            successful: result.successful,
+                            failed: result.failed,
+                            presets_processed: result.presets_processed,
+                            presets_with_prompts: result.presets_with_prompts,
+                            thumbnail_format: result.thumbnail_format,
+                            results: result.results
+                        },
+                        duration
+                    });
+
+                    // Show detailed progress information
+                    let statusParts = [];
+                    statusParts.push(`✓ ${result.successful}/${result.total} presets`);
+                    if (result.presets_with_prompts > 0) {
+                        statusParts.push(`${result.presets_with_prompts} với AI prompts`);
+                    }
+                    statusParts.push(`Format: ${result.thumbnail_format.toUpperCase()}`);
+
+                    statusText.textContent = statusParts.join(' | ');
+
+                    if (result.failed > 0) {
+                        const failedFiles = result.results.filter(r => !r.success);
+                        console.warn('Failed files:', failedFiles);
+                        showStatusMessage(`${result.failed} preset thất bại. Kiểm tra console để xem chi tiết.`, 'error');
+                    } else {
+                        showStatusMessage(`Tải lên preset từ ${zipFile.name} thành công!`, 'success');
+                    }
+
+                    // Reset inputs
+                    const zipInput = $('thumbnail-zip-input');
+                    if (zipInput) zipInput.value = '';
+
+                    // Reload thumbnails after upload
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        loadThumbnails();
+                    }, 1000);
+                } else {
+                    throw new Error(data.message || data.data?.error || 'Unknown error');
+                }
+            } catch (error) {
+                const duration = Date.now() - startTime;
+                logApiCall({
+                    label: `Tải Lên Zip Preset: ${zipFile.name}`,
+                    method: 'POST',
+                    url: '/process-thumbnail-file',
+                    fullUrl: uploadUrl,
+                    status: 'error',
+                    payload: { error: error.message },
+                    duration
+                });
+                progressFill.style.width = '100%';
+                progressFill.style.background = 'var(--danger)';
+                statusText.textContent = `Lỗi: ${error.message}`;
+                showStatusMessage(`Tải lên ${zipFile.name} thất bại: ${error.message}`, 'error');
+            }
         }
 
         async function processThumbnailFiles(zipFiles, regularFiles) {
@@ -3243,6 +3522,11 @@
             // Check if filter mode is enabled for thumbnails
             const filterModeCheckbox = document.getElementById('thumbnail-filter-mode');
             const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
+            
+            // Get thumbnail format (webp or json)
+            const formatWebp = document.getElementById('thumbnail-format-webp');
+            const formatJson = document.getElementById('thumbnail-format-json');
+            const thumbnailFormat = formatJson && formatJson.checked ? 'json' : 'webp';
             
             // Extract all files from zip files client-side
             const allFiles = [];
@@ -3266,19 +3550,42 @@
                             }
                         });
                         
+                        // Filter for files in "preset" folder only
+                        const presetFiles = zipEntries.filter(({ relativePath }) => {
+                            const normalizedPath = relativePath.replace(/\\/g, '/').toLowerCase();
+                            return normalizedPath.includes('preset/') || normalizedPath.startsWith('preset/');
+                        });
+                        
+                        if (presetFiles.length === 0) {
+                            console.warn(`No preset files found in zip: ${zipFile.name}`);
+                            showStatusMessage(`Không tìm thấy file preset trong zip: ${zipFile.name}`, 'warning');
+                            continue;
+                        }
+                        
                         // Process all entries in parallel for faster extraction
                         const extractedFiles = await Promise.all(
-                            zipEntries.map(async ({ relativePath, zipEntry }) => {
-                                const fileData = await zipEntry.async('blob');
-                                const file = new File([fileData], zipEntry.name, { type: 'application/octet-stream' });
-                                return {
-                                    file: file,
-                                    path: relativePath
-                                };
+                            presetFiles.map(async ({ relativePath, zipEntry }) => {
+                                try {
+                                    const fileData = await zipEntry.async('blob');
+                                    if (!fileData || fileData.size === 0) {
+                                        console.warn(`Skipping empty file: ${zipEntry.name}`);
+                                        return null;
+                                    }
+                                    const file = new File([fileData], zipEntry.name, { type: 'image/png' });
+                                    return {
+                                        file: file,
+                                        path: relativePath
+                                    };
+                                } catch (extractError) {
+                                    console.error(`Error extracting ${zipEntry.name}:`, extractError);
+                                    return null;
+                                }
                             })
                         );
                         
-                        allFiles.push(...extractedFiles);
+                        // Filter out null entries (failed extractions)
+                        const validFiles = extractedFiles.filter(f => f !== null);
+                        allFiles.push(...validFiles);
                     } catch (zipError) {
                         console.error(`Error extracting zip ${zipFile.name}:`, zipError);
                         showStatusMessage(`Lỗi giải nén ${zipFile.name}: ${zipError.message}`, 'error');
@@ -3286,27 +3593,17 @@
                 }
             }
             
-            // Add regular files
-            if (regularFiles.length > 0) {
-                for (const file of regularFiles) {
-                    allFiles.push({
-                        file: file,
-                        path: file.webkitRelativePath || ''
-                    });
-                }
-            }
-            
             const totalFiles = allFiles.length;
             if (totalFiles === 0) {
-                statusText.textContent = 'Không có file nào để tải lên';
+                statusText.textContent = 'Không có file preset nào để tải lên';
                 progressContainer.style.display = 'none';
                 return;
             }
 
-            statusText.textContent = `Đang xử lý ${totalFiles} file (song song để tối ưu tốc độ)...`;
+            statusText.textContent = `Đang xử lý ${totalFiles} file preset (giới hạn 10 file cùng lúc)...`;
             progressFill.style.width = '10%';
 
-            // Process files in parallel using Promise.all() for optimal performance
+            // Process files with controlled concurrency (10 at a time)
             const results = [];
             let successful = 0;
             let failed = 0;
@@ -3317,50 +3614,152 @@
             const uploadUrl = `${WORKER_URL}/process-thumbnail-file`;
             const startTime = Date.now();
 
-            try {
-                // Create an array of promises for parallel processing
-                const uploadPromises = allFiles.map(async ({ file, path }) => {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    if (path) {
-                        formData.append('path', path);
-                    }
-                    if (isFilterMode) {
-                        formData.append('is_filter_mode', 'true');
-                    }
-
+            // Enhanced retry function for preset uploads - NEVER LOSE DATA
+            const fetchWithRetry = async (url, options, maxRetries = 8, retryDelay = 2000) => {
+                const errors = [];
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
                     try {
-                        const response = await fetch(uploadUrl, {
-                            method: 'POST',
-                            headers: buildHeaders(),
-                            body: formData
+                        // Add timeout to fetch (60s for large uploads)
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => {
+                            controller.abort();
+                            console.warn(`[Preset Upload] Request timeout on attempt ${attempt + 1}, aborting...`);
+                        }, 60000); // 60s timeout for preset uploads
+
+                        console.log(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} - Starting request...`);
+                        const response = await fetch(url, {
+                            ...options,
+                            signal: controller.signal
                         });
 
-                        const data = await response.json();
+                        clearTimeout(timeoutId);
+                        console.log(`[Preset Upload] Attempt ${attempt + 1} - Response received: ${response.status}`);
 
-                        if (data.status === 'success' && data.data.success) {
+                        // Success! Return the response
+                        return response;
+
+                    } catch (error) {
+                        const errorMsg = error instanceof Error ? error.message : String(error);
+                        const isLastAttempt = attempt === maxRetries - 1;
+
+                        console.error(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} failed:`, errorMsg);
+                        errors.push(`${attempt + 1}: ${errorMsg}`);
+
+                        // Check if this is a retryable error
+                        const isRetryable = error.name === 'AbortError' || // Timeout
+                                          error.message.includes('fetch') || // Network error
+                                          error.message.includes('network') || // Network error
+                                          error.message.includes('Failed to fetch') || // Network error
+                                          error.message.includes('TypeError') || // Network error
+                                          !error.message.includes('400') || // Don't retry client errors except 400
+                                          !error.message.includes('401') || // Don't retry auth errors
+                                          !error.message.includes('403');   // Don't retry forbidden errors
+
+                        if (!isRetryable || isLastAttempt) {
+                            console.error(`[Preset Upload] Final failure after ${maxRetries} attempts`);
+                            console.error(`[Preset Upload] All errors:`, errors);
+                            throw new Error(`Upload failed after ${maxRetries} attempts. Errors: ${errors.join(' | ')}`);
+                        }
+
+                        // Exponential backoff with jitter: 2s, 4s, 8s, 16s, 32s, 64s, 128s
+                        const baseDelay = retryDelay * Math.pow(2, attempt);
+                        const jitter = Math.random() * 0.3 * baseDelay; // Add up to 30% jitter
+                        const delay = Math.min(baseDelay + jitter, 120000); // Cap at 2 minutes
+
+                        console.warn(`[Preset Upload] Retrying in ${Math.round(delay/1000)}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            };
+
+            // Concurrency limiter function
+            const processWithConcurrency = async (items, concurrency = 10) => {
+                const results = [];
+                for (let i = 0; i < items.length; i += concurrency) {
+                    const batch = items.slice(i, i + concurrency);
+                    const batchPromises = batch.map(async ({ file, path }) => {
+                        // Validate file exists and has size
+                        if (!file || file.size === 0) {
                             return {
-                                success: true,
-                                data: data.data
+                                success: false,
+                                filename: file?.name || path || 'unknown',
+                                error: 'File is empty or missing'
                             };
-                        } else {
+                        }
+
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('path', path);
+                        formData.append('thumbnail_format', thumbnailFormat);
+                        if (isFilterMode) {
+                            formData.append('is_filter_mode', 'true');
+                        }
+
+                        try {
+                            console.log(`[Preset Upload] Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+                            const response = await fetchWithRetry(uploadUrl, {
+                                method: 'POST',
+                                headers: buildHeaders(),
+                                body: formData
+                            }, 10); // Use 10 retries for individual files too
+
+                            if (!response.ok) {
+                                const errorText = await response.text().catch(() => response.statusText);
+                                throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+                            }
+
+                            const data = await response.json();
+
+                            if (data.status === 'success' && data.data.success) {
+                                return {
+                                    success: true,
+                                    data: data.data
+                                };
+                            } else {
+                                return {
+                                    success: false,
+                                    filename: file.name,
+                                    error: data.message || data.data?.error || 'Unknown error'
+                                };
+                            }
+                        } catch (fileError) {
+                            let errorMessage = 'Failed to fetch';
+                            if (fileError.name === 'AbortError') {
+                                errorMessage = 'Request timeout (30s)';
+                            } else if (fileError.message) {
+                                errorMessage = fileError.message;
+                            } else if (fileError instanceof TypeError) {
+                                errorMessage = 'Network error - check CORS and connection';
+                            }
+                            
                             return {
                                 success: false,
                                 filename: file.name,
-                                error: data.message || data.data?.error || 'Unknown error'
+                                error: errorMessage
                             };
                         }
-                    } catch (fileError) {
-                        return {
-                            success: false,
-                            filename: file.name,
-                            error: fileError.message || 'Network error'
-                        };
+                    });
+                    
+                    const batchResults = await Promise.all(batchPromises);
+                    results.push(...batchResults);
+                    
+                    // Update progress
+                    const processed = i + batch.length;
+                    const progressPercent = 10 + (processed / totalFiles) * 80;
+                    progressFill.style.width = `${Math.min(progressPercent, 90)}%`;
+                    statusText.textContent = `Đang xử lý ${processed}/${totalFiles} file...`;
+                    
+                    // Small delay between batches to prevent overwhelming server
+                    if (i + concurrency < items.length) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
                     }
-                });
+                }
+                return results;
+            };
 
-                // Process all files in parallel
-                const uploadResults = await Promise.all(uploadPromises);
+            try {
+                // Process files with concurrency limit
+                const uploadResults = await processWithConcurrency(allFiles, 10);
 
                 // Process results
                 uploadResults.forEach(result => {
@@ -3395,7 +3794,7 @@
                 
                 // Log API call summary
                 logApiCall({
-                    label: `Tải Lên Thumbnails (${totalFiles} files)`,
+                    label: `Tải Lên Presets & Thumbnails (${totalFiles} files)`,
                     method: 'POST',
                     url: '/process-thumbnail-file',
                     fullUrl: uploadUrl,
@@ -3436,15 +3835,15 @@
                 const zipInput = $('thumbnail-zip-input');
                 if (zipInput) zipInput.value = '';
                 
-                // Switch to view sub tab and reload thumbnails
+                // Reload thumbnails after upload
                 setTimeout(() => {
                     progressContainer.style.display = 'none';
-                    switchThumbnailSubTab('view');
+                    loadThumbnails();
                 }, 1000);
             } catch (error) {
                 const duration = Date.now() - startTime;
                 logApiCall({
-                    label: `Tải Lên Thumbnails (${totalFiles} files)`,
+                    label: `Tải Lên Presets & Thumbnails (${totalFiles} files)`,
                     method: 'POST',
                     url: '/process-thumbnail-file',
                     fullUrl: uploadUrl,
@@ -3518,7 +3917,6 @@
         }
 
         window.switchMainTab = switchMainTab;
-        window.switchThumbnailSubTab = switchThumbnailSubTab;
         window.handleThumbnailZipSelect = handleThumbnailZipSelect;
         window.selectThumbnail = selectThumbnail;
 

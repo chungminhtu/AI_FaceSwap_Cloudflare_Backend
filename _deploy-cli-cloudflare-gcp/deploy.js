@@ -2568,6 +2568,7 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
       if (flags.DEPLOY_WORKER === false) childArgs.push('--no-worker');
       if (flags.DEPLOY_PAGES === false) childArgs.push('--no-pages');
       if (flags.DEPLOY_R2 === false) childArgs.push('--no-r2');
+      if (args.includes('--workers-only')) childArgs.push('--workers-only');
       
       const child = spawn('node', childArgs, {
         cwd: cwd,
@@ -3101,12 +3102,13 @@ async function main() {
   
   if (childDeployIndex >= 0 && args[childDeployIndex + 1]) {
     const envName = args[childDeployIndex + 1];
+    const workersOnly = args.includes('--workers-only');
     const flags = {
-      DEPLOY_SECRETS: !args.includes('--no-secrets'),
-      DEPLOY_DB: !args.includes('--no-db'),
+      DEPLOY_SECRETS: workersOnly ? false : !args.includes('--no-secrets'),
+      DEPLOY_DB: workersOnly ? false : !args.includes('--no-db'),
       DEPLOY_WORKER: !args.includes('--no-worker'),
-      DEPLOY_PAGES: !args.includes('--no-pages'),
-      DEPLOY_R2: !args.includes('--no-r2')
+      DEPLOY_PAGES: workersOnly ? false : !args.includes('--no-pages'),
+      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2')
     };
     
     try {
@@ -3145,12 +3147,13 @@ async function main() {
       process.exit(1);
     }
     
+    const workersOnly = args.includes('--workers-only');
     const flags = {
-      DEPLOY_SECRETS: !args.includes('--no-secrets'),
-      DEPLOY_DB: !args.includes('--no-db'),
+      DEPLOY_SECRETS: workersOnly ? false : !args.includes('--no-secrets'),
+      DEPLOY_DB: workersOnly ? false : !args.includes('--no-db'),
       DEPLOY_WORKER: !args.includes('--no-worker'),
-      DEPLOY_PAGES: !args.includes('--no-pages'),
-      DEPLOY_R2: !args.includes('--no-r2')
+      DEPLOY_PAGES: workersOnly ? false : !args.includes('--no-pages'),
+      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2')
     };
     
     try {
@@ -3273,17 +3276,32 @@ async function main() {
   try {
     logger.startStep('Loading configuration');
     const config = await loadConfig();
+    
+    // Parse flags for single environment deployment
+    const workersOnly = args.includes('--workers-only');
+    if (workersOnly) {
+      config.deployPages = false;
+    }
+    
     logger.completeStep('Loading configuration', 'Configuration loaded');
 
-    logger.addStep('Checking prerequisites', 'Validating required tools');
-    logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
-    logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
-    logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
-    logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
-    logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
-    logger.addStep('Deploying secrets', 'Configuring environment secrets');
+    // Only add steps that are needed
+    if (!workersOnly) {
+      logger.addStep('Checking prerequisites', 'Validating required tools');
+      logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+      logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
+      logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+      logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
+      logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
+      logger.addStep('Deploying secrets', 'Configuring environment secrets');
+    } else {
+      logger.addStep('Checking prerequisites', 'Validating required tools');
+      logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+    }
     logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
-    logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+    if (!workersOnly && config.deployPages) {
+      logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+    }
     logger.render();
 
     logger.startStep('Checking prerequisites');
@@ -3291,28 +3309,30 @@ async function main() {
       logger.failStep('Checking prerequisites', 'Wrangler CLI not found');
       process.exit(1);
     }
-    if (!utils.checkGcloud()) {
+    if (!workersOnly && !utils.checkGcloud()) {
       logger.failStep('Checking prerequisites', 'gcloud CLI not found');
       process.exit(1);
     }
     logger.completeStep('Checking prerequisites', 'Tools validated');
 
-    logger.startStep('Authenticating with GCP');
-    if (!await utils.authenticateGCP(config.gcp)) {
-      logger.failStep('Authenticating with GCP', 'GCP authentication failed');
-      process.exit(1);
-    }
-    logger.completeStep('Authenticating with GCP', 'GCP authenticated');
+    if (!workersOnly) {
+      logger.startStep('Authenticating with GCP');
+      if (!await utils.authenticateGCP(config.gcp)) {
+        logger.failStep('Authenticating with GCP', 'GCP authentication failed');
+        process.exit(1);
+      }
+      logger.completeStep('Authenticating with GCP', 'GCP authenticated');
 
-    logger.startStep('Checking GCP APIs');
-    const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
-    if (apiResults.failed.length > 0) {
-      const failedApis = apiResults.failed.map(f => f.api).join(', ');
-      logger.warnStep('Checking GCP APIs', `Some APIs failed: ${failedApis}`);
-    } else if (apiResults.newlyEnabled.length > 0) {
-      logger.completeStep('Checking GCP APIs', `Enabled ${apiResults.newlyEnabled.length} API(s)`);
-    } else {
-      logger.completeStep('Checking GCP APIs', 'All required APIs are enabled');
+      logger.startStep('Checking GCP APIs');
+      const apiResults = await utils.ensureGCPApis(config.gcp.projectId);
+      if (apiResults.failed.length > 0) {
+        const failedApis = apiResults.failed.map(f => f.api).join(', ');
+        logger.warnStep('Checking GCP APIs', `Some APIs failed: ${failedApis}`);
+      } else if (apiResults.newlyEnabled.length > 0) {
+        logger.completeStep('Checking GCP APIs', `Enabled ${apiResults.newlyEnabled.length} API(s)`);
+      } else {
+        logger.completeStep('Checking GCP APIs', 'All required APIs are enabled');
+      }
     }
 
     logger.startStep('Setting up Cloudflare credentials');
@@ -3356,59 +3376,76 @@ async function main() {
     process.env.CLOUDFLARE_ACCOUNT_ID = cfAccountId;
 
     try {
-      logger.startStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`);
-      const r2Result = await utils.ensureR2Bucket(process.cwd(), config.bucketName);
-      if (r2Result.created) {
-        logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket created successfully');
-      } else {
-        logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket already exists');
-      }
+      let dbResult = { skipped: false, databaseId: null };
+      let promptCacheResult = { namespaceId: null };
       
-      const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
-      if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
-        config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
-      }
-
-      logger.startStep(`[Cloudflare] D1 Database: ${config.databaseName}`);
-      const dbResult = await utils.ensureD1Database(process.cwd(), config.databaseName);
-      if (dbResult.skipped) {
-        logger.warnStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Skipped (API token lacks D1 permissions)');
-      } else if (dbResult.created) {
-        if (dbResult.schemaApplied) {
-          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created & schema applied');
+      if (!workersOnly) {
+        logger.startStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`);
+        const r2Result = await utils.ensureR2Bucket(process.cwd(), config.bucketName);
+        if (r2Result.created) {
+          logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket created successfully');
         } else {
-          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created');
+          logger.completeStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Bucket already exists');
+        }
+        
+        const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+        if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+          config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
+        }
+
+        logger.startStep(`[Cloudflare] D1 Database: ${config.databaseName}`);
+        dbResult = await utils.ensureD1Database(process.cwd(), config.databaseName);
+        if (dbResult.skipped) {
+          logger.warnStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Skipped (API token lacks D1 permissions)');
+        } else if (dbResult.created) {
+          if (dbResult.schemaApplied) {
+            logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created & schema applied');
+          } else {
+            logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database created');
+          }
+        } else {
+          if (dbResult.schemaApplied) {
+            logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database exists, schema verified');
+          } else {
+            logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database already exists');
+          }
+        }
+
+        const promptCacheKVName = config.promptCacheKV.namespaceName;
+        logger.startStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`);
+        promptCacheResult = await utils.ensureKVNamespace(process.cwd(), promptCacheKVName);
+        if (promptCacheResult.skipped) {
+          logger.warnStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Skipped (API token lacks KV permissions)');
+        } else if (promptCacheResult.created) {
+          logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace created successfully');
+        } else {
+          logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace already exists');
+        }
+
+        logger.startStep('Deploying secrets');
+        if (Object.keys(config.secrets).length > 0) {
+          await utils.deploySecrets(config.secrets, process.cwd(), config.workerName, config.workerName);
+          logger.completeStep('Deploying secrets', 'Secrets deployed');
+        } else {
+          const existing = utils.getExistingSecrets();
+          const { missing, allSet } = checkSecrets(existing);
+          if (!allSet) {
+            logger.warnStep('Deploying secrets', `Missing secrets: ${missing.join(', ')}`);
+          } else {
+            logger.completeStep('Deploying secrets', 'All secrets set');
+          }
         }
       } else {
-        if (dbResult.schemaApplied) {
-          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database exists, schema verified');
+        // For workers-only, we still need KV namespace for worker bindings
+        const promptCacheKVName = config.promptCacheKV.namespaceName;
+        logger.startStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`);
+        promptCacheResult = await utils.ensureKVNamespace(process.cwd(), promptCacheKVName);
+        if (promptCacheResult.skipped) {
+          logger.warnStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Skipped (API token lacks KV permissions)');
+        } else if (promptCacheResult.created) {
+          logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace created successfully');
         } else {
-          logger.completeStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Database already exists');
-        }
-      }
-
-      const promptCacheKVName = config.promptCacheKV.namespaceName;
-      logger.startStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`);
-      const promptCacheResult = await utils.ensureKVNamespace(process.cwd(), promptCacheKVName);
-      if (promptCacheResult.skipped) {
-        logger.warnStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Skipped (API token lacks KV permissions)');
-      } else if (promptCacheResult.created) {
-        logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace created successfully');
-      } else {
-        logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace already exists');
-      }
-
-      logger.startStep('Deploying secrets');
-      if (Object.keys(config.secrets).length > 0) {
-        await utils.deploySecrets(config.secrets, process.cwd(), config.workerName, config.workerName);
-        logger.completeStep('Deploying secrets', 'Secrets deployed');
-      } else {
-        const existing = utils.getExistingSecrets();
-        const { missing, allSet } = checkSecrets(existing);
-        if (!allSet) {
-          logger.warnStep('Deploying secrets', `Missing secrets: ${missing.join(', ')}`);
-        } else {
-          logger.completeStep('Deploying secrets', 'All secrets set');
+          logger.completeStep(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'Namespace already exists');
         }
       }
 
@@ -3433,28 +3470,30 @@ async function main() {
       
       logger.completeStep('Deploying worker', 'Worker deployed');
 
-      logger.startStep('Deploying secrets');
-      try {
-        if (Object.keys(config.secrets).length > 0) {
-          await utils.deploySecrets(config.secrets, process.cwd(), config.workerName, config.workerName);
-          logger.completeStep('Deploying secrets', 'Secrets deployed');
-        } else {
-          const existing = utils.getExistingSecrets();
-          const { missing, allSet } = checkSecrets(existing);
-          if (!allSet) {
-            logger.warnStep('Deploying secrets', `Missing secrets: ${missing.join(', ')}`);
+      if (!workersOnly) {
+        logger.startStep('Deploying secrets');
+        try {
+          if (Object.keys(config.secrets).length > 0) {
+            await utils.deploySecrets(config.secrets, process.cwd(), config.workerName, config.workerName);
+            logger.completeStep('Deploying secrets', 'Secrets deployed');
           } else {
-            logger.completeStep('Deploying secrets', 'All secrets set');
+            const existing = utils.getExistingSecrets();
+            const { missing, allSet } = checkSecrets(existing);
+            if (!allSet) {
+              logger.warnStep('Deploying secrets', `Missing secrets: ${missing.join(', ')}`);
+            } else {
+              logger.completeStep('Deploying secrets', 'All secrets set');
+            }
           }
+        } catch (error) {
+          logger.failStep('Deploying secrets', error.message);
+          throw error;
         }
-      } catch (error) {
-        logger.failStep('Deploying secrets', error.message);
-        throw error;
       }
 
       let pagesUrl = '';
       let tempFrontendDir = null;
-      if (config.deployPages) {
+      if (!workersOnly && config.deployPages) {
         logger.startStep('Deploying frontend');
         // Create temp folder copy to avoid editing source file directly
         const envName = config._environment || 'default';

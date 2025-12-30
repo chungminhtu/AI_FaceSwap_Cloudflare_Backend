@@ -15,8 +15,8 @@ const generateVertexPromptWithRetry = async (
   env: Env,
   isFilterMode: boolean = false,
   customPromptText: string | null = null,
-  maxRetries: number = 8,
-  initialDelay: number = 1000
+  maxRetries: number = 15,
+  initialDelay: number = 2000
 ): Promise<{ success: boolean; prompt?: any; error?: string; debug?: any }> => {
   let lastError: string | undefined;
   let lastDebug: any;
@@ -26,12 +26,17 @@ const generateVertexPromptWithRetry = async (
     if (!error) return true; // Unknown errors are retryable
     const errorLower = error.toLowerCase();
     const httpStatus = debug?.httpStatus;
-    
+
     // Don't retry on permanent errors (4xx except 429)
     if (httpStatus && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
       return false; // Client errors (except rate limit) are not retryable
     }
-    
+
+    // Always retry on JSON parsing errors (even with 200 OK) - Vertex AI sometimes returns incomplete responses
+    if (errorLower.includes('no valid json') || errorLower.includes('could not extract')) {
+      return true; // JSON parsing failures are retryable
+    }
+
     // Retry on: network errors, timeouts, rate limits, server errors (5xx)
     return errorLower.includes('timeout') ||
            errorLower.includes('network') ||
@@ -47,12 +52,17 @@ const generateVertexPromptWithRetry = async (
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await generateVertexPrompt(imageUrl, env, isFilterMode, customPromptText);
-      
+
       if (result.success && result.prompt) {
         if (attempt > 0) {
           console.log(`[Vertex Prompt Retry] Success on attempt ${attempt + 1}/${maxRetries}`);
         }
         return result;
+      }
+
+      // Log retry attempts for debugging
+      if (attempt > 0 || (result.error && (result.error.includes('JSON') || result.error.includes('extract')))) {
+        console.log(`[Vertex Prompt Retry] Attempt ${attempt + 1}/${maxRetries} failed: ${result.error}`);
       }
       
       // Store error for final return if all retries fail
@@ -65,7 +75,11 @@ const generateVertexPromptWithRetry = async (
         return {
           success: false,
           error: lastError,
-          debug: lastDebug
+          debug: {
+            ...lastDebug,
+            totalAttempts: attempt + 1,
+            finalError: lastError
+          }
         };
       }
       
@@ -109,7 +123,12 @@ const generateVertexPromptWithRetry = async (
   return {
     success: false,
     error: lastError || 'All retry attempts failed',
-    debug: lastDebug
+    debug: {
+      ...lastDebug,
+      totalAttempts: maxRetries,
+      retriesExhausted: true,
+      finalError: lastError
+    }
   };
 };
 
@@ -729,14 +748,19 @@ export default {
     }
 
     if (request.method === 'POST' || request.method === 'PUT') {
-      // Large file upload endpoints: 100MB limit (Cloudflare Workers Pro/Free plan limit)
-      // For files >100MB, use presigned URL flow (not currently used by frontend)
-      const isLargeUploadEndpoint = path === '/upload-url' || path.startsWith('/r2-upload/');
-      const maxSize = isLargeUploadEndpoint ? 100 * 1024 * 1024 : 1024 * 1024;
-      const sizeCheck = checkRequestSize(request, maxSize);
-      if (!sizeCheck.valid) {
-        const debugEnabled = isDebugEnabled(env);
-        return errorResponse(sizeCheck.error || 'Request too large', 413, debugEnabled ? { path, method: request.method, maxSize } : undefined, request, env);
+      // Skip size check for /process-thumbnail-file and /process-thumbnail-zip (no limit, up to Cloudflare's 100MB max)
+      if (path === '/process-thumbnail-file' || path === '/process-thumbnail-zip') {
+        // No size limit check - allow up to Cloudflare Workers maximum (100MB)
+      } else {
+        // Large file upload endpoints: 100MB limit (Cloudflare Workers Pro/Free plan limit)
+        // For files >100MB, use presigned URL flow (not currently used by frontend)
+        const isLargeUploadEndpoint = path === '/upload-url' || path.startsWith('/r2-upload/');
+        const maxSize = isLargeUploadEndpoint ? 100 * 1024 * 1024 : 1024 * 1024;
+        const sizeCheck = checkRequestSize(request, maxSize);
+        if (!sizeCheck.valid) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(sizeCheck.error || 'Request too large', 413, debugEnabled ? { path, method: request.method, maxSize } : undefined, request, env);
+        }
       }
     }
 
@@ -1119,10 +1143,25 @@ export default {
               }
             }
 
-            // Save to database (store only id and ext, prompt_json in R2 metadata)
+            // Create 4x thumbnail using the preset image itself
+            // Since Cloudflare Workers don't have native image processing,
+            // we use the preset image as the thumbnail
+            const thumbnailR2Key = key; // Use the same preset image as thumbnail
+            const thumbnailData = {
+              webp_4x: thumbnailR2Key
+            };
+            const thumbnailR2Json = JSON.stringify(thumbnailData);
+
+            // Save to database (store id, ext, and thumbnail_r2)
+            // Use INSERT OR REPLACE to handle case where preset already exists
+            const existingPreset = await DB.prepare('SELECT created_at FROM presets WHERE id = ?').bind(id).first();
+            const finalCreatedAt = existingPreset && (existingPreset as any).created_at 
+              ? (existingPreset as any).created_at 
+              : createdAt;
+            
             const dbResult = await DB.prepare(
-              'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
-            ).bind(id, ext, createdAt).run();
+              'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
+            ).bind(id, ext, finalCreatedAt, thumbnailR2Json).run();
 
             if (!dbResult.success) {
               return {
@@ -1139,7 +1178,9 @@ export default {
               filename: `${id}.${ext}`,
               hasPrompt: !!promptJson,
               prompt_json: promptJson ? JSON.parse(promptJson) : null,
-              vertex_info: vertexCallInfo
+              vertex_info: vertexCallInfo,
+              thumbnail_4x: getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin),
+              thumbnail_created: true
             };
             
             // Include vision check result in response only if debug is enabled (if preset also needs vision check in future)
@@ -1338,11 +1379,17 @@ export default {
           return { success: true, url: publicUrl };
         };
 
-        // Process files: presets in parallel (no state conflicts), selfies sequentially (enforce limits without race conditions)
+        // Process files: presets with controlled parallelism (avoid overwhelming system), selfies sequentially (enforce limits without race conditions)
         let results: any[] = [];
         if (type === 'preset') {
-          // Presets can be processed in parallel - no limit enforcement conflicts
-          results = await Promise.all(allFileData.map((fileData, index) => processFile(fileData, index)));
+          // Presets can be processed with controlled parallelism - no limit enforcement conflicts
+          // Limit to 5 concurrent uploads to prevent system overload with large zip files
+          const PRESET_CONCURRENCY_LIMIT = 5;
+          results = await promisePoolWithConcurrency(
+            allFileData,
+            async (fileData, index) => processFile(fileData, index),
+            PRESET_CONCURRENCY_LIMIT
+          );
         } else {
           // Selfies must be processed sequentially to prevent race conditions on limit enforcement
           // Race condition scenario: 2 parallel uploads both COUNT=4, both INSERT → 6 selfies when limit is 5
@@ -1703,7 +1750,8 @@ export default {
 
 
     if (path === '/process-thumbnail-file' && request.method === 'POST') {
-      return await retryUploadOperation(async () => {
+      try {
+        return await retryUploadOperation(async () => {
         const contentType = request.headers.get('Content-Type') || '';
         const DB = getD1Database(env);
         const R2_BUCKET = getR2Bucket(env);
@@ -1799,11 +1847,273 @@ export default {
           return errorResponse('r2_key or r2_url is required for preset prompt generation', 400, undefined, request, env);
         }
         
-        // Handle file upload (thumbnail files)
+        // Handle file upload (thumbnail files or zip files)
         const formData = await request.formData();
+        const zipFile = formData.get('zip') as File | null;
+        const thumbnailFormat = (formData.get('thumbnail_format') as string | null) || 'webp';
+        const isFilterMode = formData.get('is_filter_mode') === 'true';
+        const customPromptText = formData.get('custom_prompt_text') as string | null;
+
+        // Check if this is a zip file upload for preset processing
+        if (zipFile && zipFile.type === 'application/zip') {
+          console.log('[process-thumbnail-file] Processing zip file for preset upload, size:', zipFile.size);
+
+          const zipData = await zipFile.arrayBuffer();
+          const zip = await JSZip.loadAsync(zipData);
+
+          const results: any[] = [];
+          let successful = 0;
+          let failed = 0;
+          let presetsProcessed = 0;
+          let presetsWithPrompts = 0;
+
+          // Extract PNG files from preset folder in zip
+          const presetFiles: Array<{ filename: string; zipEntry: JSZip.JSZipObject }> = [];
+          zip.forEach((path: string, entry: JSZip.JSZipObject) => {
+            if (!entry.dir && path.toLowerCase().startsWith('preset/') && path.toLowerCase().endsWith('.png')) {
+              const filename = path.split('/').pop() || path;
+              presetFiles.push({ filename, zipEntry: entry });
+            }
+          });
+
+          if (presetFiles.length === 0) {
+            return errorResponse('No PNG files found in the preset folder. Zip file must contain PNG files in a "preset/" folder.', 400, undefined, request, env);
+          }
+
+          if (presetFiles.length === 0) {
+            return errorResponse('No PNG files found in the preset folder', 400, undefined, request, env);
+          }
+
+          console.log(`[process-thumbnail-file] Found ${presetFiles.length} PNG files in preset folder`);
+
+          // Process preset files in parallel with controlled concurrency
+          const processPresetFile = async ({ filename, zipEntry }: { filename: string; zipEntry: JSZip.JSZipObject }) => {
+            try {
+              const parsed = parseThumbnailFilename(filename);
+              if (!parsed) {
+                return {
+                  success: false,
+                  filename,
+                  error: 'Invalid filename format. Could not extract preset_id from filename.'
+                };
+              }
+
+              const { preset_id: presetId } = parsed;
+              const fileDataUint8 = await zipEntry.async('uint8array');
+
+              if (!fileDataUint8 || fileDataUint8.length === 0) {
+                return {
+                  success: false,
+                  filename,
+                  error: 'File is empty'
+                };
+              }
+
+              // Convert Uint8Array to ArrayBuffer
+              const fileData = new ArrayBuffer(fileDataUint8.length);
+              new Uint8Array(fileData).set(fileDataUint8);
+
+              // Upload to temp location first for prompt generation
+              const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
+              await R2_BUCKET.put(tempR2Key, fileData, {
+                httpMetadata: {
+                  contentType: 'image/png',
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+
+              const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
+
+              // Generate Vertex AI prompt with retry
+              const promptResult = await generateVertexPromptWithRetry(tempPublicUrl, env, isFilterMode, customPromptText);
+
+              // Clean up temp file
+              try {
+                await R2_BUCKET.delete(tempR2Key);
+              } catch (e) {
+                // Ignore cleanup errors
+              }
+
+              if (!promptResult.success || !promptResult.prompt) {
+                return {
+                  success: false,
+                  filename,
+                  error: `Vertex AI prompt generation failed: ${promptResult.error || 'Unknown error'}`
+                };
+              }
+
+              // Upload preset to final location with prompt metadata
+              const presetR2Key = `presets/${presetId}.png`;
+              const promptJson = JSON.stringify(promptResult.prompt);
+
+              await R2_BUCKET.put(presetR2Key, fileData, {
+                httpMetadata: {
+                  contentType: 'image/png',
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+                customMetadata: {
+                  prompt_json: promptJson
+                }
+              });
+
+              const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
+
+              // Generate thumbnails based on format - all resolutions
+              let thumbnailData: Record<string, string> = {};
+              let thumbnailUrl: string | null = null;
+
+              if (thumbnailFormat === 'json') {
+                // Generate all Lottie JSON and Lottie AVIF resolutions
+                const lottieResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+                const lottieAvifResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+
+                // Lottie JSON files (placeholder entries - actual JSON files should be uploaded separately)
+                for (const res of lottieResolutions) {
+                  const thumbnailR2Key = `preset_thumb/lottie_${res}/${presetId}.json`;
+                  thumbnailData[`lottie_${res}`] = thumbnailR2Key;
+                }
+
+                // Lottie AVIF files (placeholder entries - actual AVIF files should be uploaded separately)
+                for (const res of lottieAvifResolutions) {
+                  const thumbnailR2Key = `preset_thumb/lottie_avif_${res}/${presetId}.json`;
+                  thumbnailData[`lottie_avif_${res}`] = thumbnailR2Key;
+                }
+
+                // Use the 4x lottie as the primary thumbnail URL
+                thumbnailUrl = getR2PublicUrl(env, thumbnailData['lottie_4x'], requestUrl.origin);
+              } else {
+                // Generate all WebP resolutions
+                const webpResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+
+                // Upload PNG to all WebP resolution paths
+                for (const res of webpResolutions) {
+                  const thumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
+                  await R2_BUCKET.put(thumbnailR2Key, fileData, {
+                    httpMetadata: {
+                      contentType: 'image/png', // Store as PNG (will work as thumbnail)
+                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                    },
+                  });
+                  thumbnailData[`webp_${res}`] = thumbnailR2Key;
+                }
+
+                // Use the 4x webp as the primary thumbnail URL
+                thumbnailUrl = getR2PublicUrl(env, thumbnailData['webp_4x'], requestUrl.origin);
+              }
+
+              // Update database
+              const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
+              const createdAt = existingPreset && (existingPreset as any).created_at
+                ? (existingPreset as any).created_at
+                : Math.floor(Date.now() / 1000);
+
+              // Merge with existing thumbnail data if any
+              if (existingPreset && (existingPreset as any).thumbnail_r2) {
+                try {
+                  const existingThumbnailData = JSON.parse((existingPreset as any).thumbnail_r2 as string);
+                  thumbnailData = { ...existingThumbnailData, ...thumbnailData };
+                } catch (e) {
+                  // If parsing fails, use new data
+                }
+              }
+
+              // Use INSERT OR REPLACE to avoid UNIQUE constraint violations
+              await DB.prepare(
+                'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2, prompt_json) VALUES (?, ?, ?, ?, ?)'
+              ).bind(
+                presetId,
+                'png',
+                createdAt,
+                JSON.stringify(thumbnailData),
+                promptJson
+              ).run();
+
+              return {
+                success: true,
+                type: 'preset',
+                preset_id: presetId,
+                url: presetPublicUrl,
+                hasPrompt: true,
+                vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) },
+                thumbnail_url: thumbnailUrl,
+                thumbnail_format: thumbnailFormat,
+                thumbnail_created: true
+              };
+
+            } catch (fileError) {
+              const errorMsg = fileError instanceof Error ? fileError.message : String(fileError);
+              return {
+                success: false,
+                filename,
+                error: errorMsg.substring(0, 200)
+              };
+            }
+          };
+
+          // Process preset files with concurrency limit (5 at a time to prevent timeout)
+          const concurrency = 5;
+          const startTime = Date.now();
+          const MAX_PROCESSING_TIME = 25000; // 25 seconds max
+          let processedCount = 0;
+          let timeoutReached = false;
+
+          for (let i = 0; i < presetFiles.length; i += concurrency) {
+            // Check if we're running out of time
+            const elapsed = Date.now() - startTime;
+            if (elapsed > MAX_PROCESSING_TIME) {
+              console.warn(`[process-thumbnail-file] Timeout approaching, stopping processing. Processed ${processedCount}/${presetFiles.length} files`);
+              timeoutReached = true;
+              break;
+            }
+
+            const batch = presetFiles.slice(i, i + concurrency);
+            console.log(`[process-thumbnail-file] Processing batch ${Math.floor(i / concurrency) + 1}, files ${i + 1}-${Math.min(i + concurrency, presetFiles.length)}`);
+
+            const batchResults = await Promise.all(batch.map(processPresetFile));
+            processedCount += batch.length;
+
+            for (const result of batchResults) {
+              if (result.success) {
+                successful++;
+                results.push(result);
+                presetsProcessed++;
+                if (result.hasPrompt) {
+                  presetsWithPrompts++;
+                }
+              } else {
+                failed++;
+                results.push(result);
+              }
+            }
+
+            // Small delay to prevent overwhelming the system
+            if (i + concurrency < presetFiles.length) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+
+          const totalTime = Date.now() - startTime;
+          console.log(`[process-thumbnail-file] Zip processing complete. Time: ${totalTime}ms, Processed: ${processedCount}/${presetFiles.length}, Success: ${successful}, Failed: ${failed}`);
+
+          return successResponse({
+            success: true,
+            total: presetFiles.length,
+            processed: processedCount,
+            successful,
+            failed,
+            presets_processed: presetsProcessed,
+            presets_with_prompts: presetsWithPrompts,
+            timeout_reached: timeoutReached,
+            processing_time_ms: totalTime,
+            thumbnail_format: thumbnailFormat,
+            results: timeoutReached ? results.slice(0, 100) : results
+          }, 200, request, env);
+        }
+
+        // Handle single file upload (thumbnail files)
         const file = formData.get('file') as File | null;
         const filePath = (formData.get('path') as string | null) || '';
-        
+
         if (!file) {
           return errorResponse('file is required', 400, undefined, request, env);
         }
@@ -1832,7 +2142,8 @@ export default {
         if (isFromPresetFolder) {
           // Preset file processing
           const fileData = await file.arrayBuffer();
-          const contentType = file.type || 'image/webp';
+          const contentType = file.type || 'image/png';
+          const thumbnailFormat = (formData.get('thumbnail_format') as string | null) || 'webp';
           
           // Upload to temp location first for prompt generation
           const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
@@ -1867,11 +2178,11 @@ export default {
             );
           }
           
-          // Upload to final location with prompt metadata
-          const r2Key = `presets/${presetId}.${filename.split('.').pop()}`;
+          // Upload preset to final location with prompt metadata
+          const presetR2Key = `presets/${presetId}.${filename.split('.').pop()}`;
           const promptJson = JSON.stringify(promptResult.prompt);
           
-          await R2_BUCKET.put(r2Key, fileData, {
+          await R2_BUCKET.put(presetR2Key, fileData, {
             httpMetadata: {
               contentType,
               cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
@@ -1881,40 +2192,88 @@ export default {
             }
           });
           
-          const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
           
-          // Update database
-          const existingPreset = await DB.prepare('SELECT id, thumbnail_r2 FROM presets WHERE id = ?').bind(presetId).first();
-          const createdAt = Math.floor(Date.now() / 1000);
+          // Generate thumbnails based on format - all resolutions
+          let thumbnailData: Record<string, string> = {};
+          let thumbnailUrl: string | null = null;
+
+          if (thumbnailFormat === 'json') {
+            // Generate all Lottie JSON and Lottie AVIF resolutions
+            const lottieResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+            const lottieAvifResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+
+            // Lottie JSON files (placeholder entries - actual JSON files should be uploaded separately)
+            for (const res of lottieResolutions) {
+              const thumbnailR2Key = `preset_thumb/lottie_${res}/${presetId}.json`;
+              thumbnailData[`lottie_${res}`] = thumbnailR2Key;
+            }
+
+            // Lottie AVIF files (placeholder entries - actual AVIF files should be uploaded separately)
+            for (const res of lottieAvifResolutions) {
+              const thumbnailR2Key = `preset_thumb/lottie_avif_${res}/${presetId}.json`;
+              thumbnailData[`lottie_avif_${res}`] = thumbnailR2Key;
+            }
+
+            // Use the 4x lottie as the primary thumbnail URL
+            thumbnailUrl = getR2PublicUrl(env, thumbnailData['lottie_4x'], requestUrl.origin);
+          } else {
+            // Generate all WebP resolutions
+            const webpResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+
+            // Upload PNG to all WebP resolution paths
+            for (const res of webpResolutions) {
+              const thumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
+              await R2_BUCKET.put(thumbnailR2Key, fileData, {
+                httpMetadata: {
+                  contentType: 'image/png', // Store as PNG (will work as thumbnail)
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+              thumbnailData[`webp_${res}`] = thumbnailR2Key;
+            }
+
+            // Use the 4x webp as the primary thumbnail URL
+            thumbnailUrl = getR2PublicUrl(env, thumbnailData['webp_4x'], requestUrl.origin);
+          }
+          
+          // Update database - use INSERT OR REPLACE to handle concurrent requests
+          const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
+          const createdAt = existingPreset && (existingPreset as any).created_at 
+            ? (existingPreset as any).created_at 
+            : Math.floor(Date.now() / 1000);
           const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
           
-          let existingThumbnailR2: string | null = null;
+          // Merge with existing thumbnail data if any
           if (existingPreset && (existingPreset as any).thumbnail_r2) {
-            existingThumbnailR2 = (existingPreset as any).thumbnail_r2 as string;
+            try {
+              const existingThumbnailData = JSON.parse((existingPreset as any).thumbnail_r2 as string);
+              thumbnailData = { ...existingThumbnailData, ...thumbnailData };
+            } catch (e) {
+              // If parsing fails, use new data
+            }
           }
           
-          if (existingPreset) {
-            await DB.prepare('DELETE FROM presets WHERE id = ?').bind(presetId).run();
-          }
-          
+          // Use INSERT OR REPLACE to avoid UNIQUE constraint violations
           await DB.prepare(
-            existingThumbnailR2 
-              ? 'INSERT INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
-              : 'INSERT INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+            'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
           ).bind(
             presetId, 
             ext, 
             createdAt,
-            ...(existingThumbnailR2 ? [existingThumbnailR2] : [])
+            JSON.stringify(thumbnailData)
           ).run();
           
           return successResponse({
             success: true,
             type: 'preset',
             preset_id: presetId,
-            url: publicUrl,
+            url: presetPublicUrl,
             hasPrompt: true,
-            vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) }
+            vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) },
+            thumbnail_url: thumbnailUrl,
+            thumbnail_format: thumbnailFormat,
+            thumbnail_created: true
           }, 200, request, env);
         } else {
           // Thumbnail file processing
@@ -1943,8 +2302,8 @@ export default {
           
           const thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
           
-          // Update database
-          const existingPreset = await DB.prepare('SELECT id, thumbnail_r2 FROM presets WHERE id = ?').bind(presetId).first();
+          // Update database - use INSERT OR REPLACE to handle concurrent requests
+          const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
           let thumbnailData: Record<string, string> = {};
           
           if (existingPreset && (existingPreset as any).thumbnail_r2) {
@@ -1957,15 +2316,15 @@ export default {
           
           thumbnailData[thumbnailFolder] = thumbnailR2Key;
           
-          const createdAt = Math.floor(Date.now() / 1000);
+          // Preserve created_at from existing record, or use current timestamp
+          const createdAt = existingPreset && (existingPreset as any).created_at 
+            ? (existingPreset as any).created_at 
+            : Math.floor(Date.now() / 1000);
           const extForDb = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
           
-          if (existingPreset) {
-            await DB.prepare('DELETE FROM presets WHERE id = ?').bind(presetId).run();
-          }
-          
+          // Use INSERT OR REPLACE to avoid UNIQUE constraint violations
           await DB.prepare(
-            'INSERT INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
+            'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
           ).bind(
             presetId, 
             extForDb, 
@@ -1983,6 +2342,341 @@ export default {
           }, 200, request, env);
         }
       }, 10, 1000);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        console.error('[process-thumbnail-file] Unhandled error:', errorMsg);
+        return errorResponse('', 500, { error: errorMsg }, request, env);
+      }
+    }
+
+    // Handle zip file upload and process all files server-side
+    if (path === '/process-thumbnail-zip' && request.method === 'POST') {
+      const startTime = Date.now();
+      const MAX_PROCESSING_TIME = 25000; // 25 seconds max (leave 5s buffer for response)
+      const MAX_FILES = 500; // Limit to 500 files per request to prevent timeout
+      
+      try {
+        const formData = await request.formData();
+        const zipFile = formData.get('zip') as File | null;
+        const isFilterMode = formData.get('is_filter_mode') === 'true';
+        const customPromptText = formData.get('custom_prompt_text') as string | null;
+
+        if (!zipFile) {
+          return errorResponse('zip file is required', 400, undefined, request, env);
+        }
+
+        console.log('[process-thumbnail-zip] Starting zip processing, file size:', zipFile.size);
+
+        const DB = getD1Database(env);
+        const R2_BUCKET = getR2Bucket(env);
+        const requestUrl = new URL(request.url);
+
+        // Extract zip file
+        console.log('[process-thumbnail-zip] Extracting zip file...');
+        const zipData = await zipFile.arrayBuffer();
+        const zip = await JSZip.loadAsync(zipData);
+
+        const results: any[] = [];
+        let successful = 0;
+        let failed = 0;
+        let presetsProcessed = 0;
+        let thumbnailsProcessed = 0;
+        let presetsWithPrompts = 0;
+
+        // Process all files in the zip
+        const fileEntries: Array<{ path: string; zipEntry: JSZip.JSZipObject }> = [];
+        zip.forEach((relativePath: string, zipEntry: JSZip.JSZipObject) => {
+          if (!zipEntry.dir) {
+            fileEntries.push({ path: relativePath, zipEntry });
+          }
+        });
+
+        console.log(`[process-thumbnail-zip] Found ${fileEntries.length} files in zip`);
+
+        // Limit number of files to prevent timeout
+        if (fileEntries.length > MAX_FILES) {
+          return errorResponse(
+            `Too many files in zip. Maximum ${MAX_FILES} files allowed, found ${fileEntries.length}. Please split into smaller zip files.`,
+            400,
+            { maxFiles: MAX_FILES, found: fileEntries.length },
+            request,
+            env
+          );
+        }
+
+        // Process files with controlled concurrency (10 at a time)
+        const processFile = async ({ path: relativePath, zipEntry }: { path: string; zipEntry: JSZip.JSZipObject }) => {
+          try {
+            const filename = zipEntry.name.split('/').pop() || zipEntry.name.split('\\').pop() || zipEntry.name;
+            const basename = filename;
+            const parsed = parseThumbnailFilename(basename);
+
+            if (!parsed) {
+              return {
+                success: false,
+                filename: relativePath,
+                error: 'Invalid filename format'
+              };
+            }
+
+            const { preset_id: presetId, format } = parsed;
+            const normalizedPath = relativePath.replace(/\\/g, '/').toLowerCase();
+
+            // Determine if this is a preset file or thumbnail
+            const pathParts = normalizedPath.split('/').filter(p => p);
+            const isFromPresetFolder =
+              normalizedPath.includes('preset/') ||
+              normalizedPath.startsWith('preset/') ||
+              normalizedPath.includes('/preset/') ||
+              normalizedPath === 'preset' ||
+              (pathParts.length > 0 && pathParts[0] === 'preset') ||
+              (!normalizedPath && filename.toLowerCase().endsWith('.png'));
+
+            const fileDataUint8 = await zipEntry.async('uint8array');
+            if (!fileDataUint8 || fileDataUint8.length === 0) {
+              return {
+                success: false,
+                filename: relativePath,
+                error: 'File is empty'
+              };
+            }
+
+            // Convert Uint8Array to ArrayBuffer (create new ArrayBuffer to avoid SharedArrayBuffer issues)
+            const fileData = new ArrayBuffer(fileDataUint8.length);
+            new Uint8Array(fileData).set(fileDataUint8);
+
+            if (isFromPresetFolder) {
+              // Preset file processing
+              const contentType = filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/webp';
+
+              // Check if we have enough time for prompt generation (need at least 20 seconds)
+              const elapsed = Date.now() - startTime;
+              const skipPromptGeneration = elapsed > (MAX_PROCESSING_TIME - 20000);
+
+              let promptResult: any = { success: false, error: 'Skipped due to timeout' };
+              
+              if (!skipPromptGeneration) {
+                // Upload to temp location first for prompt generation
+                const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
+                await R2_BUCKET.put(tempR2Key, fileData, {
+                  httpMetadata: {
+                    contentType,
+                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                  },
+                });
+
+                const tempPublicUrl = getR2PublicUrl(env, tempR2Key, requestUrl.origin);
+
+                // Generate Vertex AI prompt with retry
+                promptResult = await generateVertexPromptWithRetry(tempPublicUrl, env, isFilterMode === true, customPromptText);
+
+                // Clean up temp file
+                try {
+                  await R2_BUCKET.delete(tempR2Key);
+                } catch (e) {
+                  // Ignore cleanup errors
+                }
+              }
+
+              if (!skipPromptGeneration && (!promptResult.success || !promptResult.prompt)) {
+                return {
+                  success: false,
+                  filename: relativePath,
+                  error: `Vertex AI prompt generation failed: ${promptResult.error || 'Unknown error'}`
+                };
+              }
+
+              // Upload to final location with prompt metadata (if available)
+              const r2Key = `presets/${presetId}.${filename.split('.').pop()}`;
+              const promptJson = skipPromptGeneration ? null : JSON.stringify(promptResult.prompt);
+
+              await R2_BUCKET.put(r2Key, fileData, {
+                httpMetadata: {
+                  contentType,
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+                ...(promptJson ? {
+                  customMetadata: {
+                    prompt_json: promptJson
+                  }
+                } : {})
+              });
+
+              const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+
+              // Update database - use INSERT OR REPLACE
+              const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
+              const createdAt = existingPreset && (existingPreset as any).created_at
+                ? (existingPreset as any).created_at
+                : Math.floor(Date.now() / 1000);
+              const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
+
+              let existingThumbnailR2: string | null = null;
+              if (existingPreset && (existingPreset as any).thumbnail_r2) {
+                existingThumbnailR2 = (existingPreset as any).thumbnail_r2 as string;
+              }
+
+              await DB.prepare(
+                existingThumbnailR2
+                  ? 'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
+                  : 'INSERT OR REPLACE INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
+              ).bind(
+                presetId,
+                ext,
+                createdAt,
+                ...(existingThumbnailR2 ? [existingThumbnailR2] : [])
+              ).run();
+
+              return {
+                success: true,
+                type: 'preset',
+                preset_id: presetId,
+                url: publicUrl,
+                hasPrompt: !skipPromptGeneration && promptResult.success && !!promptResult.prompt,
+                vertex_info: skipPromptGeneration 
+                  ? { success: false, error: 'Skipped due to timeout' }
+                  : (promptResult.success && promptResult.prompt 
+                    ? { success: true, promptKeys: Object.keys(promptResult.prompt) }
+                    : { success: false, error: promptResult.error || 'Unknown error' })
+              };
+            } else {
+              // Thumbnail file processing
+              const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)(?:\/|$)/i);
+              let folderType = 'webp';
+              let resolution = '1x';
+
+              if (folderMatch) {
+                folderType = folderMatch[1].toLowerCase();
+                resolution = folderMatch[2];
+              }
+
+              const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
+              const thumbnailFolder = `${folderType}_${resolution}`;
+              const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
+
+              const contentType = filename.toLowerCase().endsWith('.json') ? 'application/json' : 'image/webp';
+
+              await R2_BUCKET.put(thumbnailR2Key, fileData, {
+                httpMetadata: {
+                  contentType,
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+
+              const thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
+
+              // Update database - use INSERT OR REPLACE
+              const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
+              let thumbnailData: Record<string, string> = {};
+
+              if (existingPreset && (existingPreset as any).thumbnail_r2) {
+                try {
+                  thumbnailData = JSON.parse((existingPreset as any).thumbnail_r2 as string);
+                } catch (e) {
+                  thumbnailData = {};
+                }
+              }
+
+              thumbnailData[thumbnailFolder] = thumbnailR2Key;
+
+              const createdAt = existingPreset && (existingPreset as any).created_at
+                ? (existingPreset as any).created_at
+                : Math.floor(Date.now() / 1000);
+              const extForDb = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp';
+
+              await DB.prepare(
+                'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
+              ).bind(
+                presetId,
+                extForDb,
+                createdAt,
+                JSON.stringify(thumbnailData)
+              ).run();
+
+              return {
+                success: true,
+                type: 'thumbnail',
+                preset_id: presetId,
+                url: thumbnailUrl,
+                hasPrompt: false,
+                metadata: { format: folderType, resolution }
+              };
+            }
+          } catch (fileError) {
+            const errorMsg = fileError instanceof Error ? fileError.message : String(fileError);
+            return {
+              success: false,
+              filename: relativePath,
+              error: errorMsg.substring(0, 200)
+            };
+          }
+        };
+
+        // Process files with concurrency limit (5 at a time to prevent timeout)
+        const concurrency = 5;
+        let processedCount = 0;
+        let timeoutReached = false;
+
+        for (let i = 0; i < fileEntries.length; i += concurrency) {
+          // Check if we're running out of time
+          const elapsed = Date.now() - startTime;
+          if (elapsed > MAX_PROCESSING_TIME) {
+            console.warn(`[process-thumbnail-zip] Timeout approaching, stopping processing. Processed ${processedCount}/${fileEntries.length} files`);
+            timeoutReached = true;
+            break;
+          }
+
+          const batch = fileEntries.slice(i, i + concurrency);
+          console.log(`[process-thumbnail-zip] Processing batch ${Math.floor(i / concurrency) + 1}, files ${i + 1}-${Math.min(i + concurrency, fileEntries.length)}`);
+          
+          const batchResults = await Promise.all(batch.map(processFile));
+          processedCount += batch.length;
+
+          for (const result of batchResults) {
+            if (result.success) {
+              successful++;
+              results.push(result);
+              if (result.type === 'preset') {
+                presetsProcessed++;
+                if (result.hasPrompt) {
+                  presetsWithPrompts++;
+                }
+              } else if (result.type === 'thumbnail') {
+                thumbnailsProcessed++;
+              }
+            } else {
+              failed++;
+              results.push(result);
+            }
+          }
+
+          // Small delay to prevent overwhelming the system
+          if (i + concurrency < fileEntries.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+
+        const totalTime = Date.now() - startTime;
+        console.log(`[process-thumbnail-zip] Processing complete. Time: ${totalTime}ms, Processed: ${processedCount}/${fileEntries.length}, Success: ${successful}, Failed: ${failed}`);
+
+        return successResponse({
+          total: fileEntries.length,
+          processed: processedCount,
+          successful,
+          failed,
+          presets_processed: presetsProcessed,
+          presets_with_prompts: presetsWithPrompts,
+          thumbnails_processed: thumbnailsProcessed,
+          timeout_reached: timeoutReached,
+          processing_time_ms: totalTime,
+          results: timeoutReached ? results.slice(0, 100) : results // Limit results if timeout
+        }, 200, request, env);
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        console.error('[process-thumbnail-zip] Unhandled error:', errorMsg);
+        return errorResponse('', 500, { error: errorMsg }, request, env);
+      }
     }
 
     // Handle profile creation
@@ -2384,20 +3078,53 @@ export default {
           const storedKey = reconstructR2Key(row.id, row.ext, 'preset');
           const fullUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
           
-          // Reconstruct thumbnail URL from thumbnail_r2 if available
+          // Parse thumbnail_r2 JSON to extract 4x thumbnail
           let thumbnailUrl: string | null = null;
           let thumbnailFormat: string | null = null;
           let thumbnailResolution: string | null = null;
+          let thumbnailR2Key: string | null = null;
+          
           if (row.thumbnail_r2) {
-            thumbnailUrl = getR2PublicUrl(env, row.thumbnail_r2, requestUrl.origin);
-            // Extract format and resolution from R2 key (e.g., "webp_1x/face-swap/portrait.webp")
-            const r2KeyParts = row.thumbnail_r2.split('/');
-            if (r2KeyParts.length > 0) {
-              const prefix = r2KeyParts[0]; // e.g., "webp_1x" or "lottie_2x"
-              const formatMatch = prefix.match(/^(webp|lottie)/i);
-              const resolutionMatch = prefix.match(/([\d.]+x)/i);
-              thumbnailFormat = formatMatch ? formatMatch[1].toLowerCase() : null;
-              thumbnailResolution = resolutionMatch ? resolutionMatch[1] : null;
+            try {
+              // Parse thumbnail_r2 as JSON (e.g., {"webp_4x": "preset/{id}.{ext}"})
+              const thumbnailData = typeof row.thumbnail_r2 === 'string' 
+                ? JSON.parse(row.thumbnail_r2) 
+                : row.thumbnail_r2;
+              
+              // Extract webp_4x thumbnail key
+              thumbnailR2Key = thumbnailData['webp_4x'] || thumbnailData['lottie_4x'] || thumbnailData['lottie_avif_4x'] || null;
+              
+              if (thumbnailR2Key) {
+                thumbnailUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
+                // Extract format and resolution from R2 key (e.g., "preset_thumb/webp_4x/fs_aging_f1_3.webp")
+                const r2KeyParts = thumbnailR2Key.split('/');
+                if (r2KeyParts.length > 0) {
+                  // Check if path contains format/resolution info
+                  const keyStr = thumbnailR2Key.toLowerCase();
+                  if (keyStr.includes('webp_4x')) {
+                    thumbnailFormat = 'webp';
+                    thumbnailResolution = '4x';
+                  } else if (keyStr.includes('lottie_4x')) {
+                    thumbnailFormat = 'lottie';
+                    thumbnailResolution = '4x';
+                  } else if (keyStr.includes('lottie_avif_4x')) {
+                    thumbnailFormat = 'lottie_avif';
+                    thumbnailResolution = '4x';
+                  }
+                }
+              }
+            } catch (e) {
+              // If parsing fails, thumbnail_r2 might be a direct string (legacy format)
+              // Try to use it directly
+              try {
+                if (typeof row.thumbnail_r2 === 'string' && row.thumbnail_r2.trim()) {
+                  const legacyKey = row.thumbnail_r2.trim();
+                  thumbnailR2Key = legacyKey;
+                  thumbnailUrl = getR2PublicUrl(env, legacyKey, requestUrl.origin);
+                }
+              } catch (err) {
+                // Ignore errors
+              }
             }
           }
           
@@ -2410,10 +3137,13 @@ export default {
             // If R2 check fails, assume no prompt
           }
           
+          // Use thumbnail URL as image_url if available, otherwise use original preset URL
+          const displayUrl = thumbnailUrl || fullUrl;
+          
           return {
             id: row.id || '',
-            preset_url: fullUrl,
-            image_url: fullUrl, // Alias for backward compatibility
+            preset_url: fullUrl, // Always include original preset URL
+            image_url: displayUrl, // Use thumbnail if available, otherwise original
             hasPrompt,
             prompt_json: null, // Not included in list view for performance (read from R2 metadata in detail view)
             thumbnail_url: thumbnailUrl,
@@ -2788,22 +3518,24 @@ export default {
           };
 
           // Build response object with only 4x thumbnails
-          const response: any = {};
-          
+          const response: any = {
+            preset_id: row.id, // Include preset_id for frontend selection
+          };
+
           // Primary thumbnail_url_4x: prefer webp, then lottie, then lottie_avif
           const primary4x = thumbnailData['webp_4x'] || thumbnailData['lottie_4x'] || thumbnailData['lottie_avif_4x'];
           response.thumbnail_url_4x = buildThumbnailUrl(primary4x);
-          
+
           // Add lottie_4x if exists (can coexist with webp_4x)
           if (thumbnailData['lottie_4x']) {
             response.thumbnail_url_4x_lottie = buildThumbnailUrl(thumbnailData['lottie_4x']);
           }
-          
+
           // Add lottie_avif_4x if exists (can coexist with lottie_4x and webp_4x)
           if (thumbnailData['lottie_avif_4x']) {
             response.thumbnail_url_4x_lottie_avif = buildThumbnailUrl(thumbnailData['lottie_avif_4x']);
           }
-          
+
           return response;
         });
           

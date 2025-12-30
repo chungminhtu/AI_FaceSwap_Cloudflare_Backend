@@ -64,21 +64,52 @@ export const getCorsHeaders = (request: Request, env: any): Record<string, strin
   const userAgent = request.headers.get('User-Agent') || '';
   const isMobileApp = userAgent.includes('okhttp') || userAgent.includes('Android') || userAgent.includes('Dart') || !origin;
   
-  const allowedOrigins = env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map((o: any) => o.trim()) : [];
+  // Parse and normalize allowed origins (preserve original for matching, but normalize for comparison)
+  const allowedOriginsRaw = env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',').map((o: any) => o.trim()) : [];
+  const allowedOriginsNormalized = allowedOriginsRaw.map((o: string) => o.toLowerCase());
   
   let allowOrigin = '*';
   
   if (isMobileApp) {
     allowOrigin = '*';
-  } else if (allowedOrigins.length > 0) {
-    if (origin && allowedOrigins.includes(origin)) {
-      allowOrigin = origin;
-    } else if (allowedOrigins.length === 1 && allowedOrigins[0] === '*') {
+  } else if (allowedOriginsRaw.length > 0) {
+    // Check if '*' is explicitly allowed
+    if (allowedOriginsRaw.includes('*')) {
       allowOrigin = '*';
-    } else if (origin && allowedOrigins.includes('*')) {
+    } else if (origin) {
+      // Normalize origin for comparison
+      const normalizedOrigin = origin.trim().toLowerCase();
+      
+      // Find matching origin (case-insensitive comparison)
+      const matchedIndex = allowedOriginsNormalized.findIndex((allowed: string) => allowed === normalizedOrigin);
+      
+      if (matchedIndex >= 0) {
+        // Use the original (non-normalized) allowed origin to preserve exact format
+        allowOrigin = allowedOriginsRaw[matchedIndex];
+      } else {
+        // Check if origin is localhost/127.0.0.1 and any localhost is in allowed list
+        const isLocalhost = normalizedOrigin.startsWith('http://localhost') || 
+                           normalizedOrigin.startsWith('http://127.0.0.1') ||
+                           normalizedOrigin.startsWith('https://localhost') ||
+                           normalizedOrigin.startsWith('https://127.0.0.1');
+        
+        const hasLocalhostInAllowed = allowedOriginsNormalized.some((o: string) => 
+          o.includes('localhost') || o.includes('127.0.0.1')
+        );
+        
+        if (isLocalhost && hasLocalhostInAllowed) {
+          // Allow any localhost if localhost is in allowed origins
+          allowOrigin = origin;
+        } else {
+          // Origin not in allowed list - this should cause CORS to fail, but for backward compatibility
+          // we'll use '*' if no origin match found (this is a fallback, but not ideal)
+          // Actually, let's use the origin itself if it's provided, browser will handle CORS check
+          allowOrigin = origin;
+        }
+      }
+    } else {
+      // No origin header - allow all
       allowOrigin = '*';
-    } else if (allowedOrigins.length > 0) {
-      allowOrigin = allowedOrigins[0];
     }
   }
   

@@ -5,10 +5,30 @@ export const VERTEX_AI_PROMPTS = {
   MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`,
 
   // Default prompt for normal face-swap preset generation
-  PROMPT_GENERATION_DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
+  PROMPT_GENERATION_DEFAULT: `IMPORTANT: You MUST respond with VALID JSON only. No explanations, no markdown, no code blocks, no additional text. Start your response with { and end with }.
+
+Analyze the provided image and return a JSON object with exactly these 6 keys:
+- "prompt": A detailed HDR scene description (2-3 sentences) including pose, outfit, environment, lighting, and mood. MUST include this exact text: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching."
+- "style": One word (photorealistic, cinematic, artistic, etc.)
+- "lighting": One word (natural, studio, dramatic, soft, etc.)
+- "composition": One word (portrait, closeup, fullbody, etc.)
+- "camera": One word (professional, smartphone, dslr, etc.)
+- "background": One word (neutral, urban, nature, studio, etc.)
+
+The entire response must be valid JSON only. Example: {"prompt":"A beautiful woman...","style":"photorealistic","lighting":"natural","composition":"portrait","camera":"professional","background":"neutral"}`,
 
   // Filter mode prompt for art style analysis (when checkbox is checked)
-  PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender. Return a detailed JSON object with these keys: "prompt", "style", "lighting", "composition", "camera", "background". For "prompt", write a detailed scene description that captures the aesthetic. Include: character pose, outfit/costume, environment, atmosphere, and visual mood. The generated prompt must be fully compliant with Google Play Store content policies: no sexual, explicit, suggestive, or adult content. The JSON should fully describe the image following the style characteristics, without any extra commentary outside the JSON.`,
+  PROMPT_GENERATION_FILTER: `IMPORTANT: You MUST respond with VALID JSON only. No explanations, no markdown, no code blocks, no additional text. Start your response with { and end with }.
+
+Analyze the art and thematic styles of the provided image and return a JSON object with exactly these 6 keys:
+- "prompt": A detailed scene description that captures the art style aesthetic (2-3 sentences). Include: character pose, outfit/costume, environment, atmosphere, and visual mood. Do not specify gender. MUST include this exact text: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance."
+- "style": The specific art style (figurine, popmart, clay, disney, anime, cartoon, etc.)
+- "lighting": One word describing lighting style
+- "composition": One word describing composition
+- "camera": One word describing camera style
+- "background": One word describing background
+
+The entire response must be valid JSON only. No sexual, explicit, or inappropriate content. Example: {"prompt":"A stylized figurine character...","style":"popmart","lighting":"dramatic","composition":"closeup","camera":"artistic","background":"studio"}`,
 
   // Filter endpoint instruction - MUST be added to all filter prompts
   FILTER_SELFIE_PRESERVATION: 'Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
@@ -61,10 +81,10 @@ export const VERTEX_AI_CONFIG = {
 
   // Model Configuration
   MODELS: {
-    IMAGE_GENERATION: 'gemini-2.5-flash-image',
+    IMAGE_GENERATION: 'gemini-2.5-flash-preview',
     PROMPT_GENERATION: 'gemini-3-flash-preview',
     MAPPING: {
-      '2.5': 'gemini-2.5-flash-image',
+      '2.5': 'gemini-2.5-flash-preview',
       '3p': 'gemini-3-pro-image-preview',
       '3f': 'gemini-3-flash-preview',
       // Legacy support
@@ -240,7 +260,7 @@ export const MODEL_CONFIG = {
   IMAGE_GENERATION_MODEL: 'gemini-2.5-flash-image',
   PROMPT_GENERATION_MODEL: 'gemini-3-flash-preview',
   MODEL_MAPPING: {
-    '2.5': 'gemini-2.5-flash-image',
+    '2.5': 'gemini-2.5-flash-preview',
     '3p': 'gemini-3-pro-image-preview',
     '3f': 'gemini-3-flash-preview',
   },
