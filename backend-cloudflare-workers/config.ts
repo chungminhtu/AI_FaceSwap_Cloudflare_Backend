@@ -262,7 +262,7 @@ export const TIMEOUT_CONFIG = {
   DEFAULT_REQUEST: 25000,  // 25s - Cloudflare Workers have 30s limit
   OAUTH_TOKEN: 10000,      // 10s - OAuth should be fast
   IMAGE_FETCH: 15000,      // 15s - R2/CDN fetches should be quick
-  VERTEX_AI: 20000,        // 20s - Vertex AI prompt generation
+  VERTEX_AI: 60000,        // 60s - Vertex AI prompt generation (allow 20-50+ second responses)
   POLLING: {
     MAX_ATTEMPTS: 20,
     FIRST_DELAY: 8000,

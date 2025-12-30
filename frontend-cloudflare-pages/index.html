@@ -3303,27 +3303,23 @@
                 return;
             }
 
-            statusText.textContent = `Đang xử lý ${totalFiles} file (tuần tự để tránh timeout)...`;
+            statusText.textContent = `Đang xử lý ${totalFiles} file (song song để tối ưu tốc độ)...`;
             progressFill.style.width = '10%';
 
-            // Process files sequentially using single-file endpoint
+            // Process files in parallel using Promise.all() for optimal performance
             const results = [];
             let successful = 0;
             let failed = 0;
             let presetsProcessed = 0;
             let thumbnailsProcessed = 0;
             let presetsWithPrompts = 0;
-            
+
             const uploadUrl = `${WORKER_URL}/process-thumbnail-file`;
             const startTime = Date.now();
-            
+
             try {
-                for (let i = 0; i < allFiles.length; i++) {
-                    const { file, path } = allFiles[i];
-                    const progress = Math.floor(10 + (i / totalFiles) * 80);
-                    progressFill.style.width = `${progress}%`;
-                    statusText.textContent = `Đang xử lý file ${i + 1}/${totalFiles}: ${file.name}...`;
-                    
+                // Create an array of promises for parallel processing
+                const uploadPromises = allFiles.map(async ({ file, path }) => {
                     const formData = new FormData();
                     formData.append('file', file);
                     if (path) {
@@ -3332,54 +3328,69 @@
                     if (isFilterMode) {
                         formData.append('is_filter_mode', 'true');
                     }
-                    
+
                     try {
                         const response = await fetch(uploadUrl, {
                             method: 'POST',
                             headers: buildHeaders(),
                             body: formData
                         });
-                        
+
                         const data = await response.json();
-                        
+
                         if (data.status === 'success' && data.data.success) {
-                            successful++;
-                            results.push(data.data);
-                            
-                            if (data.data.type === 'preset') {
-                                presetsProcessed++;
-                                if (data.data.hasPrompt) {
-                                    presetsWithPrompts++;
-                                }
-                            } else if (data.data.type === 'thumbnail') {
-                                thumbnailsProcessed++;
-                            }
+                            return {
+                                success: true,
+                                data: data.data
+                            };
                         } else {
-                            failed++;
-                            results.push({
-                                filename: file.name,
+                            return {
                                 success: false,
+                                filename: file.name,
                                 error: data.message || data.data?.error || 'Unknown error'
-                            });
-                            console.warn(`Failed to process ${file.name}:`, data);
+                            };
                         }
                     } catch (fileError) {
+                        return {
+                            success: false,
+                            filename: file.name,
+                            error: fileError.message || 'Network error'
+                        };
+                    }
+                });
+
+                // Process all files in parallel
+                const uploadResults = await Promise.all(uploadPromises);
+
+                // Process results
+                uploadResults.forEach(result => {
+                    if (result.success) {
+                        successful++;
+                        results.push(result.data);
+
+                        if (result.data.type === 'preset') {
+                            presetsProcessed++;
+                            if (result.data.hasPrompt) {
+                                presetsWithPrompts++;
+                            }
+                        } else if (result.data.type === 'thumbnail') {
+                            thumbnailsProcessed++;
+                        }
+                    } else {
                         failed++;
                         results.push({
-                            filename: file.name,
+                            filename: result.filename,
                             success: false,
-                            error: fileError.message || 'Network error'
+                            error: result.error
                         });
-                        console.error(`Error processing ${file.name}:`, fileError);
+                        console.warn(`Failed to process ${result.filename}:`, result.error);
                     }
-                    
-                    // Small delay between requests to avoid overwhelming the server
-                    if (i < allFiles.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                }
+                });
                 
                 const duration = Date.now() - startTime;
+                progressFill.style.width = '90%';
+                statusText.textContent = `Hoàn thành xử lý song song, đang tổng hợp kết quả...`;
+                await new Promise(resolve => setTimeout(resolve, 200)); // Brief pause for UX
                 progressFill.style.width = '100%';
                 
                 // Log API call summary

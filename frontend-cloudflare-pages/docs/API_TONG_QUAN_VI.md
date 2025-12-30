@@ -1781,6 +1781,188 @@ curl https://api.d.shotpix.app/thumbnails/preset_1234567890_abc123/preset
 
 ---
 
+#### 4.10. Thumbnail URL Rules - Quy tắc URL Thumbnail
+
+**Mục đích:** Tài liệu chi tiết về cấu trúc URL và quy tắc đặt tên cho thumbnails trong hệ thống.
+
+**Cấu trúc URL Thumbnail:**
+
+Thumbnails được lưu trữ trong R2 bucket với cấu trúc path như sau:
+
+```
+preset_thumb/{folderType}_{resolution}/{presetId}.{ext}
+```
+
+**Format URL đầy đủ:**
+
+```
+https://resources.d.shotpix.app/{bucket-name}/preset_thumb/{folderType}_{resolution}/{presetId}.{ext}
+```
+
+**Ví dụ:**
+
+```
+https://resources.d.shotpix.app/faceswap-images-office-dev/preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json
+https://resources.d.shotpix.app/faceswap-images-office-dev/preset_thumb/lottie_avif_2x/fs_wonder_f_3.json
+https://resources.d.shotpix.app/faceswap-images-office-dev/preset_thumb/webp_4x/preset_1234567890_abc123.webp
+```
+
+**Folder Types (Loại thư mục):**
+
+| Folder Type | Mô tả | Extension | Content Type |
+|-------------|-------|-----------|--------------|
+| `webp` | WebP image format | `.webp` | `image/webp` |
+| `lottie` | Lottie animation JSON | `.json` | `application/json` |
+| `lottie_avif` | Lottie animation với AVIF optimization | `.json` | `application/json` |
+
+**Resolutions (Độ phân giải):**
+
+| Resolution | Mô tả | Use Case |
+|------------|-------|----------|
+| `1x` | Base resolution | Standard displays |
+| `1.5x` | 1.5x resolution | Retina displays (1.5x) |
+| `2x` | 2x resolution | Retina displays (2x) |
+| `3x` | 3x resolution | High-DPI displays (3x) |
+| `4x` | 4x resolution | Ultra high-DPI displays (4x) |
+
+**Folder Naming Convention (Quy tắc đặt tên thư mục):**
+
+Format: `{folderType}_{resolution}`
+
+**Tất cả các folder types và resolutions được hỗ trợ:**
+
+- `webp_1x`, `webp_1.5x`, `webp_2x`, `webp_3x`, `webp_4x`
+- `lottie_1x`, `lottie_1.5x`, `lottie_2x`, `lottie_3x`, `lottie_4x`
+- `lottie_avif_1x`, `lottie_avif_1.5x`, `lottie_avif_2x`, `lottie_avif_3x`, `lottie_avif_4x`
+
+**Tổng cộng: 15 folder types × resolutions**
+
+**File Naming Convention (Quy tắc đặt tên file):**
+
+Format: `{presetId}.{ext}`
+
+- `presetId`: ID của preset (ví dụ: `fs_frosted_window_portrait_f_4`, `preset_1234567890_abc123`)
+- `ext`: Extension dựa trên folder type:
+  - `webp` → `.webp`
+  - `lottie` → `.json`
+  - `lottie_avif` → `.json`
+
+**Ví dụ file names:**
+
+- `fs_frosted_window_portrait_f_4.json` (lottie thumbnail)
+- `fs_wonder_f_3.webp` (webp thumbnail)
+- `preset_1234567890_abc123.json` (lottie_avif thumbnail)
+
+**Database Storage (Lưu trữ trong Database):**
+
+Thumbnails được lưu trong bảng `presets` với trường `thumbnail_r2` dạng JSON:
+
+```json
+{
+  "webp_1x": "preset_thumb/webp_1x/fs_frosted_window_portrait_f_4.webp",
+  "webp_1.5x": "preset_thumb/webp_1.5x/fs_frosted_window_portrait_f_4.webp",
+  "webp_2x": "preset_thumb/webp_2x/fs_frosted_window_portrait_f_4.webp",
+  "webp_3x": "preset_thumb/webp_3x/fs_frosted_window_portrait_f_4.webp",
+  "webp_4x": "preset_thumb/webp_4x/fs_frosted_window_portrait_f_4.webp",
+  "lottie_1x": "preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json",
+  "lottie_1.5x": "preset_thumb/lottie_1.5x/fs_frosted_window_portrait_f_4.json",
+  "lottie_2x": "preset_thumb/lottie_2x/fs_frosted_window_portrait_f_4.json",
+  "lottie_3x": "preset_thumb/lottie_3x/fs_frosted_window_portrait_f_4.json",
+  "lottie_4x": "preset_thumb/lottie_4x/fs_frosted_window_portrait_f_4.json",
+  "lottie_avif_1x": "preset_thumb/lottie_avif_1x/fs_frosted_window_portrait_f_4.json",
+  "lottie_avif_1.5x": "preset_thumb/lottie_avif_1.5x/fs_frosted_window_portrait_f_4.json",
+  "lottie_avif_2x": "preset_thumb/lottie_avif_2x/fs_frosted_window_portrait_f_4.json",
+  "lottie_avif_3x": "preset_thumb/lottie_avif_3x/fs_frosted_window_portrait_f_4.json",
+  "lottie_avif_4x": "preset_thumb/lottie_avif_4x/fs_frosted_window_portrait_f_4.json"
+}
+```
+
+**Key trong JSON = `{folderType}_{resolution}`**
+**Value trong JSON = R2 key (full path từ root)**
+
+**Cách xây dựng URL từ R2 key:**
+
+1. Lấy R2 key từ database: `preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json`
+2. Kết hợp với R2 public domain: `https://resources.d.shotpix.app/{bucket-name}/{r2Key}`
+3. Kết quả: `https://resources.d.shotpix.app/faceswap-images-office-dev/preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json`
+
+**Lưu ý quan trọng:**
+
+1. **Không có duplicate folders:** URL không bao giờ có dạng `preset_thumb/lottie_1x/lottie_1x/` (folder name bị lặp). Format đúng là `preset_thumb/lottie_1x/{presetId}.json`.
+
+2. **Preset ID extraction:** Preset ID được extract từ filename (basename), không bao gồm path. Ví dụ:
+   - File: `lottie_1x/fs_frosted_window_portrait_f_4.json`
+   - Preset ID: `fs_frosted_window_portrait_f_4` (không phải `lottie_1x/fs_frosted_window_portrait_f_4`)
+
+3. **Bucket name:** Bucket name khác nhau theo environment:
+   - Development: `faceswap-images-office-dev`
+   - Production: `faceswap-images-office-prod`
+   - Default: `faceswap-images-office`
+
+4. **R2 Public Domain:** Luôn sử dụng `https://resources.d.shotpix.app` cho public URLs.
+
+5. **Cache Control:** Tất cả thumbnails có cache control header: `public, max-age=31536000, immutable` (1 năm).
+
+**Ví dụ sử dụng trong code:**
+
+**JavaScript/TypeScript:**
+```javascript
+// Lấy thumbnail URL từ database response
+const preset = {
+  id: "fs_frosted_window_portrait_f_4",
+  thumbnail_r2: '{"lottie_1x":"preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json"}'
+};
+
+const thumbnailData = JSON.parse(preset.thumbnail_r2);
+const r2Key = thumbnailData['lottie_1x']; // "preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json"
+const bucketName = "faceswap-images-office-dev";
+const publicUrl = `https://resources.d.shotpix.app/${bucketName}/${r2Key}`;
+// Result: https://resources.d.shotpix.app/faceswap-images-office-dev/preset_thumb/lottie_1x/fs_frosted_window_portrait_f_4.json
+```
+
+**Mobile App (Swift/Kotlin):**
+```swift
+// Swift example
+let thumbnailData = try JSONDecoder().decode([String: String].self, from: preset.thumbnailR2.data(using: .utf8)!)
+if let r2Key = thumbnailData["lottie_1x"] {
+    let bucketName = "faceswap-images-office-dev"
+    let publicUrl = "https://resources.d.shotpix.app/\(bucketName)/\(r2Key)"
+    // Use publicUrl to load thumbnail
+}
+```
+
+**Best Practices:**
+
+1. **Fallback resolution:** Luôn có fallback khi resolution không tồn tại:
+   ```javascript
+   const thumbnailUrl = 
+     thumbnailData['lottie_4x'] || 
+     thumbnailData['lottie_3x'] || 
+     thumbnailData['lottie_2x'] || 
+     thumbnailData['lottie_1x'] || 
+     thumbnailData['webp_4x'] || 
+     thumbnailData['webp_1x'];
+   ```
+
+2. **Format preference:** Ưu tiên format theo thứ tự:
+   - Lottie AVIF (tối ưu nhất cho animation)
+   - Lottie (standard animation)
+   - WebP (static image fallback)
+
+3. **Resolution selection:** Chọn resolution dựa trên device pixel ratio:
+   - 1x devices: `1x` hoặc `1.5x`
+   - 2x devices (Retina): `2x` hoặc `3x`
+   - 3x+ devices (Super Retina): `3x` hoặc `4x`
+
+4. **Error handling:** Luôn kiểm tra URL tồn tại trước khi sử dụng:
+   ```javascript
+   if (thumbnailUrl && thumbnailUrl.startsWith('https://')) {
+     // Safe to use
+   }
+   ```
+
+---
+
 ### 5. Hệ thống & Cấu hình
 
 #### 5.1. GET `/config` - Lấy config
