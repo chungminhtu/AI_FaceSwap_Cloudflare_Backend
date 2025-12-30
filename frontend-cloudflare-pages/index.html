@@ -145,7 +145,7 @@
         /* Left Sidebar - Galleries */
         .sidebar-column {
             display: flex; flex-direction: column; gap: 12px;
-            max-height: calc(100vh - 120px); overflow-y: auto;
+            max-height: calc(100vh - 120px); /* Removed overflow-y: auto to prevent scrolling in preset/selfie galleries */
         }
         .sidebar-column::-webkit-scrollbar { width: 4px; }
         .sidebar-column::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
@@ -287,7 +287,7 @@
         .results-count { font-weight: 400; color: var(--text-muted); }
         .results-grid {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;
-            max-height: 300px; overflow-y: auto;
+            /* Removed max-height and overflow-y to allow auto height like preset/selfie galleries */
         }
 
         /* Log Panel - Right Sidebar */
@@ -808,7 +808,7 @@
                 <div class="sidebar-section">
                     <div class="sidebar-header">
                         <div class="gallery-title-row">
-                            <span>Mẫu (Presets)</span>
+                            <span id="preset-title">Mẫu (Presets)</span>
                         </div>
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
                         <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
@@ -1802,6 +1802,31 @@
                     return normalized;
                 });
                 config.state.page = 1;
+
+                // Update preset counter in header
+                if (type === 'preset') {
+                    const presetTitle = $('preset-title');
+                    if (presetTitle) {
+                        const items = config.state.items;
+                        let lottieCount = 0;
+                        let webpCount = 0;
+
+                        items.forEach(item => {
+                            // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
+                            const hasLottie = item.thumbnail_url_4x_lottie ||
+                                (item.image_url && (item.image_url.toLowerCase().endsWith('.json') ||
+                                                   item.image_url.toLowerCase().includes('lottie')));
+                            if (hasLottie) {
+                                lottieCount++;
+                            } else {
+                                webpCount++;
+                            }
+                        });
+
+                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp`;
+                    }
+                }
+
                 renderGallery(type);
             } catch (error) {
                 // Only log error if it wasn't already logged (e.g., network errors, JSON parse errors)
@@ -2127,6 +2152,31 @@
                 } else if (config.state.selected?.id === itemId) {
                     config.state.selected = null;
                 }
+
+                // Update preset counter after deletion
+                if (type === 'preset') {
+                    const presetTitle = $('preset-title');
+                    if (presetTitle) {
+                        const items = config.state.items;
+                        let lottieCount = 0;
+                        let webpCount = 0;
+
+                        items.forEach(item => {
+                            // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
+                            const hasLottie = item.thumbnail_url_4x_lottie ||
+                                (item.image_url && (item.image_url.toLowerCase().endsWith('.json') ||
+                                                   item.image_url.toLowerCase().includes('lottie')));
+                            if (hasLottie) {
+                                lottieCount++;
+                            } else {
+                                webpCount++;
+                            }
+                        });
+
+                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp`;
+                    }
+                }
+
                 updatePreview(type);
                 renderGallery(type);
                 updateGenerateButton();
