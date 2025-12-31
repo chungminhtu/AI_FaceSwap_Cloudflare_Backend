@@ -1982,19 +1982,31 @@ export default {
                 // Use the 4x lottie as the primary thumbnail URL
                 thumbnailUrl = getR2PublicUrl(env, thumbnailData['lottie_4x'], requestUrl.origin);
               } else {
-                // Generate all WebP resolutions
-                const webpResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+                // Generate all WebP and AVIF resolutions
+                const allResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
 
                 // Upload PNG to all WebP resolution paths
-                for (const res of webpResolutions) {
-                  const thumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
-                  await R2_BUCKET.put(thumbnailR2Key, fileData, {
+                for (const res of allResolutions) {
+                  const webpThumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
+                  await R2_BUCKET.put(webpThumbnailR2Key, fileData, {
                     httpMetadata: {
                       contentType: 'image/png', // Store as PNG (will work as thumbnail)
                       cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
                     },
                   });
-                  thumbnailData[`webp_${res}`] = thumbnailR2Key;
+                  thumbnailData[`webp_${res}`] = webpThumbnailR2Key;
+                }
+
+                // Upload PNG to all AVIF resolution paths
+                for (const res of allResolutions) {
+                  const avifThumbnailR2Key = `preset_thumb/avif_${res}/${presetId}.avif`;
+                  await R2_BUCKET.put(avifThumbnailR2Key, fileData, {
+                    httpMetadata: {
+                      contentType: 'image/png', // Store as PNG (will work as thumbnail)
+                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                    },
+                  });
+                  thumbnailData[`avif_${res}`] = avifThumbnailR2Key;
                 }
 
                 // Use the 4x webp as the primary thumbnail URL
@@ -2218,19 +2230,31 @@ export default {
             // Use the 4x lottie as the primary thumbnail URL
             thumbnailUrl = getR2PublicUrl(env, thumbnailData['lottie_4x'], requestUrl.origin);
           } else {
-            // Generate all WebP resolutions
-            const webpResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
+            // Generate all WebP and AVIF resolutions
+            const allResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
 
             // Upload PNG to all WebP resolution paths
-            for (const res of webpResolutions) {
-              const thumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
-              await R2_BUCKET.put(thumbnailR2Key, fileData, {
+            for (const res of allResolutions) {
+              const webpThumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
+              await R2_BUCKET.put(webpThumbnailR2Key, fileData, {
                 httpMetadata: {
                   contentType: 'image/png', // Store as PNG (will work as thumbnail)
                   cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
                 },
               });
-              thumbnailData[`webp_${res}`] = thumbnailR2Key;
+              thumbnailData[`webp_${res}`] = webpThumbnailR2Key;
+            }
+
+            // Upload PNG to all AVIF resolution paths
+            for (const res of allResolutions) {
+              const avifThumbnailR2Key = `preset_thumb/avif_${res}/${presetId}.avif`;
+              await R2_BUCKET.put(avifThumbnailR2Key, fileData, {
+                httpMetadata: {
+                  contentType: 'image/png', // Store as PNG (will work as thumbnail)
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+              });
+              thumbnailData[`avif_${res}`] = avifThumbnailR2Key;
             }
 
             // Use the 4x webp as the primary thumbnail URL

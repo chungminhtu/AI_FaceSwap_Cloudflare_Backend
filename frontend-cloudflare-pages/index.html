@@ -1810,20 +1810,20 @@
                         const items = config.state.items;
                         let lottieCount = 0;
                         let webpCount = 0;
+                        let avifCount = 0;
 
                         items.forEach(item => {
-                            // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
-                            const hasLottie = item.thumbnail_url_4x_lottie ||
-                                (item.image_url && (item.image_url.toLowerCase().endsWith('.json') ||
-                                                   item.image_url.toLowerCase().includes('lottie')));
-                            if (hasLottie) {
+                            // Check preset type based on available thumbnail formats
+                            if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
+                            } else if (item.avif_4x) {
+                                avifCount++;
                             } else {
                                 webpCount++;
                             }
                         });
 
-                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp`;
+                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
                     }
                 }
 
@@ -1893,11 +1893,21 @@
                         ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
                         : `<img src="${imageUrl}" alt="" loading="lazy">`;
                     
-                    return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
-                        ${mediaElement}
-                        ${actionBadge}
-                        <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
-                    </div>`;
+                    if (type === 'preset') {
+                        // For presets, open lightbox first, then allow selection from lightbox
+                        return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="openPresetLightbox('${item.id}')" data-item-id="${item.id}">
+                            ${mediaElement}
+                            ${actionBadge}
+                            <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
+                        </div>`;
+                    } else {
+                        // For selfies and results, use existing selection logic
+                        return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
+                            ${mediaElement}
+                            ${actionBadge}
+                            <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
+                        </div>`;
+                    }
                 }).join('');
             }
 
@@ -2160,20 +2170,20 @@
                         const items = config.state.items;
                         let lottieCount = 0;
                         let webpCount = 0;
+                        let avifCount = 0;
 
                         items.forEach(item => {
-                            // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
-                            const hasLottie = item.thumbnail_url_4x_lottie ||
-                                (item.image_url && (item.image_url.toLowerCase().endsWith('.json') ||
-                                                   item.image_url.toLowerCase().includes('lottie')));
-                            if (hasLottie) {
+                            // Check preset type based on available thumbnail formats
+                            if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
+                            } else if (item.avif_4x) {
+                                avifCount++;
                             } else {
                                 webpCount++;
                             }
                         });
 
-                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp`;
+                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
                     }
                 }
 
@@ -2718,6 +2728,24 @@
             }
         }
 
+        function openPresetLightbox(presetId) {
+            const preset = galleries.preset.state.items.find(item => item.id === presetId);
+            if (!preset) return;
+
+            lightboxMode = 'preset-preview';
+            lightboxItems = [{
+                type: 'preset',
+                id: preset.id,
+                image_url: preset.image_url,
+                thumbnail_url_4x_lottie: preset.thumbnail_url_4x_lottie,
+                label: `Preset: ${preset.id}`
+            }];
+
+            lightboxCurrentIndex = 0;
+            updateLightbox();
+            setupLightboxKeyboard();
+        }
+
         function openPreviewLightbox(startType, selfieIndex) {
             lightboxMode = 'preview';
             lightboxItems = [];
@@ -2826,10 +2854,25 @@
             const item = lightboxItems[lightboxCurrentIndex];
             const imageUrl = item.result_url || item.image_url || '';
             
-            if (lightboxMode === 'preview') {
-                img.src = item.image_url || '';
+            if (lightboxMode === 'preview' || lightboxMode === 'preset-preview') {
+                // Handle Lottie animations for presets
+                if (lightboxMode === 'preset-preview' && item.thumbnail_url_4x_lottie) {
+                    // For Lottie presets, show Lottie player instead of img
+                    const lottieContainer = document.createElement('div');
+                    lottieContainer.innerHTML = `<lottie-player src="${item.thumbnail_url_4x_lottie}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
+                    const content = $('lightbox-content');
+                    const single = $('lightbox-single');
+                    single.innerHTML = '';
+                    single.appendChild(lottieContainer);
+                    const info = document.createElement('div');
+                    info.className = 'lightbox-info';
+                    info.innerHTML = `<span id="lightbox-counter">${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})</span>`;
+                    single.appendChild(info);
+                } else {
+                    img.src = item.image_url || '';
+                }
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
-                if (actions) actions.style.display = item.type === 'result' ? 'flex' : 'flex';
+                if (actions) actions.style.display = 'flex';
             } else {
                 img.src = imageUrl;
                 if (counter) counter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
@@ -3076,6 +3119,19 @@
         async function selectAsPreset() {
             if (lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
             const item = lightboxItems[lightboxCurrentIndex];
+
+            if (lightboxMode === 'preset-preview' && item.id) {
+                // For preset-preview mode, find and select the actual preset
+                const preset = galleries.preset.state.items.find(p => p.id === item.id);
+                if (preset) {
+                    setSelectedItem('preset', preset, { showMessage: true });
+                    showStatusMessage('Đã chọn làm mẫu thành công!', 'success');
+                    closeLightbox();
+                    return;
+                }
+            }
+
+            // Fallback for other modes (results, etc.)
             const imageUrl = item.result_url || item.image_url || '';
             if (!imageUrl) {
                 showStatusMessage('Không tìm thấy URL hình ảnh', 'error');
