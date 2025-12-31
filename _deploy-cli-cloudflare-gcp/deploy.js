@@ -2497,7 +2497,7 @@ async function deploySingleEnvironmentAsChild(envName, cwd, flags = {}) {
   }
 }
 
-async function deployMultipleEnvironments(envNames, cwd, flags = {}) {
+async function deployMultipleEnvironments(envNames, cwd, flags = {}, args = []) {
   const secretsPath = path.join(cwd, '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
   if (!fs.existsSync(secretsPath)) {
     throw new Error('deployments-secrets.json not found');
@@ -3157,7 +3157,7 @@ async function main() {
     };
     
     try {
-      const result = await deployMultipleEnvironments(envsToDeploy, process.cwd(), flags);
+      const result = await deployMultipleEnvironments(envsToDeploy, process.cwd(), flags, args);
       
       // Run tests after successful deployment (skip if --skip-tests flag is set or if already in test mode)
       if (result.success && !args.includes('--skip-tests') && !process.env.SKIP_POST_DEPLOY_TESTS) {

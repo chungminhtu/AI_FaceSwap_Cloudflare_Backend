@@ -3508,6 +3508,7 @@ export default {
 
     // Get thumbnails - query presets table where any thumbnail column IS NOT NULL
     if (path === '/thumbnails' && request.method === 'GET') {
+      const debugEnabled = isDebugEnabled(env);
       try {
         const DB = getD1Database(env);
         
@@ -3516,7 +3517,7 @@ export default {
           thumbnail_r2,
           created_at
         FROM presets
-        WHERE thumbnail_r2 IS NOT NULL AND thumbnail_r2 != '{}'`;
+        WHERE thumbnail_r2 IS NOT NULL`;
         const bindings: any[] = [];
 
         query += ' ORDER BY created_at DESC';
@@ -3563,7 +3564,6 @@ export default {
           return response;
         });
           
-        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { thumbnails },
           status: 'success',
@@ -3572,7 +3572,6 @@ export default {
           ...(debugEnabled ? { debug: { count: thumbnails.length } } : {})
         }, 200, request, env);
       } catch (error) {
-        const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
       }

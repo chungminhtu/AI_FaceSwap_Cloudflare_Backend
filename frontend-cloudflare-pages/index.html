@@ -1816,7 +1816,7 @@
                             // Check preset type based on available thumbnail formats
                             if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
-                            } else if (item.avif_4x) {
+                            } else if (item.thumbnail_url_4x_lottie_avif) {
                                 avifCount++;
                             } else {
                                 webpCount++;
@@ -2176,7 +2176,7 @@
                             // Check preset type based on available thumbnail formats
                             if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
-                            } else if (item.avif_4x) {
+                            } else if (item.thumbnail_url_4x_lottie_avif) {
                                 avifCount++;
                             } else {
                                 webpCount++;
@@ -2729,19 +2729,30 @@
         }
 
         function openPresetLightbox(presetId) {
-            const preset = galleries.preset.state.items.find(item => item.id === presetId);
-            if (!preset) return;
+            const allPresets = galleries.preset.state.items;
+            if (!allPresets || allPresets.length === 0) return;
+
+            const clickedPreset = allPresets.find(item => item.id === presetId);
+            if (!clickedPreset) return;
 
             lightboxMode = 'preset-preview';
-            lightboxItems = [{
+            
+            // Map all presets to lightboxItems with all thumbnail formats
+            lightboxItems = allPresets.map(preset => ({
                 type: 'preset',
-                id: preset.id,
-                image_url: preset.image_url,
+                id: preset.id || preset.preset_id,
+                preset_id: preset.preset_id || preset.id,
+                image_url: preset.thumbnail_url_4x || preset.thumbnail_url_4x_lottie_avif || preset.thumbnail_url_4x_lottie || preset.image_url,
+                thumbnail_url_4x: preset.thumbnail_url_4x,
                 thumbnail_url_4x_lottie: preset.thumbnail_url_4x_lottie,
-                label: `Preset: ${preset.id}`
-            }];
+                thumbnail_url_4x_lottie_avif: preset.thumbnail_url_4x_lottie_avif,
+                label: `Preset: ${preset.id || preset.preset_id}`
+            }));
 
-            lightboxCurrentIndex = 0;
+            // Find the index of the clicked preset
+            lightboxCurrentIndex = lightboxItems.findIndex(item => item.id === presetId);
+            if (lightboxCurrentIndex < 0) lightboxCurrentIndex = 0;
+
             updateLightbox();
             setupLightboxKeyboard();
         }
@@ -2855,11 +2866,12 @@
             const imageUrl = item.result_url || item.image_url || '';
             
             if (lightboxMode === 'preview' || lightboxMode === 'preset-preview') {
-                // Handle Lottie animations for presets
-                if (lightboxMode === 'preset-preview' && item.thumbnail_url_4x_lottie) {
+                // Handle Lottie animations for presets (both regular Lottie and AVIF Lottie)
+                if (lightboxMode === 'preset-preview' && (item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif)) {
                     // For Lottie presets, show Lottie player instead of img
+                    const lottieUrl = item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif;
                     const lottieContainer = document.createElement('div');
-                    lottieContainer.innerHTML = `<lottie-player src="${item.thumbnail_url_4x_lottie}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
+                    lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
                     const content = $('lightbox-content');
                     const single = $('lightbox-single');
                     single.innerHTML = '';
