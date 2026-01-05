@@ -356,7 +356,11 @@ const saveResultToDatabase = async (
     }
     
     // Get max history limit (default 10)
-    const maxHistory = parseInt(env.RESULT_MAX_HISTORY || '10', 10);
+    let maxHistory = parseInt(env.RESULT_MAX_HISTORY || '10', 10);
+    if (isNaN(maxHistory) || maxHistory < 1) {
+      maxHistory = 10; // Default to 10 if invalid
+    }
+    maxHistory = Math.floor(Math.max(1, maxHistory)); // Ensure it's a positive integer
     
     // Check current count of results for this profile
     const countResult = await DB.prepare(
@@ -367,7 +371,7 @@ const saveResultToDatabase = async (
     
     // If we're at or over the limit, delete oldest results
     if (currentCount >= maxHistory) {
-      const excessCount = currentCount - maxHistory + 1; // +1 because we're about to add one
+      const excessCount = Math.floor(Math.max(1, currentCount - maxHistory + 1)); // +1 because we're about to add one, ensure positive integer
       
       // Get oldest results to delete
       const oldResults = await DB.prepare(
@@ -1229,6 +1233,12 @@ export default {
               queryBindings = [profileId, actionValue];
             }
 
+            // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
+            if (isNaN(maxCount) || maxCount < 1) {
+              maxCount = 1; // Default to 1 if invalid
+            }
+            maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
+
             // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
             const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
             const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
@@ -1301,13 +1311,13 @@ export default {
             }
             
             // Explicitly bind with correct types - ensure all are primitive types
-            // Log values for debugging (in production, remove or make conditional)
-            const bindValues = [
-              String(validId),           // id: TEXT
-              String(validExt),          // ext: TEXT NOT NULL
-              String(validProfileId),    // profile_id: TEXT NOT NULL
-              String(validAction),       // action: TEXT (nullable)
-              Number(validCreatedAt)     // created_at: INTEGER NOT NULL
+            // SQLite INTEGER must be a whole number, not a float
+            const bindValues: [string, string, string, string, number] = [
+              validId,                    // id: TEXT (already string)
+              validExt,                   // ext: TEXT NOT NULL (already string)
+              validProfileId,             // profile_id: TEXT NOT NULL (already string)
+              validAction,                // action: TEXT (already string)
+              Math.floor(validCreatedAt)  // created_at: INTEGER NOT NULL (must be integer, not float)
             ];
             
             // Validate all bind values are correct types
@@ -1323,8 +1333,8 @@ export default {
             if (typeof bindValues[3] !== 'string') {
               throw new Error(`Invalid action type: ${typeof bindValues[3]}, value: ${bindValues[3]}`);
             }
-            if (typeof bindValues[4] !== 'number' || isNaN(bindValues[4])) {
-              throw new Error(`Invalid created_at type: ${typeof bindValues[4]}, value: ${bindValues[4]}`);
+            if (typeof bindValues[4] !== 'number' || isNaN(bindValues[4]) || !Number.isInteger(bindValues[4])) {
+              throw new Error(`Invalid created_at type: ${typeof bindValues[4]}, value: ${bindValues[4]}, isInteger: ${Number.isInteger(bindValues[4])}`);
             }
             
             try {
@@ -3743,39 +3753,48 @@ export default {
       };
 
       try {
-        const body: FaceSwapRequest = await request.json();
+        let body: FaceSwapRequest;
+        try {
+          body = await request.json();
+        } catch (jsonError) {
+          const errorMsg = jsonError instanceof Error ? jsonError.message : String(jsonError);
+          return errorResponse('', 400, debugEnabled ? { error: `Invalid JSON in request body: ${errorMsg}`, path } : undefined, request, env);
+        }
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse('', 500, undefined, request, env);
+        if (envError) return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
 
         const requestError = validateRequest(body);
-        if (requestError) return errorResponse('', 400, undefined, request, env);
+        if (requestError) {
+          console.error('[Faceswap] Validation error:', requestError, { preset_image_id: body.preset_image_id, profile_id: body.profile_id, selfie_ids: body.selfie_ids });
+          return errorResponse('', 400, debugEnabled ? { error: requestError, path, body: { preset_image_id: body.preset_image_id, profile_id: body.profile_id, selfie_ids: body.selfie_ids } } : undefined, request, env);
+        }
 
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
         
         if (!hasSelfieIds && !hasSelfieUrls) {
-          return errorResponse('', 400, undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { error: 'Missing selfie_ids or selfie_image_urls (must be a non-empty array)', path, body: { selfie_ids: body.selfie_ids, selfie_image_urls: body.selfie_image_urls } } : undefined, request, env);
         }
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
 
         if (!hasPresetId && !hasPresetUrl) {
-          return errorResponse('', 400, undefined, request, env);
+          return errorResponse('', 400, debugEnabled ? { error: 'Missing preset_image_id or preset_image_url', path, body: { preset_image_id: body.preset_image_id, preset_image_url: body.preset_image_url } } : undefined, request, env);
         }
         
         if (hasSelfieUrls && body.selfie_image_urls) {
           for (const url of body.selfie_image_urls) {
             if (!validateImageUrl(url, env)) {
-              return errorResponse('', 400, undefined, request, env);
+              return errorResponse('', 400, debugEnabled ? { error: `Invalid selfie image URL: ${url}`, path, url } : undefined, request, env);
             }
           }
         }
         
         if (hasPresetUrl && body.preset_image_url) {
           if (!validateImageUrl(body.preset_image_url, env)) {
-            return errorResponse('', 400, undefined, request, env);
+            return errorResponse('', 400, debugEnabled ? { error: `Invalid preset image URL: ${body.preset_image_url}`, path, url: body.preset_image_url } : undefined, request, env);
           }
         }
 

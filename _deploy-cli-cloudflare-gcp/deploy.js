@@ -641,6 +641,16 @@ function logWarn(message, envName = null) {
   }
 }
 
+function logCriticalError(message) {
+  const border = `${colors.bright}${colors.red}${'═'.repeat(80)}${colors.reset}`;
+  const critical = `${colors.bright}${colors.red}${colors.bgRed}${colors.white} ⚠ CRITICAL CONFIGURATION ERROR - DEPLOYMENT ABORTED ⚠ ${colors.reset}`;
+  console.error('\n' + border);
+  console.error(critical);
+  console.error(border);
+  console.error(`${colors.bright}${colors.red}${message}${colors.reset}`);
+  console.error(border + '\n');
+}
+
 function validateEnvironmentConfig(config, expectedEnvName) {
   if (!config) {
     throw new Error(`Environment validation failed: Config is null or undefined. Deployment ABORTED to prevent cross-environment deployment.`);
@@ -788,19 +798,40 @@ async function loadConfig() {
 
   try {
     const content = fs.readFileSync(secretsPath, 'utf8');
-    let config = parseConfig(JSON.parse(content));
+    let parsedContent;
+    try {
+      parsedContent = JSON.parse(content);
+    } catch (parseError) {
+      const errorMessage = `Invalid JSON in deployments-secrets.json: ${parseError.message}`;
+      logCriticalError(errorMessage);
+      process.exit(1);
+    }
+    
+    let config = parseConfig(parsedContent);
 
     if (config._needsCloudflareSetup) {
       logWarn('Cloudflare credentials missing, setting up...');
       await setupCloudflare(config._environment);
       const newContent = fs.readFileSync(secretsPath, 'utf8');
-      config = parseConfig(JSON.parse(newContent));
+      try {
+        parsedContent = JSON.parse(newContent);
+      } catch (parseError) {
+        const errorMessage = `Invalid JSON in deployments-secrets.json after Cloudflare setup: ${parseError.message}`;
+        logCriticalError(errorMessage);
+        process.exit(1);
+      }
+      config = parseConfig(parsedContent);
       logSuccess('Cloudflare credentials configured');
     }
 
     return config;
   } catch (error) {
-    logError(`Config error: ${error.message}`);
+    // If it's already a critical error, it was already displayed
+    if (error.message && (error.message.includes('Invalid numeric') || error.message.includes('Invalid rateLimiter'))) {
+      // Error already displayed by logCriticalError
+    } else {
+      logCriticalError(`Configuration validation failed: ${error.message}`);
+    }
     process.exit(1);
   }
 }
@@ -821,6 +852,53 @@ function parseConfig(config) {
 
   const missing = required.filter(field => !config[field]);
   if (missing.length) throw new Error(`Missing fields: ${missing.join(', ')}`);
+
+  // Strict validation for numeric configuration values
+  const numericFields = {
+    RESULT_MAX_HISTORY: { min: 1, max: 10000, default: 10 },
+    SELFIE_MAX_FACESWAP: { min: 1, max: 1000, default: 5 },
+    SELFIE_MAX_WEDDING: { min: 1, max: 1000, default: 2 },
+    SELFIE_MAX_4K: { min: 1, max: 1000, default: 1 },
+    SELFIE_MAX_OTHER: { min: 1, max: 1000, default: 1 }
+  };
+
+  const numericValidationErrors = [];
+  for (const [fieldName, constraints] of Object.entries(numericFields)) {
+    if (config[fieldName] !== undefined && config[fieldName] !== null) {
+      const value = String(config[fieldName]).trim();
+      const numValue = Number(value);
+      
+      // Check if it's a valid number
+      if (value === '' || isNaN(numValue) || !isFinite(numValue)) {
+        numericValidationErrors.push(`${fieldName}: "${config[fieldName]}" is not a valid number`);
+        continue;
+      }
+      
+      // Check if it's an integer
+      if (!Number.isInteger(numValue)) {
+        numericValidationErrors.push(`${fieldName}: "${config[fieldName]}" must be an integer (whole number)`);
+        continue;
+      }
+      
+      // Check if it's within valid range
+      if (numValue < constraints.min || numValue > constraints.max) {
+        numericValidationErrors.push(`${fieldName}: "${config[fieldName]}" must be between ${constraints.min} and ${constraints.max}`);
+        continue;
+      }
+      
+      // Check if it's positive
+      if (numValue <= 0) {
+        numericValidationErrors.push(`${fieldName}: "${config[fieldName]}" must be a positive number (greater than 0)`);
+        continue;
+      }
+    }
+  }
+
+  if (numericValidationErrors.length > 0) {
+    const errorMessage = `Invalid numeric configuration values in deployments-secrets.json:\n  - ${numericValidationErrors.join('\n  - ')}\n\nPlease fix these values before deployment.`;
+    logCriticalError(errorMessage);
+    throw new Error(errorMessage);
+  }
 
   config.cloudflare = config.cloudflare || {};
   const hasCloudflare = config.cloudflare.accountId && config.cloudflare.apiToken &&
@@ -896,6 +974,38 @@ function parseConfig(config) {
 
   if (!config.rateLimiter) {
     throw new Error('rateLimiter is required in deployments-secrets.json');
+  }
+
+  // Validate rateLimiter fields
+  const rateLimiterErrors = [];
+  if (!config.rateLimiter.namespaceId || String(config.rateLimiter.namespaceId).trim() === '') {
+    rateLimiterErrors.push('rateLimiter.namespaceId is required and cannot be empty');
+  }
+  
+  if (config.rateLimiter.limit !== undefined && config.rateLimiter.limit !== null) {
+    const limitValue = String(config.rateLimiter.limit).trim();
+    const limitNum = Number(limitValue);
+    if (limitValue === '' || isNaN(limitNum) || !isFinite(limitNum) || !Number.isInteger(limitNum) || limitNum < 1 || limitNum > 100000) {
+      rateLimiterErrors.push(`rateLimiter.limit: "${config.rateLimiter.limit}" must be a valid integer between 1 and 100000`);
+    }
+  } else {
+    rateLimiterErrors.push('rateLimiter.limit is required');
+  }
+
+  if (config.rateLimiter.period_second !== undefined && config.rateLimiter.period_second !== null) {
+    const periodValue = String(config.rateLimiter.period_second).trim();
+    const periodNum = Number(periodValue);
+    if (periodValue === '' || isNaN(periodNum) || !isFinite(periodNum) || !Number.isInteger(periodNum) || periodNum < 1 || periodNum > 3600) {
+      rateLimiterErrors.push(`rateLimiter.period_second: "${config.rateLimiter.period_second}" must be a valid integer between 1 and 3600`);
+    }
+  } else {
+    rateLimiterErrors.push('rateLimiter.period_second is required');
+  }
+
+  if (rateLimiterErrors.length > 0) {
+    const errorMessage = `Invalid rateLimiter configuration in deployments-secrets.json:\n  - ${rateLimiterErrors.join('\n  - ')}\n\nPlease fix these values before deployment.`;
+    logCriticalError(errorMessage);
+    throw new Error(errorMessage);
   }
 
   return {
@@ -2503,9 +2613,19 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}, args = []) 
     throw new Error('deployments-secrets.json not found');
   }
 
-  const allConfigs = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+  let allConfigs;
+  try {
+    allConfigs = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+  } catch (parseError) {
+    const errorMessage = `Invalid JSON in deployments-secrets.json: ${parseError.message}`;
+    logCriticalError(errorMessage);
+    process.exit(1);
+  }
+  
   if (!allConfigs.environments) {
-    throw new Error('No environments found in deployments-secrets.json');
+    const errorMessage = 'No environments found in deployments-secrets.json';
+    logCriticalError(errorMessage);
+    throw new Error(errorMessage);
   }
 
   const envsToDeploy = envNames.length > 0 
@@ -2513,9 +2633,42 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}, args = []) 
     : Object.keys(allConfigs.environments);
 
   if (envsToDeploy.length === 0) {
-    throw new Error('No valid environments to deploy');
+    const errorMessage = 'No valid environments to deploy';
+    logCriticalError(errorMessage);
+    throw new Error(errorMessage);
   }
 
+  // CRITICAL: Validate ALL environments BEFORE starting any deployment
+  console.log(`${colors.cyan}Validating all environment configurations before deployment...${colors.reset}\n`);
+  const validationErrors = [];
+  const originalDeployEnv = process.env.DEPLOY_ENV;
+  
+  for (const envName of envsToDeploy) {
+    try {
+      process.env.DEPLOY_ENV = envName;
+      const envConfig = allConfigs.environments[envName];
+      if (!envConfig) {
+        validationErrors.push(`Environment '${envName}': Configuration not found`);
+        continue;
+      }
+      // Create a config object that parseConfig expects (with environments wrapper)
+      const configForValidation = { environments: { [envName]: envConfig } };
+      // This will throw if validation fails
+      parseConfig(configForValidation);
+    } catch (error) {
+      validationErrors.push(`Environment '${envName}': ${error.message}`);
+    }
+  }
+  
+  process.env.DEPLOY_ENV = originalDeployEnv;
+  
+  if (validationErrors.length > 0) {
+    const errorMessage = `Configuration validation failed for ${validationErrors.length} environment(s):\n  - ${validationErrors.join('\n  - ')}\n\nDEPLOYMENT ABORTED - Please fix all configuration errors before deploying.`;
+    logCriticalError(errorMessage);
+    process.exit(1);
+  }
+  
+  console.log(`${colors.green}✓ All environment configurations validated successfully${colors.reset}\n`);
   console.log(`${colors.cyan}Deploying ${envsToDeploy.length} environment(s) in parallel: ${envsToDeploy.join(', ')}${colors.reset}\n`);
 
   // Initialize matrix logger for parallel deployments - ONE shared logger
