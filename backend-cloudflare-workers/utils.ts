@@ -150,6 +150,45 @@ export const getVertexAIEndpoint = (
   return VERTEX_AI_CONFIG.ENDPOINTS.REGIONAL(location, projectId, model);
 };
 
+// Strip file extension from preset ID
+// Mobile apps may send preset IDs with extensions like "fs_seoul_trendy_k_travel_style_m1_2.xxx"
+// This function removes the extension and returns only the filename as preset ID
+export const normalizePresetId = (presetId: string | undefined | null): string | null => {
+  if (!presetId || typeof presetId !== 'string') {
+    return null;
+  }
+  
+  const trimmed = presetId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  
+  // Remove file extension (everything after the last dot)
+  // But preserve dots that are part of the preset ID (like "fs_seoul_trendy_k_travel_style_m1_2")
+  // Only remove if it looks like a file extension (common image extensions)
+  const commonExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.json'];
+  const lowerTrimmed = trimmed.toLowerCase();
+  
+  // Check if it ends with a common extension
+  for (const ext of commonExtensions) {
+    if (lowerTrimmed.endsWith(ext)) {
+      return trimmed.slice(0, -ext.length);
+    }
+  }
+  
+  // If no common extension found, check if it has a dot near the end (likely an extension)
+  // Remove extension if there's a dot followed by 1-5 characters at the end
+  const extensionPattern = /\.([a-z0-9]{1,5})$/i;
+  const match = trimmed.match(extensionPattern);
+  if (match) {
+    // Only remove if the part after dot looks like an extension (not part of preset ID)
+    // Preset IDs typically don't end with short extensions
+    return trimmed.slice(0, -match[0].length);
+  }
+  
+  return trimmed;
+};
+
 export const jsonResponse = (data: any, status = 200, request?: Request, env?: any): Response => {
   // Check if debug is enabled
   const debugEnabled = env && env.ENABLE_DEBUG_RESPONSE === 'true';

@@ -81,42 +81,126 @@ function getCloudflareCredentials(env) {
   return { apiToken, accountId };
 }
 
-async function listObjects(apiToken, accountId, bucketName, prefix, cursor = null) {
+async function listObjects(apiToken, accountId, bucketName, prefix, cursor = null, retries = 3) {
   let url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucketName}/objects`;
   const params = [];
   if (prefix) params.push(`prefix=${encodeURIComponent(prefix)}`);
   if (cursor) params.push(`cursor=${encodeURIComponent(cursor)}`);
   if (params.length > 0) url += `?${params.join('&')}`;
   
-  const result = execSync(
-    `curl -s -X GET "${url}" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json"`,
-    { encoding: 'utf8' }
-  );
-  const data = JSON.parse(result);
-  if (!data.success) {
-    throw new Error(`Failed to list objects: ${JSON.stringify(data.errors)}`);
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const result = execSync(
+        `curl -s -X GET "${url}" -H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json"`,
+        { encoding: 'utf8' }
+      );
+      const data = JSON.parse(result);
+      if (!data.success) {
+        // Check if it's a rate limit error
+        const isRateLimit = data.errors?.some(e => e.code === 7010 || e.message?.includes('rate limit') || e.message?.includes('unavailable'));
+        if (isRateLimit && attempt < retries - 1) {
+          const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
+          console.log(`  ${colors.yellow}Rate limited, retrying in ${delay/1000}s... (attempt ${attempt + 1}/${retries})${colors.reset}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw new Error(`Failed to list objects: ${JSON.stringify(data.errors)}`);
+      }
+      
+      // Cloudflare R2 API returns objects array directly in result, with pagination info
+      const resultData = data.result || {};
+      
+      // If result is an array, it's the objects directly
+      if (Array.isArray(resultData)) {
+        return {
+          objects: resultData,
+          truncated: data.result_info?.truncated === true || false,
+          cursor: data.result_info?.cursor || null
+        };
+      }
+      
+      // Otherwise, result should have objects, truncated, cursor properties
+      return resultData;
+    } catch (error) {
+      if (attempt === retries - 1) throw error;
+      const delay = Math.pow(2, attempt) * 1000;
+      console.log(`  ${colors.yellow}Error, retrying in ${delay/1000}s... (attempt ${attempt + 1}/${retries})${colors.reset}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
-  return data.result || { objects: [], truncated: false };
 }
 
-async function listAllObjects(apiToken, accountId, bucketName, prefix) {
+async function listAllObjects(apiToken, accountId, bucketName, prefix, verbose = false) {
   const allObjects = [];
   let cursor = null;
+  let previousCursor = null;
   let truncated = true;
+  let pageCount = 0;
+  const maxPages = 10000; // Safety limit to prevent infinite loops
   
-  while (truncated) {
+  while (truncated && pageCount < maxPages) {
+    pageCount++;
+    if (verbose) {
+      console.log(`  ${colors.cyan}Fetching page ${pageCount}${cursor ? ` (cursor: ${cursor.substring(0, 20)}...)` : ''}${colors.reset}`);
+    }
+    
     const result = await listObjects(apiToken, accountId, bucketName, prefix, cursor);
-    const objects = result.objects || result;
-    if (Array.isArray(objects)) {
-      allObjects.push(...objects);
-      truncated = result.truncated || false;
+    
+    // Handle response structure - result should have objects, truncated, cursor
+    let objects = [];
+    if (Array.isArray(result)) {
+      objects = result;
+      truncated = false;
+    } else if (Array.isArray(result.objects)) {
+      objects = result.objects;
+      truncated = result.truncated === true;
+      previousCursor = cursor;
       cursor = result.cursor || null;
     } else {
-      allObjects.push(...(result.objects || []));
-      truncated = result.truncated || false;
-      cursor = result.cursor || null;
+      objects = [];
+      truncated = false;
+      cursor = null;
     }
-    if (!truncated || !cursor) break;
+    
+    // Check if cursor changed (if not, we might be stuck)
+    if (cursor && cursor === previousCursor && objects.length === 0) {
+      console.log(`  ${colors.yellow}Warning: Cursor unchanged and no objects returned, stopping pagination${colors.reset}`);
+      break;
+    }
+    
+    // Debug output
+    if (verbose) {
+      console.log(`  ${colors.yellow}Page ${pageCount}: ${objects.length} objects, truncated=${truncated}, cursor=${cursor ? cursor.substring(0, 20) + '...' : 'null'}${colors.reset}`);
+    }
+    
+    if (objects.length > 0) {
+      allObjects.push(...objects);
+      if (verbose) {
+        console.log(`  ${colors.green}Found ${objects.length} objects on page ${pageCount} (total so far: ${allObjects.length})${colors.reset}`);
+      }
+    }
+    
+    // Continue if there's a cursor (even if truncated is false, cursor indicates more pages)
+    // Break only if no cursor AND not truncated
+    if (!cursor && !truncated) {
+      break;
+    }
+    
+    // If we have a cursor, continue to next page
+    // Also add a small delay to avoid rate limiting
+    if (cursor) {
+      truncated = true; // Force continue if cursor exists
+      // Small delay to avoid rate limiting (100ms between requests)
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  if (pageCount >= maxPages) {
+    console.log(`  ${colors.red}Warning: Reached maximum page limit (${maxPages}), stopping${colors.reset}`);
+  }
+  
+  if (verbose) {
+    console.log(`  ${colors.cyan}Total objects fetched: ${allObjects.length}${colors.reset}`);
   }
   
   return allObjects;
@@ -232,6 +316,96 @@ async function cleanupDuplicateFolders(env, dryRun = false) {
     totalFailed++;
   }
   
+  console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
+  console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
+  if (totalFailed > 0) {
+    console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} object(s)`);
+  }
+  
+  if (dryRun && totalDeleted > 0) {
+    console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
+  }
+  
+  return { deleted: totalDeleted, failed: totalFailed };
+}
+
+async function deleteFolder(env, folderName, dryRun = false) {
+  console.log(`${colors.cyan}=== DELETING folder: ${folderName} ===${colors.reset}`);
+  console.log(`Environment: ${colors.yellow}${env}${colors.reset}`);
+  console.log(`Mode: ${dryRun ? colors.yellow + 'DRY RUN' : colors.red + 'FORCE DELETE' + colors.reset}${colors.reset}`);
+  console.log('');
+  
+  const bucketName = getBucketName(env);
+  const { apiToken, accountId } = getCloudflareCredentials(env);
+  
+  console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
+  console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
+  console.log(`Folder: ${colors.cyan}${folderName}/${colors.reset}`);
+  console.log('');
+  
+  const prefix = folderName.endsWith('/') ? folderName : `${folderName}/`;
+  let totalDeleted = 0;
+  let totalFailed = 0;
+  
+  try {
+    console.log(`${colors.cyan}Scanning for objects in ${prefix}...${colors.reset}`);
+    const objects = await listAllObjects(apiToken, accountId, bucketName, prefix, true);
+    
+    console.log(`  ${colors.cyan}Found ${objects.length} object(s) in ${prefix}${colors.reset}`);
+    
+    if (objects.length === 0) {
+      console.log(`  ${colors.yellow}No objects found in ${prefix}${colors.reset}`);
+    } else {
+      if (dryRun) {
+        console.log(`  ${colors.yellow}[DRY RUN] Would delete ${objects.length} object(s)${colors.reset}`);
+        objects.slice(0, 10).forEach(obj => {
+          const key = obj.key || obj;
+          console.log(`    - ${key}`);
+        });
+        if (objects.length > 10) {
+          console.log(`    ... and ${objects.length - 10} more`);
+        }
+        totalDeleted = objects.length;
+      } else {
+        let deleted = 0;
+        let failed = 0;
+        
+        console.log(`  ${colors.cyan}Deleting ${objects.length} object(s)...${colors.reset}`);
+        
+        for (const obj of objects) {
+          const key = obj.key || obj;
+          try {
+            const success = await deleteObject(apiToken, accountId, bucketName, key);
+            if (success) {
+              deleted++;
+              if (deleted % 100 === 0) {
+                console.log(`  ${colors.cyan}Progress: ${deleted}/${objects.length} deleted...${colors.reset}`);
+              }
+            } else {
+              failed++;
+            }
+          } catch (error) {
+            console.log(`  ${colors.red}✗ Failed to delete ${key}: ${error.message}${colors.reset}`);
+            failed++;
+          }
+        }
+        
+        if (deleted > 0) {
+          console.log(`  ${colors.green}✓ Deleted ${deleted} object(s)${colors.reset}`);
+          totalDeleted = deleted;
+        }
+        if (failed > 0) {
+          console.log(`  ${colors.red}✗ Failed to delete ${failed} object(s)${colors.reset}`);
+          totalFailed = failed;
+        }
+      }
+    }
+  } catch (error) {
+    console.log(`  ${colors.red}✗ Error: ${error.message}${colors.reset}`);
+    totalFailed++;
+  }
+  
+  console.log('');
   console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
   console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
   if (totalFailed > 0) {
@@ -369,11 +543,28 @@ const env = process.env.DEPLOY_ENV ||
 const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-d');
 const listMode = process.argv.includes('--list') || process.argv.includes('-l');
 const duplicateOnly = process.argv.includes('--duplicates') || process.argv.includes('--dup');
+const folderArg = process.argv.find(arg => arg.startsWith('--folder='))?.split('=')[1] ||
+                  process.argv.find(arg => arg.startsWith('-f='))?.split('=')[1] ||
+                  (process.argv.includes('--folder') && process.argv[process.argv.indexOf('--folder') + 1]) ||
+                  (process.argv.includes('-f') && process.argv[process.argv.indexOf('-f') + 1]);
 
 if (listMode) {
   const prefix = process.argv.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || '';
   listR2Objects(env, prefix)
     .then(() => {
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error(`\n${colors.red}Error: ${error.message}${colors.reset}`);
+      if (error.stack) {
+        console.error(error.stack);
+      }
+      process.exit(1);
+    });
+} else if (folderArg) {
+  deleteFolder(env, folderArg, dryRun)
+    .then(() => {
+      console.log(`\n${colors.green}Folder deletion completed!${colors.reset}`);
       process.exit(0);
     })
     .catch((error) => {

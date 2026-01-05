@@ -4,7 +4,7 @@ import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, BackgroundRequest } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, promisePoolWithConcurrency } from './utils';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
@@ -1929,7 +1929,7 @@ export default {
           // Extract PNG files from preset folder in zip
           const presetFiles: Array<{ filename: string; zipEntry: JSZip.JSZipObject }> = [];
           zip.forEach((path: string, entry: JSZip.JSZipObject) => {
-            if (!entry.dir && path.toLowerCase().startsWith('preset/') && path.toLowerCase().endsWith('.png')) {
+            if (!entry.dir && path.toLowerCase().startsWith('preset/') && (path.toLowerCase().endsWith('.webp') || path.toLowerCase().endsWith('.png'))) {
               const filename = path.split('/').pop() || path;
               presetFiles.push({ filename, zipEntry: entry });
             }
@@ -2002,18 +2002,38 @@ export default {
               }
 
               // Upload preset to final location with prompt metadata
-              const presetR2Key = `presets/${presetId}.png`;
+              const presetR2Key = `preset/${presetId}.webp`;
               const promptJson = JSON.stringify(promptResult.prompt);
 
-              await R2_BUCKET.put(presetR2Key, fileData, {
-                httpMetadata: {
-                  contentType: 'image/png',
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-                customMetadata: {
-                  prompt_json: promptJson
+              console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes`);
+              
+              try {
+                await R2_BUCKET.put(presetR2Key, fileData, {
+                  httpMetadata: {
+                    contentType: 'image/webp',
+                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                  },
+                  customMetadata: {
+                    prompt_json: promptJson
+                  }
+                });
+                
+                // Verify upload succeeded by checking if file exists
+                const verifyUpload = await R2_BUCKET.head(presetR2Key);
+                if (!verifyUpload) {
+                  throw new Error('Upload verification failed: file not found after upload');
                 }
-              });
+                
+                console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key}`);
+              } catch (uploadError) {
+                const uploadErrorMsg = uploadError instanceof Error ? uploadError.message : String(uploadError);
+                console.error(`[process-thumbnail-file] Failed to upload preset ${presetId} to R2:`, uploadErrorMsg);
+                return {
+                  success: false,
+                  filename,
+                  error: `Failed to upload preset to R2: ${uploadErrorMsg}`
+                };
+              }
 
               const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
 
@@ -2093,7 +2113,7 @@ export default {
                 'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2, prompt_json) VALUES (?, ?, ?, ?, ?)'
               ).bind(
                 presetId,
-                'png',
+                'webp',
                 createdAt,
                 JSON.stringify(thumbnailData),
                 promptJson
@@ -2208,7 +2228,7 @@ export default {
           normalizedPath.includes('/preset/') ||
           normalizedPath === 'preset' ||
           (pathParts.length > 0 && pathParts[0] === 'preset') ||
-          (!normalizedPath && filename.toLowerCase().endsWith('.png'));
+          (!normalizedPath && (filename.toLowerCase().endsWith('.webp') || filename.toLowerCase().endsWith('.png')));
         
         if (isFromPresetFolder) {
           // Preset file processing
@@ -2250,20 +2270,44 @@ export default {
           }
           
           // Upload preset to final location with prompt metadata
-          const presetR2Key = `presets/${presetId}.${filename.split('.').pop()}`;
+          // Always use .webp extension for preset files (presets are always WebP)
+          const presetR2Key = `preset/${presetId}.webp`;
           const promptJson = JSON.stringify(promptResult.prompt);
           
-          await R2_BUCKET.put(presetR2Key, fileData, {
-            httpMetadata: {
-              contentType,
-              cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-            },
-            customMetadata: {
-              prompt_json: promptJson
+          console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes, original filename: ${filename}`);
+          
+          try {
+            await R2_BUCKET.put(presetR2Key, fileData, {
+              httpMetadata: {
+                contentType: 'image/webp', // Always use WebP for presets
+                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+              },
+              customMetadata: {
+                prompt_json: promptJson
+              }
+            });
+            
+            // Verify upload succeeded by checking if file exists
+            const verifyUpload = await R2_BUCKET.head(presetR2Key);
+            if (!verifyUpload) {
+              throw new Error('Upload verification failed: file not found after upload');
             }
-          });
+            
+            console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key}, size: ${verifyUpload.size} bytes`);
+          } catch (uploadError) {
+            const uploadErrorMsg = uploadError instanceof Error ? uploadError.message : String(uploadError);
+            console.error(`[process-thumbnail-file] Failed to upload preset ${presetId} to R2:`, uploadErrorMsg, { presetR2Key, fileSize: fileData.byteLength });
+            return errorResponse(
+              `Failed to upload preset to R2: ${uploadErrorMsg}`,
+              500,
+              { presetId, presetR2Key, error: uploadErrorMsg },
+              request,
+              env
+            );
+          }
           
           const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
+          console.log(`[process-thumbnail-file] Preset public URL: ${presetPublicUrl}`);
           
           // Generate thumbnails based on format - all resolutions
           let thumbnailData: Record<string, string> = {};
@@ -2325,7 +2369,7 @@ export default {
           const createdAt = existingPreset && (existingPreset as any).created_at 
             ? (existingPreset as any).created_at 
             : Math.floor(Date.now() / 1000);
-          const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
+          const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp'; // Presets are always WebP (or JSON for Lottie)
           
           // Merge with existing thumbnail data if any
           if (existingPreset && (existingPreset as any).thumbnail_r2) {
@@ -2570,7 +2614,7 @@ export default {
               }
 
               // Upload to final location with prompt metadata (if available)
-              const r2Key = `presets/${presetId}.${filename.split('.').pop()}`;
+              const r2Key = `preset/${presetId}.${filename.split('.').pop()}`;
               const promptJson = skipPromptGeneration ? null : JSON.stringify(promptResult.prompt);
 
               await R2_BUCKET.put(r2Key, fileData, {
@@ -2592,7 +2636,7 @@ export default {
               const createdAt = existingPreset && (existingPreset as any).created_at
                 ? (existingPreset as any).created_at
                 : Math.floor(Date.now() / 1000);
-              const ext = filename.toLowerCase().endsWith('.png') ? 'png' : (filename.toLowerCase().endsWith('.json') ? 'json' : 'webp');
+              const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp'; // Presets are always WebP (or JSON for Lottie)
 
               let existingThumbnailR2: string | null = null;
               if (existingPreset && (existingPreset as any).thumbnail_r2) {
@@ -3849,6 +3893,14 @@ export default {
           return errorResponse('', 400, { error: 'Request body is required', path }, request, env);
         }
 
+        // Normalize preset_image_id to remove file extensions (mobile apps may send IDs with extensions)
+        if (body.preset_image_id) {
+          const normalized = normalizePresetId(body.preset_image_id);
+          if (normalized) {
+            body.preset_image_id = normalized;
+          }
+        }
+
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           console.error('[Faceswap] Env validation error:', envError);
@@ -4396,6 +4448,14 @@ export default {
       let body: BackgroundRequest | undefined;
       try {
         body = await request.json() as BackgroundRequest;
+
+        // Normalize preset_image_id to remove file extensions (mobile apps may send IDs with extensions)
+        if (body.preset_image_id) {
+          const normalized = normalizePresetId(body.preset_image_id);
+          if (normalized) {
+            body.preset_image_id = normalized;
+          }
+        }
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
@@ -5074,6 +5134,14 @@ export default {
           model?: string | number;
           additional_prompt?: string;
         };
+
+        // Normalize preset_image_id to remove file extensions (mobile apps may send IDs with extensions)
+        if (body.preset_image_id) {
+          const normalized = normalizePresetId(body.preset_image_id);
+          if (normalized) {
+            body.preset_image_id = normalized;
+          }
+        }
 
         const envError = validateEnv(env, 'vertex');
         if (envError) {

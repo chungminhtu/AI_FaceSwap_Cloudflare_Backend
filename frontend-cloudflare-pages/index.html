@@ -3492,140 +3492,86 @@
             }
         }
 
-        async function handleThumbnailZipSelect(event) {
-            const zipFiles = Array.from(event.target.files || []);
-            if (zipFiles.length === 0) return;
+        // Enhanced retry function for preset uploads - NEVER LOSE DATA
+        // Defined at module level so it can be used by multiple functions
+        const fetchWithRetry = async (url, options, maxRetries = 8, retryDelay = 2000) => {
+            const errors = [];
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    // Add timeout to fetch (60s for large uploads)
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => {
+                        controller.abort();
+                        console.warn(`[Preset Upload] Request timeout on attempt ${attempt + 1}, aborting...`);
+                    }, 60000); // 60s timeout for preset uploads
 
-            // Process each zip file individually (send to backend for extraction)
-            for (const zipFile of zipFiles) {
-                await processThumbnailZipFile(zipFile);
+                    console.log(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} - Starting request...`);
+                    const response = await fetch(url, {
+                        ...options,
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+                    console.log(`[Preset Upload] Attempt ${attempt + 1} - Response received: ${response.status}`);
+
+                    // Success! Return the response
+                    return response;
+
+                } catch (error) {
+                    const errorMsg = error instanceof Error ? error.message : String(error);
+                    const isLastAttempt = attempt === maxRetries - 1;
+
+                    console.error(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} failed:`, errorMsg);
+                    errors.push(`${attempt + 1}: ${errorMsg}`);
+
+                    // Check if this is a retryable error
+                    const isRetryable = error.name === 'AbortError' || // Timeout
+                                      error.message.includes('fetch') || // Network error
+                                      error.message.includes('network') || // Network error
+                                      error.message.includes('Failed to fetch') || // Network error
+                                      error.message.includes('TypeError') || // Network error
+                                      !error.message.includes('400') || // Don't retry client errors except 400
+                                      !error.message.includes('401') || // Don't retry auth errors
+                                      !error.message.includes('403');   // Don't retry forbidden errors
+
+                    if (!isRetryable || isLastAttempt) {
+                        console.error(`[Preset Upload] Final failure after ${maxRetries} attempts`);
+                        console.error(`[Preset Upload] All errors:`, errors);
+                        throw new Error(`Upload failed after ${maxRetries} attempts. Errors: ${errors.join(' | ')}`);
+                    }
+
+                    // Exponential backoff with jitter: 2s, 4s, 8s, 16s, 32s, 64s, 128s
+                    const baseDelay = retryDelay * Math.pow(2, attempt);
+                    const jitter = Math.random() * 0.3 * baseDelay; // Add up to 30% jitter
+                    const delay = Math.min(baseDelay + jitter, 120000); // Cap at 2 minutes
+
+                    console.warn(`[Preset Upload] Retrying in ${Math.round(delay/1000)}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
+        };
+
+        async function handleThumbnailZipSelect(event) {
+            const allFiles = Array.from(event.target.files || []);
+            if (allFiles.length === 0) return;
+
+            // Separate zip files and regular files
+            const zipFiles = [];
+            const regularFiles = [];
+            
+            for (const file of allFiles) {
+                if (file.name.toLowerCase().endsWith('.zip')) {
+                    zipFiles.push(file);
+                } else {
+                    regularFiles.push(file);
+                }
+            }
+
+            // Use the same client-side extraction and upload logic as drag & drop
+            await processThumbnailFiles(zipFiles, regularFiles);
 
             // Reset input
             event.target.value = '';
-        }
-
-        async function processThumbnailZipFile(zipFile) {
-            const progressContainer = $('thumbnail-upload-progress');
-            const progressFill = $('thumbnail-progress-fill');
-            const statusText = $('thumbnail-upload-status');
-
-            progressContainer.style.display = 'block';
-            progressFill.style.width = '0%';
-            statusText.textContent = `Đang xử lý file zip: ${zipFile.name}...`;
-
-            // Check if filter mode is enabled for thumbnails
-            const filterModeCheckbox = document.getElementById('thumbnail-filter-mode');
-            const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
-
-            // Get thumbnail format (webp or json)
-            const formatJson = document.getElementById('thumbnail-format-json');
-            const thumbnailFormat = formatJson && formatJson.checked ? 'json' : 'webp';
-
-            const uploadUrl = `${WORKER_URL}/process-thumbnail-file`;
-            const startTime = Date.now();
-
-            // CRITICAL: Preset uploads MUST succeed - use maximum retry attempts
-            const MAX_UPLOAD_RETRIES = 10;
-
-            try {
-                console.log(`[Preset Upload] Starting upload for ${zipFile.name} (${(zipFile.size / 1024 / 1024).toFixed(2)}MB)`);
-
-                const formData = new FormData();
-                formData.append('zip', zipFile);
-                formData.append('thumbnail_format', thumbnailFormat);
-                if (isFilterMode) {
-                    formData.append('is_filter_mode', 'true');
-                }
-
-                const response = await fetchWithRetry(uploadUrl, {
-                    method: 'POST',
-                    headers: buildHeaders(),
-                    body: formData
-                }, MAX_UPLOAD_RETRIES);
-
-                if (!response.ok) {
-                    const errorText = await response.text().catch(() => response.statusText);
-                    throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
-                }
-
-                const data = await response.json();
-                console.log(`[Preset Upload] Upload successful for ${zipFile.name}`);
-
-                if (data.status === 'success' && data.data.success) {
-                    const duration = Date.now() - startTime;
-                    const result = data.data;
-
-                    progressFill.style.width = '100%';
-                    statusText.textContent = `Hoàn thành xử lý ${zipFile.name}!`;
-
-                    // Log API call summary
-                    logApiCall({
-                        label: `Tải Lên Zip Preset: ${zipFile.name}`,
-                        method: 'POST',
-                        url: '/process-thumbnail-file',
-                        fullUrl: uploadUrl,
-                        status: 'success',
-                        payload: {
-                            zip_filename: zipFile.name,
-                            total: result.total,
-                            processed: result.processed,
-                            successful: result.successful,
-                            failed: result.failed,
-                            presets_processed: result.presets_processed,
-                            presets_with_prompts: result.presets_with_prompts,
-                            thumbnail_format: result.thumbnail_format,
-                            results: result.results
-                        },
-                        duration
-                    });
-
-                    // Show detailed progress information
-                    let statusParts = [];
-                    statusParts.push(`✓ ${result.successful}/${result.total} presets`);
-                    if (result.presets_with_prompts > 0) {
-                        statusParts.push(`${result.presets_with_prompts} với AI prompts`);
-                    }
-                    statusParts.push(`Format: ${result.thumbnail_format.toUpperCase()}`);
-
-                    statusText.textContent = statusParts.join(' | ');
-
-                    if (result.failed > 0) {
-                        const failedFiles = result.results.filter(r => !r.success);
-                        console.warn('Failed files:', failedFiles);
-                        showStatusMessage(`${result.failed} preset thất bại. Kiểm tra console để xem chi tiết.`, 'error');
-                    } else {
-                        showStatusMessage(`Tải lên preset từ ${zipFile.name} thành công!`, 'success');
-                    }
-
-                    // Reset inputs
-                    const zipInput = $('thumbnail-zip-input');
-                    if (zipInput) zipInput.value = '';
-
-                    // Reload thumbnails after upload
-                    setTimeout(() => {
-                        progressContainer.style.display = 'none';
-                        loadThumbnails();
-                    }, 1000);
-                } else {
-                    throw new Error(data.message || data.data?.error || 'Unknown error');
-                }
-            } catch (error) {
-                const duration = Date.now() - startTime;
-                logApiCall({
-                    label: `Tải Lên Zip Preset: ${zipFile.name}`,
-                    method: 'POST',
-                    url: '/process-thumbnail-file',
-                    fullUrl: uploadUrl,
-                    status: 'error',
-                    payload: { error: error.message },
-                    duration
-                });
-                progressFill.style.width = '100%';
-                progressFill.style.background = 'var(--danger)';
-                statusText.textContent = `Lỗi: ${error.message}`;
-                showStatusMessage(`Tải lên ${zipFile.name} thất bại: ${error.message}`, 'error');
-            }
         }
 
         async function processThumbnailFiles(zipFiles, regularFiles) {
@@ -3711,6 +3657,16 @@
                 }
             }
             
+            // Add regular files (non-zip) to the upload queue
+            if (regularFiles.length > 0) {
+                regularFiles.forEach(file => {
+                    allFiles.push({
+                        file: file,
+                        path: file.name
+                    });
+                });
+            }
+            
             const totalFiles = allFiles.length;
             if (totalFiles === 0) {
                 statusText.textContent = 'Không có file preset nào để tải lên';
@@ -3731,64 +3687,6 @@
 
             const uploadUrl = `${WORKER_URL}/process-thumbnail-file`;
             const startTime = Date.now();
-
-            // Enhanced retry function for preset uploads - NEVER LOSE DATA
-            const fetchWithRetry = async (url, options, maxRetries = 8, retryDelay = 2000) => {
-                const errors = [];
-                for (let attempt = 0; attempt < maxRetries; attempt++) {
-                    try {
-                        // Add timeout to fetch (60s for large uploads)
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => {
-                            controller.abort();
-                            console.warn(`[Preset Upload] Request timeout on attempt ${attempt + 1}, aborting...`);
-                        }, 60000); // 60s timeout for preset uploads
-
-                        console.log(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} - Starting request...`);
-                        const response = await fetch(url, {
-                            ...options,
-                            signal: controller.signal
-                        });
-
-                        clearTimeout(timeoutId);
-                        console.log(`[Preset Upload] Attempt ${attempt + 1} - Response received: ${response.status}`);
-
-                        // Success! Return the response
-                        return response;
-
-                    } catch (error) {
-                        const errorMsg = error instanceof Error ? error.message : String(error);
-                        const isLastAttempt = attempt === maxRetries - 1;
-
-                        console.error(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} failed:`, errorMsg);
-                        errors.push(`${attempt + 1}: ${errorMsg}`);
-
-                        // Check if this is a retryable error
-                        const isRetryable = error.name === 'AbortError' || // Timeout
-                                          error.message.includes('fetch') || // Network error
-                                          error.message.includes('network') || // Network error
-                                          error.message.includes('Failed to fetch') || // Network error
-                                          error.message.includes('TypeError') || // Network error
-                                          !error.message.includes('400') || // Don't retry client errors except 400
-                                          !error.message.includes('401') || // Don't retry auth errors
-                                          !error.message.includes('403');   // Don't retry forbidden errors
-
-                        if (!isRetryable || isLastAttempt) {
-                            console.error(`[Preset Upload] Final failure after ${maxRetries} attempts`);
-                            console.error(`[Preset Upload] All errors:`, errors);
-                            throw new Error(`Upload failed after ${maxRetries} attempts. Errors: ${errors.join(' | ')}`);
-                        }
-
-                        // Exponential backoff with jitter: 2s, 4s, 8s, 16s, 32s, 64s, 128s
-                        const baseDelay = retryDelay * Math.pow(2, attempt);
-                        const jitter = Math.random() * 0.3 * baseDelay; // Add up to 30% jitter
-                        const delay = Math.min(baseDelay + jitter, 120000); // Cap at 2 minutes
-
-                        console.warn(`[Preset Upload] Retrying in ${Math.round(delay/1000)}s...`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    }
-                }
-            };
 
             // Concurrency limiter function
             const processWithConcurrency = async (items, concurrency = 10) => {
