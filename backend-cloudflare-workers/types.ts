@@ -46,6 +46,7 @@ export interface FaceSwapResponse {
   Prompt?: any;
   CurlCommand?: string | null;
   FullResponse?: any;
+  RawResponse?: any;
   SafetyCheck?: {
     checked: boolean;
     isSafe: boolean;

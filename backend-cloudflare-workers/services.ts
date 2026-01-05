@@ -354,15 +354,45 @@ export const callNanoBanana = async (
           Message: safetyViolation.reason,
           StatusCode: safetyViolation.code,
           Error: safetyViolation.reason,
+          Debug: debugInfo,
         } as any;
       }
 
-      // If no safety violation found but Vertex AI returned error, return unknown error (3000)
+      // Extract actual error message from Vertex AI response
+      let actualErrorMessage = 'Processing failed';
+      if (parsedError) {
+        if (parsedError.error?.message) {
+          actualErrorMessage = parsedError.error.message;
+        } else if (parsedError.message) {
+          actualErrorMessage = parsedError.message;
+        } else if (typeof parsedError === 'string') {
+          actualErrorMessage = parsedError;
+        }
+      } else if (rawResponse) {
+        // Try to extract error from raw response
+        try {
+          const textResponse = typeof rawResponse === 'string' ? rawResponse : JSON.stringify(rawResponse);
+          if (textResponse.length < 500) {
+            actualErrorMessage = textResponse;
+          }
+        } catch {
+          // Keep default message
+        }
+      }
+
+      // If no safety violation found but Vertex AI returned error, preserve the HTTP status code
+      console.error('[Vertex-NanoBanana] API error (no safety violation):', response.status, response.statusText, actualErrorMessage);
+      // Use the actual HTTP status code (e.g., 404) instead of 3000 for HTTP errors
+      const statusCode = (response.status >= 200 && response.status < 600) ? response.status : VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR;
       return {
         Success: false,
-        Message: 'Processing failed',
-        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-        Error: 'Processing failed',
+        Message: actualErrorMessage,
+        StatusCode: statusCode,
+        Error: actualErrorMessage,
+        Debug: debugInfo,
+        FullResponse: parsedError || rawResponse,
+        HttpStatus: response.status,
+        HttpStatusText: response.statusText,
       } as any;
     }
 
@@ -438,10 +468,12 @@ export const callNanoBanana = async (
         }
         return {
           Success: false,
-          Message: 'Processing failed',
+          Message: 'Processing failed: No image data in response',
           StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-          Error: 'Processing failed',
-        };
+          Error: 'Processing failed: No image data in response',
+          Debug: debugInfo,
+          FullResponse: data,
+        } as any;
       }
 
 
@@ -489,20 +521,29 @@ export const callNanoBanana = async (
       } catch {
         // If parse fails, continue with unknown error
       }
+      const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+      console.error('[Vertex-NanoBanana] Parse error:', errorMsg);
       return {
         Success: false,
-        Message: 'Processing failed',
+        Message: `Failed to parse response: ${errorMsg}`,
         StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-        Error: 'Processing failed',
-      };
+        Error: `Failed to parse response: ${errorMsg}`,
+        Debug: {
+          ...debugInfo,
+          rawResponse: rawResponse ? (typeof rawResponse === 'string' ? rawResponse.substring(0, 1000) : rawResponse) : undefined,
+          parseError: errorMsg,
+        },
+      } as any;
     }
   } catch (error) {
-    console.error('[Vertex-NanoBanana] Unexpected error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Vertex-NanoBanana] Unexpected error:', errorMsg);
     return {
       Success: false,
-      Message: 'Processing failed',
+      Message: `Unexpected error: ${errorMsg}`,
       StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-      Error: 'Processing failed',
+      Error: `Unexpected error: ${errorMsg}`,
+      Debug: debugInfo,
     };
   }
 };
@@ -1020,12 +1061,39 @@ export const callNanoBananaMerge = async (
         } as any;
       }
 
-      // If no safety violation found but Vertex AI returned error, return unknown error (3000)
+      // If no safety violation found but Vertex AI returned error, preserve the HTTP status code
+      // Extract actual error message from Vertex AI response
+      let actualErrorMessage = 'Processing failed';
+      if (parsedError) {
+        if (parsedError.error?.message) {
+          actualErrorMessage = parsedError.error.message;
+        } else if (parsedError.message) {
+          actualErrorMessage = parsedError.message;
+        } else if (typeof parsedError === 'string') {
+          actualErrorMessage = parsedError;
+        }
+      } else if (rawResponse) {
+        // Try to extract error from raw response
+        try {
+          const textResponse = typeof rawResponse === 'string' ? rawResponse : JSON.stringify(rawResponse);
+          if (textResponse.length < 500) {
+            actualErrorMessage = textResponse;
+          }
+        } catch {
+          // Keep default message
+        }
+      }
+      // Use the actual HTTP status code (e.g., 404) instead of 3000 for HTTP errors
+      const statusCode = (response.status >= 200 && response.status < 600) ? response.status : VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR;
       return {
         Success: false,
-        Message: 'Processing failed',
-        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-        Error: 'Processing failed',
+        Message: actualErrorMessage,
+        StatusCode: statusCode,
+        Error: actualErrorMessage,
+        Debug: debugInfo,
+        FullResponse: parsedError || rawResponse,
+        HttpStatus: response.status,
+        HttpStatusText: response.statusText,
       } as any;
     }
 

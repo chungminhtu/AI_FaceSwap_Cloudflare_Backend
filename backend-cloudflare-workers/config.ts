@@ -81,10 +81,10 @@ export const VERTEX_AI_CONFIG = {
 
   // Model Configuration
   MODELS: {
-    IMAGE_GENERATION: 'gemini-2.5-flash-preview',
+    IMAGE_GENERATION: 'gemini-2.5-flash-image',
     PROMPT_GENERATION: 'gemini-3-flash-preview',
     MAPPING: {
-      '2.5': 'gemini-2.5-flash-preview',
+      '2.5': 'gemini-2.5-flash-image',
       '3p': 'gemini-3-pro-image-preview',
       '3f': 'gemini-3-flash-preview',
       // Legacy support
@@ -260,7 +260,7 @@ export const MODEL_CONFIG = {
   IMAGE_GENERATION_MODEL: 'gemini-2.5-flash-image',
   PROMPT_GENERATION_MODEL: 'gemini-3-flash-preview',
   MODEL_MAPPING: {
-    '2.5': 'gemini-2.5-flash-preview',
+    '2.5': 'gemini-2.5-flash-image',
     '3p': 'gemini-3-pro-image-preview',
     '3f': 'gemini-3-flash-preview',
   },

@@ -22,21 +22,25 @@ export const validateEnv = (env: Env, mode: 'rapidapi' | 'vertex' = 'rapidapi'):
 };
 
 export const validateRequest = (body: any): string | null => {
-  const hasPresetId = body?.preset_image_id && body.preset_image_id.trim() !== '';
-  const hasPresetUrl = body?.preset_image_url && body.preset_image_url.trim() !== '';
+  if (!body || typeof body !== 'object') {
+    return 'Invalid request body: must be a JSON object';
+  }
+  
+  const hasPresetId = body.preset_image_id && typeof body.preset_image_id === 'string' && body.preset_image_id.trim() !== '';
+  const hasPresetUrl = body.preset_image_url && typeof body.preset_image_url === 'string' && body.preset_image_url.trim() !== '';
   if (!hasPresetId && !hasPresetUrl) {
     return 'Missing required field: preset_image_id or preset_image_url';
   }
   if (hasPresetId && hasPresetUrl) {
     return 'Cannot provide both preset_image_id and preset_image_url. Please provide only one.';
   }
-  const hasSelfieIds = Array.isArray(body?.selfie_ids) && body.selfie_ids.length > 0;
-  const hasSelfieUrls = Array.isArray(body?.selfie_image_urls) && body.selfie_image_urls.length > 0;
+  const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
+  const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
   if (!hasSelfieIds && !hasSelfieUrls) {
     return 'Missing required field: selfie_ids or selfie_image_urls (must be a non-empty array)';
   }
-  if (!body?.profile_id) {
-    return 'Missing required field: profile_id';
+  if (!body.profile_id || typeof body.profile_id !== 'string' || body.profile_id.trim() === '') {
+    return 'Missing required field: profile_id (must be a non-empty string)';
   }
   return null;
 };

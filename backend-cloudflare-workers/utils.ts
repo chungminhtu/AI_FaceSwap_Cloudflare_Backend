@@ -151,12 +151,24 @@ export const getVertexAIEndpoint = (
 };
 
 export const jsonResponse = (data: any, status = 200, request?: Request, env?: any): Response => {
+  // Check if debug is enabled
+  const debugEnabled = env && env.ENABLE_DEBUG_RESPONSE === 'true';
+  
   // For 400 and 500 errors, sanitize message field - detailed info only in debug
+  // If debug is enabled and debug object contains error message, use it
   if (data && typeof data === 'object' && data.status === 'error' && data.message) {
-    if (status === 400) {
-      data.message = 'Bad Request';
-    } else if (status === 500) {
-      data.message = 'Internal Server Error';
+    if (status === 400 || status === 500) {
+      // If debug is enabled and we have debug info with error message, use it
+      if (debugEnabled && data.debug && data.debug.error) {
+        data.message = data.debug.error;
+      } else if (!debugEnabled) {
+        // Only sanitize if debug is disabled
+        if (status === 400) {
+          data.message = 'Bad Request';
+        } else if (status === 500) {
+          data.message = 'Internal Server Error';
+        }
+      }
     }
   }
   
@@ -169,25 +181,129 @@ export const jsonResponse = (data: any, status = 200, request?: Request, env?: a
   });
 };
 
+// Log error responses for 400/500 status codes
+// Always logs actual error details for monitoring, even if not shown to user
+const logErrorResponse = (status: number, message: string, debug: Record<string, any> | undefined, request: Request | undefined, env: any): void => {
+  if (status !== 400 && status !== 500) return;
+  if (!request) return;
+  
+  try {
+    const url = new URL(request.url);
+    const endpoint = url.pathname;
+    const requestId = request.headers.get('cf-ray') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+    const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
+    
+    // Extract actual error message - prioritize debug.error, then message parameter, then generic
+    // If message is already generic ("Bad Request"), try to get more info from debug object
+    let actualError: string;
+    if (debug?.error) {
+      actualError = debug.error;
+    } else if (message && message !== 'Bad Request' && message !== 'Internal Server Error') {
+      actualError = message;
+    } else if (debug && Object.keys(debug).length > 0) {
+      // If we have debug context but no error field, construct error from debug data
+      const debugStr = JSON.stringify(debug).substring(0, 500);
+      actualError = `Error details: ${debugStr}`;
+    } else {
+      actualError = message || (status === 400 ? 'Bad Request' : 'Internal Server Error');
+    }
+    
+    const logData: any = {
+      endpoint,
+      statusCode: status,
+      errorMessage: actualError, // Always log the actual error, not generic message
+      request: {
+        method: request.method,
+        url: request.url,
+        path: endpoint,
+        requestId,
+        ip,
+        userAgent: userAgent.substring(0, 200),
+        headers: {
+          'content-type': request.headers.get('content-type'),
+          'x-api-key': request.headers.get('x-api-key') ? '***present***' : 'missing',
+          'authorization': request.headers.get('authorization') ? '***present***' : 'missing'
+        }
+      }
+    };
+    
+    // Include all debug context for full error details (even if empty, it shows we tried to log)
+    if (debug && Object.keys(debug).length > 0) {
+      Object.assign(logData, debug);
+    } else {
+      // If no debug provided, note it in the log
+      logData.debugMissing = true;
+      logData.note = 'No debug context provided to errorResponse';
+    }
+    
+    console.error(`[ERROR ${status}] ${endpoint}:`, JSON.stringify(logData, null, 2));
+  } catch (logError) {
+    // Don't fail if logging fails
+    console.error(`[ERROR ${status}] Failed to log error response:`, logError);
+  }
+};
+
 export const errorResponse = (message: string, status = 500, debug?: Record<string, any>, request?: Request, env?: any): Response => {
-  // For 400 and 500 errors, always use generic messages - detailed info only in debug
-  // Message parameter is ignored for 400/500, only used for other status codes
-  let sanitizedMessage: string;
-  if (status === 400) {
-    sanitizedMessage = 'Bad Request';
-  } else if (status === 500) {
-    sanitizedMessage = 'Internal Server Error';
-  } else {
-    sanitizedMessage = message;
+  // Check if debug is enabled
+  const debugEnabled = env && env.ENABLE_DEBUG_RESPONSE === 'true';
+  
+  // For 400/500 errors, ensure we have error details for logging
+  // If debug is not provided or doesn't have error field, create one from message
+  let debugWithError = debug;
+  if ((status === 400 || status === 500) && (!debug || !debug.error)) {
+    // Create debug object with error field if missing
+    debugWithError = {
+      ...(debug || {}),
+      error: message && message !== 'Bad Request' && message !== 'Internal Server Error' 
+        ? message 
+        : (status === 400 ? 'Bad Request - no error details provided' : 'Internal Server Error - no error details provided')
+    };
   }
   
-  return jsonResponse({ 
+  // For 400 and 500 errors, use detailed messages when debug is enabled
+  let finalMessage: string;
+  if (status === 400 || status === 500) {
+    // If debug is enabled and debug object has error message, use it
+    if (debugEnabled && debugWithError && debugWithError.error) {
+      finalMessage = debugWithError.error;
+    } else if (debugEnabled && message && message !== 'Bad Request' && message !== 'Internal Server Error') {
+      // If debug enabled but no debug.error, use the message parameter if provided
+      finalMessage = message;
+    } else {
+      // Generic messages when debug is disabled
+      if (status === 400) {
+        finalMessage = 'Bad Request';
+      } else {
+        finalMessage = 'Internal Server Error';
+      }
+    }
+  } else {
+    finalMessage = message;
+  }
+  
+  // Always log 400/500 errors with actual error details for critical monitoring
+  // This logs even if debug is disabled - important for catching DB errors and other critical issues
+  // Use debugWithError which always has an error field for 400/500 errors
+  if (status === 400 || status === 500) {
+    logErrorResponse(status, finalMessage, debugWithError, request, env);
+  }
+  
+  // Include debug object in response only when debug is enabled
+  // But always log it for monitoring purposes (handled above)
+  const responseData: any = {
     data: null,
     status: 'error', 
-    message: sanitizedMessage, 
-    code: status,
-    ...(debug ? { debug } : {})
-  }, status, request, env);
+    message: finalMessage, 
+    code: status
+  };
+  
+  // Always include debug object when debug is enabled and debug data exists
+  if (debugEnabled && debug && Object.keys(debug).length > 0) {
+    responseData.debug = debug;
+  }
+  
+  return jsonResponse(responseData, status, request, env);
 };
 
 export const successResponse = (data: any, status = 200, request?: Request, env?: any): Response => {

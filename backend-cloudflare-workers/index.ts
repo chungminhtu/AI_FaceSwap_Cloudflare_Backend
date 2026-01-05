@@ -191,6 +191,52 @@ const checkRequestSize = (request: Request, maxSizeBytes: number): { valid: bool
 
 const DEFAULT_R2_BUCKET_NAME = '';
 
+// Critical error logging helper for mobile APIs
+const logCriticalError = (endpoint: string, error: unknown, request: Request, env: Env, context?: Record<string, any>): void => {
+  const errorMsg = error instanceof Error ? error.message : String(error);
+  const errorStack = error instanceof Error ? error.stack : undefined;
+  const requestId = request.headers.get('cf-ray') || 'unknown';
+  const userAgent = request.headers.get('user-agent') || 'unknown';
+  const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
+  
+  // Try to get request body if available (for POST requests)
+  let requestBody: any = null;
+  try {
+    // Don't consume the request body here, just log what we know
+    const contentType = request.headers.get('content-type') || '';
+    requestBody = {
+      contentType,
+      hasBody: !!request.body,
+      bodySize: request.headers.get('content-length') || 'unknown'
+    };
+  } catch {
+    // Ignore errors when trying to inspect body
+  }
+  
+  const logData = {
+    endpoint,
+    error: errorMsg,
+    stack: errorStack ? errorStack.substring(0, 1000) : undefined,
+    request: {
+      method: request.method,
+      url: request.url,
+      path: new URL(request.url).pathname,
+      requestId,
+      ip,
+      userAgent: userAgent.substring(0, 200),
+      headers: {
+        'content-type': request.headers.get('content-type'),
+        'x-api-key': request.headers.get('x-api-key') ? '***present***' : 'missing',
+        'authorization': request.headers.get('authorization') ? '***present***' : 'missing'
+      },
+      body: requestBody
+    },
+    ...(context || {})
+  };
+  
+  console.error(`[CRITICAL ERROR] ${endpoint}:`, JSON.stringify(logData, null, 2));
+};
+
 // Helper function to resolve aspect ratio for non-faceswap endpoints
 // If aspect_ratio is "original" or null/undefined, calculate from selfie image
 const resolveAspectRatioForNonFaceswap = async (
@@ -564,6 +610,9 @@ const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record
     originalResultImageUrl: result.ResultImageUrl,
     finalResultImageUrl: finalUrl,
     debug: (result as any).Debug,
+    fullResponse: (result as any).FullResponse,
+    httpStatus: (result as any).HttpStatus,
+    httpStatusText: (result as any).HttpStatusText,
   });
 
 const buildVertexDebug = (result: FaceSwapResponse): Record<string, any> | undefined => {
@@ -2715,8 +2764,9 @@ export default {
 
     // Handle profile creation
     if (path === '/profiles' && request.method === 'POST') {
+      let body: Partial<Profile & { userID?: string; id?: string; device_id?: string }> | undefined;
       try {
-        const body = await request.json() as Partial<Profile & { userID?: string; id?: string; device_id?: string }>;
+        body = await request.json() as Partial<Profile & { userID?: string; id?: string; device_id?: string }>;
         const deviceId = body.device_id || request.headers.get('x-device-id') || null;
         const profileId = body.userID || body.id || nanoid(16);
 
@@ -2797,9 +2847,17 @@ export default {
           ...(debugEnabled ? { debug: { profileId, deviceId } } : {})
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/profiles (POST)', error, request, env, {
+          body: {
+            device_id: body?.device_id ? '***present***' : 'missing',
+            userID: body?.userID,
+            id: body?.id,
+            profile_id: body?.userID || body?.id || 'auto-generated'
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
@@ -2840,9 +2898,12 @@ export default {
           ...(debugEnabled ? { debug: { profileId } } : {})
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/profiles/{id} (GET)', error, request, env, {
+          profileId: extractPathId(path, '/profiles/')
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
@@ -3282,9 +3343,9 @@ export default {
 
     // Handle selfies listing
     if (path === '/selfies' && request.method === 'GET') {
+      const url = new URL(request.url);
       try {
         // Check for required profile_id query parameter
-        const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
         if (!profileId) {
           const debugEnabled = isDebugEnabled(env);
@@ -3394,6 +3455,11 @@ export default {
           ...(debugEnabled ? { debug: { count: selfies.length, profileId } } : {})
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/selfies (GET)', error, request, env, {
+          profileId: url.searchParams.get('profile_id'),
+          action: url.searchParams.get('action'),
+          limit: url.searchParams.get('limit')
+        });
         // Return empty array instead of error to prevent UI breaking
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
@@ -3401,7 +3467,7 @@ export default {
           status: 'success',
           message: 'Selfies retrieved successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200), count: 0 } } : {})
+          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message : String(error), count: 0 } } : {})
         }, 200, request, env);
       }
     }
@@ -3588,8 +3654,8 @@ export default {
     }
 
     if (path === '/results' && request.method === 'GET') {
+      const url = new URL(request.url);
       try {
-        const url = new URL(request.url);
         const profileId = url.searchParams.get('profile_id');
 
 
@@ -3652,13 +3718,17 @@ export default {
           ...(debugEnabled ? { debug: { count: results.length, profileId: profileId || null } } : {})
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/results (GET)', error, request, env, {
+          profileId: url.searchParams.get('profile_id'),
+          limit: url.searchParams.get('limit')
+        });
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { results: [] },
           status: 'success',
           message: 'Results retrieved successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200), count: 0 } } : {})
+          ...(debugEnabled ? { debug: { error: error instanceof Error ? error.message : String(error), count: 0 } } : {})
         }, 200, request, env);
       }
     }
@@ -3721,7 +3791,10 @@ export default {
           } } : {})
         }, 200, request, env);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        logCriticalError('/results/{id} (DELETE)', error, request, env, {
+          resultId: extractPathId(path, '/results/')
+        });
+        const errorMessage = error instanceof Error ? error.message : String(error);
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: null,
@@ -3729,10 +3802,10 @@ export default {
           message: '',
           code: 500,
           ...(debugEnabled ? { debug: {
-            resultId: path.replace('/results/', ''),
+            resultId: extractPathId(path, '/results/'),
             error: errorMessage,
             path,
-            ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {})
+            ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {})
           } } : {})
         }, 500, request, env);
       }
@@ -3752,49 +3825,70 @@ export default {
         return requestCache.get(key) as Promise<T>;
       };
 
+      let body: FaceSwapRequest | undefined;
       try {
-        let body: FaceSwapRequest;
         try {
-          body = await request.json();
+          const rawBody = await request.text();
+          console.log('[Faceswap] Raw request body:', rawBody.substring(0, 500));
+          body = JSON.parse(rawBody);
+          console.log('[Faceswap] Parsed body:', JSON.stringify({ 
+            preset_image_id: body?.preset_image_id, 
+            profile_id: body?.profile_id, 
+            selfie_ids: body?.selfie_ids,
+            has_preset_id: !!body?.preset_image_id,
+            has_profile_id: !!body?.profile_id,
+            has_selfie_ids: Array.isArray(body?.selfie_ids)
+          }));
         } catch (jsonError) {
           const errorMsg = jsonError instanceof Error ? jsonError.message : String(jsonError);
-          return errorResponse('', 400, debugEnabled ? { error: `Invalid JSON in request body: ${errorMsg}`, path } : undefined, request, env);
+          console.error('[Faceswap] JSON parse error:', errorMsg);
+          return errorResponse('', 400, { error: `Invalid JSON in request body: ${errorMsg}`, path }, request, env);
+        }
+
+        if (!body) {
+          return errorResponse('', 400, { error: 'Request body is required', path }, request, env);
         }
 
         const envError = validateEnv(env, 'vertex');
-        if (envError) return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        if (envError) {
+          console.error('[Faceswap] Env validation error:', envError);
+          return errorResponse('', 500, { error: envError, path }, request, env);
+        }
 
         const requestError = validateRequest(body);
         if (requestError) {
-          console.error('[Faceswap] Validation error:', requestError, { preset_image_id: body.preset_image_id, profile_id: body.profile_id, selfie_ids: body.selfie_ids });
-          return errorResponse('', 400, debugEnabled ? { error: requestError, path, body: { preset_image_id: body.preset_image_id, profile_id: body.profile_id, selfie_ids: body.selfie_ids } } : undefined, request, env);
+          console.error('[Faceswap] Request validation error:', requestError, { 
+            preset_image_id: body?.preset_image_id, 
+            preset_image_id_type: typeof body?.preset_image_id,
+            profile_id: body?.profile_id,
+            profile_id_type: typeof body?.profile_id,
+            selfie_ids: body?.selfie_ids,
+            selfie_ids_type: Array.isArray(body?.selfie_ids) ? 'array' : typeof body?.selfie_ids,
+            body_keys: body ? Object.keys(body) : 'null',
+            body_stringified: JSON.stringify(body).substring(0, 500)
+          });
+          return errorResponse('', 400, { error: requestError, path, body: { preset_image_id: body?.preset_image_id, profile_id: body?.profile_id, selfie_ids: body?.selfie_ids } }, request, env);
         }
 
+        // Extract validated values (validateRequest already confirmed they exist and are correct types)
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
+        const hasPresetId = body.preset_image_id && typeof body.preset_image_id === 'string' && body.preset_image_id.trim() !== '';
+        const hasPresetUrl = body.preset_image_url && typeof body.preset_image_url === 'string' && body.preset_image_url.trim() !== '';
         
-        if (!hasSelfieIds && !hasSelfieUrls) {
-          return errorResponse('', 400, debugEnabled ? { error: 'Missing selfie_ids or selfie_image_urls (must be a non-empty array)', path, body: { selfie_ids: body.selfie_ids, selfie_image_urls: body.selfie_image_urls } } : undefined, request, env);
-        }
-
-        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
-        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
-
-        if (!hasPresetId && !hasPresetUrl) {
-          return errorResponse('', 400, debugEnabled ? { error: 'Missing preset_image_id or preset_image_url', path, body: { preset_image_id: body.preset_image_id, preset_image_url: body.preset_image_url } } : undefined, request, env);
-        }
+        console.log('[Faceswap] All validations passed, proceeding to database queries', { hasPresetId, hasPresetUrl, hasSelfieIds, hasSelfieUrls });
         
         if (hasSelfieUrls && body.selfie_image_urls) {
           for (const url of body.selfie_image_urls) {
             if (!validateImageUrl(url, env)) {
-              return errorResponse('', 400, debugEnabled ? { error: `Invalid selfie image URL: ${url}`, path, url } : undefined, request, env);
+              return errorResponse('', 400, { error: `Invalid selfie image URL: ${url}`, path, url }, request, env);
             }
           }
         }
         
         if (hasPresetUrl && body.preset_image_url) {
           if (!validateImageUrl(body.preset_image_url, env)) {
-            return errorResponse('', 400, debugEnabled ? { error: `Invalid preset image URL: ${body.preset_image_url}`, path, url: body.preset_image_url } : undefined, request, env);
+            return errorResponse('', 400, { error: `Invalid preset image URL: ${body.preset_image_url}`, path, url: body.preset_image_url }, request, env);
           }
         }
 
@@ -3827,7 +3921,39 @@ export default {
         }
 
         // Execute all queries in parallel
-        const results = await Promise.all(queries);
+        let results: any[];
+        try {
+          results = await Promise.all(queries);
+        } catch (dbError) {
+          // Database errors could be client errors (invalid ID format) or server errors
+          const errorMsg = dbError instanceof Error ? dbError.message : String(dbError);
+          const errorLower = errorMsg.toLowerCase();
+          
+          // Check if it's a client error (invalid input format, type mismatch, etc.)
+          const isClientError = errorLower.includes('datatype mismatch') ||
+                               errorLower.includes('sqlite_mismatch') ||
+                               errorLower.includes('invalid') ||
+                               errorLower.includes('syntax error') ||
+                               errorLower.includes('no such column');
+          
+          logCriticalError('/faceswap', dbError, request, env, {
+            body: {
+              preset_image_id: body?.preset_image_id,
+              profile_id: body?.profile_id,
+              selfie_ids: body?.selfie_ids
+            },
+            dbErrorType: isClientError ? 'client_error' : 'server_error',
+            errorMessage: errorMsg
+          });
+          
+          const status = isClientError ? 400 : 500;
+          return errorResponse('', status, { 
+            error: `Database query failed: ${errorMsg}`, 
+            path,
+            dbErrorType: isClientError ? 'client_error' : 'server_error',
+            stack: dbError instanceof Error ? dbError.stack?.substring(0, 1000) : undefined
+          }, request, env);
+        }
 
         const profileCheck = results[0];
         if (!profileCheck) {
@@ -3854,7 +3980,8 @@ export default {
           presetImageId = null;
         } else {
           // This should never happen due to earlier validation, but TypeScript needs this
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+          const errorMsg = 'Invalid request: missing both preset_image_id and preset_image_url';
+          return errorResponse('', 400, debugEnabled ? { error: errorMsg, path, hasPresetId, hasPresetUrl } : { error: errorMsg }, request, env);
         }
 
         // Extract selfie results and validate action match if specified
@@ -3880,19 +4007,21 @@ export default {
               // Support both '4k' and '4K' for backward compatibility
               if (requestedAction === '4k') {
                 if (selfieAction !== '4k') {
+                  const errorMsg = `Selfie with ID ${body.selfie_ids[i]} has action "${selfieActionRaw || 'null'}" but request requires action "4k"`;
                   return errorResponse(
-                    `Selfie with ID ${body.selfie_ids[i]} has action "${selfieActionRaw || 'null'}" but request requires action "4k"`,
+                    errorMsg,
                     400,
-                    debugEnabled ? { selfieId: body.selfie_ids[i], selfieAction: selfieActionRaw, requestedAction, path } : undefined,
+                    { error: errorMsg, selfieId: body.selfie_ids[i], selfieAction: selfieActionRaw, requestedAction, path },
                     request,
                     env
                   );
                 }
               } else if (selfieAction !== requestedAction) {
+                const errorMsg = `Selfie with ID ${body.selfie_ids[i]} has action "${selfieActionRaw || 'null'}" but request requires action "${requestedAction}"`;
                 return errorResponse(
-                  `Selfie with ID ${body.selfie_ids[i]} has action "${selfieActionRaw || 'null'}" but request requires action "${requestedAction}"`,
+                  errorMsg,
                   400,
-                  debugEnabled ? { selfieId: body.selfie_ids[i], selfieAction: selfieActionRaw, requestedAction, path } : undefined,
+                  { error: errorMsg, selfieId: body.selfie_ids[i], selfieAction: selfieActionRaw, requestedAction, path },
                   request,
                   env
                 );
@@ -3915,7 +4044,8 @@ export default {
 
         // Support multiple selfies for wedding faceswap (e.g., bride and groom)
         if (selfieUrls.length === 0) {
-          return errorResponse('', 400, debugEnabled ? { hasSelfieIds, hasSelfieUrls, selfieIdsCount: body.selfie_ids?.length || 0, selfieUrlsCount: body.selfie_image_urls?.length || 0, path } : undefined, request, env);
+          const errorMsg = 'No valid selfie images found. Both selfie_ids and selfie_image_urls are empty or invalid.';
+          return errorResponse('', 400, debugEnabled ? { error: errorMsg, hasSelfieIds, hasSelfieUrls, selfieIdsCount: body.selfie_ids?.length || 0, selfieUrlsCount: body.selfie_image_urls?.length || 0, path } : { error: errorMsg }, request, env);
         }
         const sourceUrl = selfieUrls.length === 1 ? selfieUrls[0] : selfieUrls;
 
@@ -4237,16 +4367,29 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
-        console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        logCriticalError('/faceswap', error, request, env, {
+          body: {
+            preset_image_id: body?.preset_image_id,
+            profile_id: body?.profile_id,
+            selfie_ids: body?.selfie_ids,
+            has_preset_id: !!body?.preset_image_id,
+            has_selfie_ids: Array.isArray(body?.selfie_ids)
+          }
+        });
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, { 
+          error: errorMsg, 
+          path, 
+          ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {})
+        }, request, env);
       }
     }
 
     // Handle background endpoint
     if (path === '/background' && request.method === 'POST') {
+      let body: BackgroundRequest | undefined;
       try {
-        const body: BackgroundRequest = await request.json();
+        body = await request.json() as BackgroundRequest;
 
         const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
@@ -4548,17 +4691,27 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
-        console.error('Unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/background', error, request, env, {
+          body: {
+            preset_image_id: body?.preset_image_id,
+            preset_image_url: body?.preset_image_url,
+            custom_prompt: body?.custom_prompt ? '***present***' : 'missing',
+            profile_id: body?.profile_id,
+            selfie_id: body?.selfie_id,
+            selfie_image_url: body?.selfie_image_url ? '***present***' : 'missing'
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
     // Handle upscaler4k endpoint
     if (path === '/upscaler4k' && request.method === 'POST') {
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string } | undefined;
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
         
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -4669,17 +4822,23 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
-        console.error('Upscaler4K unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/upscaler4k', error, request, env, {
+          body: {
+            image_url: body?.image_url,
+            profile_id: body?.profile_id
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -4763,17 +4922,24 @@ export default {
           }) } : {}),
         });
       } catch (error) {
-        console.error('Enhance unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/enhance', error, request, env, {
+          body: {
+            image_url: body?.image_url,
+            profile_id: body?.profile_id,
+            aspect_ratio: body?.aspect_ratio
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
     // Handle beauty endpoint
     if (path === '/beauty' && request.method === 'POST') {
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -4857,10 +5023,16 @@ export default {
           }) } : {}),
         });
       } catch (error) {
-        console.error('Beauty unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/beauty', error, request, env, {
+          body: {
+            image_url: body?.image_url,
+            profile_id: body?.profile_id,
+            aspect_ratio: body?.aspect_ratio
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
@@ -4875,8 +5047,18 @@ export default {
         return requestCache.get(key) as Promise<T>;
       };
 
+      let body: {
+        preset_image_id?: string;
+        preset_image_url?: string; 
+        selfie_id?: string;
+        selfie_image_url?: string;
+        profile_id: string;
+        aspect_ratio?: string; 
+        model?: string | number;
+        additional_prompt?: string;
+      } | undefined;
       try {
-        const body = await request.json() as { 
+        body = await request.json() as { 
           preset_image_id?: string;
           preset_image_url?: string; 
           selfie_id?: string;
@@ -5097,17 +5279,26 @@ export default {
           }) } : {}),
         });
       } catch (error) {
-        console.error('Filter unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/filter', error, request, env, {
+          body: {
+            preset_image_id: body?.preset_image_id,
+            preset_image_url: body?.preset_image_url ? '***present***' : 'missing',
+            selfie_id: body?.selfie_id,
+            selfie_image_url: body?.selfie_image_url ? '***present***' : 'missing',
+            profile_id: body?.profile_id
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('Internal server error', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('Internal server error', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
     // Handle restore endpoint
     if (path === '/restore' && request.method === 'POST') {
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
       try {
-        const body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -5190,17 +5381,24 @@ export default {
           }) } : {}),
         });
       } catch (error) {
-        console.error('Restore unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/restore', error, request, env, {
+          body: {
+            image_url: body?.image_url,
+            profile_id: body?.profile_id,
+            aspect_ratio: body?.aspect_ratio
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
     // Handle aging endpoint
     if (path === '/aging' && request.method === 'POST') {
+      let body: { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
       try {
-        const body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -5286,10 +5484,17 @@ export default {
           }) } : {}),
         });
       } catch (error) {
-        console.error('Aging unhandled error:', error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200));
+        logCriticalError('/aging', error, request, env, {
+          body: {
+            image_url: body?.image_url,
+            profile_id: body?.profile_id,
+            age_years: body?.age_years,
+            aspect_ratio: body?.aspect_ratio
+          }
+        });
         const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
     }
 
