@@ -299,8 +299,10 @@ export const errorResponse = (message: string, status = 500, debug?: Record<stri
   };
   
   // Always include debug object when debug is enabled and debug data exists
-  if (debugEnabled && debug && Object.keys(debug).length > 0) {
-    responseData.debug = debug;
+  // Use debugWithError for 400/500 errors to ensure error field is present
+  const debugForResponse = (status === 400 || status === 500) ? debugWithError : debug;
+  if (debugEnabled && debugForResponse && Object.keys(debugForResponse).length > 0) {
+    responseData.debug = debugForResponse;
   }
   
   return jsonResponse(responseData, status, request, env);

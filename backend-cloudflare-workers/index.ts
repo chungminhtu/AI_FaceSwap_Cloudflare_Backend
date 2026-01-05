@@ -4132,7 +4132,13 @@ export default {
               }
             }
           } else {
-            return errorResponse('', 400, undefined, request, env);
+            const errorMsg = generateResult.error || 'Failed to generate Vertex AI prompt from preset image';
+            return errorResponse('', 400, { 
+              error: errorMsg, 
+              path,
+              presetImageId: presetImageId || null,
+              presetImageUrl: presetImageUrl || null
+            }, request, env);
           }
         }
         const augmentedPromptPayload = augmentVertexPrompt(
