@@ -1551,6 +1551,10 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {})
         }, httpStatus, request, env);
       } catch (error) {
+        logCriticalError('/upload-url', error, request, env, {
+          path,
+          errorType: 'upload_error'
+        });
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         const debugEnabled = isDebugEnabled(env);
         return errorResponse(
@@ -1672,8 +1676,10 @@ export default {
           key: multipartUpload.key
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/upload-multipart/create', error, request, env);
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return errorResponse('Failed to create multipart upload', 500, { error: errorMsg.substring(0, 200) }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('Failed to create multipart upload', 500, debugEnabled ? { error: errorMsg.substring(0, 200) } : undefined, request, env);
       }
     }
 
@@ -1707,8 +1713,10 @@ export default {
           etag: uploadedPart.etag
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/upload-multipart/part', error, request, env);
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return errorResponse('Failed to upload part', 500, { error: errorMsg.substring(0, 200) }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('Failed to upload part', 500, debugEnabled ? { error: errorMsg.substring(0, 200) } : undefined, request, env);
       }
     }
 
@@ -1738,8 +1746,10 @@ export default {
           completed: true
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/upload-multipart/complete', error, request, env);
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return errorResponse('Failed to complete multipart upload', 500, { error: errorMsg.substring(0, 200) }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('Failed to complete multipart upload', 500, debugEnabled ? { error: errorMsg.substring(0, 200) } : undefined, request, env);
       }
     }
 
@@ -1760,8 +1770,10 @@ export default {
 
         return successResponse({ aborted: true }, 200, request, env);
       } catch (error) {
+        logCriticalError('/upload-multipart/abort', error, request, env);
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return errorResponse('Failed to abort multipart upload', 500, { error: errorMsg.substring(0, 200) }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('Failed to abort multipart upload', 500, debugEnabled ? { error: errorMsg.substring(0, 200) } : undefined, request, env);
       }
     }
 
@@ -1796,8 +1808,12 @@ export default {
           uploaded: true
         }, 200, request, env);
       } catch (error) {
+        logCriticalError('/r2-upload', error, request, env, {
+          uploadKey: path.replace('/r2-upload/', '')
+        });
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        return errorResponse('', 500, { error: errorMsg }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg } : undefined, request, env);
       }
     }
 
@@ -2470,9 +2486,12 @@ export default {
         }
       }, 10, 1000);
       } catch (error) {
+        logCriticalError('/process-thumbnail-file', error, request, env, {
+          errorType: 'unhandled_error'
+        });
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        console.error('[process-thumbnail-file] Unhandled error:', errorMsg);
-        return errorResponse('', 500, { error: errorMsg }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path } : undefined, request, env);
       }
     }
 
@@ -2800,9 +2819,12 @@ export default {
         }, 200, request, env);
 
       } catch (error) {
+        logCriticalError('/process-thumbnail-zip', error, request, env, {
+          errorType: 'unhandled_error'
+        });
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
-        console.error('[process-thumbnail-zip] Unhandled error:', errorMsg);
-        return errorResponse('', 500, { error: errorMsg }, request, env);
+        const debugEnabled = isDebugEnabled(env);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path } : undefined, request, env);
       }
     }
 
