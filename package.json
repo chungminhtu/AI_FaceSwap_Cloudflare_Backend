@@ -20,10 +20,8 @@
     "deploy:parallel:test": "npm run docs:build && node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office,ai-office-dev,ai-office-prod --skip-tests",
     "generate:api-key": "node backend-cloudflare-workers/generate-api-key.js",
     "cleanup:old-thumbnails": "node backend-cloudflare-workers/cleanup-old-thumbnails.js --folder=avif_1.5x,avif_1x,avif_2x,avif_3x,avif_4x,webp_1.5x,webp_1x,webp_2x,webp_3x,webp_4x",
-    "upload:zip:ai-office-dev": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js /Volumes/DATA/TEST/LOTTIE_DIE/Test_Lottie_Webp/FULL_FACESWAP_With_Text_webp_avif_20251231_095945.zip ai-office-dev faceswap-images-office-dev preset_thumb 100",
-    "upload:zip:ai-office-dev_Lottie": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js /Users/minhtu/Downloads/Lottie_All_297_20260107_124901.zip ai-office-dev faceswap-images-office-dev preset_thumb 100",
-    "upload:zip:ai-office-prod": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js ./files.zip ai-office-prod faceswap-images-office-prod",
-    "upload:zip:preset": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js ./files.zip ai-office faceswap-images preset/"
+    "upload:zip:ai-office-dev": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js /Volumes/DATA/TEST/LOTTIE_DIE/Test_Lottie_Webp/FULL_FACESWAP_With_Text_webp_avif_20251231_095945.zip ai-office-dev faceswap-images-office-dev preset_thumb",
+    "upload:zip:ai-office-dev_Lottie": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js /Users/minhtu/Downloads/Lottie_All_297_20260107_124901.zip ai-office-dev faceswap-images-office-dev preset_thumb"
   },
   "dependencies": {
     "express": "^4.18.2",

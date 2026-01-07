@@ -1813,12 +1813,14 @@
                         let avifCount = 0;
 
                         items.forEach(item => {
-                            // Check preset type based on available thumbnail formats
+                            // Count each format independently (presets can have multiple formats)
                             if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
-                            } else if (item.thumbnail_url_4x_lottie_avif) {
+                            }
+                            if (item.thumbnail_url_4x_lottie_avif) {
                                 avifCount++;
-                            } else {
+                            }
+                            if (!item.thumbnail_url_4x_lottie && !item.thumbnail_url_4x_lottie_avif) {
                                 webpCount++;
                             }
                         });
@@ -2173,12 +2175,14 @@
                         let avifCount = 0;
 
                         items.forEach(item => {
-                            // Check preset type based on available thumbnail formats
+                            // Count each format independently (presets can have multiple formats)
                             if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
-                            } else if (item.thumbnail_url_4x_lottie_avif) {
+                            }
+                            if (item.thumbnail_url_4x_lottie_avif) {
                                 avifCount++;
-                            } else {
+                            }
+                            if (!item.thumbnail_url_4x_lottie && !item.thumbnail_url_4x_lottie_avif) {
                                 webpCount++;
                             }
                         });
