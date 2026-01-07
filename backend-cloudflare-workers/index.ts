@@ -3,7 +3,7 @@
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
-import type { Env, FaceSwapRequest, FaceSwapResponse, UploadUrlRequest, Profile, BackgroundRequest } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
@@ -260,12 +260,6 @@ const resolveAspectRatioForNonFaceswap = async (
   return supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
 };
 
-const globalScopeWithAccount = globalThis as typeof globalThis & {
-  ACCOUNT_ID?: string;
-  __CF_ACCOUNT_ID?: string;
-  __ACCOUNT_ID?: string;
-};
-
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
 // Extract ID from path parameter (e.g., /profiles/{id} -> id)
@@ -462,14 +456,6 @@ const saveResultToDatabase = async (
   }
 };
 
-const resolveAccountId = (env: Env): string | undefined =>
-  env.R2_ACCOUNT_ID ||
-  env.CF_ACCOUNT_ID ||
-  env.ACCOUNT_ID ||
-  globalScopeWithAccount.ACCOUNT_ID ||
-  globalScopeWithAccount.__CF_ACCOUNT_ID ||
-  globalScopeWithAccount.__ACCOUNT_ID;
-
 const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
 
 const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
@@ -538,17 +524,7 @@ const extractR2KeyFromUrl = (url: string): string | null => {
   }
 };
 
-const buildSelfieUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
-  return getR2PublicUrl(env, key, fallbackOrigin);
-};
-
-const buildPresetUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
-  return getR2PublicUrl(env, key, fallbackOrigin);
-};
-
-const buildResultUrl = (key: string, env: Env, fallbackOrigin?: string): string => {
-  return getR2PublicUrl(env, key, fallbackOrigin);
-};
+// Removed redundant wrapper functions - use getR2PublicUrl directly
 
 const reconstructR2Key = (id: string, ext: string, prefix: 'selfie' | 'preset' | 'results'): string => {
   return `${prefix}/${id}.${ext}`;
@@ -3095,7 +3071,7 @@ export default {
         }
 
         const storedKey = reconstructR2Key((result as any).id, (result as any).ext, 'preset');
-        const presetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+        const presetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
         
         // Extract thumbnail information from thumbnail_r2 JSON
         let thumbnailUrl: string | null = null;
@@ -3237,7 +3213,7 @@ export default {
         // Flatten to match frontend expectations
         const presets = await Promise.all(imagesResult.results.map(async (row: any) => {
           const storedKey = reconstructR2Key(row.id, row.ext, 'preset');
-          const fullUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+          const fullUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
           
           // Parse thumbnail_r2 JSON to extract 4x thumbnail
           let thumbnailUrl: string | null = null;
@@ -3493,11 +3469,11 @@ export default {
           let fullUrl: string;
           if (hasExt && row.ext) {
             const storedKey = reconstructR2Key(row.id, row.ext, 'selfie');
-            fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+            fullUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
           } else if (hasUrl && row.selfie_url) {
             const storedKey = row.selfie_url || '';
             if (storedKey && !storedKey.startsWith('http://') && !storedKey.startsWith('https://')) {
-              fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+              fullUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
             } else {
               fullUrl = convertLegacyUrl(storedKey, env);
             }
@@ -3765,7 +3741,7 @@ export default {
 
         const results = result.results.map((row: any) => {
           const storedKey = reconstructR2Key(row.id, row.ext, 'results');
-          const fullUrl = buildResultUrl(storedKey, env, requestUrl.origin);
+          const fullUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
           return {
             id: String(row.id || ''),
             result_url: fullUrl,
@@ -4045,7 +4021,7 @@ export default {
             return errorResponse('Preset image not found', 404, undefined, request, env);
           }
           const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
-          targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+          targetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
           presetName = 'Unnamed Preset';
           presetImageId = body.preset_image_id || null;
         } else if (hasPresetUrl) {
@@ -4103,7 +4079,7 @@ export default {
             }
             
             const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
-            const fullUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+            const fullUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
             selfieUrls.push(fullUrl);
             selfieIds.push(body.selfie_ids[i]);
             selfieActions.push(selfieActionRaw || 'faceswap'); // Use raw value from DB, default to faceswap if null
@@ -4598,7 +4574,7 @@ export default {
           }
 
           const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
-          targetUrl = buildPresetUrl(storedKey, env, requestUrl.origin);
+          targetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
           presetName = 'Preset';
           presetImageId = body.preset_image_id || null;
         } else {
@@ -4616,7 +4592,7 @@ export default {
           }
 
           const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
-          selfieUrl = buildSelfieUrl(storedKey, env, requestUrl.origin);
+          selfieUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
         } else {
           selfieUrl = body.selfie_image_url!;
         }
