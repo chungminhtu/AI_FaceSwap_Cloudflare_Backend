@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const colors = {
   reset: '\x1b[0m',
@@ -12,24 +13,6 @@ const colors = {
   cyan: '\x1b[36m',
 };
 
-// Old thumbnail folders to delete (in root, not in preset_thumb)
-const oldThumbnailFolders = [
-  'lottie_1x',
-  'lottie_1.5x',
-  'lottie_2x',
-  'lottie_3x',
-  'lottie_4x',
-  'lottie_avif_1x',
-  'lottie_avif_1.5x',
-  'lottie_avif_2x',
-  'lottie_avif_3x',
-  'lottie_avif_4x',
-  'webp_1x',
-  'webp_1.5x',
-  'webp_2x',
-  'webp_3x',
-  'webp_4x',
-];
 
 function getWranglerConfig(env) {
   const configPath = path.join(__dirname, '..', '_deploy-cli-cloudflare-gcp', 'wrangler-configs', `wrangler.${env}.jsonc`);
@@ -73,12 +56,203 @@ function getCloudflareCredentials(env) {
     throw new Error(`No Cloudflare config found for environment: ${env}`);
   }
   
-  const { apiToken, accountId } = envSecrets.cloudflare;
+  const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = envSecrets.cloudflare;
   if (!apiToken || !accountId) {
     throw new Error(`Missing API token or account ID for environment: ${env}`);
   }
   
-  return { apiToken, accountId };
+  return { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey };
+}
+
+function checkRcloneAvailable() {
+  try {
+    execSync('which rclone', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getRcloneRemoteName() {
+  try {
+    // Check if rclone has any configured remotes
+    const remotes = execSync('rclone listremotes', { encoding: 'utf-8', stdio: 'pipe' }).trim().split('\n').filter(r => r.trim());
+    // Look for common R2 remote names (r2, cloudflare, etc.)
+    const r2Remotes = remotes.filter(r => {
+      const name = r.replace(':', '').toLowerCase();
+      return name.includes('r2') || name.includes('cloudflare');
+    });
+    if (r2Remotes.length > 0) {
+      return r2Remotes[0].replace(':', ''); // Remove the colon
+    }
+    // If no R2-specific remote found, use the first remote
+    if (remotes.length > 0) {
+      return remotes[0].replace(':', '');
+    }
+  } catch {
+    // Ignore errors
+  }
+  return null;
+}
+
+async function deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun = false) {
+  return new Promise(async (resolve, reject) => {
+    // Remove trailing slash for purge
+    const folderPath = folderName.endsWith('/') ? folderName.slice(0, -1) : folderName;
+    const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+    
+    // Try to use pre-configured remote first
+    let remoteName = getRcloneRemoteName();
+    let tempConfigPath = null;
+    
+    if (!remoteName && r2AccessKeyId && r2SecretAccessKey) {
+      // Create temporary rclone config file
+      const tempDir = os.tmpdir();
+      tempConfigPath = path.join(tempDir, `rclone-${Date.now()}.conf`);
+      const configContent = `[r2]
+type = s3
+provider = Cloudflare
+access_key_id = ${r2AccessKeyId}
+secret_access_key = ${r2SecretAccessKey}
+endpoint = ${endpoint}
+`;
+      fs.writeFileSync(tempConfigPath, configContent);
+      remoteName = 'r2';
+      console.log(`  ${colors.cyan}Using temporary rclone config with R2 credentials${colors.reset}`);
+    } else if (remoteName) {
+      console.log(`  ${colors.cyan}Using pre-configured rclone remote: ${remoteName}${colors.reset}`);
+    } else {
+      reject(new Error('No rclone remote configured and R2 access keys not provided. Either run "rclone config" or add r2AccessKeyId and r2SecretAccessKey to deployments-secrets.json'));
+      return;
+    }
+    
+    const remotePath = `${remoteName}:${bucketName}/${folderPath}`;
+    const baseArgs = tempConfigPath ? ['--config', tempConfigPath] : [];
+    
+    try {
+      // Step 1: Use purge to delete all files and subdirectories
+      console.log(`  ${colors.cyan}Step 1: Purging folder and all contents...${colors.reset}`);
+      const purgeArgs = [...baseArgs, 'purge', '-P', remotePath];
+      if (dryRun) {
+        purgeArgs.splice(purgeArgs.indexOf('purge') + 1, 0, '--dry-run');
+      }
+      
+      await new Promise((purgeResolve, purgeReject) => {
+        const rclone = spawn('rclone', purgeArgs, {
+          stdio: 'inherit',
+          env: process.env
+        });
+        
+        rclone.on('close', (code) => {
+          if (code === 0) {
+            purgeResolve();
+          } else {
+            purgeReject(new Error(`rclone purge failed with code ${code}`));
+          }
+        });
+        
+        rclone.on('error', purgeReject);
+      });
+      
+      // Step 2: Use rmdirs to remove any empty directory markers
+      if (!dryRun) {
+        console.log(`  ${colors.cyan}Step 2: Removing empty directory markers...${colors.reset}`);
+        const rmdirsArgs = [...baseArgs, 'rmdirs', '-P', remotePath];
+        
+        await new Promise((rmdirsResolve, rmdirsReject) => {
+          const rclone = spawn('rclone', rmdirsArgs, {
+            stdio: 'inherit',
+            env: process.env
+          });
+          
+          rclone.on('close', (code) => {
+            // rmdirs returns 0 even if nothing to delete, so accept any code
+            rmdirsResolve();
+          });
+          
+          rclone.on('error', () => {
+            // Ignore rmdirs errors - folder might already be gone
+            rmdirsResolve();
+          });
+        });
+      }
+      
+      // Step 3: Try to delete the folder marker object itself using R2 API (more reliable)
+      if (!dryRun) {
+        console.log(`  ${colors.cyan}Step 3: Removing folder marker object via R2 API...${colors.reset}`);
+        const folderMarkerKey = `${folderPath}/`;
+        
+        try {
+          // Get credentials for R2 API using the passed env parameter
+          const credentials = getCloudflareCredentials(env);
+          if (credentials.apiToken && credentials.accountId) {
+            // Try to delete the folder marker object using R2 API
+            const markerUrl = `https://api.cloudflare.com/client/v4/accounts/${credentials.accountId}/r2/buckets/${bucketName}/objects/${encodeURIComponent(folderMarkerKey)}`;
+            const response = await fetch(markerUrl, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${credentials.apiToken}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (response.ok || response.status === 404) {
+              // 404 means it doesn't exist, which is fine
+              console.log(`  ${colors.green}✓ Folder marker removed or didn't exist${colors.reset}`);
+            } else {
+              const errorText = await response.text();
+              console.log(`  ${colors.yellow}⚠ Could not delete folder marker: ${response.status} - ${errorText}${colors.reset}`);
+            }
+          }
+        } catch (error) {
+          // Ignore errors - folder marker might not exist or API call failed
+          console.log(`  ${colors.yellow}⚠ Could not delete folder marker via API: ${error.message}${colors.reset}`);
+        }
+        
+        // Also try with rclone as backup
+        console.log(`  ${colors.cyan}Step 4: Trying rclone delete as backup...${colors.reset}`);
+        const folderMarkerPath = `${remotePath}/`;
+        const deleteArgs = [...baseArgs, 'delete', folderMarkerPath];
+        
+        await new Promise((deleteResolve) => {
+          const rclone = spawn('rclone', deleteArgs, {
+            stdio: 'pipe',
+            env: process.env
+          });
+          
+          rclone.on('close', () => {
+            // Ignore errors - folder marker might not exist
+            deleteResolve();
+          });
+          
+          rclone.on('error', () => {
+            deleteResolve();
+          });
+        });
+      }
+      
+      // Clean up temporary config file
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      
+      resolve(true);
+    } catch (error) {
+      // Clean up temporary config file
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      reject(error);
+    }
+  });
 }
 
 async function listObjects(apiToken, accountId, bucketName, prefix, cursor = null, retries = 3) {
@@ -354,116 +528,6 @@ async function deleteObjectsBatch(apiToken, accountId, bucketName, objectKeys, c
   return { deleted, failed, errors };
 }
 
-async function cleanupDuplicateFolders(env, dryRun = false) {
-  console.log(`${colors.cyan}=== CLEANING UP duplicate preset_thumb folders ===${colors.reset}`);
-  console.log(`Environment: ${colors.yellow}${env}${colors.reset}`);
-  console.log(`Mode: ${dryRun ? colors.yellow + 'DRY RUN' : colors.red + 'FORCE DELETE' + colors.reset}${colors.reset}`);
-  console.log('');
-  
-  const bucketName = getBucketName(env);
-  const { apiToken, accountId } = getCloudflareCredentials(env);
-  
-  console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
-  console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
-  console.log('');
-  
-  const prefix = 'preset_thumb/';
-  let totalDeleted = 0;
-  let totalFailed = 0;
-  
-  try {
-    console.log(`${colors.cyan}Scanning for duplicate folders...${colors.reset}`);
-    const allObjects = await listAllObjects(apiToken, accountId, bucketName, prefix);
-    
-    const duplicatePatterns = new Set();
-    
-    for (const obj of allObjects) {
-      const key = obj.key || obj;
-      const match = key.match(/^preset_thumb\/([^\/]+)\/\1\//);
-      if (match) {
-        const folderName = match[1];
-        duplicatePatterns.add(`preset_thumb/${folderName}/${folderName}/`);
-      }
-    }
-    
-    if (duplicatePatterns.size === 0) {
-      console.log(`  ${colors.yellow}No duplicate folders found${colors.reset}`);
-      return { deleted: 0, failed: 0 };
-    }
-    
-    console.log(`  ${colors.cyan}Found ${duplicatePatterns.size} duplicate folder pattern(s)${colors.reset}`);
-    console.log('');
-    
-    for (const duplicatePrefix of Array.from(duplicatePatterns).sort()) {
-      console.log(`${colors.cyan}Processing: ${duplicatePrefix}${colors.reset}`);
-      
-      try {
-        const objects = await listAllObjects(apiToken, accountId, bucketName, duplicatePrefix);
-        
-        if (objects.length === 0) {
-          console.log(`  ${colors.yellow}No objects found${colors.reset}`);
-        } else {
-          if (dryRun) {
-            console.log(`  ${colors.yellow}[DRY RUN] Would delete ${objects.length} object(s)${colors.reset}`);
-            objects.slice(0, 5).forEach(obj => {
-              const key = obj.key || obj;
-              console.log(`    - ${key}`);
-            });
-            if (objects.length > 5) {
-              console.log(`    ... and ${objects.length - 5} more`);
-            }
-            totalDeleted += objects.length;
-          } else {
-            const objectKeys = objects.map(obj => obj.key || obj);
-            console.log(`  ${colors.cyan}Deleting ${objectKeys.length} object(s) in batches...${colors.reset}`);
-
-            const result = await deleteObjectsBatch(
-              apiToken, accountId, bucketName, objectKeys, 10,
-              (processed, total, deleted, failed) => {
-                if (processed % 50 === 0 || processed === total) {
-                  console.log(`  ${colors.cyan}Progress: ${processed}/${total} processed (${deleted} deleted, ${failed} failed)...${colors.reset}`);
-                }
-              }
-            );
-
-            totalDeleted += result.deleted;
-            totalFailed += result.failed;
-
-            if (result.failed > 0) {
-              console.log(`  ${colors.red}✗ Failed to delete ${result.failed} object(s)${colors.reset}`);
-              result.errors.slice(0, 3).forEach(error => {
-                console.log(`    ${colors.red}${error}${colors.reset}`);
-              });
-              if (result.errors.length > 3) {
-                console.log(`    ${colors.red}... and ${result.errors.length - 3} more errors${colors.reset}`);
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.log(`  ${colors.red}✗ Error: ${error.message}${colors.reset}`);
-        totalFailed++;
-      }
-      
-      console.log('');
-    }
-  } catch (error) {
-    console.log(`  ${colors.red}✗ Error scanning: ${error.message}${colors.reset}`);
-    totalFailed++;
-  }
-  
-  console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
-  console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
-  if (totalFailed > 0) {
-    console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} object(s)`);
-  }
-  
-  if (dryRun && totalDeleted > 0) {
-    console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
-  }
-  
-  return { deleted: totalDeleted, failed: totalFailed };
-}
 
 async function deleteFolder(env, folderName, dryRun = false) {
   const startTime = Date.now();
@@ -474,13 +538,40 @@ async function deleteFolder(env, folderName, dryRun = false) {
   console.log('');
 
   const bucketName = getBucketName(env);
-  const { apiToken, accountId } = getCloudflareCredentials(env);
+  const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = getCloudflareCredentials(env);
 
   console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
   console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
   console.log(`Folder: ${colors.cyan}${folderName}/${colors.reset}`);
   console.log('');
 
+  // Try to use rclone if available
+  const useRclone = checkRcloneAvailable();
+  
+  if (useRclone) {
+    console.log(`${colors.cyan}Using rclone for fast recursive deletion...${colors.reset}\n`);
+    try {
+      await deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
+      const duration = (Date.now() - startTime) / 1000;
+      console.log('');
+      console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
+      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folder and all contents${colors.reset}`);
+      console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
+      if (dryRun) {
+        console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
+      }
+      return { deleted: 1, failed: 0, duration };
+    } catch (error) {
+      console.log(`  ${colors.yellow}⚠ rclone deletion failed: ${error.message}${colors.reset}`);
+      console.log(`  ${colors.cyan}Falling back to API method...${colors.reset}\n`);
+    }
+  } else {
+    console.log(`${colors.yellow}⚠ rclone not installed. Install with: brew install rclone${colors.reset}`);
+    console.log(`${colors.yellow}⚠ Then configure with: rclone config${colors.reset}`);
+    console.log(`${colors.cyan}Using API method for deletion...${colors.reset}\n`);
+  }
+
+  // Fallback to API method
   const prefix = folderName.endsWith('/') ? folderName : `${folderName}/`;
   let totalDeleted = 0;
   let totalFailed = 0;
@@ -552,93 +643,6 @@ async function deleteFolder(env, folderName, dryRun = false) {
   return { deleted: totalDeleted, failed: totalFailed, duration };
 }
 
-async function cleanupOldThumbnails(env, dryRun = false) {
-  const startTime = Date.now();
-
-  console.log(`${colors.cyan}=== FORCE DELETING old thumbnail folders ===${colors.reset}`);
-  console.log(`Environment: ${colors.yellow}${env}${colors.reset}`);
-  console.log(`Mode: ${dryRun ? colors.yellow + 'DRY RUN' : colors.red + 'FORCE DELETE' + colors.reset}${colors.reset}`);
-  console.log(`Folders to process: ${colors.cyan}${oldThumbnailFolders.length}${colors.reset}`);
-  console.log('');
-
-  const bucketName = getBucketName(env);
-  const { apiToken, accountId } = getCloudflareCredentials(env);
-
-  console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
-  console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
-  console.log('');
-
-  let totalDeleted = 0;
-  let totalFailed = 0;
-  
-  // Process folders concurrently with controlled parallelism
-  const folderConcurrency = 3; // Process 3 folders at a time
-  for (let i = 0; i < oldThumbnailFolders.length; i += folderConcurrency) {
-    const folderBatch = oldThumbnailFolders.slice(i, i + folderConcurrency);
-    console.log(`${colors.cyan}Processing folders ${i + 1}-${Math.min(i + folderConcurrency, oldThumbnailFolders.length)} of ${oldThumbnailFolders.length}${colors.reset}`);
-
-    const folderPromises = folderBatch.map(async (folder) => {
-      console.log(`  ${colors.cyan}Processing: ${folder}/${colors.reset}`);
-
-      const prefix = `${folder}/`;
-      let folderDeleted = 0;
-      let folderFailed = 0;
-
-      try {
-        const objects = await listAllObjects(apiToken, accountId, bucketName, prefix);
-
-        if (objects.length === 0) {
-          console.log(`    ${colors.yellow}No objects found${colors.reset}`);
-        } else {
-          if (dryRun) {
-            console.log(`    ${colors.yellow}[DRY RUN] Would delete ${objects.length} object(s)${colors.reset}`);
-            folderDeleted = objects.length;
-          } else {
-            const objectKeys = objects.map(obj => obj.key || obj);
-
-            const result = await deleteObjectsBatch(apiToken, accountId, bucketName, objectKeys, 8); // Slightly lower concurrency per folder
-
-            folderDeleted = result.deleted;
-            folderFailed = result.failed;
-
-            if (result.failed > 0) {
-              console.log(`    ${colors.red}✗ Failed to delete ${result.failed} object(s)${colors.reset}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.log(`    ${colors.red}✗ Error: ${error.message}${colors.reset}`);
-        folderFailed++;
-      }
-
-      return { folderDeleted, folderFailed };
-    });
-
-    const results = await Promise.all(folderPromises);
-
-    // Aggregate results
-    for (const result of results) {
-      totalDeleted += result.folderDeleted;
-      totalFailed += result.folderFailed;
-    }
-
-    console.log('');
-  }
-  
-  const duration = (Date.now() - startTime) / 1000;
-  console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
-  console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
-  if (totalFailed > 0) {
-    console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} object(s)`);
-  }
-  console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
-
-  if (dryRun && totalDeleted > 0) {
-    console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
-  }
-
-  return { deleted: totalDeleted, failed: totalFailed, duration };
-}
 
 async function listR2Objects(env, prefix = '') {
   const bucketName = getBucketName(env);
@@ -685,11 +689,35 @@ const env = process.env.DEPLOY_ENV ||
 
 const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-d');
 const listMode = process.argv.includes('--list') || process.argv.includes('-l');
-const duplicateOnly = process.argv.includes('--duplicates') || process.argv.includes('--dup');
-const folderArg = process.argv.find(arg => arg.startsWith('--folder='))?.split('=')[1] ||
-                  process.argv.find(arg => arg.startsWith('-f='))?.split('=')[1] ||
-                  (process.argv.includes('--folder') && process.argv[process.argv.indexOf('--folder') + 1]) ||
-                  (process.argv.includes('-f') && process.argv[process.argv.indexOf('-f') + 1]);
+
+// Support multiple folders: --folder=folder1,folder2 or --folder=folder1 --folder=folder2
+const folderArgs = [];
+// Get all --folder= arguments
+process.argv.forEach(arg => {
+  if (arg.startsWith('--folder=')) {
+    const folders = arg.split('=')[1].split(',').map(f => f.trim()).filter(f => f);
+    folderArgs.push(...folders);
+  } else if (arg.startsWith('-f=')) {
+    const folders = arg.split('=')[1].split(',').map(f => f.trim()).filter(f => f);
+    folderArgs.push(...folders);
+  }
+});
+// Get --folder without = (space-separated)
+if (process.argv.includes('--folder')) {
+  const folderIndex = process.argv.indexOf('--folder');
+  if (folderIndex + 1 < process.argv.length && !process.argv[folderIndex + 1].startsWith('--')) {
+    const folders = process.argv[folderIndex + 1].split(',').map(f => f.trim()).filter(f => f);
+    folderArgs.push(...folders);
+  }
+}
+// Get -f without = (space-separated)
+if (process.argv.includes('-f')) {
+  const folderIndex = process.argv.indexOf('-f');
+  if (folderIndex + 1 < process.argv.length && !process.argv[folderIndex + 1].startsWith('-')) {
+    const folders = process.argv[folderIndex + 1].split(',').map(f => f.trim()).filter(f => f);
+    folderArgs.push(...folders);
+  }
+}
 
 if (listMode) {
   const prefix = process.argv.find(arg => arg.startsWith('--prefix='))?.split('=')[1] || '';
@@ -704,46 +732,63 @@ if (listMode) {
       }
       process.exit(1);
     });
-} else if (folderArg) {
-  deleteFolder(env, folderArg, dryRun)
-    .then(() => {
-      console.log(`\n${colors.green}Folder deletion completed!${colors.reset}`);
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error(`\n${colors.red}Error: ${error.message}${colors.reset}`);
-      if (error.stack) {
-        console.error(error.stack);
+} else if (folderArgs.length > 0 || process.env.DEFAULT_FOLDER) {
+  // If no folders specified but DEFAULT_FOLDER env var is set, use it
+  if (folderArgs.length === 0 && process.env.DEFAULT_FOLDER) {
+    folderArgs.push(...process.env.DEFAULT_FOLDER.split(',').map(f => f.trim()).filter(f => f));
+  }
+  
+  if (folderArgs.length > 0) {
+    // Process multiple folders
+    (async () => {
+      let totalDeleted = 0;
+      let totalFailed = 0;
+      const startTime = Date.now();
+      
+      console.log(`${colors.cyan}=== DELETING ${folderArgs.length} folder(s) ===${colors.reset}\n`);
+      
+      for (let i = 0; i < folderArgs.length; i++) {
+        const folder = folderArgs[i];
+        console.log(`\n${colors.cyan}[${i + 1}/${folderArgs.length}] Processing folder: ${folder}${colors.reset}`);
+        console.log('─'.repeat(60));
+        
+        try {
+          const result = await deleteFolder(env, folder, dryRun);
+          totalDeleted += result.deleted;
+          totalFailed += result.failed;
+        } catch (error) {
+          console.error(`\n${colors.red}Error deleting ${folder}: ${error.message}${colors.reset}`);
+          totalFailed++;
+        }
+        
+        if (i < folderArgs.length - 1) {
+          console.log(''); // Add spacing between folders
+        }
       }
-      process.exit(1);
-    });
-} else if (duplicateOnly) {
-  cleanupDuplicateFolders(env, dryRun)
-    .then(() => {
-      console.log(`\n${colors.green}Duplicate cleanup completed!${colors.reset}`);
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error(`\n${colors.red}Error: ${error.message}${colors.reset}`);
-      if (error.stack) {
-        console.error(error.stack);
+      
+      const duration = (Date.now() - startTime) / 1000;
+      console.log(`\n${colors.cyan}${'='.repeat(60)}${colors.reset}`);
+      console.log(`${colors.cyan}=== Overall Summary ===${colors.reset}`);
+      console.log(`Folders processed: ${colors.cyan}${folderArgs.length}${colors.reset}`);
+      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
+      if (totalFailed > 0) {
+        console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} object(s)`);
       }
-      process.exit(1);
-    });
+      console.log(`Total duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
+      console.log(`${colors.green}All folders processed!${colors.reset}`);
+      
+      process.exit(totalFailed > 0 ? 1 : 0);
+    })();
+  } else {
+    console.error(`${colors.red}Error: No folders specified${colors.reset}`);
+    process.exit(1);
+  }
 } else {
-  Promise.all([
-    cleanupOldThumbnails(env, dryRun),
-    cleanupDuplicateFolders(env, dryRun)
-  ])
-    .then(() => {
-      console.log(`\n${colors.green}Cleanup completed!${colors.reset}`);
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error(`\n${colors.red}Error: ${error.message}${colors.reset}`);
-      if (error.stack) {
-        console.error(error.stack);
-      }
-      process.exit(1);
-    });
+  console.error(`${colors.red}Error: --folder argument is required${colors.reset}`);
+  console.error(`Usage: node cleanup-old-thumbnails.js --folder=<folder-name> [--folder=<folder2>] [--dry-run]`);
+  console.error(`Examples:`);
+  console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb`);
+  console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb,folder2,folder3`);
+  console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb --folder=folder2`);
+  process.exit(1);
 }
