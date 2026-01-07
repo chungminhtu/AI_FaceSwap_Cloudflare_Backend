@@ -73,7 +73,7 @@ if (!envConfig?.cloudflare) {
   process.exit(1);
 }
 
-const { apiToken, accountId } = envConfig.cloudflare;
+const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = envConfig.cloudflare;
 if (!apiToken || !accountId) {
   console.error(`Error: Missing API token or account ID for environment: ${environment}`);
   process.exit(1);
@@ -242,37 +242,87 @@ function checkRcloneAvailable() {
   }
 }
 
-async function uploadFolderWithRclone(tempDir, bucket, prefix, accountId) {
+function getRcloneRemoteName() {
+  try {
+    // Check if rclone has any configured remotes
+    const remotes = execSync('rclone listremotes', { encoding: 'utf-8', stdio: 'pipe' }).trim().split('\n').filter(r => r.trim());
+    // Look for common R2 remote names (r2, cloudflare, etc.)
+    const r2Remotes = remotes.filter(r => {
+      const name = r.replace(':', '').toLowerCase();
+      return name.includes('r2') || name.includes('cloudflare');
+    });
+    if (r2Remotes.length > 0) {
+      return r2Remotes[0].replace(':', ''); // Remove the colon
+    }
+    // If no R2-specific remote found, use the first remote
+    if (remotes.length > 0) {
+      return remotes[0].replace(':', '');
+    }
+  } catch {
+    // Ignore errors
+  }
+  return null;
+}
+
+async function uploadFolderWithRclone(tempDir, bucket, prefix, accountId, r2AccessKeyId, r2SecretAccessKey) {
   return new Promise((resolve, reject) => {
     const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
     
     console.log('🚀 Using rclone for fast folder upload...\n');
     
     const sourcePath = tempDir;
-    // Use bucket name as remote, or check for R2_REMOTE env var
-    const remoteName = process.env.R2_REMOTE || bucket;
-    const destPath = prefix 
-      ? `${remoteName}:${prefix.replace(/\/$/, '')}/` 
-      : `${remoteName}:`;
+    let remoteName;
+    let args;
+    let tempConfigPath = null;
     
-    // Use rclone copy with high concurrency for fast uploads
-    const args = [
-      'copy',
-      sourcePath,
-      destPath,
-      '--transfers', '50',  // 50 parallel file transfers
-      '--checkers', '50',   // 50 parallel checks
-      '--progress',
-      '--stats', '1s'       // Show stats every second
-    ];
+    // Try to use pre-configured remote first
+    const preConfiguredRemote = getRcloneRemoteName();
     
-    // If using inline S3 config (requires access keys)
-    if (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
-      args.push('--s3-endpoint', endpoint);
-      args.push('--s3-provider', 'Cloudflare');
-      args.push('--s3-access-key-id', process.env.R2_ACCESS_KEY_ID);
-      args.push('--s3-secret-access-key', process.env.R2_SECRET_ACCESS_KEY);
-      args.push('--s3-region', 'auto');
+    if (preConfiguredRemote) {
+      remoteName = preConfiguredRemote;
+      const destPath = prefix 
+        ? `${remoteName}:${bucket}/${prefix.replace(/\/$/, '')}/` 
+        : `${remoteName}:${bucket}/`;
+      args = [
+        'copy',
+        sourcePath,
+        destPath,
+        '--transfers', '50',  // 50 parallel file transfers
+        '--checkers', '50',   // 50 parallel checks
+        '--progress',
+        '--stats', '1s'       // Show stats every second
+      ];
+      console.log(`  Using pre-configured rclone remote: ${remoteName}\n`);
+    } else if (r2AccessKeyId && r2SecretAccessKey) {
+      // Create temporary rclone config file
+      const tempConfigDir = os.tmpdir();
+      tempConfigPath = path.join(tempConfigDir, `rclone-upload-${Date.now()}.conf`);
+      const configContent = `[r2]
+type = s3
+provider = Cloudflare
+access_key_id = ${r2AccessKeyId}
+secret_access_key = ${r2SecretAccessKey}
+endpoint = ${endpoint}
+`;
+      fs.writeFileSync(tempConfigPath, configContent);
+      remoteName = 'r2';
+      const destPath = prefix 
+        ? `${remoteName}:${bucket}/${prefix.replace(/\/$/, '')}/` 
+        : `${remoteName}:${bucket}/`;
+      args = [
+        '--config', tempConfigPath,
+        'copy',
+        sourcePath,
+        destPath,
+        '--transfers', '50',  // 50 parallel file transfers
+        '--checkers', '50',   // 50 parallel checks
+        '--progress',
+        '--stats', '1s'       // Show stats every second
+      ];
+      console.log(`  Using temporary rclone config with R2 credentials\n`);
+    } else {
+      reject(new Error('No rclone remote configured and R2 access keys not provided. Either run "rclone config" or add r2AccessKeyId and r2SecretAccessKey to deployments-secrets.json'));
+      return;
     }
     
     const rclone = spawn('rclone', args, {
@@ -281,14 +331,31 @@ async function uploadFolderWithRclone(tempDir, bucket, prefix, accountId) {
     });
     
     rclone.on('close', (code) => {
+      // Clean up temporary config file
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      
       if (code === 0) {
         resolve(true);
       } else {
-        reject(new Error(`rclone upload failed with code ${code}. Make sure rclone is configured with: rclone config`));
+        reject(new Error(`rclone upload failed with code ${code}`));
       }
     });
     
     rclone.on('error', (error) => {
+      // Clean up temporary config file
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
       reject(error);
     });
   });
@@ -369,15 +436,16 @@ async function main() {
     // Try to use rclone for folder upload (much faster)
     // rclone can be used if:
     // 1. rclone is installed AND
-    // 2. Either R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY are set OR rclone is pre-configured
+    // 2. Either rclone is pre-configured OR r2AccessKeyId/r2SecretAccessKey are in secrets
     const rcloneAvailable = checkRcloneAvailable();
-    const hasAccessKeys = process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY;
-    const useRclone = rcloneAvailable && hasAccessKeys;
+    const hasAccessKeys = r2AccessKeyId && r2SecretAccessKey;
+    const hasPreConfiguredRemote = getRcloneRemoteName() !== null;
+    const useRclone = rcloneAvailable && (hasAccessKeys || hasPreConfiguredRemote);
     
     if (useRclone) {
       try {
         console.log('📤 Uploading folder to R2 using rclone (fast batch upload)...\n');
-        await uploadFolderWithRclone(tempDir, targetBucket, prefix, accountId);
+        await uploadFolderWithRclone(tempDir, targetBucket, prefix, accountId, r2AccessKeyId, r2SecretAccessKey);
         successCount = files.length;
         failCount = 0;
         failedFiles = [];
@@ -401,10 +469,10 @@ async function main() {
       // Use wrangler (file-by-file)
       console.log('📤 Uploading files to R2 in parallel batches (using wrangler)...\n');
       console.log(`⚡ Using ${concurrency} concurrent uploads for maximum speed\n`);
-      if (rcloneAvailable && !hasAccessKeys) {
-        console.log('💡 Tip: Set R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY env vars to use rclone for faster folder uploads\n');
+      if (rcloneAvailable && !hasAccessKeys && !hasPreConfiguredRemote) {
+        console.log('💡 Tip: Add r2AccessKeyId and r2SecretAccessKey to deployments-secrets.json to use rclone for faster folder uploads\n');
       } else if (!rcloneAvailable) {
-        console.log('💡 Tip: Install rclone (brew install rclone) and set R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY for faster folder uploads\n');
+        console.log('💡 Tip: Install rclone (brew install rclone) for faster folder uploads\n');
       }
       
       const result = await uploadBatch(
