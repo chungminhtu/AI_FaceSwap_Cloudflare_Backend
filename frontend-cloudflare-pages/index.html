@@ -370,20 +370,27 @@
 
 
         /* Pagination */
-        .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; }
+        .pagination { 
+            display: flex; align-items: center; justify-content: center; gap: 6px; 
+            margin-top: 12px; flex-wrap: wrap; max-width: 100%; 
+        }
         .pagination-btn {
             width: 32px; height: 32px; padding: 0; background: var(--accent); border: none;
             color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
-            transition: all 0.2s; border-radius: 12px;
+            transition: all 0.2s; border-radius: 12px; flex-shrink: 0;
         }
         .pagination-btn:hover:not(:disabled) { background: var(--accent-hover); }
         .pagination-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .pagination-numbers { display: flex; gap: 4px; }
+        .pagination-numbers { 
+            display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; 
+            max-width: 100%; overflow: hidden;
+        }
         .pagination-number {
             width: 32px; height: 32px; padding: 0; background: var(--bg-secondary);
             color: var(--text-primary); font-size: 12px; font-weight: 600; cursor: pointer;
             border: 1px solid var(--border); border-radius: 6px;
             transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
         }
         .pagination-number:hover:not(.active) { background: var(--bg-tertiary); border-color: var(--accent); }
         .pagination-number.active { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -1197,7 +1204,17 @@
         const ITEMS_PER_PAGE = 40;
         const ACCESS_CODE = '123456';
         const MAX_LOG_ENTRIES = 30;
-        
+
+        // Helper function to proxy external Lottie URLs through backend to avoid CORS
+        function getProxiedLottieUrl(originalUrl) {
+            if (!originalUrl) return originalUrl;
+            // Only proxy URLs from resources.d.shotpix.app to avoid CORS issues
+            if (originalUrl.includes('resources.d.shotpix.app')) {
+                return `${WORKER_URL}/proxy-resource?url=${encodeURIComponent(originalUrl)}`;
+            }
+            return originalUrl;
+        }
+
         // Default Vertex AI Prompts (from backend config.ts)
         const DEFAULT_PROMPTS = {
             DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
@@ -1888,11 +1905,12 @@
                     
                     // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
                     const lottieUrl = item.thumbnail_url_4x_lottie || (item.image_url && (item.image_url.toLowerCase().endsWith('.json') || item.image_url.toLowerCase().includes('lottie')) ? item.image_url : null);
-                    const imageUrl = lottieUrl ? null : item.image_url;
-                    
+                    const proxiedLottieUrl = getProxiedLottieUrl(lottieUrl);
+                    const imageUrl = proxiedLottieUrl ? null : item.image_url;
+
                     // Render Lottie player for Lottie files, img for regular images
-                    const mediaElement = lottieUrl
-                        ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
+                    const mediaElement = proxiedLottieUrl
+                        ? `<lottie-player src="${proxiedLottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
                         : `<img src="${imageUrl}" alt="" loading="lazy">`;
                     
                     if (type === 'preset') {
@@ -1919,12 +1937,61 @@
             const numbersContainer = $(type + '-dots');
             if (numbersContainer && totalPages > 1) {
                 numbersContainer.innerHTML = '';
-                for (let i = 1; i <= totalPages; i++) {
-                    const numberBtn = document.createElement('button');
-                    numberBtn.className = 'pagination-number' + (i === config.state.page ? ' active' : '');
-                    numberBtn.textContent = i.toString();
-                    numberBtn.onclick = () => { config.state.page = i; renderGallery(type); };
-                    numbersContainer.appendChild(numberBtn);
+                const currentPage = config.state.page;
+                const maxVisible = 7;
+                
+                if (totalPages <= maxVisible) {
+                    // Show all pages if total is small
+                    for (let i = 1; i <= totalPages; i++) {
+                        const numberBtn = document.createElement('button');
+                        numberBtn.className = 'pagination-number' + (i === currentPage ? ' active' : '');
+                        numberBtn.textContent = i.toString();
+                        numberBtn.onclick = () => { config.state.page = i; renderGallery(type); };
+                        numbersContainer.appendChild(numberBtn);
+                    }
+                } else {
+                    // Smart pagination with ellipsis
+                    const showEllipsis = (text) => {
+                        const ellipsis = document.createElement('span');
+                        ellipsis.textContent = text;
+                        ellipsis.style.cssText = 'padding: 0 4px; color: var(--text-secondary); user-select: none;';
+                        numbersContainer.appendChild(ellipsis);
+                    };
+                    
+                    // Always show first page
+                    const firstBtn = document.createElement('button');
+                    firstBtn.className = 'pagination-number' + (currentPage === 1 ? ' active' : '');
+                    firstBtn.textContent = '1';
+                    firstBtn.onclick = () => { config.state.page = 1; renderGallery(type); };
+                    numbersContainer.appendChild(firstBtn);
+                    
+                    if (currentPage > 3) {
+                        showEllipsis('...');
+                    }
+                    
+                    // Show pages around current
+                    const start = Math.max(2, currentPage - 1);
+                    const end = Math.min(totalPages - 1, currentPage + 1);
+                    
+                    for (let i = start; i <= end; i++) {
+                        if (i === 1 || i === totalPages) continue;
+                        const numberBtn = document.createElement('button');
+                        numberBtn.className = 'pagination-number' + (i === currentPage ? ' active' : '');
+                        numberBtn.textContent = i.toString();
+                        numberBtn.onclick = () => { config.state.page = i; renderGallery(type); };
+                        numbersContainer.appendChild(numberBtn);
+                    }
+                    
+                    if (currentPage < totalPages - 2) {
+                        showEllipsis('...');
+                    }
+                    
+                    // Always show last page
+                    const lastBtn = document.createElement('button');
+                    lastBtn.className = 'pagination-number' + (currentPage === totalPages ? ' active' : '');
+                    lastBtn.textContent = totalPages.toString();
+                    lastBtn.onclick = () => { config.state.page = totalPages; renderGallery(type); };
+                    numbersContainer.appendChild(lastBtn);
                 }
             }
 
@@ -2076,14 +2143,15 @@
             }
             const imageUrl = selected.image_url || selected.result_url || '';
             const lottieUrl = selected.thumbnail_url_4x_lottie || (imageUrl && (imageUrl.toLowerCase().endsWith('.json') || imageUrl.toLowerCase().includes('lottie')) ? imageUrl : null);
+            const proxiedLottieUrl = getProxiedLottieUrl(lottieUrl);
             const action = selected.action?.toLowerCase() || 'faceswap';
-            const actionBadge = type === 'selfie' && selected.action 
+            const actionBadge = type === 'selfie' && selected.action
                 ? `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`
                 : '';
-            
+
             // Render Lottie player for Lottie files, img for regular images
-            const mediaElement = lottieUrl
-                ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`
+            const mediaElement = proxiedLottieUrl
+                ? `<lottie-player src="${proxiedLottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`
                 : `<img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
             
             preview.innerHTML = `<div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">${mediaElement}${actionBadge}</div>`;
@@ -2874,8 +2942,9 @@
                 if (lightboxMode === 'preset-preview' && (item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif)) {
                     // For Lottie presets, show Lottie player instead of img
                     const lottieUrl = item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif;
+                    const proxiedLottieUrl = getProxiedLottieUrl(lottieUrl);
                     const lottieContainer = document.createElement('div');
-                    lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
+                    lottieContainer.innerHTML = `<lottie-player src="${proxiedLottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
                     const content = $('lightbox-content');
                     const single = $('lightbox-single');
                     single.innerHTML = '';
@@ -3322,8 +3391,9 @@
                 }
 
                 // Render Lottie player if Lottie URL is available, otherwise use image
-                const mediaElement = lottieUrl
-                    ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 80px;" loop autoplay></lottie-player>`
+                const proxiedLottieUrl = getProxiedLottieUrl(lottieUrl);
+                const mediaElement = proxiedLottieUrl
+                    ? `<lottie-player src="${proxiedLottieUrl}" background="transparent" speed="1" style="width: 100%; height: 80px;" loop autoplay></lottie-player>`
                     : `<img src="${thumbnailUrl}" alt="Thumbnail ${presetId}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px;" loading="lazy">`;
 
                 return `<div class="thumbnail-item" onclick="selectThumbnailAsPreset('${presetId}')" style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-primary); cursor: pointer; transition: all 0.2s; position: relative;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
