@@ -2033,9 +2033,9 @@ const utils = {
       const corsPolicy = [
         {
           AllowedOrigins: ['*'],
-          AllowedMethods: ['GET', 'HEAD', 'OPTIONS'],
+          AllowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD'],
           AllowedHeaders: ['*'],
-          ExposeHeaders: ['Content-Length', 'Content-Range', 'Content-Type'],
+          ExposeHeaders: ['*'],
           MaxAgeSeconds: 86400
         }
       ];

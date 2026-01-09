@@ -825,6 +825,13 @@
                             <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
                             <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
                         </label>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Format:</label>
+                            <select id="preset-format-select" style="padding: 2px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;">
+                                <option value="webp">WebP</option>
+                                <option value="lottie">Lottie</option>
+                            </select>
+                        </div>
                         <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
                             ⚙️ Customize Prompts
                         </button>
@@ -933,6 +940,7 @@
                         <button class="action-btn" id="filter-btn" disabled onclick="runFilter()">🎨 Bộ Lọc (Filter)</button>
                         <button class="action-btn" id="upscale4k-btn" disabled onclick="runUpscale4k()">📐 Nâng Cấp 4K (4K Upscale)</button>
                         <button class="action-btn" id="restore-btn" disabled onclick="runRestore()">🔄 Khôi Phục (Restore)</button>
+                        <button class="action-btn" id="batch-try-btn" onclick="batchProcessTryImages()" style="background: rgba(139, 92, 246, 0.9);">🔄 Batch Try All Presets</button>
                         <div class="action-aging">
                             <input type="number" id="aging-years" value="20" min="5" max="60" step="5">
                             <button class="action-btn" id="aging-btn" disabled onclick="runAging()">⏳ Lão Hóa (Age)</button>
@@ -1062,20 +1070,20 @@
             <div class="lightbox-single" id="lightbox-single">
                 <img id="lightbox-image" src="" alt="">
                 <div class="lightbox-info"><span id="lightbox-counter"></span></div>
-                <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
-                    <button class="lightbox-action-btn" onclick="selectAsPreset()">
-                        <span>📸</span>
-                        <span>Chọn làm Mẫu</span>
-                    </button>
-                    <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
-                        <span>👤</span>
-                        <span>Chọn làm Selfie</span>
-                    </button>
-                    <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
-                        <span>➕</span>
-                        <span>Thêm vào So Sánh</span>
-                    </button>
-                </div>
+            </div>
+            <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
+                <button class="lightbox-action-btn" onclick="selectAsPreset()">
+                    <span>📸</span>
+                    <span>Chọn làm Mẫu</span>
+                </button>
+                <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
+                    <span>👤</span>
+                    <span>Chọn làm Selfie</span>
+                </button>
+                <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
+                    <span>➕</span>
+                    <span>Thêm vào So Sánh</span>
+                </button>
             </div>
             <div class="lightbox-comparison" id="lightbox-comparison" style="display: none;">
                 <div class="comparison-header">
@@ -1786,14 +1794,15 @@
                 
                 // For presets, map thumbnails response to preset format
                 if (type === 'preset') {
+                    // Prioritize WebP for image_url (default format), but keep all format URLs available
                     items = items.map((item) => ({
                         id: item.preset_id,
-                        image_url: item.thumbnail_url_4x || item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif,
+                        image_url: item.thumbnail_url_4x || item.thumbnail_url_4x_lottie_avif || item.thumbnail_url_4x_lottie,
                         preset_id: item.preset_id,
                         thumbnail_url_4x: item.thumbnail_url_4x,
                         thumbnail_url_4x_lottie: item.thumbnail_url_4x_lottie,
                         thumbnail_url_4x_lottie_avif: item.thumbnail_url_4x_lottie_avif
-                    })).filter(item => item.image_url); // Only include items with valid thumbnail URLs
+                    })).filter(item => item.thumbnail_url_4x || item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif); // Include items with any valid thumbnail format
                 }
                 
                 // Normalize field names: map selfie_url/preset_url/result_url to image_url for backward compatibility
@@ -1893,14 +1902,42 @@
                         ? `<span class="gallery-action-badge action-${item.action.toLowerCase()}">${item.action.toLowerCase() === '4k' ? '4K' : item.action}</span>`
                         : '';
                     
-                    // Check if this is a Lottie file (prefer lottie URL if available, or check if image_url is a Lottie file)
-                    const lottieUrl = item.thumbnail_url_4x_lottie || (item.image_url && (item.image_url.toLowerCase().endsWith('.json') || item.image_url.toLowerCase().includes('lottie')) ? item.image_url : null);
-                    const imageUrl = lottieUrl ? null : item.image_url;
-                    
-                    // Render Lottie player for Lottie files, img for regular images
-                    const mediaElement = lottieUrl
-                        ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
-                        : `<img src="${imageUrl}" alt="" loading="lazy">`;
+                    // Get selected format from dropdown (only for presets)
+                    let mediaElement = '';
+                    if (type === 'preset') {
+                        const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+                        if (selectedFormat === 'lottie') {
+                            // Try lottie_avif first, then regular lottie
+                            const lottieUrl = item.thumbnail_url_4x_lottie_avif || item.thumbnail_url_4x_lottie;
+                            if (lottieUrl) {
+                                mediaElement = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`;
+                            } else {
+                                // Fallback to WebP if Lottie not available
+                                const webpUrl = item.thumbnail_url_4x || item.image_url;
+                                mediaElement = `<img src="${webpUrl}" alt="" loading="lazy">`;
+                            }
+                        } else {
+                            // WebP format (default) - only use thumbnail_url_4x if it's actually a WebP file
+                            let webpUrl = item.thumbnail_url_4x;
+                            // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
+                            if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
+                                webpUrl = null; // Ignore if it's actually a Lottie file
+                            }
+                            if (webpUrl) {
+                                mediaElement = `<img src="${webpUrl}" alt="" loading="lazy">`;
+                            } else {
+                                // If no WebP available, show placeholder
+                                mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 11px;">No WebP</div>`;
+                            }
+                        }
+                    } else {
+                        // For selfies and results, use existing logic
+                        const lottieUrl = item.thumbnail_url_4x_lottie || (item.image_url && (item.image_url.toLowerCase().endsWith('.json') || item.image_url.toLowerCase().includes('lottie')) ? item.image_url : null);
+                        const imageUrl = lottieUrl ? null : item.image_url;
+                        mediaElement = lottieUrl
+                            ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
+                            : `<img src="${imageUrl}" alt="" loading="lazy">`;
+                    }
                     
                     if (type === 'preset') {
                         // For presets, open lightbox first, then allow selection from lightbox
@@ -2131,16 +2168,47 @@
                 return;
             }
             const imageUrl = selected.image_url || selected.result_url || '';
-            const lottieUrl = selected.thumbnail_url_4x_lottie || (imageUrl && (imageUrl.toLowerCase().endsWith('.json') || imageUrl.toLowerCase().includes('lottie')) ? imageUrl : null);
+            let mediaElement = '';
+            
+            if (type === 'preset') {
+                // For presets, respect format selector
+                const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+                if (selectedFormat === 'lottie') {
+                    // Try lottie_avif first, then regular lottie
+                    const lottieUrl = selected.thumbnail_url_4x_lottie_avif || selected.thumbnail_url_4x_lottie;
+                    if (lottieUrl) {
+                        mediaElement = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`;
+                    } else {
+                        // Fallback to WebP if Lottie not available
+                        const webpUrl = selected.thumbnail_url_4x || imageUrl;
+                        mediaElement = `<img src="${webpUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
+                    }
+                } else {
+                    // WebP format (default) - only use thumbnail_url_4x if it's actually a WebP file
+                    let webpUrl = selected.thumbnail_url_4x;
+                    // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
+                    if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
+                        webpUrl = null; // Ignore if it's actually a Lottie file
+                    }
+                    if (webpUrl) {
+                        mediaElement = `<img src="${webpUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
+                    } else {
+                        // If no WebP available, show message
+                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">WebP not available for this preset</div>`;
+                    }
+                }
+            } else {
+                // For selfies and results, use existing logic
+                const lottieUrl = selected.thumbnail_url_4x_lottie || (imageUrl && (imageUrl.toLowerCase().endsWith('.json') || imageUrl.toLowerCase().includes('lottie')) ? imageUrl : null);
+                mediaElement = lottieUrl
+                    ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`
+                    : `<img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
+            }
+            
             const action = selected.action?.toLowerCase() || 'faceswap';
             const actionBadge = type === 'selfie' && selected.action 
                 ? `<span class="preview-action-badge action-${action}">${action === '4k' ? '4K' : action}</span>`
                 : '';
-            
-            // Render Lottie player for Lottie files, img for regular images
-            const mediaElement = lottieUrl
-                ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`
-                : `<img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
             
             preview.innerHTML = `<div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">${mediaElement}${actionBadge}</div>`;
             if (clearBtn) clearBtn.style.display = 'block';
@@ -2468,16 +2536,18 @@
                 
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
-                
+                const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+
                 const requestBody = {
-                    ...(usePresetUrl 
+                    ...(usePresetUrl
                         ? { preset_image_url: presetSelected.image_url }
                         : { preset_image_id: presetSelected.id }
                     ),
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
                     aspect_ratio: selectedAspectRatio,
-                    model: selectedModel
+                    model: selectedModel,
+                    format: selectedFormat
                 };
                 
                 if (selfieUrls.length > 0) {
@@ -2518,6 +2588,172 @@
                 hideLoading();
                 updateGenerateButton();
                 updateImageOperationButtons();
+            }
+        }
+
+        async function downloadImage(url, filename) {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(downloadUrl);
+                return true;
+            } catch (error) {
+                console.error(`Failed to download ${filename}:`, error);
+                return false;
+            }
+        }
+
+        async function batchProcessTryImages() {
+            if (!window.profileManager?.currentProfile) {
+                showStatusMessage('Vui lòng chọn hồ sơ trước khi chạy batch.', 'error');
+                return;
+            }
+
+            const batchBtn = document.getElementById('batch-try-btn');
+            if (!batchBtn) return;
+
+            await loadGallery('preset');
+            const allPresets = galleries.preset.state.items || [];
+            
+            if (allPresets.length === 0) {
+                showStatusMessage('Không có preset nào trong gallery. Vui lòng tải presets trước.', 'error');
+                return;
+            }
+
+            const presetCategories = {
+                'ai_avatar': { tryPath: 'ai_avatar', tryImages: ['try_1.webp', 'try_2.webp', 'try_3.webp'] },
+                'ai_restore': { tryPath: 'ai_restore', tryImages: ['try_1.webp', 'try_2.webp', 'try_3.webp'] },
+                'ai_enhance': { tryPath: 'ai_enhance', tryImages: ['try_1.webp', 'try_2.webp', 'try_3.webp'] },
+                'ai_beauty': { tryPath: 'ai_beauty', tryImages: ['try_1.webp', 'try_2.webp', 'try_3.webp'] },
+                'ai_upscale_4k': { tryPath: 'ai_upscale_4k', tryImages: ['try_1.webp', 'try_2.webp', 'try_3.webp'] }
+            };
+
+            const presetMap = new Map();
+            allPresets.forEach(preset => {
+                const presetId = preset.preset_id || preset.id || '';
+                for (const [category, config] of Object.entries(presetCategories)) {
+                    if (presetId.includes(category) || presetId.toLowerCase().includes(category.replace('_', ''))) {
+                        if (!presetMap.has(category)) {
+                            presetMap.set(category, []);
+                        }
+                        presetMap.get(category).push(preset);
+                    }
+                }
+            });
+
+            const totalCombinations = Array.from(presetMap.values()).reduce((sum, presets) => sum + presets.length * 3, 0);
+            const confirmed = confirm(`Bạn có chắc muốn chạy FaceSwap cho ${totalCombinations} combinations? (${presetMap.size} categories, ${allPresets.length} presets total)`);
+            if (!confirmed) return;
+
+            batchBtn.disabled = true;
+            batchBtn.classList.add('loading');
+            showLoading('Đang xử lý batch...');
+
+            const results = [];
+            let successCount = 0;
+            let failCount = 0;
+            let currentIndex = 0;
+
+            try {
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+                const additionalPromptInput = document.getElementById('additional-prompt');
+                const additionalPrompt = additionalPromptInput?.value.trim() || '';
+
+                for (const [category, config] of Object.entries(presetCategories)) {
+                    const categoryPresets = presetMap.get(category) || [];
+                    if (categoryPresets.length === 0) continue;
+
+                    for (const preset of categoryPresets) {
+                        for (const tryImage of config.tryImages) {
+                            currentIndex++;
+                            const tryImageUrl = `/try/${config.tryPath}/${tryImage}`;
+                            const usePresetUrl = !preset.id || preset.id?.startsWith('result-preset-');
+
+                            try {
+                                showLoading(`Đang xử lý: ${category} - ${preset.preset_id || preset.id} - ${tryImage} (${currentIndex}/${totalCombinations})`);
+
+                                const requestBody = {
+                                    ...(usePresetUrl
+                                        ? { preset_image_url: preset.image_url }
+                                        : { preset_image_id: preset.id || preset.preset_id }
+                                    ),
+                                    selfie_image_urls: [tryImageUrl],
+                                    profile_id: window.profileManager.currentProfile.id,
+                                    additional_prompt: additionalPrompt,
+                                    aspect_ratio: selectedAspectRatio,
+                                    model: selectedModel,
+                                    format: selectedFormat
+                                };
+
+                                const faceswapUrl = `${WORKER_URL}/faceswap`;
+                                const response = await fetch(faceswapUrl, {
+                                    method: 'POST',
+                                    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+                                    body: JSON.stringify(requestBody)
+                                });
+
+                                const data = await response.json();
+
+                                if (response.ok && data.data?.resultImageUrl) {
+                                    const resultUrl = data.data.resultImageUrl;
+                                    const presetId = preset.preset_id || preset.id || 'unknown';
+                                    const filename = `${category}_${presetId}_${tryImage.replace('.webp', '')}_result.webp`;
+                                    
+                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                    const downloaded = await downloadImage(resultUrl, filename);
+                                    
+                                    results.push({
+                                        category: category,
+                                        presetId: presetId,
+                                        tryImage: tryImage,
+                                        success: true,
+                                        resultUrl: resultUrl,
+                                        downloaded: downloaded
+                                    });
+                                    successCount++;
+                                } else {
+                                    throw new Error(data.message || 'FaceSwap failed');
+                                }
+
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            } catch (error) {
+                                console.error(`Error processing ${category}/${preset.preset_id || preset.id}/${tryImage}:`, error);
+                                results.push({
+                                    category: category,
+                                    presetId: preset.preset_id || preset.id || 'unknown',
+                                    tryImage: tryImage,
+                                    success: false,
+                                    error: error.message
+                                });
+                                failCount++;
+                            }
+                        }
+                    }
+                }
+
+                const summary = `Hoàn thành! Thành công: ${successCount}, Thất bại: ${failCount}`;
+                showStatusMessage(summary, successCount > 0 ? 'success' : 'error');
+                console.log('Batch processing results:', results);
+
+                await loadGallery('results');
+            } catch (error) {
+                showStatusMessage(`Batch processing failed: ${error.message}`, 'error');
+                console.error('Batch processing error:', error);
+            } finally {
+                batchBtn.disabled = false;
+                batchBtn.classList.remove('loading');
+                hideLoading();
             }
         }
 
@@ -2924,29 +3160,86 @@
             if (!lightbox || lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
             const item = lightboxItems[lightboxCurrentIndex];
             const imageUrl = item.result_url || item.image_url || '';
-            
+
             if (lightboxMode === 'preview' || lightboxMode === 'preset-preview') {
-                // Handle Lottie animations for presets (both regular Lottie and AVIF Lottie)
-                if (lightboxMode === 'preset-preview' && (item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif)) {
-                    // For Lottie presets, show Lottie player instead of img
-                    const lottieUrl = item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif;
-                    const lottieContainer = document.createElement('div');
-                    lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
-                    const content = $('lightbox-content');
-                    const single = $('lightbox-single');
-                    single.innerHTML = '';
-                    single.appendChild(lottieContainer);
-                    const info = document.createElement('div');
+                // Handle different media types for presets (Lottie, WebP, AVIF) - unified approach
+                const single = $('lightbox-single');
+                if (!single) return;
+
+                // Find or create info element
+                let info = single.querySelector('.lightbox-info');
+                if (!info) {
+                    info = document.createElement('div');
                     info.className = 'lightbox-info';
-                    info.innerHTML = `<span id="lightbox-counter">${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})</span>`;
                     single.appendChild(info);
-                } else {
-                    img.src = item.image_url || '';
                 }
+
+                // Clear only media elements (img, lottie-player, or container divs), keep info
+                Array.from(single.children).forEach(child => {
+                    if (!child.classList.contains('lightbox-info')) {
+                        child.remove();
+                    }
+                });
+
+                // Determine media type and create appropriate element
+                let mediaElement = null;
+                if (lightboxMode === 'preset-preview') {
+                    // Respect format selector for preset preview
+                    const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+                    const lottieUrl = item.thumbnail_url_4x_lottie_avif || item.thumbnail_url_4x_lottie;
+                    let webpUrl = item.thumbnail_url_4x;
+                    // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
+                    if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
+                        webpUrl = null; // Ignore if it's actually a Lottie file
+                    }
+
+                    if (selectedFormat === 'lottie') {
+                        // Show Lottie if format is Lottie
+                        if (lottieUrl) {
+                            const lottieContainer = document.createElement('div');
+                            lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
+                            mediaElement = lottieContainer;
+                        } else if (webpUrl && img) {
+                            // Fallback to WebP if Lottie not available
+                            img.src = webpUrl;
+                            img.alt = item.label || 'Preset';
+                            img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
+                            mediaElement = img;
+                        }
+                    } else {
+                        // WebP format (default) - only use thumbnail_url_4x if it's actually a WebP file
+                        if (webpUrl && img) {
+                            img.src = webpUrl;
+                            img.alt = item.label || 'Preset';
+                            img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
+                            mediaElement = img;
+                        } else if (lottieUrl) {
+                            // Fallback to Lottie if WebP not available
+                            const lottieContainer = document.createElement('div');
+                            lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
+                            mediaElement = lottieContainer;
+                        }
+                    }
+                } else {
+                    // Regular preview mode
+                    if (img) {
+                        img.src = item.image_url || '';
+                        mediaElement = img;
+                    }
+                }
+
+                // Insert media before info
+                if (mediaElement) {
+                    single.insertBefore(mediaElement, info);
+                }
+
+                // Update counter text
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
+                
+                // Always show actions for both Lottie and WebP
                 if (actions) actions.style.display = 'flex';
             } else {
-                img.src = imageUrl;
+                if (img) img.src = imageUrl;
                 if (counter) counter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
                 if (actions) actions.style.display = 'flex';
             }
@@ -4241,9 +4534,33 @@
                 console.error('[Init] Model select element not found during initialization!');
             }
 
+            // Initialize preset format selector
+            const formatSelect = document.getElementById('preset-format-select');
+            const savedFormat = localStorage.getItem('preset:format') || 'webp';
+            if (formatSelect) {
+                formatSelect.value = savedFormat;
+                console.log('[Init] Set preset format to:', savedFormat);
+            }
+
             // Initialize profile FIRST, then load galleries
             await window.profileManager.initializeProfile();
             await init();
+            
+            // Setup format selector change handler AFTER galleries are loaded
+            if (formatSelect) {
+                formatSelect.addEventListener('change', (e) => {
+                    const newValue = e.target.value;
+                    localStorage.setItem('preset:format', newValue);
+                    console.log('[Init] Preset format changed to:', newValue);
+                    // Re-render gallery and update preview when format changes
+                    if (typeof renderGallery === 'function') {
+                        renderGallery('preset');
+                    }
+                    if (galleries?.preset?.state?.selected && typeof updatePreview === 'function') {
+                        updatePreview('preset');
+                    }
+                });
+            }
             
             // Setup thumbnail drag and drop
             setupThumbnailDragDrop();

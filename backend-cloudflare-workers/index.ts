@@ -4020,8 +4020,40 @@ export default {
           if (!presetResult) {
             return errorResponse('Preset image not found', 404, undefined, request, env);
           }
-          const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
-          targetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
+
+          // Check if a specific format is requested for thumbnails
+          const requestedFormat = body.format ? body.format.trim().toLowerCase() : null;
+          let useThumbnailUrl = false;
+
+          if (requestedFormat && (requestedFormat === 'lottie' || requestedFormat === 'avif')) {
+            // For Lottie or AVIF formats, try to use the 4x thumbnail if available
+            const thumbnailKey = requestedFormat === 'lottie' ? 'thumbnail_url_4x_lottie' : 'thumbnail_url_4x_lottie_avif';
+
+            // Query for thumbnail data
+            const thumbnailQuery = await DB.prepare(`
+              SELECT thumbnail_data FROM presets WHERE id = ?
+            `).bind(body.preset_image_id).first();
+
+            if (thumbnailQuery && thumbnailQuery.thumbnail_data && typeof thumbnailQuery.thumbnail_data === 'string') {
+              try {
+                const thumbnailData = JSON.parse(thumbnailQuery.thumbnail_data);
+                const thumbnailR2Key = thumbnailData[thumbnailKey];
+                if (thumbnailR2Key && typeof thumbnailR2Key === 'string') {
+                  targetUrl = getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin);
+                  useThumbnailUrl = true;
+                }
+              } catch (parseError) {
+                console.warn('[Faceswap] Failed to parse thumbnail data for format selection:', parseError);
+              }
+            }
+          }
+
+          // Fallback to original preset image if thumbnail not found or no format specified
+          if (!useThumbnailUrl) {
+            const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+            targetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
+          }
+
           presetName = 'Unnamed Preset';
           presetImageId = body.preset_image_id || null;
         } else if (hasPresetUrl) {
