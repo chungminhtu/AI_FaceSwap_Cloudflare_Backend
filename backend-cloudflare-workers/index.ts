@@ -248,16 +248,23 @@ const resolveAspectRatioForNonFaceswap = async (
   
   // If aspect_ratio is "original" or null/undefined, calculate from image
   if (!aspectRatio || aspectRatio === 'original') {
+    console.log('[AspectRatio] Calculating aspect ratio from image:', selfieImageUrl);
     const dimensions = await getImageDimensions(selfieImageUrl, env);
-    if (dimensions) {
+    if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+      const actualRatio = dimensions.width / dimensions.height;
       const closestRatio = getClosestAspectRatio(dimensions.width, dimensions.height, supportedRatios);
+      console.log('[AspectRatio] Image dimensions:', { width: dimensions.width, height: dimensions.height, actualRatio: actualRatio.toFixed(3), closestRatio });
       return closestRatio;
+    } else {
+      console.warn('[AspectRatio] Failed to get image dimensions, using default:', ASPECT_RATIO_CONFIG.DEFAULT);
+      return ASPECT_RATIO_CONFIG.DEFAULT;
     }
-    return ASPECT_RATIO_CONFIG.DEFAULT;
   }
   
   // Validate and return supported ratio, or default
-  return supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+  const validRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+  console.log('[AspectRatio] Using provided aspect ratio:', aspectRatio, '->', validRatio);
+  return validRatio;
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
@@ -1128,6 +1135,7 @@ export default {
 
             if (enableVertexPrompt) {
               try {
+                console.log(`[Upload-url] Generating Vertex prompt for preset ${id}, isFilterMode: ${isFilterMode}, customPromptText: ${customPromptText ? 'provided' : 'none'}`);
                 const promptResult = await generateVertexPrompt(publicUrl, env, isFilterMode, customPromptText);
                 if (promptResult.success && promptResult.prompt) {
                   promptJson = JSON.stringify(promptResult.prompt);
@@ -1136,12 +1144,14 @@ export default {
                     promptKeys: Object.keys(promptResult.prompt),
                     debug: promptResult.debug
                   };
+                  console.log(`[Upload-url] Successfully generated prompt for preset ${id}, keys: ${Object.keys(promptResult.prompt).join(', ')}`);
                 } else {
                   vertexCallInfo = {
                     success: false,
                     error: promptResult.error || 'Unknown error',
                     debug: promptResult.debug
                   };
+                  console.error(`[Upload-url] Prompt generation failed for preset ${id}:`, promptResult.error || 'Unknown error');
                 }
               } catch (vertexError) {
                 const errorMsg = vertexError instanceof Error ? vertexError.message : String(vertexError);
@@ -1150,26 +1160,34 @@ export default {
                   error: errorMsg.substring(0, 200),
                   debug: { errorDetails: errorMsg.substring(0, 200) }
                 };
+                console.error(`[Upload-url] Prompt generation exception for preset ${id}:`, errorMsg.substring(0, 200));
               }
+            } else {
+              console.log(`[Upload-url] Prompt generation not requested for preset ${id}`);
             }
 
             // Store prompt_json in R2 metadata
             if (promptJson) {
               try {
-                const existingObject = await R2_BUCKET.head(key);
-                if (existingObject) {
-                  await R2_BUCKET.put(key, fileData.fileData, {
-                    httpMetadata: {
-                      contentType: fileData.contentType,
-                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                    },
-                    customMetadata: {
-                      prompt_json: promptJson
-                    }
-                  });
-                }
+                // Re-upload with metadata (the file was already uploaded at line 1000, but we need to add metadata)
+                await R2_BUCKET.put(key, fileData.fileData, {
+                  httpMetadata: {
+                    contentType: fileData.contentType,
+                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                  },
+                  customMetadata: {
+                    prompt_json: promptJson
+                  }
+                });
+                console.log(`[Upload-url] Successfully stored prompt_json metadata for preset ${id} at key ${key}`);
               } catch (metadataError) {
+                const errorMsg = metadataError instanceof Error ? metadataError.message : String(metadataError);
+                console.error(`[Upload-url] Failed to store prompt_json metadata for preset ${id}:`, errorMsg.substring(0, 200));
+                // Don't fail the upload, but log the error
               }
+            } else if (enableVertexPrompt) {
+              // Prompt generation was requested but failed
+              console.warn(`[Upload-url] Prompt generation was requested for preset ${id} but promptJson is null`);
             }
 
             // Create 4x thumbnail using the preset image itself

@@ -555,6 +555,11 @@ const parseImageDimensions = (data: Uint8Array): { width: number; height: number
 
 // Calculate aspect ratio from dimensions and find closest supported Vertex ratio
 export const getClosestAspectRatio = (width: number, height: number, supportedRatios: string[]): string => {
+  if (width <= 0 || height <= 0) {
+    console.warn('[getClosestAspectRatio] Invalid dimensions:', { width, height });
+    return supportedRatios[0] || '3:4';
+  }
+  
   const actualRatio = width / height;
   
   // Parse supported ratios and find closest match
@@ -563,6 +568,8 @@ export const getClosestAspectRatio = (width: number, height: number, supportedRa
   
   for (const ratioStr of supportedRatios) {
     const [w, h] = ratioStr.split(':').map(Number);
+    if (w <= 0 || h <= 0) continue;
+    
     const ratioValue = w / h;
     const diff = Math.abs(actualRatio - ratioValue);
     
@@ -572,6 +579,7 @@ export const getClosestAspectRatio = (width: number, height: number, supportedRa
     }
   }
   
+  console.log('[getClosestAspectRatio]', { width, height, actualRatio: actualRatio.toFixed(3), closestRatio, minDiff: minDiff.toFixed(4) });
   return closestRatio;
 };
 

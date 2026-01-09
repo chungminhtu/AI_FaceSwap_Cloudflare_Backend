@@ -407,10 +407,29 @@
         .lightbox {
             position: fixed; inset: 0; z-index: 10000;
             display: flex; align-items: center; justify-content: center;
+            width: 100vw; height: 100vh;
+            overflow: hidden;
         }
         .lightbox-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); cursor: pointer; }
-        .lightbox-content { position: relative; max-width: 95%; max-height: 95%; z-index: 10001; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px; }
-        .lightbox-single { display: flex; flex-direction: column; align-items: center; width: 100%; }
+        .lightbox-content { 
+            position: relative; 
+            max-width: 95vw; 
+            max-height: 95vh; 
+            z-index: 10001; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: flex-start; 
+            padding: 20px;
+            overflow: auto;
+        }
+        .lightbox-single { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            width: 100%; 
+            max-height: 100%;
+        }
         .lightbox-content img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px; }
         .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
         .lightbox-actions {
@@ -822,21 +841,24 @@
                         <button class="gallery-upload-btn" onclick="document.getElementById('preset-input').click()">+</button>
                         <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                     </div>
-                    <div style="padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; flex: 1; min-width: 0;">
-                            <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
-                            <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
-                        </label>
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <label style="font-size: 12px; color: var(--text-secondary);">Format:</label>
-                            <select id="preset-format-select" style="padding: 2px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;">
-                                <option value="webp">WebP</option>
-                                <option value="lottie">Lottie</option>
-                            </select>
+                    <div style="padding: 8px 12px; border-bottom: 1px solid var(--border);">
+                        <input type="text" id="preset-search-input" placeholder="🔍 Tìm kiếm preset..." style="width: 100%; padding: 6px 10px; margin-bottom: 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);" autocomplete="off">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; flex: 1; min-width: 0;">
+                                <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
+                                <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
+                            </label>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <label style="font-size: 12px; color: var(--text-secondary);">Format:</label>
+                                <select id="preset-format-select" style="padding: 2px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;">
+                                    <option value="webp">WebP</option>
+                                    <option value="lottie">Lottie</option>
+                                </select>
+                            </div>
+                            <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
+                                ⚙️ Customize Prompts
+                            </button>
                         </div>
-                        <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
-                            ⚙️ Customize Prompts
-                        </button>
                     </div>
                     <div class="sidebar-content" id="preset-sidebar-content">
                         <div class="gallery-drop-zone" id="preset-drop-zone">
@@ -1323,7 +1345,7 @@
                 key: 'preset', responseKey: 'thumbnails', endpoints: { list: '/thumbnails', delete: '/presets' },
                 logName: 'Thư Viện Mẫu', labels: { selectSuccess: 'Đã chọn mẫu thành công', deleteSuccess: 'Đã xóa mẫu thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?' },
                 elements: { input: presetInput, preview: presetPreview, gallery: presetGallery, pagination: $('preset-pagination'), prevBtn: $('preset-prev'), nextBtn: $('preset-next') },
-                state: { items: [], selected: null, page: 1 }
+                state: { items: [], selected: null, page: 1, searchQuery: '', filteredItems: [] }
             },
             selfie: {
                 key: 'selfie', responseKey: 'selfies', endpoints: { list: '/selfies', delete: '/selfies' },
@@ -1826,11 +1848,13 @@
                     const presetTitle = $('preset-title');
                     if (presetTitle) {
                         const items = config.state.items;
+                        const searchQuery = config.state.searchQuery;
+                        const displayItems = searchQuery ? config.state.filteredItems || items : items;
                         let lottieCount = 0;
                         let webpCount = 0;
                         let avifCount = 0;
 
-                        items.forEach(item => {
+                        displayItems.forEach(item => {
                             // Count each format independently (presets can have multiple formats)
                             if (item.thumbnail_url_4x_lottie) {
                                 lottieCount++;
@@ -1843,7 +1867,11 @@
                             }
                         });
 
-                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
+                        if (searchQuery) {
+                            presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif)`;
+                        } else {
+                            presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
+                        }
                     }
                 }
 
@@ -1863,15 +1891,63 @@
 
         function renderGallery(type) {
             const config = galleries[type];
-            const { items, page, selected } = config.state;
+            let { items, page, selected } = config.state;
             const { gallery, pagination, prevBtn, nextBtn } = config.elements;
             if (!gallery) return;
+
+            // Apply search filter for presets
+            if (type === 'preset' && config.state.searchQuery) {
+                const query = config.state.searchQuery.toLowerCase().trim();
+                if (query) {
+                    // Split query into words and remove empty strings
+                    const queryWords = query.split(/\s+/).filter(word => word.length > 0);
+                    // Also create a version without spaces/special chars for loose matching
+                    const queryNormalized = query.replace(/[_\-\s]/g, '');
+                    
+                    items = items.filter(item => {
+                        const presetId = (item.preset_id || item.id || '').toLowerCase();
+                        const id = (item.id || '').toLowerCase();
+                        const imageUrl = (item.image_url || item.thumbnail_url_4x || '').toLowerCase();
+                        
+                        // Normalize strings for loose matching (remove spaces, underscores, hyphens)
+                        const presetIdNormalized = presetId.replace(/[_\-\s]/g, '');
+                        const idNormalized = id.replace(/[_\-\s]/g, '');
+                        
+                        // Check if query matches as substring in any field
+                        if (presetId.includes(query) || id.includes(query) || imageUrl.includes(query)) {
+                            return true;
+                        }
+                        
+                        // Check normalized matching (without spaces/special chars)
+                        if (queryNormalized && (presetIdNormalized.includes(queryNormalized) || idNormalized.includes(queryNormalized))) {
+                            return true;
+                        }
+                        
+                        // Check if any word from query matches
+                        if (queryWords.length > 0) {
+                            return queryWords.some(word => {
+                                return presetId.includes(word) || id.includes(word) || 
+                                       presetIdNormalized.includes(word.replace(/[_\-\s]/g, '')) ||
+                                       idNormalized.includes(word.replace(/[_\-\s]/g, ''));
+                            });
+                        }
+                        
+                        return false;
+                    });
+                }
+                config.state.filteredItems = items;
+            } else if (type === 'preset') {
+                config.state.filteredItems = items;
+            }
 
             if (!items.length) {
                 gallery.style.display = 'none';
                 if (pagination) pagination.style.display = 'none';
                 if (type === 'results') {
                     gallery.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">Chưa có kết quả nào</div>';
+                    gallery.style.display = 'block';
+                } else if (type === 'preset' && config.state.searchQuery) {
+                    gallery.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">Không tìm thấy preset nào</div>';
                     gallery.style.display = 'block';
                 }
                 return;
@@ -1948,15 +2024,8 @@
                             ${actionBadge}
                             <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                         </div>`;
-                    } else if (type === 'selfie') {
-                        // For selfies, open lightbox first
-                        return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="openSelfieLightbox('${item.id}')" data-item-id="${item.id}">
-                            ${mediaElement}
-                            ${actionBadge}
-                            <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
-                        </div>`;
                     } else {
-                        // For other types, use existing selection logic
+                        // For selfies and other types, use existing selection logic (direct selection, no lightbox)
                         return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
                             ${mediaElement}
                             ${actionBadge}
@@ -1968,6 +2037,31 @@
 
             if (prevBtn) prevBtn.disabled = config.state.page === 1;
             if (nextBtn) nextBtn.disabled = config.state.page === totalPages;
+
+            // Update preset title with search results count
+            if (type === 'preset') {
+                const presetTitle = $('preset-title');
+                if (presetTitle) {
+                    const allItems = galleries.preset.state.items;
+                    const searchQuery = galleries.preset.state.searchQuery;
+                    const displayItems = searchQuery ? items : allItems;
+                    let lottieCount = 0;
+                    let webpCount = 0;
+                    let avifCount = 0;
+
+                    displayItems.forEach(item => {
+                        if (item.thumbnail_url_4x_lottie) lottieCount++;
+                        if (item.thumbnail_url_4x_lottie_avif) avifCount++;
+                        if (!item.thumbnail_url_4x_lottie && !item.thumbnail_url_4x_lottie_avif) webpCount++;
+                    });
+
+                    if (searchQuery) {
+                        presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif)`;
+                    } else {
+                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
+                    }
+                }
+            }
 
             const numbersContainer = $(type + '-dots');
             if (numbersContainer && totalPages > 1) {
@@ -2339,6 +2433,14 @@
             const files = Array.from(e.target.files || []);
             if (files.length > 0) await handleMultipleImageUpload(files, 'preset');
             e.target.value = '';
+        });
+
+        const presetSearchInput = $('preset-search-input');
+        presetSearchInput?.addEventListener('input', (e) => {
+            const query = e.target.value;
+            galleries.preset.state.searchQuery = query;
+            galleries.preset.state.page = 1;
+            renderGallery('preset');
         });
 
         selfieInput?.addEventListener('change', async e => {
@@ -4058,6 +4160,12 @@
             const filterModeCheckbox = document.getElementById('thumbnail-filter-mode');
             const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
             
+            // Get custom prompt if user has customized it
+            const { defaultPrompt, filterPrompt } = loadCustomPrompts();
+            const currentPrompt = isFilterMode ? filterPrompt : defaultPrompt;
+            const originalPrompt = isFilterMode ? DEFAULT_PROMPTS.FILTER : DEFAULT_PROMPTS.DEFAULT;
+            const customPromptText = currentPrompt !== originalPrompt ? currentPrompt : null;
+            
             // Get thumbnail format (webp or json)
             const formatWebp = document.getElementById('thumbnail-format-webp');
             const formatJson = document.getElementById('thumbnail-format-json');
@@ -4188,6 +4296,9 @@
                         formData.append('thumbnail_format', thumbnailFormat);
                         if (isFilterMode) {
                             formData.append('is_filter_mode', 'true');
+                        }
+                        if (customPromptText) {
+                            formData.append('custom_prompt_text', customPromptText);
                         }
 
                         try {
@@ -4626,11 +4737,18 @@
             }
 
             // Load saved aspect ratio from localStorage (default to 'original' for non-faceswap endpoints)
+            // For image operations (enhance, beauty, etc.), always default to 'original' to preserve input aspect ratio
             const savedRatio = localStorage.getItem('faceswap:aspectRatio') || 'original';
             const aspectRatioSelect = document.getElementById('aspect-ratio');
             if (aspectRatioSelect) {
-                aspectRatioSelect.value = savedRatio;
-                console.log('[Init] Set aspect ratio select to:', savedRatio, 'Current value:', aspectRatioSelect.value);
+                // Ensure 'original' is the default for image operations
+                if (!savedRatio || savedRatio === '3:4') {
+                    aspectRatioSelect.value = 'original';
+                    localStorage.setItem('faceswap:aspectRatio', 'original');
+                } else {
+                    aspectRatioSelect.value = savedRatio;
+                }
+                console.log('[Init] Set aspect ratio select to:', aspectRatioSelect.value, 'Saved value:', savedRatio);
                 aspectRatioSelect.addEventListener('change', (e) => {
                     const newValue = e.target.value;
                     localStorage.setItem('faceswap:aspectRatio', newValue);
