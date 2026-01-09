@@ -823,16 +823,23 @@ export default {
           profileId = formData.get('profile_id') as string;
           presetName = formData.get('presetName') as string;
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
-          isFilterMode = formData.get('is_filter_mode') === 'true';
+          
+          // Explicitly get and convert is_filter_mode to boolean
+          const isFilterModeRaw = formData.get('is_filter_mode');
+          isFilterMode = isFilterModeRaw === 'true' || (typeof isFilterModeRaw === 'string' && isFilterModeRaw.toLowerCase() === 'true');
           customPromptText = formData.get('custom_prompt_text') as string | null;
           
           // Log parsed parameters for debugging
           if (type === 'preset') {
             console.log('[Upload-url] Preset upload parameters:', {
               enableVertexPrompt,
-              isFilterMode,
+              isFilterModeRaw: isFilterModeRaw,
+              isFilterModeRawType: typeof isFilterModeRaw,
+              isFilterMode: isFilterMode,
+              isFilterModeType: typeof isFilterMode,
               hasCustomPrompt: !!customPromptText,
-              customPromptLength: customPromptText?.length || 0
+              customPromptLength: customPromptText?.length || 0,
+              allFormDataKeys: Array.from(formData.keys())
             });
           }
           // Ensure action is always a string (formData.get can return File if name collision)
@@ -1129,8 +1136,16 @@ export default {
 
             if (enableVertexPrompt) {
               try {
-                console.log(`[Upload-url] Generating Vertex prompt for preset ${id}, isFilterMode: ${isFilterMode}, customPromptText: ${customPromptText ? 'provided' : 'none'}`);
-                const promptResult = await generateVertexPrompt(publicUrl, env, isFilterMode, customPromptText);
+                // Explicitly convert to boolean (same as ZIP upload flow) and log values
+                const filterModeBool = isFilterMode === true;
+                console.log(`[Upload-url] Generating Vertex prompt for preset ${id}:`, {
+                  isFilterMode: isFilterMode,
+                  isFilterModeType: typeof isFilterMode,
+                  filterModeBool: filterModeBool,
+                  customPromptText: customPromptText ? `provided (${customPromptText.length} chars)` : 'none',
+                  publicUrl: publicUrl
+                });
+                const promptResult = await generateVertexPrompt(publicUrl, env, filterModeBool, customPromptText);
                 if (promptResult.success && promptResult.prompt) {
                   promptJson = JSON.stringify(promptResult.prompt);
                   vertexCallInfo = {
@@ -1221,7 +1236,9 @@ export default {
               prompt_json: promptJson ? JSON.parse(promptJson) : null,
               vertex_info: vertexCallInfo,
               thumbnail_4x: getR2PublicUrl(env, thumbnailR2Key, requestUrl.origin),
-              thumbnail_created: true
+              thumbnail_created: true,
+              filter_mode_used: isFilterMode,
+              prompt_type: isFilterMode ? 'filter' : (customPromptText ? 'custom' : 'default')
             };
             
             // Include vision check result in response only if debug is enabled (if preset also needs vision check in future)
@@ -1516,11 +1533,19 @@ export default {
           data: {
             results: results.map(r => {
               if (r.success) {
-                return {
+                const result: any = {
                   id: r.id,
                   url: r.url,
                   filename: r.filename
                 };
+                // Include filter mode info if available (for presets)
+                if ((r as any).filter_mode_used !== undefined) {
+                  result.filter_mode_used = (r as any).filter_mode_used;
+                }
+                if ((r as any).prompt_type) {
+                  result.prompt_type = (r as any).prompt_type;
+                }
+                return result;
               } else {
                 return {
                   success: false,
