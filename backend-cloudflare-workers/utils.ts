@@ -1,5 +1,6 @@
 // backend-cloudflare-workers/utils.ts
 import type { Env } from './types';
+import { ASPECT_RATIO_CONFIG } from './config';
 
 // Safety violation status codes (1000+) Loại nhạy cảm
 // Tìm kiếm An toàn: Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính
@@ -581,6 +582,60 @@ export const getClosestAspectRatio = (width: number, height: number, supportedRa
   
   console.log('[getClosestAspectRatio]', { width, height, actualRatio: actualRatio.toFixed(3), closestRatio, minDiff: minDiff.toFixed(4) });
   return closestRatio;
+};
+
+// Unified function to resolve aspect ratio for all APIs
+// Supports both faceswap (no "original") and non-faceswap (with "original") endpoints
+export const resolveAspectRatio = async (
+  aspectRatio: string | undefined | null,
+  imageUrl: string | undefined | null,
+  env: any,
+  options: {
+    allowOriginal?: boolean; // If true, "original" will calculate from image. If false, "original" is treated as invalid.
+    defaultRatio?: string; // Default ratio if calculation fails
+    supportedRatios?: string[]; // Optional: override supported ratios
+  } = {}
+): Promise<string> => {
+  const { allowOriginal = false, defaultRatio, supportedRatios: customSupportedRatios } = options;
+  const supportedRatios = customSupportedRatios || ASPECT_RATIO_CONFIG.SUPPORTED;
+  const fallbackDefault = defaultRatio || ASPECT_RATIO_CONFIG.DEFAULT;
+  
+  // If aspect_ratio is "original" and original is allowed, calculate from image
+  if (allowOriginal && (!aspectRatio || aspectRatio === 'original')) {
+    if (!imageUrl) {
+      console.warn('[resolveAspectRatio] "original" specified but no imageUrl provided, using default:', fallbackDefault);
+      return fallbackDefault;
+    }
+    
+    console.log('[resolveAspectRatio] Calculating aspect ratio from image:', imageUrl);
+    const dimensions = await getImageDimensions(imageUrl, env);
+    if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+      const actualRatio = dimensions.width / dimensions.height;
+      const closestRatio = getClosestAspectRatio(dimensions.width, dimensions.height, supportedRatios);
+      console.log('[resolveAspectRatio] Image dimensions:', { width: dimensions.width, height: dimensions.height, actualRatio: actualRatio.toFixed(3), closestRatio });
+      return closestRatio;
+    } else {
+      console.warn('[resolveAspectRatio] Failed to get image dimensions, using default:', fallbackDefault);
+      return fallbackDefault;
+    }
+  }
+  
+  // If "original" is not allowed but was provided, treat as invalid
+  if (aspectRatio === 'original' && !allowOriginal) {
+    console.warn('[resolveAspectRatio] "original" not allowed for this endpoint, using default:', fallbackDefault);
+    return fallbackDefault;
+  }
+  
+  // Validate and return supported ratio, or default
+  const validRatio = supportedRatios.includes(aspectRatio || '') ? (aspectRatio || fallbackDefault) : fallbackDefault;
+  if (aspectRatio && aspectRatio !== validRatio) {
+    console.log('[resolveAspectRatio] Invalid aspect ratio provided:', aspectRatio, '-> using:', validRatio);
+  } else if (aspectRatio) {
+    console.log('[resolveAspectRatio] Using provided aspect ratio:', aspectRatio);
+  } else {
+    console.log('[resolveAspectRatio] No aspect ratio provided, using default:', validRatio);
+  }
+  return validRatio;
 };
 
 export const getWorstViolation = (

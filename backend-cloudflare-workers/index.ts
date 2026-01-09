@@ -4,7 +4,7 @@ import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
@@ -237,34 +237,14 @@ const logCriticalError = (endpoint: string, error: unknown, request: Request, en
   console.error(`[CRITICAL ERROR] ${endpoint}:`, JSON.stringify(logData, null, 2));
 };
 
-// Helper function to resolve aspect ratio for non-faceswap endpoints
-// If aspect_ratio is "original" or null/undefined, calculate from selfie image
+// Deprecated: Use resolveAspectRatio from utils instead
+// Kept for backward compatibility, but all new code should use resolveAspectRatio
 const resolveAspectRatioForNonFaceswap = async (
   aspectRatio: string | undefined | null,
   selfieImageUrl: string,
   env: Env
 ): Promise<string> => {
-  const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-  
-  // If aspect_ratio is "original" or null/undefined, calculate from image
-  if (!aspectRatio || aspectRatio === 'original') {
-    console.log('[AspectRatio] Calculating aspect ratio from image:', selfieImageUrl);
-    const dimensions = await getImageDimensions(selfieImageUrl, env);
-    if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
-      const actualRatio = dimensions.width / dimensions.height;
-      const closestRatio = getClosestAspectRatio(dimensions.width, dimensions.height, supportedRatios);
-      console.log('[AspectRatio] Image dimensions:', { width: dimensions.width, height: dimensions.height, actualRatio: actualRatio.toFixed(3), closestRatio });
-      return closestRatio;
-    } else {
-      console.warn('[AspectRatio] Failed to get image dimensions, using default:', ASPECT_RATIO_CONFIG.DEFAULT);
-      return ASPECT_RATIO_CONFIG.DEFAULT;
-    }
-  }
-  
-  // Validate and return supported ratio, or default
-  const validRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
-  console.log('[AspectRatio] Using provided aspect ratio:', aspectRatio, '->', validRatio);
-  return validRatio;
+  return resolveAspectRatio(aspectRatio, selfieImageUrl, env, { allowOriginal: true });
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
@@ -4247,12 +4227,8 @@ export default {
         );
         const vertexPromptPayload = augmentedPromptPayload;
 
-        // Extract aspect ratio from request body, default to "3:4" if not provided
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        // Validate aspect ratio is one of the supported values for Vertex AI
-        // Supported: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        // Resolve aspect ratio (faceswap doesn't support "original")
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, null, env, { allowOriginal: false });
         // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
         // may not work correctly and may always return 1:1 images regardless of the specified ratio.
         // This is a limitation of the current API version.
@@ -4584,9 +4560,20 @@ export default {
             return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
           }
 
-          const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-          const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-          const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+          // Get selfie URL for aspect ratio calculation
+          let selfieUrlForRatio = '';
+          if (hasSelfieId) {
+            const selfieResult = results[hasPresetId ? 2 : 1];
+            if (selfieResult) {
+              const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+              selfieUrlForRatio = getR2PublicUrl(env, storedKey, requestUrl.origin);
+            }
+          } else if (hasSelfieUrl) {
+            selfieUrlForRatio = body.selfie_image_url!;
+          }
+          
+          // Resolve aspect ratio from selfie image if "original" is specified
+          const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrlForRatio, env, { allowOriginal: true });
           const modelParam = body.model;
 
           const backgroundGenResult = await generateBackgroundFromPrompt(body.custom_prompt!, env, validAspectRatio, modelParam);
@@ -4671,9 +4658,8 @@ export default {
           mergePrompt = `${defaultMergePrompt} Additional instructions: ${body.additional_prompt}`;
         }
 
-        const aspectRatio = (body.aspect_ratio as string) || ASPECT_RATIO_CONFIG.DEFAULT;
-        const supportedRatios = ASPECT_RATIO_CONFIG.SUPPORTED;
-        const validAspectRatio = supportedRatios.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT;
+        // Resolve aspect ratio from selfie image if "original" is specified
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
         const modelParam = body.model;
 
         const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
@@ -4979,7 +4965,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
 
         const enhancedResult = await callNanoBanana(
@@ -5080,7 +5066,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
 
         const beautyResult = await callNanoBanana(
@@ -5342,7 +5328,7 @@ export default {
           body.additional_prompt
         );
 
-        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, selfieImageUrl, env);
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieImageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
 
         const filterResult = await callNanoBanana(
@@ -5446,7 +5432,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
 
         const restoredResult = await callNanoBanana(
@@ -5547,7 +5533,7 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatioForNonFaceswap(body.aspect_ratio, body.image_url, env);
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
 
         // For now, implement aging using existing Nano Banana API
