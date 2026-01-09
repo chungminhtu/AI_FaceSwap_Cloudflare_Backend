@@ -1451,11 +1451,21 @@ export const generateVertexPrompt = async (
     let prompt: string;
     if (customPromptText && customPromptText.trim()) {
       prompt = customPromptText.trim();
+      console.log('[generateVertexPrompt] Using custom prompt text (length:', prompt.length, ')');
     } else if (isFilterMode) {
       prompt = VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER;
+      console.log('[generateVertexPrompt] Using filter mode prompt (art style analysis)');
     } else {
       prompt = VERTEX_AI_PROMPTS.PROMPT_GENERATION_DEFAULT;
+      console.log('[generateVertexPrompt] Using default prompt (normal face-swap)');
     }
+    
+    console.log('[generateVertexPrompt] Prompt selection:', {
+      isFilterMode,
+      hasCustomPrompt: !!(customPromptText && customPromptText.trim()),
+      promptLength: prompt.length,
+      promptPreview: prompt.substring(0, 100) + '...'
+    });
 
     // Fetch image as base64
     const imageData = await fetchImageAsBase64(imageUrl, env);

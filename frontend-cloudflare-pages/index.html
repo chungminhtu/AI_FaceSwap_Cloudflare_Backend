@@ -2529,10 +2529,20 @@
                     formData.append('enableVertexPrompt', 'true');
                     // Check if filter mode is enabled
                     const filterModeCheckbox = document.getElementById('preset-filter-mode');
-                    const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked;
+                    const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked === true;
+                    
+                    console.log('[Preset Upload] Filter mode checkbox:', {
+                        found: !!filterModeCheckbox,
+                        checked: filterModeCheckbox?.checked,
+                        isFilterMode: isFilterMode,
+                        checkboxType: filterModeCheckbox?.type
+                    });
                     
                     if (isFilterMode) {
                         formData.append('is_filter_mode', 'true');
+                        console.log('[Preset Upload] Filter mode enabled - using filter prompt');
+                    } else {
+                        console.log('[Preset Upload] Filter mode disabled - using default prompt');
                     }
                     
                     // Add custom prompt if user has customized it
@@ -2543,7 +2553,19 @@
                     const originalPrompt = isFilterMode ? DEFAULT_PROMPTS.FILTER : DEFAULT_PROMPTS.DEFAULT;
                     if (currentPrompt !== originalPrompt) {
                         formData.append('custom_prompt_text', currentPrompt);
+                        console.log('[Preset Upload] Using custom prompt (different from default), length:', currentPrompt.length);
+                    } else if (isFilterMode) {
+                        console.log('[Preset Upload] Using default filter prompt (not customized)');
+                    } else {
+                        console.log('[Preset Upload] Using default prompt (not customized)');
                     }
+                    
+                    // Log what we're sending
+                    console.log('[Preset Upload] FormData values being sent:', {
+                        enableVertexPrompt: 'true',
+                        is_filter_mode: isFilterMode ? 'true' : 'not set',
+                        custom_prompt_text: formData.has('custom_prompt_text') ? 'set' : 'not set'
+                    });
                 } else if (type === 'selfie') {
                     const actionSelect = document.getElementById('selfie-action-select');
                     const action = actionSelect?.value || 'faceswap';

@@ -825,6 +825,16 @@ export default {
           enableVertexPrompt = formData.get('enableVertexPrompt') === 'true';
           isFilterMode = formData.get('is_filter_mode') === 'true';
           customPromptText = formData.get('custom_prompt_text') as string | null;
+          
+          // Log parsed parameters for debugging
+          if (type === 'preset') {
+            console.log('[Upload-url] Preset upload parameters:', {
+              enableVertexPrompt,
+              isFilterMode,
+              hasCustomPrompt: !!customPromptText,
+              customPromptLength: customPromptText?.length || 0
+            });
+          }
           // Ensure action is always a string (formData.get can return File if name collision)
           const actionEntry = formData.get('action');
           action = (actionEntry && typeof actionEntry === 'string') ? actionEntry : null;
@@ -886,7 +896,11 @@ export default {
           profileId,
           action,
           filesCount: files.length,
-          imageUrlsCount: imageUrls.length
+          imageUrlsCount: imageUrls.length,
+          enableVertexPrompt: type === 'preset' ? enableVertexPrompt : undefined,
+          isFilterMode: type === 'preset' ? isFilterMode : undefined,
+          hasCustomPrompt: type === 'preset' ? !!customPromptText : undefined,
+          customPromptLength: type === 'preset' ? (customPromptText?.length || 0) : undefined
         });
 
         if (type === 'selfie' && !checkApiKey(env, request)) {
