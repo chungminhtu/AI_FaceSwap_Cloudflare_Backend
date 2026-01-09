@@ -415,6 +415,7 @@
         .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
         .lightbox-actions {
             margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+            position: relative; z-index: 10002;
         }
         .lightbox-action-btn {
             padding: 10px 20px; background: rgba(139, 92, 246, 0.9); border: none; border-radius: 8px;
@@ -3051,6 +3052,13 @@
 
             updateLightbox();
             setupLightboxKeyboard();
+
+            // Ensure actions are visible for preset preview
+            const actions = $('lightbox-actions');
+            if (actions) {
+                actions.style.display = 'flex';
+                actions.style.visibility = 'visible';
+            }
         }
 
         function openPreviewLightbox(startType, selfieIndex) {
@@ -3235,13 +3243,22 @@
 
                 // Update counter text
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
-                
-                // Always show actions for both Lottie and WebP
-                if (actions) actions.style.display = 'flex';
+            }
+
+            // Always show actions for preset-preview mode (both Lottie and WebP)
+            if (lightboxMode === 'preset-preview') {
+                const actions = $('lightbox-actions');
+                if (actions) {
+                    actions.style.display = 'flex';
+                    actions.style.visibility = 'visible';
+                    actions.style.opacity = '1';
+                    actions.style.zIndex = '10002';
+                }
             } else {
-                if (img) img.src = imageUrl;
-                if (counter) counter.textContent = `${lightboxCurrentIndex + 1} / ${lightboxItems.length}`;
-                if (actions) actions.style.display = 'flex';
+                const actions = $('lightbox-actions');
+                if (actions) {
+                    actions.style.display = 'flex';
+                }
             }
             
             // Update add to comparison button state
