@@ -409,13 +409,14 @@
             display: flex; align-items: center; justify-content: center;
         }
         .lightbox-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.9); cursor: pointer; }
-        .lightbox-content { position: relative; max-width: 95%; max-height: 95%; z-index: 10001; display: flex; flex-direction: column; align-items: center; }
+        .lightbox-content { position: relative; max-width: 95%; max-height: 95%; z-index: 10001; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px; }
         .lightbox-single { display: flex; flex-direction: column; align-items: center; width: 100%; }
         .lightbox-content img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px; }
         .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
         .lightbox-actions {
-            margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
-            position: relative; z-index: 10002;
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+            z-index: 10002;
         }
         .lightbox-action-btn {
             padding: 10px 20px; background: rgba(139, 92, 246, 0.9); border: none; border-radius: 8px;
@@ -1947,8 +1948,15 @@
                             ${actionBadge}
                             <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
                         </div>`;
+                    } else if (type === 'selfie') {
+                        // For selfies, open lightbox first
+                        return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="openSelfieLightbox('${item.id}')" data-item-id="${item.id}">
+                            ${mediaElement}
+                            ${actionBadge}
+                            <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
+                        </div>`;
                     } else {
-                        // For selfies and results, use existing selection logic
+                        // For other types, use existing selection logic
                         return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="handleSelect('${type}', '${item.id}', event)" data-item-id="${item.id}">
                             ${mediaElement}
                             ${actionBadge}
@@ -3061,6 +3069,34 @@
             }
         }
 
+        function openSelfieLightbox(selfieId) {
+            const allSelfies = galleries.selfie.state.items;
+            if (!allSelfies || allSelfies.length === 0) return;
+
+            const clickedSelfie = allSelfies.find(item => item.id === selfieId);
+            if (!clickedSelfie) return;
+
+            lightboxMode = 'selfie-preview';
+            
+            lightboxItems = allSelfies.map(selfie => ({
+                type: 'selfie',
+                id: selfie.id,
+                image_url: selfie.image_url || selfie.selfie_url,
+                label: `Selfie: ${selfie.id}`
+            }));
+
+            lightboxCurrentIndex = lightboxItems.findIndex(item => item.id === selfieId);
+            if (lightboxCurrentIndex < 0) lightboxCurrentIndex = 0;
+
+            updateLightbox();
+            setupLightboxKeyboard();
+
+            const actions = $('lightbox-actions');
+            if (actions) {
+                actions.style.display = 'flex';
+            }
+        }
+
         function openPreviewLightbox(startType, selfieIndex) {
             lightboxMode = 'preview';
             lightboxItems = [];
@@ -3169,7 +3205,67 @@
             const item = lightboxItems[lightboxCurrentIndex];
             const imageUrl = item.result_url || item.image_url || '';
 
-            if (lightboxMode === 'preview' || lightboxMode === 'preset-preview') {
+            if (lightboxMode === 'gallery') {
+                const single = $('lightbox-single');
+                if (!single) return;
+
+                let info = single.querySelector('.lightbox-info');
+                if (!info) {
+                    info = document.createElement('div');
+                    info.className = 'lightbox-info';
+                    single.appendChild(info);
+                }
+
+                Array.from(single.children).forEach(child => {
+                    if (!child.classList.contains('lightbox-info')) {
+                        child.remove();
+                    }
+                });
+
+                if (img && imageUrl) {
+                    img.src = imageUrl;
+                    img.alt = 'Result';
+                    img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
+                    single.insertBefore(img, info);
+                }
+
+                if (counter) counter.textContent = `Kết Quả (Result) (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
+
+                const actions = $('lightbox-actions');
+                if (actions) {
+                    actions.style.display = 'flex';
+                }
+            } else if (lightboxMode === 'selfie-preview') {
+                const single = $('lightbox-single');
+                if (!single) return;
+
+                let info = single.querySelector('.lightbox-info');
+                if (!info) {
+                    info = document.createElement('div');
+                    info.className = 'lightbox-info';
+                    single.appendChild(info);
+                }
+
+                Array.from(single.children).forEach(child => {
+                    if (!child.classList.contains('lightbox-info')) {
+                        child.remove();
+                    }
+                });
+
+                if (img && imageUrl) {
+                    img.src = imageUrl;
+                    img.alt = 'Selfie';
+                    img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
+                    single.insertBefore(img, info);
+                }
+
+                if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
+
+                const actions = $('lightbox-actions');
+                if (actions) {
+                    actions.style.display = 'flex';
+                }
+            } else if (lightboxMode === 'preview' || lightboxMode === 'preset-preview') {
                 // Handle different media types for presets (Lottie, WebP, AVIF) - unified approach
                 const single = $('lightbox-single');
                 if (!single) return;
@@ -3245,14 +3341,19 @@
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
             }
 
-            // Always show actions for preset-preview mode (both Lottie and WebP)
-            if (lightboxMode === 'preset-preview') {
+            // Show actions appropriately for each mode
+            if (lightboxMode === 'preset-preview' || lightboxMode === 'selfie-preview') {
                 const actions = $('lightbox-actions');
                 if (actions) {
                     actions.style.display = 'flex';
                     actions.style.visibility = 'visible';
                     actions.style.opacity = '1';
                     actions.style.zIndex = '10002';
+                }
+            } else if (lightboxMode === 'gallery') {
+                const actions = $('lightbox-actions');
+                if (actions) {
+                    actions.style.display = 'flex';
                 }
             } else {
                 const actions = $('lightbox-actions');
@@ -4029,10 +4130,18 @@
             
             // Add regular files (non-zip) to the upload queue
             if (regularFiles.length > 0) {
+                // Get thumbnail format to construct proper path
+                const formatWebp = document.getElementById('thumbnail-format-webp');
+                const formatJson = document.getElementById('thumbnail-format-json');
+                const thumbnailFormat = formatJson && formatJson.checked ? 'json' : 'webp';
+
                 regularFiles.forEach(file => {
+                    // Construct path with format and resolution (default to 4x for best quality)
+                    const resolution = '4x';
+                    const path = `${thumbnailFormat}_${resolution}/${file.name}`;
                     allFiles.push({
                         file: file,
-                        path: file.name
+                        path: path
                     });
                 });
             }

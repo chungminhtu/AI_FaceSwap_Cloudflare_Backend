@@ -491,8 +491,8 @@ const extractR2KeyFromUrl = (url: string): string | null => {
     if (pathParts.length > 0) {
       const fullPath = pathParts.join('/');
       
-      // If path already has a bucket prefix (preset/, selfie/, results/), return as-is
-      if (fullPath.startsWith('preset/') || fullPath.startsWith('selfie/') || fullPath.startsWith('selfies/') || fullPath.startsWith('presets/') || fullPath.startsWith('results/')) {
+      // If path already has a bucket prefix (preset_thumb/, selfie/, results/), return as-is
+      if (fullPath.startsWith('preset_thumb/') || fullPath.startsWith('preset/') || fullPath.startsWith('selfie/') || fullPath.startsWith('selfies/') || fullPath.startsWith('presets/') || fullPath.startsWith('results/')) {
         return fullPath;
       }
       
@@ -511,7 +511,7 @@ const extractR2KeyFromUrl = (url: string): string | null => {
       
       // Presets: preset_
       if (filename.startsWith('preset_')) {
-        return `preset/${fullPath}`;
+        return `preset_thumb/${fullPath}`;
       }
       
       // Default: return as-is (might be a legacy format)
@@ -1994,7 +1994,7 @@ export default {
               }
 
               // Upload preset to final location with prompt metadata
-              const presetR2Key = `preset/${presetId}.webp`;
+              const presetR2Key = `preset_thumb/${presetId}.webp`;
               const promptJson = JSON.stringify(promptResult.prompt);
 
               console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes`);
@@ -2263,7 +2263,7 @@ export default {
           
           // Upload preset to final location with prompt metadata
           // Always use .webp extension for preset files (presets are always WebP)
-          const presetR2Key = `preset/${presetId}.webp`;
+          const presetR2Key = `preset_thumb/${presetId}.webp`;
           const promptJson = JSON.stringify(promptResult.prompt);
           
           console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes, original filename: ${filename}`);
@@ -2609,7 +2609,7 @@ export default {
               }
 
               // Upload to final location with prompt metadata (if available)
-              const r2Key = `preset/${presetId}.${filename.split('.').pop()}`;
+              const r2Key = `preset_thumb/${presetId}.${filename.split('.').pop()}`;
               const promptJson = skipPromptGeneration ? null : JSON.stringify(promptResult.prompt);
 
               await R2_BUCKET.put(r2Key, fileData, {
