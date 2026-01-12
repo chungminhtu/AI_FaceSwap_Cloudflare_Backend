@@ -339,7 +339,6 @@
         .gallery-item.selected { border-color: var(--accent); border-width: 2px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
         .gallery-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); }
         .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
-        .gallery-item lottie-player { width: 100%; height: 100%; display: block; }
         .gallery-action-badge {
             position: absolute; bottom: 4px; left: 4px; z-index: 2;
             padding: 1px 3px; border-radius: 2px; font-size: 8px; font-weight: 600;
@@ -864,7 +863,6 @@
                                 <label style="font-size: 12px; color: var(--text-secondary);">Format:</label>
                                 <select id="preset-format-select" style="padding: 2px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;">
                                     <option value="webp">WebP</option>
-                                    <option value="lottie">Lottie</option>
                                 </select>
                             </div>
                             <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
@@ -1040,7 +1038,7 @@
                                     Kéo thả file zip vào đây. Zip file phải chứa thư mục <code>preset</code> với các file PNG.<br>
                                     Tên file preset phải theo định dạng: <code>[type]_[sub_category]_[gender]_[position].png</code><br>
                                     Ví dụ: <code>face-swap_wedding_both_1.png</code><br>
-                                    Hệ thống sẽ tự động tạo thumbnail (WebP hoặc JSON Lottie) dựa trên preset.
+                                    Hệ thống sẽ tự động tạo thumbnail WebP dựa trên preset.
                                 </p>
                                 <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px;">
                                     <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
@@ -1054,10 +1052,6 @@
                                         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
                                             <input type="radio" name="thumbnail-format" id="thumbnail-format-webp" value="webp" checked style="cursor: pointer; width: 16px; height: 16px;">
                                             <span style="color: var(--text-primary);">🖼️ WebP Thumbnail</span>
-                                        </label>
-                                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
-                                            <input type="radio" name="thumbnail-format" id="thumbnail-format-json" value="json" style="cursor: pointer; width: 16px; height: 16px;">
-                                            <span style="color: var(--text-primary);">🎬 JSON Lottie</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1239,7 +1233,6 @@
     <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký">📋</button>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
         let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
@@ -1830,15 +1823,13 @@
                 
                 // For presets, map thumbnails response to preset format
                 if (type === 'preset') {
-                    // Prioritize WebP for image_url (default format), but keep all format URLs available
+                    // Use WebP only
                     items = items.map((item) => ({
                         id: item.preset_id,
-                        image_url: item.thumbnail_url_4x || item.thumbnail_url_4x_lottie_avif || item.thumbnail_url_4x_lottie,
+                        image_url: item.thumbnail_url_4x,
                         preset_id: item.preset_id,
-                        thumbnail_url_4x: item.thumbnail_url_4x,
-                        thumbnail_url_4x_lottie: item.thumbnail_url_4x_lottie,
-                        thumbnail_url_4x_lottie_avif: item.thumbnail_url_4x_lottie_avif
-                    })).filter(item => item.thumbnail_url_4x || item.thumbnail_url_4x_lottie || item.thumbnail_url_4x_lottie_avif); // Include items with any valid thumbnail format
+                        thumbnail_url_4x: item.thumbnail_url_4x
+                    })).filter(item => item.thumbnail_url_4x); // Only include items with WebP thumbnail
                 }
                 
                 // Normalize field names: map selfie_url/preset_url/result_url to image_url for backward compatibility
@@ -1862,27 +1853,12 @@
                         const items = config.state.items;
                         const searchQuery = config.state.searchQuery;
                         const displayItems = searchQuery ? config.state.filteredItems || items : items;
-                        let lottieCount = 0;
-                        let webpCount = 0;
-                        let avifCount = 0;
-
-                        displayItems.forEach(item => {
-                            // Count each format independently (presets can have multiple formats)
-                            if (item.thumbnail_url_4x_lottie) {
-                                lottieCount++;
-                            }
-                            if (item.thumbnail_url_4x_lottie_avif) {
-                                avifCount++;
-                            }
-                            if (!item.thumbnail_url_4x_lottie && !item.thumbnail_url_4x_lottie_avif) {
-                                webpCount++;
-                            }
-                        });
+                        const webpCount = displayItems.filter(item => item.thumbnail_url_4x).length;
 
                         if (searchQuery) {
-                            presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif)`;
+                            presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${webpCount} webp)`;
                         } else {
-                            presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
+                            presetTitle.textContent = `Mẫu (Presets) total ${webpCount} webp`;
                         }
                     }
                 }
@@ -1992,41 +1968,14 @@
                         ? `<span class="gallery-action-badge action-${item.action.toLowerCase()}">${item.action.toLowerCase() === '4k' ? '4K' : item.action}</span>`
                         : '';
                     
-                    // Get selected format from dropdown (only for presets)
+                    // Use WebP only
                     let mediaElement = '';
-                    if (type === 'preset') {
-                        const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
-                        if (selectedFormat === 'lottie') {
-                            // Try lottie_avif first, then regular lottie
-                            const lottieUrl = item.thumbnail_url_4x_lottie_avif || item.thumbnail_url_4x_lottie;
-                            if (lottieUrl) {
-                                mediaElement = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`;
-                            } else {
-                                // Fallback to WebP if Lottie not available
-                                const webpUrl = item.thumbnail_url_4x || item.image_url;
-                                mediaElement = `<img src="${webpUrl}" alt="" loading="lazy">`;
-                            }
-                        } else {
-                            // WebP format (default) - only use thumbnail_url_4x if it's actually a WebP file
-                            let webpUrl = item.thumbnail_url_4x;
-                            // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
-                            if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
-                                webpUrl = null; // Ignore if it's actually a Lottie file
-                            }
-                            if (webpUrl) {
-                                mediaElement = `<img src="${webpUrl}" alt="" loading="lazy">`;
-                            } else {
-                                // If no WebP available, show placeholder
-                                mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 11px;">No WebP</div>`;
-                            }
-                        }
+                    const webpUrl = item.thumbnail_url_4x || item.image_url;
+                    if (webpUrl && !webpUrl.toLowerCase().endsWith('.json') && !webpUrl.toLowerCase().includes('lottie')) {
+                        mediaElement = `<img src="${webpUrl}" alt="" loading="lazy">`;
                     } else {
-                        // For selfies and results, use existing logic
-                        const lottieUrl = item.thumbnail_url_4x_lottie || (item.image_url && (item.image_url.toLowerCase().endsWith('.json') || item.image_url.toLowerCase().includes('lottie')) ? item.image_url : null);
-                        const imageUrl = lottieUrl ? null : item.image_url;
-                        mediaElement = lottieUrl
-                            ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%;" loop autoplay></lottie-player>`
-                            : `<img src="${imageUrl}" alt="" loading="lazy">`;
+                        // If no WebP available, show placeholder
+                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 11px;">No WebP</div>`;
                     }
                     
                     if (type === 'preset') {
@@ -2057,20 +2006,12 @@
                     const allItems = galleries.preset.state.items;
                     const searchQuery = galleries.preset.state.searchQuery;
                     const displayItems = searchQuery ? items : allItems;
-                    let lottieCount = 0;
-                    let webpCount = 0;
-                    let avifCount = 0;
-
-                    displayItems.forEach(item => {
-                        if (item.thumbnail_url_4x_lottie) lottieCount++;
-                        if (item.thumbnail_url_4x_lottie_avif) avifCount++;
-                        if (!item.thumbnail_url_4x_lottie && !item.thumbnail_url_4x_lottie_avif) webpCount++;
-                    });
+                    const webpCount = displayItems.filter(item => item.thumbnail_url_4x).length;
 
                     if (searchQuery) {
-                        presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif)`;
+                        presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${webpCount} webp)`;
                     } else {
-                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
+                        presetTitle.textContent = `Mẫu (Presets) total ${webpCount} webp`;
                     }
                 }
             }
@@ -2285,39 +2226,17 @@
             const imageUrl = selected.image_url || selected.result_url || '';
             let mediaElement = '';
             
-            if (type === 'preset') {
-                // For presets, respect format selector
-                const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
-                if (selectedFormat === 'lottie') {
-                    // Try lottie_avif first, then regular lottie
-                    const lottieUrl = selected.thumbnail_url_4x_lottie_avif || selected.thumbnail_url_4x_lottie;
-                    if (lottieUrl) {
-                        mediaElement = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`;
-                    } else {
-                        // Fallback to WebP if Lottie not available
-                        const webpUrl = selected.thumbnail_url_4x || imageUrl;
-                        mediaElement = `<img src="${webpUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
-                    }
-                } else {
-                    // WebP format (default) - only use thumbnail_url_4x if it's actually a WebP file
-                    let webpUrl = selected.thumbnail_url_4x;
-                    // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
-                    if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
-                        webpUrl = null; // Ignore if it's actually a Lottie file
-                    }
-                    if (webpUrl) {
-                        mediaElement = `<img src="${webpUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
-                    } else {
-                        // If no WebP available, show message
-                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">WebP not available for this preset</div>`;
-                    }
-                }
+            // Use WebP only
+            let webpUrl = selected.thumbnail_url_4x || imageUrl;
+            // Validate that it's actually a WebP file, not a Lottie JSON
+            if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
+                webpUrl = null; // Ignore if it's actually a Lottie file
+            }
+            if (webpUrl) {
+                mediaElement = `<img src="${webpUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
             } else {
-                // For selfies and results, use existing logic
-                const lottieUrl = selected.thumbnail_url_4x_lottie || (imageUrl && (imageUrl.toLowerCase().endsWith('.json') || imageUrl.toLowerCase().includes('lottie')) ? imageUrl : null);
-                mediaElement = lottieUrl
-                    ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; cursor: pointer;" loop autoplay onclick="openPreviewLightbox('${type}')"></lottie-player>`
-                    : `<img src="${imageUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
+                // If no WebP available, show message
+                mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">WebP not available</div>`;
             }
             
             const action = selected.action?.toLowerCase() || 'faceswap';
@@ -2409,24 +2328,8 @@
                     const presetTitle = $('preset-title');
                     if (presetTitle) {
                         const items = config.state.items;
-                        let lottieCount = 0;
-                        let webpCount = 0;
-                        let avifCount = 0;
-
-                        items.forEach(item => {
-                            // Count each format independently (presets can have multiple formats)
-                            if (item.thumbnail_url_4x_lottie) {
-                                lottieCount++;
-                            }
-                            if (item.thumbnail_url_4x_lottie_avif) {
-                                avifCount++;
-                            }
-                            if (!item.thumbnail_url_4x_lottie && !item.thumbnail_url_4x_lottie_avif) {
-                                webpCount++;
-                            }
-                        });
-
-                        presetTitle.textContent = `Mẫu (Presets) total ${lottieCount} lotties, ${webpCount} webp, ${avifCount} avif`;
+                        const webpCount = items.filter(item => item.thumbnail_url_4x).length;
+                        presetTitle.textContent = `Mẫu (Presets) total ${webpCount} webp`;
                     }
                 }
 
@@ -3183,10 +3086,8 @@
                 type: 'preset',
                 id: preset.id || preset.preset_id,
                 preset_id: preset.preset_id || preset.id,
-                image_url: preset.thumbnail_url_4x || preset.thumbnail_url_4x_lottie_avif || preset.thumbnail_url_4x_lottie || preset.image_url,
+                image_url: preset.thumbnail_url_4x || preset.image_url,
                 thumbnail_url_4x: preset.thumbnail_url_4x,
-                thumbnail_url_4x_lottie: preset.thumbnail_url_4x_lottie,
-                thumbnail_url_4x_lottie_avif: preset.thumbnail_url_4x_lottie_avif,
                 label: `Preset: ${preset.id || preset.preset_id}`
             }));
 
@@ -3402,7 +3303,7 @@
                     actions.style.display = 'flex';
                 }
             } else if (lightboxMode === 'preview' || lightboxMode === 'preset-preview') {
-                // Handle different media types for presets (Lottie, WebP, AVIF) - unified approach
+                // Handle WebP media for presets
                 const single = $('lightbox-single');
                 if (!single) return;
 
@@ -3414,7 +3315,7 @@
                     single.appendChild(info);
                 }
 
-                // Clear only media elements (img, lottie-player, or container divs), keep info
+                // Clear only media elements (img or container divs), keep info
                 Array.from(single.children).forEach(child => {
                     if (!child.classList.contains('lightbox-info')) {
                         child.remove();
@@ -3424,41 +3325,17 @@
                 // Determine media type and create appropriate element
                 let mediaElement = null;
                 if (lightboxMode === 'preset-preview') {
-                    // Respect format selector for preset preview
-                    const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
-                    const lottieUrl = item.thumbnail_url_4x_lottie_avif || item.thumbnail_url_4x_lottie;
+                    // Use WebP only
                     let webpUrl = item.thumbnail_url_4x;
                     // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
                     if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
                         webpUrl = null; // Ignore if it's actually a Lottie file
                     }
-
-                    if (selectedFormat === 'lottie') {
-                        // Show Lottie if format is Lottie
-                        if (lottieUrl) {
-                            const lottieContainer = document.createElement('div');
-                            lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
-                            mediaElement = lottieContainer;
-                        } else if (webpUrl && img) {
-                            // Fallback to WebP if Lottie not available
-                            img.src = webpUrl;
-                            img.alt = item.label || 'Preset';
-                            img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
-                            mediaElement = img;
-                        }
-                    } else {
-                        // WebP format (default) - only use thumbnail_url_4x if it's actually a WebP file
-                        if (webpUrl && img) {
-                            img.src = webpUrl;
-                            img.alt = item.label || 'Preset';
-                            img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
-                            mediaElement = img;
-                        } else if (lottieUrl) {
-                            // Fallback to Lottie if WebP not available
-                            const lottieContainer = document.createElement('div');
-                            lottieContainer.innerHTML = `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 100%; max-width: 600px; max-height: 600px;" loop autoplay></lottie-player>`;
-                            mediaElement = lottieContainer;
-                        }
+                    if (webpUrl && img) {
+                        img.src = webpUrl;
+                        img.alt = item.label || 'Preset';
+                        img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
+                        mediaElement = img;
                     }
                 } else {
                     // Regular preview mode
@@ -3911,29 +3788,25 @@
                 return;
             }
 
-            // Display thumbnail images in a grid
+            // Display thumbnail images in a grid (WebP only)
             container.innerHTML = thumbnails.map((thumbnail, index) => {
                 const presetId = thumbnail.preset_id;
                 const thumbnailUrl = thumbnail.thumbnail_url_4x;
-                const lottieUrl = thumbnail.thumbnail_url_4x_lottie;
 
-                if (!thumbnailUrl && !lottieUrl) {
+                if (!thumbnailUrl) {
                     return `<div class="thumbnail-item" style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-primary); text-align: center;">
                         <div style="color: var(--text-muted); font-size: 12px;">No 4x thumbnail available</div>
                         <div style="color: var(--text-secondary); font-size: 10px; margin-top: 4px;">${presetId}</div>
                     </div>`;
                 }
 
-                // Render Lottie player if Lottie URL is available, otherwise use image
-                const mediaElement = lottieUrl
-                    ? `<lottie-player src="${lottieUrl}" background="transparent" speed="1" style="width: 100%; height: 80px;" loop autoplay></lottie-player>`
-                    : `<img src="${thumbnailUrl}" alt="Thumbnail ${presetId}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px;" loading="lazy">`;
+                const mediaElement = `<img src="${thumbnailUrl}" alt="Thumbnail ${presetId}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px;" loading="lazy">`;
 
                 return `<div class="thumbnail-item" onclick="selectThumbnailAsPreset('${presetId}')" style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-primary); cursor: pointer; transition: all 0.2s; position: relative;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
                     ${mediaElement}
                     <div class="thumbnail-item-info" style="margin-top: 8px; text-align: center;">
                         <div style="color: var(--text-secondary); font-size: 11px; font-weight: 500;">${presetId}</div>
-                        <div style="color: var(--text-muted); font-size: 10px;">4x ${lottieUrl ? 'Lottie' : 'Thumbnail'}</div>
+                        <div style="color: var(--text-muted); font-size: 10px;">4x Thumbnail</div>
                     </div>
                 </div>`;
             }).join('');

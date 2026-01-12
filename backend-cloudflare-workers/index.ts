@@ -1955,12 +1955,14 @@ export default {
           let presetsProcessed = 0;
           let presetsWithPrompts = 0;
 
-          // Extract PNG files from preset folder in zip
-          const presetFiles: Array<{ filename: string; zipEntry: JSZip.JSZipObject }> = [];
+          // Extract PNG files from preset folder in zip, preserving folder structure
+          const presetFiles: Array<{ filename: string; relativePath: string; zipEntry: JSZip.JSZipObject }> = [];
           zip.forEach((path: string, entry: JSZip.JSZipObject) => {
             if (!entry.dir && path.toLowerCase().startsWith('preset/') && (path.toLowerCase().endsWith('.webp') || path.toLowerCase().endsWith('.png'))) {
               const filename = path.split('/').pop() || path;
-              presetFiles.push({ filename, zipEntry: entry });
+              // Preserve relative path from zip (e.g., "preset/subfolder/file.png")
+              const relativePath = path.replace(/\\/g, '/');
+              presetFiles.push({ filename, relativePath, zipEntry: entry });
             }
           });
 
@@ -1975,7 +1977,7 @@ export default {
           console.log(`[process-thumbnail-file] Found ${presetFiles.length} PNG files in preset folder`);
 
           // Process preset files in parallel with controlled concurrency
-          const processPresetFile = async ({ filename, zipEntry }: { filename: string; zipEntry: JSZip.JSZipObject }) => {
+          const processPresetFile = async ({ filename, relativePath, zipEntry }: { filename: string; relativePath: string; zipEntry: JSZip.JSZipObject }) => {
             try {
               const parsed = parseThumbnailFilename(filename);
               if (!parsed) {
@@ -2030,8 +2032,13 @@ export default {
                 };
               }
 
-              // Upload preset to final location with prompt metadata
-              const presetR2Key = `preset_thumb/${presetId}.webp`;
+              // Upload preset to final location with prompt metadata, preserving folder structure
+              // Extract folder structure from relativePath (e.g., "preset/subfolder/file.png" -> "preset/subfolder")
+              const pathParts = relativePath.split('/');
+              pathParts.pop(); // Remove filename
+              const folderPath = pathParts.length > 0 ? pathParts.join('/') : 'preset';
+              // Construct R2 key preserving folder structure: preset_thumb/preset/subfolder/presetId.webp
+              const presetR2Key = `preset_thumb/${folderPath}/${presetId}.webp`;
               const promptJson = JSON.stringify(promptResult.prompt);
 
               console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes`);
@@ -2066,7 +2073,12 @@ export default {
 
               const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
 
-              // Generate thumbnails based on format - all resolutions
+              // Generate thumbnails based on format - all resolutions, preserving folder structure
+              // Extract folder path from presetR2Key (e.g., "preset_thumb/preset/subfolder/presetId.webp" -> "preset/subfolder")
+              const presetPathParts = presetR2Key.replace('preset_thumb/', '').split('/');
+              presetPathParts.pop(); // Remove filename
+              const thumbnailFolderPath = presetPathParts.length > 0 ? presetPathParts.join('/') : 'preset';
+              
               let thumbnailData: Record<string, string> = {};
               let thumbnailUrl: string | null = null;
 
@@ -2077,13 +2089,13 @@ export default {
 
                 // Lottie JSON files (placeholder entries - actual JSON files should be uploaded separately)
                 for (const res of lottieResolutions) {
-                  const thumbnailR2Key = `preset_thumb/lottie_${res}/${presetId}.json`;
+                  const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_${res}/${presetId}.json`;
                   thumbnailData[`lottie_${res}`] = thumbnailR2Key;
                 }
 
                 // Lottie AVIF files (placeholder entries - actual AVIF files should be uploaded separately)
                 for (const res of lottieAvifResolutions) {
-                  const thumbnailR2Key = `preset_thumb/lottie_avif_${res}/${presetId}.json`;
+                  const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_avif_${res}/${presetId}.json`;
                   thumbnailData[`lottie_avif_${res}`] = thumbnailR2Key;
                 }
 
@@ -2095,7 +2107,7 @@ export default {
 
                 // Upload PNG to all WebP resolution paths
                 for (const res of allResolutions) {
-                  const webpThumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
+                  const webpThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/webp_${res}/${presetId}.webp`;
                   await R2_BUCKET.put(webpThumbnailR2Key, fileData, {
                     httpMetadata: {
                       contentType: 'image/png', // Store as PNG (will work as thumbnail)
@@ -2107,7 +2119,7 @@ export default {
 
                 // Upload PNG to all AVIF resolution paths
                 for (const res of allResolutions) {
-                  const avifThumbnailR2Key = `preset_thumb/avif_${res}/${presetId}.avif`;
+                  const avifThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/avif_${res}/${presetId}.avif`;
                   await R2_BUCKET.put(avifThumbnailR2Key, fileData, {
                     httpMetadata: {
                       contentType: 'image/png', // Store as PNG (will work as thumbnail)
@@ -2298,9 +2310,18 @@ export default {
             );
           }
           
-          // Upload preset to final location with prompt metadata
-          // Always use .webp extension for preset files (presets are always WebP)
-          const presetR2Key = `preset_thumb/${presetId}.webp`;
+          // Upload preset to final location with prompt metadata, preserving folder structure
+          // Extract folder structure from filePath (e.g., "preset/subfolder/file.png" -> "preset/subfolder")
+          let folderPath = 'preset';
+          if (filePath) {
+            const normalizedPath = filePath.replace(/\\/g, '/');
+            const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
+            if (pathParts.length > 0) {
+              folderPath = pathParts.join('/');
+            }
+          }
+          // Construct R2 key preserving folder structure: preset_thumb/preset/subfolder/presetId.webp
+          const presetR2Key = `preset_thumb/${folderPath}/${presetId}.webp`;
           const promptJson = JSON.stringify(promptResult.prompt);
           
           console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes, original filename: ${filename}`);
@@ -2338,7 +2359,12 @@ export default {
           const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
           console.log(`[process-thumbnail-file] Preset public URL: ${presetPublicUrl}`);
           
-          // Generate thumbnails based on format - all resolutions
+          // Generate thumbnails based on format - all resolutions, preserving folder structure
+          // Extract folder path from presetR2Key (e.g., "preset_thumb/preset/subfolder/presetId.webp" -> "preset/subfolder")
+          const presetPathParts = presetR2Key.replace('preset_thumb/', '').split('/');
+          presetPathParts.pop(); // Remove filename
+          const thumbnailFolderPath = presetPathParts.length > 0 ? presetPathParts.join('/') : 'preset';
+          
           let thumbnailData: Record<string, string> = {};
           let thumbnailUrl: string | null = null;
 
@@ -2349,13 +2375,13 @@ export default {
 
             // Lottie JSON files (placeholder entries - actual JSON files should be uploaded separately)
             for (const res of lottieResolutions) {
-              const thumbnailR2Key = `preset_thumb/lottie_${res}/${presetId}.json`;
+              const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_${res}/${presetId}.json`;
               thumbnailData[`lottie_${res}`] = thumbnailR2Key;
             }
 
             // Lottie AVIF files (placeholder entries - actual AVIF files should be uploaded separately)
             for (const res of lottieAvifResolutions) {
-              const thumbnailR2Key = `preset_thumb/lottie_avif_${res}/${presetId}.json`;
+              const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_avif_${res}/${presetId}.json`;
               thumbnailData[`lottie_avif_${res}`] = thumbnailR2Key;
             }
 
@@ -2367,7 +2393,7 @@ export default {
 
             // Upload PNG to all WebP resolution paths
             for (const res of allResolutions) {
-              const webpThumbnailR2Key = `preset_thumb/webp_${res}/${presetId}.webp`;
+              const webpThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/webp_${res}/${presetId}.webp`;
               await R2_BUCKET.put(webpThumbnailR2Key, fileData, {
                 httpMetadata: {
                   contentType: 'image/png', // Store as PNG (will work as thumbnail)
@@ -2379,7 +2405,7 @@ export default {
 
             // Upload PNG to all AVIF resolution paths
             for (const res of allResolutions) {
-              const avifThumbnailR2Key = `preset_thumb/avif_${res}/${presetId}.avif`;
+              const avifThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/avif_${res}/${presetId}.avif`;
               await R2_BUCKET.put(avifThumbnailR2Key, fileData, {
                 httpMetadata: {
                   contentType: 'image/png', // Store as PNG (will work as thumbnail)
@@ -2645,8 +2671,12 @@ export default {
                 };
               }
 
-              // Upload to final location with prompt metadata (if available)
-              const r2Key = `preset_thumb/${presetId}.${filename.split('.').pop()}`;
+              // Upload to final location with prompt metadata (if available), preserving folder structure
+              // Extract folder structure from relativePath (e.g., "preset/subfolder/file.png" -> "preset/subfolder")
+              const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
+              const folderPath = pathParts.length > 0 ? pathParts.join('/') : 'preset';
+              // Construct R2 key preserving folder structure: preset_thumb/preset/subfolder/presetId.ext
+              const r2Key = `preset_thumb/${folderPath}/${presetId}.${filename.split('.').pop()}`;
               const promptJson = skipPromptGeneration ? null : JSON.stringify(promptResult.prompt);
 
               await R2_BUCKET.put(r2Key, fileData, {

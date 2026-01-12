@@ -1487,12 +1487,21 @@ export const generateVertexPrompt = async (
       safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
+    // Generate curl command for testing (with sanitized base64)
+    const sanitizedRequestBody = sanitizeObject(requestBody);
+    const curlCommand = `curl -X POST \\
+  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Content-Type: application/json" \\
+  ${vertexEndpoint} \\
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+
     debugInfo.requestSent = true;
     debugInfo.requestPayload = {
       promptLength: prompt.length,
       imageBytes: imageData.length,
       imageUrl,
     };
+    debugInfo.curlCommand = curlCommand;
 
     // Vertex AI requires OAuth token
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -1704,25 +1713,15 @@ export const generateVertexPrompt = async (
       return { success: false, error: `Missing required keys: ${missingKeys.join(', ')}`, debug: debugInfo };
     }
 
-    // Additional validation: Ensure prompt contains face-swap instruction
+    // Note: Face-swap instruction validation removed - accept prompts even without explicit face-swap text
+    // This allows AI-generated prompts that may describe the scene without explicitly mentioning face replacement
     const promptText = String(promptJson.prompt || '').toLowerCase();
     const hasFaceSwapInstruction = promptText.includes('replace the original face') ||
                                    promptText.includes('face from the image') ||
                                    promptText.includes('identical facial features');
 
     if (!hasFaceSwapInstruction) {
-      console.error('[Vertex] Prompt missing face-swap instruction, likely incomplete response');
-      // Include full response for debugging
-      if (parts && parts.length > 0 && parts[0].text) {
-        debugInfo.fullResponse = parts[0].text;
-        debugInfo.responseLength = parts[0].text.length;
-        debugInfo.parsedJson = promptJson;
-      }
-      return {
-        success: false,
-        error: 'Incomplete prompt response - missing face-swap instruction',
-        debug: debugInfo
-      };
+      console.log('[Vertex] Prompt does not contain explicit face-swap instruction, but accepting it anyway');
     }
 
     // Validate prompt length (should be substantial)
