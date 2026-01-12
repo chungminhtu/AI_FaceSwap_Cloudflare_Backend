@@ -234,10 +234,19 @@ export const callNanoBanana = async (
       sourceUrls.map(url => fetchImageAsBase64(url, env))
     );
 
-    // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
-    const normalizedAspectRatio = !aspectRatio
-      ? "original"
-      : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
+    // Normalize aspect ratio: resolveAspectRatio should have already calculated closest ratio from "original"
+    // This is a safety check - if "original" somehow gets through, treat as invalid and use default
+    // If undefined, use default (should never happen as resolveAspectRatio always returns a value)
+    let normalizedAspectRatio: string;
+    if (!aspectRatio) {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    } else if (aspectRatio === "original") {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    } else if (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio)) {
+      normalizedAspectRatio = aspectRatio;
+    } else {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    }
 
     // Vertex AI Gemini API request format with image generation
     // Based on official documentation format
@@ -504,7 +513,9 @@ export const callNanoBanana = async (
         ResultImageUrl: resultImageUrl,
         Message: 'Processing successful',
         StatusCode: 200,
-      };
+        CurlCommand: debugInfo?.curlCommand,
+        Debug: debugInfo,
+      } as any;
     } catch (parseError) {
       // Try to parse and check for safety violations even on parse error
       try {
@@ -597,10 +608,19 @@ export const generateBackgroundFromPrompt = async (
       };
     }
 
-    // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
-    const normalizedAspectRatio = !aspectRatio
-      ? "original"
-      : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
+    // Normalize aspect ratio: resolveAspectRatio should have already calculated closest ratio from "original"
+    // This is a safety check - if "original" somehow gets through, treat as invalid and use default
+    // If undefined, use default (should never happen as resolveAspectRatio always returns a value)
+    let normalizedAspectRatio: string;
+    if (!aspectRatio) {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    } else if (aspectRatio === "original") {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    } else if (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio)) {
+      normalizedAspectRatio = aspectRatio;
+    } else {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    }
 
     const requestBody = {
       contents: [{
@@ -614,7 +634,6 @@ export const generateBackgroundFromPrompt = async (
         imageConfig: {
           ...VERTEX_AI_CONFIG.IMAGE_GENERATION.imageConfig,
           aspectRatio: normalizedAspectRatio,
-
         },
       }, safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
@@ -936,10 +955,19 @@ export const callNanoBananaMerge = async (
       fetchImageAsBase64(presetUrl, env)
     ]);
 
-    // If aspectRatio is undefined/null, use "original" to let Vertex API use image's original aspect ratio
-    const normalizedAspectRatio = !aspectRatio
-      ? "original"
-      : (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio) ? aspectRatio : ASPECT_RATIO_CONFIG.DEFAULT);
+    // Normalize aspect ratio: resolveAspectRatio should have already calculated closest ratio from "original"
+    // This is a safety check - if "original" somehow gets through, treat as invalid and use default
+    // If undefined, use default (should never happen as resolveAspectRatio always returns a value)
+    let normalizedAspectRatio: string;
+    if (!aspectRatio) {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    } else if (aspectRatio === "original") {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    } else if (ASPECT_RATIO_CONFIG.SUPPORTED.includes(aspectRatio)) {
+      normalizedAspectRatio = aspectRatio;
+    } else {
+      normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
+    }
 
     const requestBody = {
       contents: [{

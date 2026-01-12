@@ -184,30 +184,30 @@ Google Vision API SafeSearch trả về các mức độ nghiêm trọng cho m�
 
 | Severity Level | Giá trị | Mô tả | Có bị chặn? |
 |----------------|---------|-------|-------------|
-| **VERY_UNLIKELY** | -1 | Không có nội dung nhạy cảm, chắc chắn | ❌ Không |
-| **UNLIKELY** | 0 | Không có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ Không |
-| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ✅ Có (chỉ trong strict mode) |
-| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (chỉ trong strict mode) |
-| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ✅ Có (cả strict và lenient mode) |
+| **VERY_UNLIKELY** | -1 | Không có nội dung nhạy cảm, chắc chắn | ✅ **Cho phép** |
+| **UNLIKELY** | 0 | Không có nội dung nhạy cảm, nhưng chưa chắc chắn | ✅ **Cho phép** |
+| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ **Chặn** (chỉ trong strict mode) / ✅ **Cho phép** (trong lenient mode) |
+| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ❌ **Chặn** (chỉ trong strict mode) / ✅ **Cho phép** (trong lenient mode) |
+| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ❌ **Chặn** (cả strict và lenient mode) |
 
 #### Strictness Modes (Chế độ kiểm tra)
 
 App hỗ trợ 2 chế độ kiểm tra, được cấu hình qua biến môi trường `SAFETY_STRICTNESS`:
 
 **Strict Mode (Mặc định):**
-- Chặn: `POSSIBLE`, `LIKELY`, và `VERY_LIKELY`
-- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`
+- ✅ **Cho phép**: `VERY_UNLIKELY`, `UNLIKELY`
+- ❌ **Chặn**: `POSSIBLE`, `LIKELY`, `VERY_LIKELY`
 - Sử dụng khi: `SAFETY_STRICTNESS=strict` hoặc không set (default)
 
 **Lenient Mode:**
-- Chặn: `VERY_LIKELY` only
-- Cho phép: `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`
+- ✅ **Cho phép**: `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`
+- ❌ **Chặn**: `VERY_LIKELY` only
 - Sử dụng khi: `SAFETY_STRICTNESS=lenient`
 
-**Lưu ý:**
+**Tóm tắt:**
 - `statusCode` (1001-1005) chỉ được trả về khi nội dung thực sự bị chặn
-- Trong strict mode, `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` đều bị chặn
-- Trong lenient mode, chỉ `VERY_LIKELY` bị chặn
+- **Strict mode**: Chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` → Chỉ cho phép `VERY_UNLIKELY` và `UNLIKELY`
+- **Lenient mode**: Chỉ chặn `VERY_LIKELY` → Cho phép tất cả các mức khác (`VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`)
 
 **Ví dụ Response:**
 ```json
@@ -249,16 +249,28 @@ Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại 
 
 Điểm tin cậy được chia thành bốn mức độ tin cậy:
 
-| Mức độ tin cậy | Mô tả |
-|----------------|-------|
-| **NEGLIGIBLE** | Rất thấp - Khả năng có nội dung gây hại là không đáng kể |
-| **LOW** | Thấp - Khả năng có nội dung gây hại là thấp |
-| **MEDIUM** | Trung bình - Khả năng có nội dung gây hại là trung bình |
-| **HIGH** | Cao - Khả năng có nội dung gây hại là cao |
+| Mức độ tin cậy | Giá trị | Mô tả | Có bị chặn? |
+|----------------|---------|-------|-------------|
+| **NEGLIGIBLE** | Rất thấp | Khả năng có nội dung gây hại là không đáng kể | ✅ **Cho phép** |
+| **LOW** | Thấp | Khả năng có nội dung gây hại là thấp | ✅ **Cho phép** |
+| **MEDIUM** | Trung bình | Khả năng có nội dung gây hại là trung bình | ✅ **Cho phép** |
+| **HIGH** | Cao | Khả năng có nội dung gây hại là cao | ❌ **Chặn** |
+
+#### Safety Threshold Configuration
+
+**Cấu hình hiện tại:**
+- ✅ **Cho phép**: `NEGLIGIBLE`, `LOW`, `MEDIUM`
+- ❌ **Chặn**: `HIGH` only
+
+**Áp dụng cho tất cả các loại tác hại:**
+- HARM_CATEGORY_HATE_SPEECH (Lời lẽ kích động thù hận)
+- HARM_CATEGORY_HARASSMENT (Quấy rối)
+- HARM_CATEGORY_SEXUALLY_EXPLICIT (Nội dung khiêu dâm)
+- HARM_CATEGORY_DANGEROUS_CONTENT (Nội dung nguy hiểm)
 
 **Lưu ý:**
-- App chặn nội dung khi phát hiện vi phạm với `HIGH` hoặc `MEDIUM` probability
-- Nội dung với `LOW` hoặc `NEGLIGIBLE` probability thường được cho phép
+- App chỉ chặn nội dung khi phát hiện vi phạm với `HIGH` confidence level
+- Nội dung với `NEGLIGIBLE`, `LOW`, hoặc `MEDIUM` confidence level đều được cho phép
 - Safety violations trả về HTTP 422 với internal error codes 2001-2004 trong trường `code`
 - Message trả về là lý do cụ thể từ hệ thống (ví dụ: finishMessage từ Vertex AI)
 

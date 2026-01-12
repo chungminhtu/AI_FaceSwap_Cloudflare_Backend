@@ -859,12 +859,6 @@
                                 <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
                                 <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
                             </label>
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <label style="font-size: 12px; color: var(--text-secondary);">Format:</label>
-                                <select id="preset-format-select" style="padding: 2px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;">
-                                    <option value="webp">WebP</option>
-                                </select>
-                            </div>
                             <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
                                 ⚙️ Customize Prompts
                             </button>
@@ -1246,7 +1240,7 @@
         const DEFAULT_PROMPTS = {
             DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
             
-            FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender. Return a detailed JSON object with these keys: "prompt", "style", "lighting", "composition", "camera", "background". For "prompt", write a detailed scene description that captures the aesthetic. Include: character pose, outfit/costume, environment, atmosphere, and visual mood. The generated prompt must be fully compliant with Google Play Store content policies: no sexual, explicit, suggestive, or adult content. The JSON should fully describe the image following the style characteristics, without any extra commentary outside the JSON.`
+            FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.`
         };
         
         // Load custom prompts from localStorage
@@ -1821,15 +1815,45 @@
                 const status = (response.ok && data !== null && typeof data === 'object') ? 'success' : 'error';
                 logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status, duration, payload: data });
                 
-                // For presets, map thumbnails response to preset format
+                // For presets, map thumbnails response to preset format - include both WebP and Lottie
                 if (type === 'preset') {
-                    // Use WebP only
-                    items = items.map((item) => ({
-                        id: item.preset_id,
-                        image_url: item.thumbnail_url_4x,
-                        preset_id: item.preset_id,
-                        thumbnail_url_4x: item.thumbnail_url_4x
-                    })).filter(item => item.thumbnail_url_4x); // Only include items with WebP thumbnail
+                    const presetItems = [];
+                    items.forEach((item) => {
+                        const presetId = item.preset_id;
+                        // Add WebP if available
+                        if (item.thumbnail_url_4x && !item.thumbnail_url_4x.toLowerCase().endsWith('.json')) {
+                            presetItems.push({
+                                id: `${presetId}_webp`,
+                                image_url: item.thumbnail_url_4x,
+                                preset_id: presetId,
+                                thumbnail_url_4x: item.thumbnail_url_4x,
+                                format: 'webp'
+                            });
+                        }
+                        // Add Lottie if available
+                        if (item.thumbnail_url_4x_lottie) {
+                            presetItems.push({
+                                id: `${presetId}_lottie`,
+                                image_url: item.thumbnail_url_4x_lottie,
+                                preset_id: presetId,
+                                thumbnail_url_4x: item.thumbnail_url_4x_lottie,
+                                thumbnail_url_4x_lottie: item.thumbnail_url_4x_lottie,
+                                format: 'lottie'
+                            });
+                        }
+                        // Add Lottie AVIF if available
+                        if (item.thumbnail_url_4x_lottie_avif) {
+                            presetItems.push({
+                                id: `${presetId}_lottie_avif`,
+                                image_url: item.thumbnail_url_4x_lottie_avif,
+                                preset_id: presetId,
+                                thumbnail_url_4x: item.thumbnail_url_4x_lottie_avif,
+                                thumbnail_url_4x_lottie_avif: item.thumbnail_url_4x_lottie_avif,
+                                format: 'lottie_avif'
+                            });
+                        }
+                    });
+                    items = presetItems;
                 }
                 
                 // Normalize field names: map selfie_url/preset_url/result_url to image_url for backward compatibility
@@ -1853,12 +1877,14 @@
                         const items = config.state.items;
                         const searchQuery = config.state.searchQuery;
                         const displayItems = searchQuery ? config.state.filteredItems || items : items;
-                        const webpCount = displayItems.filter(item => item.thumbnail_url_4x).length;
+                        const totalCount = displayItems.length;
+                        const webpCount = displayItems.filter(item => item.format === 'webp' || (!item.format && !item.thumbnail_url_4x?.toLowerCase().endsWith('.json'))).length;
+                        const lottieCount = displayItems.filter(item => item.format === 'lottie' || item.format === 'lottie_avif' || item.thumbnail_url_4x?.toLowerCase().endsWith('.json')).length;
 
                         if (searchQuery) {
-                            presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${webpCount} webp)`;
+                            presetTitle.textContent = `Mẫu (Presets) ${totalCount} kết quả (${webpCount} webp, ${lottieCount} lottie)`;
                         } else {
-                            presetTitle.textContent = `Mẫu (Presets) total ${webpCount} webp`;
+                            presetTitle.textContent = `Mẫu (Presets) total ${totalCount} (${webpCount} webp, ${lottieCount} lottie)`;
                         }
                     }
                 }
@@ -1923,10 +1949,10 @@
                         return false;
                     });
                 }
-                config.state.filteredItems = items;
-            } else if (type === 'preset') {
-                config.state.filteredItems = items;
             }
+            
+            // Always set filteredItems to current items (filtered or not)
+            config.state.filteredItems = items;
 
             if (!items.length) {
                 gallery.style.display = 'none';
@@ -1968,19 +1994,23 @@
                         ? `<span class="gallery-action-badge action-${item.action.toLowerCase()}">${item.action.toLowerCase() === '4k' ? '4K' : item.action}</span>`
                         : '';
                     
-                    // Use WebP only
+                    // Display both WebP and Lottie
                     let mediaElement = '';
-                    const webpUrl = item.thumbnail_url_4x || item.image_url;
-                    if (webpUrl && !webpUrl.toLowerCase().endsWith('.json') && !webpUrl.toLowerCase().includes('lottie')) {
-                        mediaElement = `<img src="${webpUrl}" alt="" loading="lazy">`;
+                    const thumbnailUrl = item.thumbnail_url_4x || item.image_url;
+                    const isLottie = thumbnailUrl && (thumbnailUrl.toLowerCase().endsWith('.json') || item.format === 'lottie' || item.format === 'lottie_avif');
+                    
+                    if (isLottie) {
+                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-secondary); font-size: 11px; padding: 8px;">📱 Lottie</div>`;
+                    } else if (thumbnailUrl) {
+                        mediaElement = `<img src="${thumbnailUrl}" alt="" loading="lazy">`;
                     } else {
-                        // If no WebP available, show placeholder
-                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 11px;">No WebP</div>`;
+                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 11px;">No thumbnail</div>`;
                     }
                     
                     if (type === 'preset') {
                         // For presets, open lightbox first, then allow selection from lightbox
-                        return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="openPresetLightbox('${item.id}')" data-item-id="${item.id}">
+                        // Use preset_id to find all formats of the same preset
+                        return `<div class="gallery-item ${isSelected ? 'selected' : ''}" onclick="openPresetLightbox('${item.preset_id}')" data-item-id="${item.id}" data-preset-id="${item.preset_id}">
                             ${mediaElement}
                             ${actionBadge}
                             <button class="gallery-delete-btn" onclick="deleteItem('${type}', '${item.id}', event)">×</button>
@@ -2006,12 +2036,14 @@
                     const allItems = galleries.preset.state.items;
                     const searchQuery = galleries.preset.state.searchQuery;
                     const displayItems = searchQuery ? items : allItems;
-                    const webpCount = displayItems.filter(item => item.thumbnail_url_4x).length;
+                    const totalCount = displayItems.length;
+                    const webpCount = displayItems.filter(item => item.format === 'webp' || (!item.format && !item.thumbnail_url_4x?.toLowerCase().endsWith('.json'))).length;
+                    const lottieCount = displayItems.filter(item => item.format === 'lottie' || item.format === 'lottie_avif' || item.thumbnail_url_4x?.toLowerCase().endsWith('.json')).length;
 
                     if (searchQuery) {
-                        presetTitle.textContent = `Mẫu (Presets) ${displayItems.length} kết quả (${webpCount} webp)`;
+                        presetTitle.textContent = `Mẫu (Presets) ${totalCount} kết quả (${webpCount} webp, ${lottieCount} lottie)`;
                     } else {
-                        presetTitle.textContent = `Mẫu (Presets) total ${webpCount} webp`;
+                        presetTitle.textContent = `Mẫu (Presets) total ${totalCount} (${webpCount} webp, ${lottieCount} lottie)`;
                     }
                 }
             }
@@ -2082,7 +2114,11 @@
 
         function changePage(type, delta) {
             const config = galleries[type];
-            const totalPages = Math.ceil(config.state.items.length / ITEMS_PER_PAGE) || 1;
+            // Use filtered items if available, otherwise use all items
+            const itemsToUse = config.state.filteredItems && config.state.filteredItems.length > 0 
+                ? config.state.filteredItems 
+                : config.state.items;
+            const totalPages = Math.ceil(itemsToUse.length / ITEMS_PER_PAGE) || 1;
             const newPage = config.state.page + delta;
             if (newPage >= 1 && newPage <= totalPages) {
                 config.state.page = newPage;
@@ -2226,17 +2262,23 @@
             const imageUrl = selected.image_url || selected.result_url || '';
             let mediaElement = '';
             
-            // Use WebP only
-            let webpUrl = selected.thumbnail_url_4x || imageUrl;
-            // Validate that it's actually a WebP file, not a Lottie JSON
-            if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
-                webpUrl = null; // Ignore if it's actually a Lottie file
-            }
-            if (webpUrl) {
-                mediaElement = `<img src="${webpUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain;" onclick="openPreviewLightbox('${type}')">`;
+            const thumbnailUrl = selected.thumbnail_url_4x || imageUrl;
+            const urlLower = thumbnailUrl ? thumbnailUrl.toLowerCase() : '';
+            const isLottie = urlLower.endsWith('.json') || 
+                           urlLower.includes('lottie') || 
+                           selected.format === 'lottie' || 
+                           selected.format === 'lottie_avif';
+            
+            if (isLottie) {
+                mediaElement = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 200px; height: 100%; color: var(--text-secondary); padding: 20px; text-align: center; box-sizing: border-box;">
+                    <div style="font-size: 64px; margin-bottom: 16px; line-height: 1;">📱</div>
+                    <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">Lottie Animation</div>
+                    <div style="font-size: 12px; color: var(--text-muted); word-break: break-all;">${selected.preset_id || selected.id || ''}</div>
+                </div>`;
+            } else if (thumbnailUrl) {
+                mediaElement = `<img src="${thumbnailUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain; display: block;" onclick="openPreviewLightbox('${type}')">`;
             } else {
-                // If no WebP available, show message
-                mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">WebP not available</div>`;
+                mediaElement = `<div style="display: flex; align-items: center; justify-content: center; min-height: 200px; height: 100%; color: var(--text-muted);">No thumbnail available</div>`;
             }
             
             const action = selected.action?.toLowerCase() || 'faceswap';
@@ -2584,7 +2626,7 @@
                 
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
-                const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+                const selectedFormat = presetSelected?.format || localStorage.getItem('preset:format') || 'webp';
 
                 const requestBody = {
                     ...(usePresetUrl
@@ -2714,7 +2756,7 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
-                const selectedFormat = document.getElementById('preset-format-select')?.value || localStorage.getItem('preset:format') || 'webp';
+                const selectedFormat = localStorage.getItem('preset:format') || 'webp';
                 const additionalPromptInput = document.getElementById('additional-prompt');
                 const additionalPrompt = additionalPromptInput?.value.trim() || '';
 
@@ -3076,24 +3118,26 @@
             const allPresets = galleries.preset.state.items;
             if (!allPresets || allPresets.length === 0) return;
 
-            const clickedPreset = allPresets.find(item => item.id === presetId);
-            if (!clickedPreset) return;
+            // Find all items with the same preset_id (WebP, Lottie, etc.)
+            const presetItems = allPresets.filter(item => (item.preset_id || item.id) === presetId);
+            if (presetItems.length === 0) return;
 
             lightboxMode = 'preset-preview';
             
-            // Map all presets to lightboxItems with all thumbnail formats
-            lightboxItems = allPresets.map(preset => ({
+            // Map all formats of this preset to lightboxItems
+            lightboxItems = presetItems.map(preset => ({
                 type: 'preset',
-                id: preset.id || preset.preset_id,
-                preset_id: preset.preset_id || preset.id,
+                id: preset.id,
+                preset_id: preset.preset_id || presetId,
                 image_url: preset.thumbnail_url_4x || preset.image_url,
                 thumbnail_url_4x: preset.thumbnail_url_4x,
-                label: `Preset: ${preset.id || preset.preset_id}`
+                format: preset.format,
+                label: `Preset: ${preset.preset_id || presetId}${preset.format ? ' (' + preset.format + ')' : ''}`
             }));
 
-            // Find the index of the clicked preset
-            lightboxCurrentIndex = lightboxItems.findIndex(item => item.id === presetId);
-            if (lightboxCurrentIndex < 0) lightboxCurrentIndex = 0;
+            // Start at first item (prefer WebP if available)
+            const webpIndex = lightboxItems.findIndex(item => item.format === 'webp' || (!item.format && !item.thumbnail_url_4x?.toLowerCase().endsWith('.json')));
+            lightboxCurrentIndex = webpIndex >= 0 ? webpIndex : 0;
 
             updateLightbox();
             setupLightboxKeyboard();
@@ -3325,16 +3369,26 @@
                 // Determine media type and create appropriate element
                 let mediaElement = null;
                 if (lightboxMode === 'preset-preview') {
-                    // Use WebP only
-                    let webpUrl = item.thumbnail_url_4x;
-                    // Validate that thumbnail_url_4x is actually a WebP file, not a Lottie JSON
-                    if (webpUrl && (webpUrl.toLowerCase().endsWith('.json') || webpUrl.toLowerCase().includes('lottie'))) {
-                        webpUrl = null; // Ignore if it's actually a Lottie file
-                    }
-                    if (webpUrl && img) {
-                        img.src = webpUrl;
+                    // Display both WebP and Lottie
+                    const thumbnailUrl = item.thumbnail_url_4x || item.image_url;
+                    const isLottie = thumbnailUrl && (thumbnailUrl.toLowerCase().endsWith('.json') || item.format === 'lottie' || item.format === 'lottie_avif');
+                    
+                    if (isLottie && img) {
+                        // Show Lottie indicator
+                        img.style.display = 'none';
+                        const lottieDiv = document.createElement('div');
+                        lottieDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 85vh; color: var(--text-secondary); padding: 40px; text-align: center;';
+                        lottieDiv.innerHTML = `
+                            <div style="font-size: 64px; margin-bottom: 16px;">📱</div>
+                            <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Lottie Animation</div>
+                            <div style="font-size: 14px; color: var(--text-muted);">${item.preset_id || ''}</div>
+                        `;
+                        mediaElement = lottieDiv;
+                    } else if (thumbnailUrl && img) {
+                        img.src = thumbnailUrl;
                         img.alt = item.label || 'Preset';
                         img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
+                        img.style.display = 'block';
                         mediaElement = img;
                     }
                 } else {
@@ -3616,11 +3670,21 @@
             if (lightboxCurrentIndex < 0 || lightboxCurrentIndex >= lightboxItems.length) return;
             const item = lightboxItems[lightboxCurrentIndex];
 
-            if (lightboxMode === 'preset-preview' && item.id) {
-                // For preset-preview mode, find and select the actual preset
+            if (lightboxMode === 'preset-preview' && item.preset_id) {
+                // For preset-preview mode, use the actual selected item from lightbox which has format info
+                // Find the original preset item to get all fields
                 const preset = galleries.preset.state.items.find(p => p.id === item.id);
                 if (preset) {
-                    setSelectedItem('preset', preset, { showMessage: true });
+                    // Create a selection item preserving format and using preset_id for API calls
+                    const selectedPreset = {
+                        ...preset,
+                        id: preset.preset_id, // Use preset_id as id for API calls
+                        preset_id: preset.preset_id,
+                        format: preset.format || item.format, // Preserve format (webp, lottie, lottie_avif)
+                        thumbnail_url_4x: preset.thumbnail_url_4x || item.thumbnail_url_4x,
+                        image_url: preset.thumbnail_url_4x || preset.image_url || item.image_url
+                    };
+                    setSelectedItem('preset', selectedPreset, { showMessage: true });
                     showStatusMessage('Đã chọn làm mẫu thành công!', 'success');
                     closeLightbox();
                     return;
@@ -3994,8 +4058,27 @@
                     clearTimeout(timeoutId);
                     console.log(`[Preset Upload] Attempt ${attempt + 1} - Response received: ${response.status}`);
 
-                    // Success! Return the response
-                    return response;
+                    // If successful, return immediately
+                    if (response.ok) {
+                        return response;
+                    }
+
+                    // If server error (5xx), retry unless last attempt
+                    if (response.status >= 500 && response.status < 600) {
+                        if (attempt < maxRetries - 1) {
+                            const errorText = await response.text().catch(() => response.statusText);
+                            errors.push(`${attempt + 1}: HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+                            console.warn(`[Preset Upload] Server error ${response.status}, will retry...`);
+                            // Continue to retry logic below
+                        } else {
+                            // Last attempt - return response anyway so caller can handle it
+                            return response;
+                        }
+                    } else {
+                        // Client error (4xx) - don't retry, throw immediately
+                        const errorText = await response.text().catch(() => response.statusText);
+                        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+                    }
 
                 } catch (error) {
                     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -4010,9 +4093,14 @@
                                       error.message.includes('network') || // Network error
                                       error.message.includes('Failed to fetch') || // Network error
                                       error.message.includes('TypeError') || // Network error
-                                      !error.message.includes('400') || // Don't retry client errors except 400
-                                      !error.message.includes('401') || // Don't retry auth errors
-                                      !error.message.includes('403');   // Don't retry forbidden errors
+                                      error.message.includes('500') || // Server error
+                                      error.message.includes('502') || // Bad gateway
+                                      error.message.includes('503') || // Service unavailable
+                                      error.message.includes('504') || // Gateway timeout
+                                      (!error.message.includes('400') && // Don't retry client errors
+                                       !error.message.includes('401') && // Don't retry auth errors
+                                       !error.message.includes('403') && // Don't retry forbidden errors
+                                       !error.message.includes('404'));  // Don't retry not found
 
                     if (!isRetryable || isLastAttempt) {
                         console.error(`[Preset Upload] Final failure after ${maxRetries} attempts`);
@@ -4272,9 +4360,55 @@
 
             try {
                 // Process files with concurrency limit
-                const uploadResults = await processWithConcurrency(allFiles, 10);
+                let uploadResults = await processWithConcurrency(allFiles, 10);
+                
+                // Retry failed files until all succeed or max retries reached
+                const maxRetryRounds = 5;
+                let retryRound = 0;
+                let failedFiles = [];
+                
+                while (retryRound < maxRetryRounds) {
+                    // Collect failed files
+                    failedFiles = [];
+                    uploadResults.forEach((result, index) => {
+                        if (!result.success) {
+                            failedFiles.push({
+                                file: allFiles[index].file,
+                                path: allFiles[index].path,
+                                filename: result.filename,
+                                error: result.error
+                            });
+                        }
+                    });
+                    
+                    if (failedFiles.length === 0) {
+                        break; // All files succeeded
+                    }
+                    
+                    retryRound++;
+                    console.log(`[Retry Round ${retryRound}/${maxRetryRounds}] Retrying ${failedFiles.length} failed files...`);
+                    statusText.textContent = `Đang thử lại ${failedFiles.length} file thất bại (lần ${retryRound}/${maxRetryRounds})...`;
+                    
+                    // Wait before retry with exponential backoff
+                    const retryDelay = Math.min(2000 * Math.pow(2, retryRound - 1), 10000);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    
+                    // Retry failed files
+                    const retryItems = failedFiles.map(f => ({ file: f.file, path: f.path }));
+                    const retryResults = await processWithConcurrency(retryItems, 10);
+                    
+                    // Update results with retry outcomes
+                    let retryIndex = 0;
+                    uploadResults = uploadResults.map(result => {
+                        if (!result.success && retryIndex < retryResults.length) {
+                            const retryResult = retryResults[retryIndex++];
+                            return retryResult;
+                        }
+                        return result;
+                    });
+                }
 
-                // Process results
+                // Process final results
                 uploadResults.forEach(result => {
                     if (result.success) {
                         successful++;
@@ -4302,10 +4436,10 @@
                 const duration = Date.now() - startTime;
                 progressFill.style.width = '90%';
                 statusText.textContent = `Hoàn thành xử lý song song, đang tổng hợp kết quả...`;
-                await new Promise(resolve => setTimeout(resolve, 200)); // Brief pause for UX
+                await new Promise(resolve => setTimeout(resolve, 200));
                 progressFill.style.width = '100%';
                 
-                // Log API call summary
+                // Log API call summary (without full results array)
                 logApiCall({
                     label: `Tải Lên Presets & Thumbnails (${totalFiles} files)`,
                     method: 'POST',
@@ -4319,7 +4453,7 @@
                         presets_processed: presetsProcessed,
                         presets_with_prompts: presetsWithPrompts,
                         thumbnails_processed: thumbnailsProcessed,
-                        results: results
+                        retry_rounds: retryRound
                     },
                     duration
                 });
@@ -4333,15 +4467,18 @@
                 if (thumbnailsProcessed > 0) {
                     statusParts.push(`${thumbnailsProcessed} thumbnails`);
                 }
+                if (retryRound > 0) {
+                    statusParts.push(`${retryRound} retry rounds`);
+                }
                 
                 statusText.textContent = statusParts.join(' | ');
                 
                 if (failed > 0) {
-                    const failedFiles = results.filter(r => !r.success);
-                    console.warn('Failed files:', failedFiles);
-                    showStatusMessage(`${failed} file thất bại. Kiểm tra console để xem chi tiết.`, 'error');
+                    const finalFailedFiles = results.filter(r => !r.success).map(r => r.filename);
+                    console.warn(`Failed files (${failed}):`, finalFailedFiles);
+                    showStatusMessage(`${failed} file thất bại sau ${retryRound} lần thử lại. Kiểm tra console để xem chi tiết.`, 'error');
                 } else {
-                    showStatusMessage('Tải lên thành công!', 'success');
+                    showStatusMessage('Tải lên thành công 100%!', 'success');
                 }
                 
                 // Reset inputs
@@ -4685,13 +4822,6 @@
                 console.error('[Init] Model select element not found during initialization!');
             }
 
-            // Initialize preset format selector
-            const formatSelect = document.getElementById('preset-format-select');
-            const savedFormat = localStorage.getItem('preset:format') || 'webp';
-            if (formatSelect) {
-                formatSelect.value = savedFormat;
-                console.log('[Init] Set preset format to:', savedFormat);
-            }
 
             // Initialize profile FIRST, then load galleries
             await window.profileManager.initializeProfile();

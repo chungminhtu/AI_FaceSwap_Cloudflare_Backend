@@ -1913,13 +1913,13 @@ export default {
               }
             });
             
-            // Update database
+            // Update database (prompt_json is stored in R2 metadata, not in D1)
             const existingPreset = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(presetId).first();
             if (existingPreset) {
-              await DB.prepare('UPDATE presets SET prompt_json = ?, updated_at = datetime(\'now\') WHERE id = ?').bind(promptJson, presetId).run();
+              await DB.prepare('UPDATE presets SET updated_at = datetime(\'now\') WHERE id = ?').bind(presetId).run();
             } else {
               const ext = r2Key.split('.').pop() || 'webp';
-              await DB.prepare('INSERT INTO presets (id, ext, prompt_json, created_at, updated_at) VALUES (?, ?, ?, datetime(\'now\'), datetime(\'now\'))').bind(presetId, ext, promptJson).run();
+              await DB.prepare('INSERT INTO presets (id, ext, created_at, updated_at) VALUES (?, ?, datetime(\'now\'), datetime(\'now\'))').bind(presetId, ext).run();
             }
             
             return successResponse({
@@ -2032,38 +2032,78 @@ export default {
                 };
               }
 
-              // Upload preset to final location with prompt metadata, preserving folder structure
-              // Extract folder structure from relativePath (e.g., "preset/subfolder/file.png" -> "preset/subfolder")
-              const pathParts = relativePath.split('/');
-              pathParts.pop(); // Remove filename
-              const folderPath = pathParts.length > 0 ? pathParts.join('/') : 'preset';
-              // Construct R2 key preserving folder structure: preset_thumb/preset/subfolder/presetId.webp
-              const presetR2Key = `preset_thumb/${folderPath}/${presetId}.webp`;
+              // Upload preset to final location with prompt metadata
+              // Zip structure is always preset/*.webp, so use only "preset" folder (ignore any nested structure)
+              // Filter out any path segments that have file extensions (these are filenames, not folders)
+              const pathParts = relativePath.split('/').filter(p => p);
+              pathParts.pop(); // Remove original filename
+              // Filter out segments with file extensions (misnamed folders/filenames) and keep only valid folder names
+              const cleanPathParts = pathParts.filter(part => !/\.(webp|png|json|jpg|jpeg|gif)$/i.test(part));
+              // Use "preset" if it exists in path, otherwise use first valid folder or default to "preset"
+              const folderPath = cleanPathParts.includes('preset') ? 'preset' : (cleanPathParts.length > 0 ? cleanPathParts[0] : 'preset');
+              // Construct R2 key: preset/presetId.webp
+              const presetR2Key = `${folderPath}/${presetId}.webp`;
               const promptJson = JSON.stringify(promptResult.prompt);
 
               console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes`);
               
-              try {
-                await R2_BUCKET.put(presetR2Key, fileData, {
-                  httpMetadata: {
-                    contentType: 'image/webp',
-                    cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                  },
-                  customMetadata: {
-                    prompt_json: promptJson
+              // Retry R2 upload operation with exponential backoff
+              let uploadSuccess = false;
+              let lastUploadError: Error | null = null;
+              const maxUploadRetries = 10;
+              
+              for (let uploadAttempt = 0; uploadAttempt < maxUploadRetries; uploadAttempt++) {
+                try {
+                  await R2_BUCKET.put(presetR2Key, fileData, {
+                    httpMetadata: {
+                      contentType: 'image/webp',
+                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                    },
+                    customMetadata: {
+                      prompt_json: promptJson
+                    }
+                  });
+                  
+                  // Verify upload succeeded by checking if file exists
+                  const verifyUpload = await R2_BUCKET.head(presetR2Key);
+                  if (!verifyUpload) {
+                    throw new Error('Upload verification failed: file not found after upload');
                   }
-                });
-                
-                // Verify upload succeeded by checking if file exists
-                const verifyUpload = await R2_BUCKET.head(presetR2Key);
-                if (!verifyUpload) {
-                  throw new Error('Upload verification failed: file not found after upload');
+                  
+                  console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key} (attempt ${uploadAttempt + 1})`);
+                  uploadSuccess = true;
+                  break;
+                } catch (uploadError) {
+                  lastUploadError = uploadError instanceof Error ? uploadError : new Error(String(uploadError));
+                  const errorMsg = lastUploadError.message.toLowerCase();
+                  
+                  // Check if error is retryable
+                  const isRetryable = 
+                    errorMsg.includes('unspecified error') ||
+                    errorMsg.includes('timeout') ||
+                    errorMsg.includes('network') ||
+                    errorMsg.includes('connection') ||
+                    errorMsg.includes('500') ||
+                    errorMsg.includes('503') ||
+                    errorMsg.includes('502') ||
+                    uploadAttempt < maxUploadRetries - 1;
+                  
+                  if (!isRetryable || uploadAttempt === maxUploadRetries - 1) {
+                    break;
+                  }
+                  
+                  // Exponential backoff with jitter
+                  const baseDelay = 1000 * Math.pow(2, uploadAttempt);
+                  const jitter = Math.random() * 0.3 * baseDelay;
+                  const delay = Math.min(baseDelay + jitter, 10000);
+                  console.warn(`[process-thumbnail-file] R2 upload attempt ${uploadAttempt + 1}/${maxUploadRetries} failed for ${presetId}: ${lastUploadError.message}. Retrying in ${Math.round(delay)}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
                 }
-                
-                console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key}`);
-              } catch (uploadError) {
-                const uploadErrorMsg = uploadError instanceof Error ? uploadError.message : String(uploadError);
-                console.error(`[process-thumbnail-file] Failed to upload preset ${presetId} to R2:`, uploadErrorMsg);
+              }
+              
+              if (!uploadSuccess) {
+                const uploadErrorMsg = lastUploadError?.message || 'Unknown error';
+                console.error(`[process-thumbnail-file] Failed to upload preset ${presetId} to R2 after ${maxUploadRetries} attempts:`, uploadErrorMsg);
                 return {
                   success: false,
                   filename,
@@ -2073,65 +2113,10 @@ export default {
 
               const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
 
-              // Generate thumbnails based on format - all resolutions, preserving folder structure
-              // Extract folder path from presetR2Key (e.g., "preset_thumb/preset/subfolder/presetId.webp" -> "preset/subfolder")
-              const presetPathParts = presetR2Key.replace('preset_thumb/', '').split('/');
-              presetPathParts.pop(); // Remove filename
-              const thumbnailFolderPath = presetPathParts.length > 0 ? presetPathParts.join('/') : 'preset';
-              
+              // Thumbnails are uploaded separately via yyy.zip, so we don't generate them here
+              // Just return the preset URL
               let thumbnailData: Record<string, string> = {};
               let thumbnailUrl: string | null = null;
-
-              if (thumbnailFormat === 'json') {
-                // Generate all Lottie JSON and Lottie AVIF resolutions
-                const lottieResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
-                const lottieAvifResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
-
-                // Lottie JSON files (placeholder entries - actual JSON files should be uploaded separately)
-                for (const res of lottieResolutions) {
-                  const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_${res}/${presetId}.json`;
-                  thumbnailData[`lottie_${res}`] = thumbnailR2Key;
-                }
-
-                // Lottie AVIF files (placeholder entries - actual AVIF files should be uploaded separately)
-                for (const res of lottieAvifResolutions) {
-                  const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_avif_${res}/${presetId}.json`;
-                  thumbnailData[`lottie_avif_${res}`] = thumbnailR2Key;
-                }
-
-                // Use the 4x lottie as the primary thumbnail URL
-                thumbnailUrl = getR2PublicUrl(env, thumbnailData['lottie_4x'], requestUrl.origin);
-              } else {
-                // Generate all WebP and AVIF resolutions
-                const allResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
-
-                // Upload PNG to all WebP resolution paths
-                for (const res of allResolutions) {
-                  const webpThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/webp_${res}/${presetId}.webp`;
-                  await R2_BUCKET.put(webpThumbnailR2Key, fileData, {
-                    httpMetadata: {
-                      contentType: 'image/png', // Store as PNG (will work as thumbnail)
-                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                    },
-                  });
-                  thumbnailData[`webp_${res}`] = webpThumbnailR2Key;
-                }
-
-                // Upload PNG to all AVIF resolution paths
-                for (const res of allResolutions) {
-                  const avifThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/avif_${res}/${presetId}.avif`;
-                  await R2_BUCKET.put(avifThumbnailR2Key, fileData, {
-                    httpMetadata: {
-                      contentType: 'image/png', // Store as PNG (will work as thumbnail)
-                      cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                    },
-                  });
-                  thumbnailData[`avif_${res}`] = avifThumbnailR2Key;
-                }
-
-                // Use the 4x webp as the primary thumbnail URL
-                thumbnailUrl = getR2PublicUrl(env, thumbnailData['webp_4x'], requestUrl.origin);
-              }
 
               // Update database
               const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
@@ -2149,15 +2134,14 @@ export default {
                 }
               }
 
-              // Use INSERT OR REPLACE to avoid UNIQUE constraint violations
+              // Use INSERT OR REPLACE to avoid UNIQUE constraint violations (prompt_json is stored in R2 metadata, not in D1)
               await DB.prepare(
-                'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2, prompt_json) VALUES (?, ?, ?, ?, ?)'
+                'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
               ).bind(
                 presetId,
                 'webp',
                 createdAt,
-                JSON.stringify(thumbnailData),
-                promptJson
+                JSON.stringify(thumbnailData)
               ).run();
 
               return {
@@ -2237,8 +2221,7 @@ export default {
             presets_with_prompts: presetsWithPrompts,
             timeout_reached: timeoutReached,
             processing_time_ms: totalTime,
-            thumbnail_format: thumbnailFormat,
-            results: timeoutReached ? results.slice(0, 100) : results
+            thumbnail_format: thumbnailFormat
           }, 200, request, env);
         }
 
@@ -2310,43 +2293,84 @@ export default {
             );
           }
           
-          // Upload preset to final location with prompt metadata, preserving folder structure
+          // Upload preset to final location with prompt metadata, preserving exact folder structure
           // Extract folder structure from filePath (e.g., "preset/subfolder/file.png" -> "preset/subfolder")
           let folderPath = 'preset';
           if (filePath) {
             const normalizedPath = filePath.replace(/\\/g, '/');
             const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
-            if (pathParts.length > 0) {
-              folderPath = pathParts.join('/');
+            // Filter out any path segments that match presetId to prevent duplicates
+            const cleanPathParts = pathParts.filter(part => {
+              const partWithoutExt = part.replace(/\.(webp|png|json)$/i, '');
+              return partWithoutExt !== presetId;
+            });
+            if (cleanPathParts.length > 0) {
+              folderPath = cleanPathParts.join('/');
             }
           }
-          // Construct R2 key preserving folder structure: preset_thumb/preset/subfolder/presetId.webp
-          const presetR2Key = `preset_thumb/${folderPath}/${presetId}.webp`;
+          // Construct R2 key using exact folder structure from zip (preset/*.webp -> preset/presetId.webp)
+          const presetR2Key = `${folderPath}/${presetId}.webp`;
           const promptJson = JSON.stringify(promptResult.prompt);
           
           console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes, original filename: ${filename}`);
           
-          try {
-            await R2_BUCKET.put(presetR2Key, fileData, {
-              httpMetadata: {
-                contentType: 'image/webp', // Always use WebP for presets
-                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-              },
-              customMetadata: {
-                prompt_json: promptJson
+          // Retry R2 upload operation with exponential backoff
+          let uploadSuccess = false;
+          let lastUploadError: Error | null = null;
+          const maxUploadRetries = 10;
+          
+          for (let uploadAttempt = 0; uploadAttempt < maxUploadRetries; uploadAttempt++) {
+            try {
+              await R2_BUCKET.put(presetR2Key, fileData, {
+                httpMetadata: {
+                  contentType: 'image/webp',
+                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
+                },
+                customMetadata: {
+                  prompt_json: promptJson
+                }
+              });
+              
+              // Verify upload succeeded by checking if file exists
+              const verifyUpload = await R2_BUCKET.head(presetR2Key);
+              if (!verifyUpload) {
+                throw new Error('Upload verification failed: file not found after upload');
               }
-            });
-            
-            // Verify upload succeeded by checking if file exists
-            const verifyUpload = await R2_BUCKET.head(presetR2Key);
-            if (!verifyUpload) {
-              throw new Error('Upload verification failed: file not found after upload');
+              
+              console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key}, size: ${verifyUpload.size} bytes (attempt ${uploadAttempt + 1})`);
+              uploadSuccess = true;
+              break;
+            } catch (uploadError) {
+              lastUploadError = uploadError instanceof Error ? uploadError : new Error(String(uploadError));
+              const errorMsg = lastUploadError.message.toLowerCase();
+              
+              // Check if error is retryable
+              const isRetryable = 
+                errorMsg.includes('unspecified error') ||
+                errorMsg.includes('timeout') ||
+                errorMsg.includes('network') ||
+                errorMsg.includes('connection') ||
+                errorMsg.includes('500') ||
+                errorMsg.includes('503') ||
+                errorMsg.includes('502') ||
+                uploadAttempt < maxUploadRetries - 1;
+              
+              if (!isRetryable || uploadAttempt === maxUploadRetries - 1) {
+                break;
+              }
+              
+              // Exponential backoff with jitter
+              const baseDelay = 1000 * Math.pow(2, uploadAttempt);
+              const jitter = Math.random() * 0.3 * baseDelay;
+              const delay = Math.min(baseDelay + jitter, 10000);
+              console.warn(`[process-thumbnail-file] R2 upload attempt ${uploadAttempt + 1}/${maxUploadRetries} failed for ${presetId}: ${lastUploadError.message}. Retrying in ${Math.round(delay)}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
             }
-            
-            console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key}, size: ${verifyUpload.size} bytes`);
-          } catch (uploadError) {
-            const uploadErrorMsg = uploadError instanceof Error ? uploadError.message : String(uploadError);
-            console.error(`[process-thumbnail-file] Failed to upload preset ${presetId} to R2:`, uploadErrorMsg, { presetR2Key, fileSize: fileData.byteLength });
+          }
+          
+          if (!uploadSuccess) {
+            const uploadErrorMsg = lastUploadError?.message || 'Unknown error';
+            console.error(`[process-thumbnail-file] Failed to upload preset ${presetId} to R2 after ${maxUploadRetries} attempts:`, uploadErrorMsg, { presetR2Key, fileSize: fileData.byteLength });
             return errorResponse(
               `Failed to upload preset to R2: ${uploadErrorMsg}`,
               500,
@@ -2359,65 +2383,10 @@ export default {
           const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
           console.log(`[process-thumbnail-file] Preset public URL: ${presetPublicUrl}`);
           
-          // Generate thumbnails based on format - all resolutions, preserving folder structure
-          // Extract folder path from presetR2Key (e.g., "preset_thumb/preset/subfolder/presetId.webp" -> "preset/subfolder")
-          const presetPathParts = presetR2Key.replace('preset_thumb/', '').split('/');
-          presetPathParts.pop(); // Remove filename
-          const thumbnailFolderPath = presetPathParts.length > 0 ? presetPathParts.join('/') : 'preset';
-          
+          // Thumbnails are uploaded separately via yyy.zip, so we don't generate them here
+          // Just return the preset URL
           let thumbnailData: Record<string, string> = {};
           let thumbnailUrl: string | null = null;
-
-          if (thumbnailFormat === 'json') {
-            // Generate all Lottie JSON and Lottie AVIF resolutions
-            const lottieResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
-            const lottieAvifResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
-
-            // Lottie JSON files (placeholder entries - actual JSON files should be uploaded separately)
-            for (const res of lottieResolutions) {
-              const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_${res}/${presetId}.json`;
-              thumbnailData[`lottie_${res}`] = thumbnailR2Key;
-            }
-
-            // Lottie AVIF files (placeholder entries - actual AVIF files should be uploaded separately)
-            for (const res of lottieAvifResolutions) {
-              const thumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/lottie_avif_${res}/${presetId}.json`;
-              thumbnailData[`lottie_avif_${res}`] = thumbnailR2Key;
-            }
-
-            // Use the 4x lottie as the primary thumbnail URL
-            thumbnailUrl = getR2PublicUrl(env, thumbnailData['lottie_4x'], requestUrl.origin);
-          } else {
-            // Generate all WebP and AVIF resolutions
-            const allResolutions = ['1.5x', '1x', '2x', '3x', '4x'];
-
-            // Upload PNG to all WebP resolution paths
-            for (const res of allResolutions) {
-              const webpThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/webp_${res}/${presetId}.webp`;
-              await R2_BUCKET.put(webpThumbnailR2Key, fileData, {
-                httpMetadata: {
-                  contentType: 'image/png', // Store as PNG (will work as thumbnail)
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-              });
-              thumbnailData[`webp_${res}`] = webpThumbnailR2Key;
-            }
-
-            // Upload PNG to all AVIF resolution paths
-            for (const res of allResolutions) {
-              const avifThumbnailR2Key = `preset_thumb/${thumbnailFolderPath}/avif_${res}/${presetId}.avif`;
-              await R2_BUCKET.put(avifThumbnailR2Key, fileData, {
-                httpMetadata: {
-                  contentType: 'image/png', // Store as PNG (will work as thumbnail)
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-              });
-              thumbnailData[`avif_${res}`] = avifThumbnailR2Key;
-            }
-
-            // Use the 4x webp as the primary thumbnail URL
-            thumbnailUrl = getR2PublicUrl(env, thumbnailData['webp_4x'], requestUrl.origin);
-          }
           
           // Update database - use INSERT OR REPLACE to handle concurrent requests
           const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
@@ -2436,7 +2405,7 @@ export default {
             }
           }
           
-          // Use INSERT OR REPLACE to avoid UNIQUE constraint violations
+          // Use INSERT OR REPLACE to avoid UNIQUE constraint violations (prompt_json is stored in R2 metadata, not in D1)
           await DB.prepare(
             'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
           ).bind(
@@ -2458,19 +2427,34 @@ export default {
             thumbnail_created: true
           }, 200, request, env);
         } else {
-          // Thumbnail file processing
+          // Thumbnail file processing - preserve exact folder structure from filePath
+          // Extract folder structure from filePath (e.g., "preset_thumb/webp_3x/file.webp" -> "preset_thumb/webp_3x")
+          let folderPath = 'preset_thumb';
+          if (filePath) {
+            const normalizedPath = filePath.replace(/\\/g, '/');
+            const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
+            // Filter out any path segments that match presetId to prevent duplicates
+            const cleanPathParts = pathParts.filter(part => {
+              const partWithoutExt = part.replace(/\.(webp|png|json)$/i, '');
+              return partWithoutExt !== presetId;
+            });
+            if (cleanPathParts.length > 0) {
+              folderPath = cleanPathParts.join('/');
+            }
+          }
+          const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
+          // Construct R2 key using exact folder structure from filePath
+          const thumbnailR2Key = `${folderPath}/${presetId}.${ext}`;
+          
+          // Extract folder type and resolution for metadata (for backward compatibility)
           const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)(?:\/|$)/i);
           let folderType = 'webp';
           let resolution = '1x';
-          
           if (folderMatch) {
             folderType = folderMatch[1].toLowerCase();
             resolution = folderMatch[2];
           }
-          
-          const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
           const thumbnailFolder = `${folderType}_${resolution}`;
-          const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
           
           const fileData = await file.arrayBuffer();
           const contentType = file.type || 'image/webp';
@@ -2671,12 +2655,17 @@ export default {
                 };
               }
 
-              // Upload to final location with prompt metadata (if available), preserving folder structure
-              // Extract folder structure from relativePath (e.g., "preset/subfolder/file.png" -> "preset/subfolder")
-              const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
-              const folderPath = pathParts.length > 0 ? pathParts.join('/') : 'preset';
-              // Construct R2 key preserving folder structure: preset_thumb/preset/subfolder/presetId.ext
-              const r2Key = `preset_thumb/${folderPath}/${presetId}.${filename.split('.').pop()}`;
+              // Upload to final location with prompt metadata (if available)
+              // Zip structure is always preset/*.webp, so use only "preset" folder (ignore any nested structure)
+              // Filter out any path segments that have file extensions (these are filenames, not folders)
+              const pathParts = normalizedPath.split('/').filter(p => p); // Remove empty parts
+              pathParts.pop(); // Remove original filename
+              // Filter out segments with file extensions (misnamed folders/filenames) and keep only valid folder names
+              const cleanPathParts = pathParts.filter(part => !/\.(webp|png|json|jpg|jpeg|gif)$/i.test(part));
+              // Use "preset" if it exists in path, otherwise use first valid folder or default to "preset"
+              const folderPath = cleanPathParts.includes('preset') ? 'preset' : (cleanPathParts.length > 0 ? cleanPathParts[0] : (isFromPresetFolder ? 'preset' : ''));
+              // Construct R2 key: preset/presetId.ext
+              const r2Key = folderPath ? `${folderPath}/${presetId}.${filename.split('.').pop()}` : `${presetId}.${filename.split('.').pop()}`;
               const promptJson = skipPromptGeneration ? null : JSON.stringify(promptResult.prompt);
 
               await R2_BUCKET.put(r2Key, fileData, {
@@ -2729,19 +2718,29 @@ export default {
                     : { success: false, error: promptResult.error || 'Unknown error' })
               };
             } else {
-              // Thumbnail file processing
+              // Thumbnail file processing - preserve exact folder structure from zip
+              // Use relativePath directly from zip (e.g., "preset_thumb/webp_3x/file.webp" -> "preset_thumb/webp_3x/presetId.webp")
+              const pathParts = normalizedPath.split('/').filter(p => p); // Remove empty parts
+              pathParts.pop(); // Remove original filename
+              // Filter out any path segments that match presetId to prevent duplicates
+              const cleanPathParts = pathParts.filter(part => {
+                const partWithoutExt = part.replace(/\.(webp|png|json)$/i, '');
+                return partWithoutExt !== presetId;
+              });
+              const folderPath = cleanPathParts.length > 0 ? cleanPathParts.join('/') : 'preset_thumb';
+              const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
+              // Construct R2 key using exact folder structure from zip
+              const thumbnailR2Key = `${folderPath}/${presetId}.${ext}`;
+              
+              // Extract folder type and resolution for metadata (for backward compatibility)
               const folderMatch = normalizedPath.match(/(webp|lottie|lottie_avif)_([\d.]+x)(?:\/|$)/i);
               let folderType = 'webp';
               let resolution = '1x';
-
               if (folderMatch) {
                 folderType = folderMatch[1].toLowerCase();
                 resolution = folderMatch[2];
               }
-
-              const ext = filename.split('.').pop() || (format === 'lottie' ? 'json' : 'webp');
               const thumbnailFolder = `${folderType}_${resolution}`;
-              const thumbnailR2Key = `preset_thumb/${thumbnailFolder}/${presetId}.${ext}`;
 
               const contentType = filename.toLowerCase().endsWith('.json') ? 'application/json' : 'image/webp';
 
@@ -5036,6 +5035,13 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
+        
+        // Get image dimensions for debug
+        let imageDimensions: { width: number; height: number } | null = null;
+        if (body.aspect_ratio === 'original' || !body.aspect_ratio) {
+          const { getImageDimensions } = await import('./utils');
+          imageDimensions = await getImageDimensions(body.image_url, env);
+        }
 
         const enhancedResult = await callNanoBanana(
           'Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance.',
@@ -5076,6 +5082,16 @@ export default {
         const debugEnabled = isDebugEnabled(env);
         const providerDebug = debugEnabled ? buildProviderDebug(enhancedResult, resultUrl) : undefined;
         const vertexDebug = debugEnabled ? mergeVertexDebug(enhancedResult, undefined) : undefined;
+        const aspectRatioDebug = debugEnabled ? {
+          requested: body.aspect_ratio || 'undefined',
+          resolved: validAspectRatio,
+          imageUrl: body.image_url,
+          imageDimensions: imageDimensions ? {
+            width: imageDimensions.width,
+            height: imageDimensions.height,
+            calculatedRatio: (imageDimensions.width / imageDimensions.height).toFixed(4),
+          } : null,
+        } : undefined;
 
         return jsonResponse({
           data: {
@@ -5085,9 +5101,10 @@ export default {
           status: 'success',
           message: enhancedResult.Message || 'Image enhancement completed',
           code: 200,
-          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
+          ...(debugEnabled ? { debug: compact({
             provider: providerDebug,
             vertex: vertexDebug,
+            aspectRatio: aspectRatioDebug,
           }) } : {}),
         });
       } catch (error) {

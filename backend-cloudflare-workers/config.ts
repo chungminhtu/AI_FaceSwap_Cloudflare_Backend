@@ -18,23 +18,13 @@ Analyze the provided image and return a JSON object with exactly these 6 keys:
 The entire response must be valid JSON only. Example: {"prompt":"A beautiful woman...","style":"photorealistic","lighting":"natural","composition":"portrait","camera":"professional","background":"neutral"}`,
 
   // Filter mode prompt for art style analysis (when checkbox is checked)
-  PROMPT_GENERATION_FILTER: `IMPORTANT: You MUST respond with VALID JSON only. No explanations, no markdown, no code blocks, no additional text. Start your response with { and end with }.
-
-Analyze the art and thematic styles of the provided image and return a JSON object with exactly these 6 keys:
-- "prompt": A detailed scene description that captures the art style aesthetic (2-3 sentences). Include: character pose, outfit/costume, environment, atmosphere, and visual mood. Do not specify gender. MUST include this exact text: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance."
-- "style": The specific art style (figurine, popmart, clay, disney, anime, cartoon, etc.)
-- "lighting": One word describing lighting style
-- "composition": One word describing composition
-- "camera": One word describing camera style
-- "background": One word describing background
-
-The entire response must be valid JSON only. No sexual, explicit, or inappropriate content. Example: {"prompt":"A stylized figurine character...","style":"popmart","lighting":"dramatic","composition":"closeup","camera":"artistic","background":"studio"}`,
+  PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.`,
 
   // Complete filter style application instruction (includes selfie preservation)
-  FILTER_STYLE_APPLICATION_INSTRUCTION: 'Apply this creative style, lighting, composition, and visual atmosphere to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood to match the described scene. Maintain natural appearance and professional quality with 1:1 aspect ratio, 8K ultra-high detail, and ultra-sharp facial features. Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
+  FILTER_STYLE_APPLICATION_INSTRUCTION: 'Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
 
   // Default filter prompt (when prompt is not a string)
-  FILTER_DEFAULT_PROMPT: 'Apply the creative style, lighting, composition, and visual atmosphere described in this preset to the person in the uploaded image. Keep the person\'s face exactly as shown with 100% identical facial features, bone structure, skin tone, and appearance. Preserve all distinctive facial features, identity, age, and ethnicity. Only transform the style, environment, lighting, colors, and visual mood. Maintain natural appearance and professional quality. Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
+  FILTER_DEFAULT_PROMPT: 'Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
 };
 
 // Image Processing Prompts Configuration
@@ -153,12 +143,12 @@ export const VERTEX_AI_CONFIG = {
     },
   },
 
-  // Safety Settings
+  // Safety Settings - Only block HIGH confidence, allow NEGLIGIBLE, LOW, and MEDIUM
   SAFETY_SETTINGS: [
-    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' as const },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' as const },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' as const },
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' as const },
   ],
 
   // Safety violation status codes (2000+)
@@ -247,10 +237,10 @@ export const API_CONFIG = {
 };
 
 export const SAFETY_SETTINGS = [
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' as const },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' as const },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' as const },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' as const },
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' as const },
 ];
 
 export const MODEL_CONFIG = {

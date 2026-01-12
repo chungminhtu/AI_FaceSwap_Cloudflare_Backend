@@ -476,17 +476,17 @@ export const promisePoolWithConcurrency = async <T, R>(
   return results;
 };
 
-// Get image dimensions from URL by parsing image headers
+// Get image dimensions from URL by parsing image headers (simplest working solution)
 export const getImageDimensions = async (imageUrl: string, env: any): Promise<{ width: number; height: number } | null> => {
   try {
-    // Fetch only first 32KB to read headers (enough for JPEG/PNG headers)
-    const IMAGE_FETCH_TIMEOUT = 60000; // 60 seconds
+    // Fetch enough bytes to read headers (WebP VP8X needs 30+ bytes)
+    const IMAGE_FETCH_TIMEOUT = 60000;
     const response = await fetchWithTimeout(imageUrl, {
       headers: { Range: 'bytes=0-32767' }
     }, IMAGE_FETCH_TIMEOUT);
     
     if (!response.ok && response.status !== 206) {
-      // If Range not supported, fetch full image (but limit to 32KB)
+      // If Range not supported, fetch full image
       const fullResponse = await fetchWithTimeout(imageUrl, {}, IMAGE_FETCH_TIMEOUT);
       if (!fullResponse.ok) {
         return null;
@@ -498,12 +498,11 @@ export const getImageDimensions = async (imageUrl: string, env: any): Promise<{ 
     const arrayBuffer = await response.arrayBuffer();
     return parseImageDimensions(new Uint8Array(arrayBuffer));
   } catch (error) {
-    console.error('[ImageDimensions] Failed to get dimensions:', error);
     return null;
   }
 };
 
-// Parse image dimensions from JPEG or PNG headers
+// Parse image dimensions from JPEG, PNG, or WebP headers
 const parseImageDimensions = (data: Uint8Array): { width: number; height: number } | null => {
   if (data.length < 24) return null;
   
@@ -518,6 +517,7 @@ const parseImageDimensions = (data: Uint8Array): { width: number; height: number
         if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) || 
             (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)) {
           if (i + 8 < data.length) {
+            // JPEG SOF format: bytes 5-6 = height (Y dimension), bytes 7-8 = width (X dimension)
             const height = (data[i + 5] << 8) | data[i + 6];
             const width = (data[i + 7] << 8) | data[i + 8];
             if (width > 0 && height > 0 && width < 65536 && height < 65536) {
@@ -551,23 +551,72 @@ const parseImageDimensions = (data: Uint8Array): { width: number; height: number
     }
   }
   
+  // Check for WebP (starts with RIFF...WEBP)
+  // WebP format: RIFF (4 bytes) + file size (4 bytes) + WEBP (4 bytes) + chunk type (4 bytes)
+  if (data.length >= 30 && 
+      data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 &&
+      data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) {
+    // Check for VP8 (lossy) - chunk type at offset 12
+    if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x20) {
+      // VP8 format: chunk header (4 bytes) + frame tag (3 bytes) + dimensions
+      // Width and height are in little-endian format at offsets 26-29
+      if (data.length >= 30) {
+        const width = ((data[26] | (data[27] << 8)) & 0x3FFF) + 1;
+        const height = ((data[28] | (data[29] << 8)) & 0x3FFF) + 1;
+        if (width > 0 && height > 0 && width < 65536 && height < 65536) {
+          return { width, height };
+        }
+      }
+    }
+    // Check for VP8L (lossless) - chunk type at offset 12
+    else if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x4C) {
+      // VP8L format: chunk header (4 bytes) + signature (1 byte) + dimensions (4 bytes)
+      // Dimensions are packed: 14-bit width + 1 + 14-bit height + 1
+      if (data.length >= 25) {
+        const bits = (data[21] | (data[22] << 8) | (data[23] << 16) | (data[24] << 24));
+        const width = (bits & 0x3FFF) + 1;
+        const height = ((bits >> 14) & 0x3FFF) + 1;
+        if (width > 0 && height > 0 && width < 65536 && height < 65536) {
+          return { width, height };
+        }
+      }
+    }
+    // Check for VP8X (extended) - chunk type at offset 12
+    else if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x58) {
+      // VP8X format: chunk header (4 bytes) + flags (1 byte) + reserved (3 bytes) + dimensions (6 bytes)
+      // Width and height are 24-bit little-endian at offsets 24-29
+      if (data.length >= 30) {
+        const width = data[24] | (data[25] << 8) | (data[26] << 16);
+        const height = data[27] | (data[28] << 8) | (data[29] << 16);
+        if (width > 0 && height > 0 && width < 16777216 && height < 16777216) {
+          return { width: width + 1, height: height + 1 };
+        }
+      }
+    }
+  }
+  
   return null;
 };
 
 // Calculate aspect ratio from dimensions and find closest supported Vertex ratio
+// Vertex AI only accepts: 1:1, 3:2, 2:3, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
 export const getClosestAspectRatio = (width: number, height: number, supportedRatios: string[]): string => {
-  if (width <= 0 || height <= 0) {
-    console.warn('[getClosestAspectRatio] Invalid dimensions:', { width, height });
-    return supportedRatios[0] || '3:4';
+  if (width <= 0 || height <= 0 || !Array.isArray(supportedRatios) || supportedRatios.length === 0) {
+    return '3:4';
+  }
+  
+  // Filter out "original" if present - only use valid ratio strings
+  const validRatios = supportedRatios.filter(r => r !== 'original' && typeof r === 'string' && /^\d+:\d+$/.test(r));
+  if (validRatios.length === 0) {
+    return '3:4';
   }
   
   const actualRatio = width / height;
   
-  // Parse supported ratios and find closest match
-  let closestRatio = supportedRatios[0];
+  let closestRatio = validRatios[0];
   let minDiff = Infinity;
   
-  for (const ratioStr of supportedRatios) {
+  for (const ratioStr of validRatios) {
     const [w, h] = ratioStr.split(':').map(Number);
     if (w <= 0 || h <= 0) continue;
     
@@ -580,7 +629,11 @@ export const getClosestAspectRatio = (width: number, height: number, supportedRa
     }
   }
   
-  console.log('[getClosestAspectRatio]', { width, height, actualRatio: actualRatio.toFixed(3), closestRatio, minDiff: minDiff.toFixed(4) });
+  // Final validation - must be in validRatios list
+  if (!validRatios.includes(closestRatio)) {
+    return validRatios[0] || '3:4';
+  }
+  
   return closestRatio;
 };
 
@@ -600,41 +653,33 @@ export const resolveAspectRatio = async (
   const supportedRatios = customSupportedRatios || ASPECT_RATIO_CONFIG.SUPPORTED;
   const fallbackDefault = defaultRatio || ASPECT_RATIO_CONFIG.DEFAULT;
   
-  // If aspect_ratio is "original" and original is allowed, calculate from image
-  if (allowOriginal && (!aspectRatio || aspectRatio === 'original')) {
+  // If aspect_ratio is "original" or undefined/null and original is allowed, calculate from image
+  if (allowOriginal && (!aspectRatio || aspectRatio === 'original' || aspectRatio === '')) {
     if (!imageUrl) {
-      console.warn('[resolveAspectRatio] "original" specified but no imageUrl provided, using default:', fallbackDefault);
       return fallbackDefault;
     }
     
-    console.log('[resolveAspectRatio] Calculating aspect ratio from image:', imageUrl);
     const dimensions = await getImageDimensions(imageUrl, env);
     if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
-      const actualRatio = dimensions.width / dimensions.height;
+      // Calculate closest supported ratio from actual image dimensions
       const closestRatio = getClosestAspectRatio(dimensions.width, dimensions.height, supportedRatios);
-      console.log('[resolveAspectRatio] Image dimensions:', { width: dimensions.width, height: dimensions.height, actualRatio: actualRatio.toFixed(3), closestRatio });
-      return closestRatio;
+      // Final validation - must be a valid supported ratio (never "original")
+      if (closestRatio && closestRatio !== 'original' && supportedRatios.includes(closestRatio)) {
+        return closestRatio;
+      }
+      return fallbackDefault;
     } else {
-      console.warn('[resolveAspectRatio] Failed to get image dimensions, using default:', fallbackDefault);
       return fallbackDefault;
     }
   }
   
   // If "original" is not allowed but was provided, treat as invalid
   if (aspectRatio === 'original' && !allowOriginal) {
-    console.warn('[resolveAspectRatio] "original" not allowed for this endpoint, using default:', fallbackDefault);
     return fallbackDefault;
   }
   
   // Validate and return supported ratio, or default
   const validRatio = supportedRatios.includes(aspectRatio || '') ? (aspectRatio || fallbackDefault) : fallbackDefault;
-  if (aspectRatio && aspectRatio !== validRatio) {
-    console.log('[resolveAspectRatio] Invalid aspect ratio provided:', aspectRatio, '-> using:', validRatio);
-  } else if (aspectRatio) {
-    console.log('[resolveAspectRatio] Using provided aspect ratio:', aspectRatio);
-  } else {
-    console.log('[resolveAspectRatio] No aspect ratio provided, using default:', validRatio);
-  }
   return validRatio;
 };
 

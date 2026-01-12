@@ -159,8 +159,11 @@ async function deleteFilesOnlyWithRclone(bucketName, folderName, accountId, r2Ac
     const remotePath = `${remoteName}:${bucketName}/${basePath}`;
     
     try {
-      console.log(`  ${colors.cyan}Deleting files only (preserving folders)...${colors.reset}`);
-      const deleteArgs = [...baseArgs, 'delete', remotePath, '--exclude', '*/', '--max-depth', '1'];
+      console.log(`  ${colors.cyan}Deleting files only (preserving folders and subfolders)...${colors.reset}`);
+      // --max-depth 1: Limits operation to immediate directory level only (no recursion into subdirectories)
+      // --exclude "*/": Excludes all directories, ensuring only files are deleted
+      // Reference: https://rclone.org/commands/rclone_delete/
+      const deleteArgs = [...baseArgs, 'delete', remotePath, '--max-depth', '1', '--exclude', '*/'];
       if (dryRun) {
         deleteArgs.push('--dry-run');
       }
@@ -202,6 +205,11 @@ async function deleteFilesOnlyWithRclone(bucketName, folderName, accountId, r2Ac
       reject(error);
     }
   });
+}
+
+async function deleteFoldersOnlyWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun = false) {
+  // Reuse existing deleteFolderWithRclone - it already uses purge to delete folders
+  return deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
 }
 
 async function deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun = false) {
@@ -605,12 +613,19 @@ async function deleteObjectsBatch(apiToken, accountId, bucketName, objectKeys, c
 }
 
 
-async function deleteFolder(env, folderName, dryRun = false) {
+async function deleteFolder(env, folderName, dryRun = false, foldersOnly = false) {
   const startTime = Date.now();
   const parsed = parseFolderPath(folderName);
   const isWildcard = parsed.isWildcard;
 
-  const operationType = isWildcard ? 'DELETING FILES (wildcard)' : 'DELETING FOLDER';
+  let operationType;
+  if (foldersOnly) {
+    operationType = 'DELETING FOLDERS ONLY';
+  } else if (isWildcard) {
+    operationType = 'DELETING FILES (wildcard)';
+  } else {
+    operationType = 'DELETING FOLDER';
+  }
   console.log(`${colors.cyan}=== ${operationType}: ${folderName} ===${colors.reset}`);
   console.log(`Environment: ${colors.yellow}${env}${colors.reset}`);
   console.log(`Mode: ${dryRun ? colors.yellow + 'DRY RUN' : colors.red + 'FORCE DELETE' + colors.reset}${colors.reset}`);
@@ -622,132 +637,195 @@ async function deleteFolder(env, folderName, dryRun = false) {
   console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
   console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
   console.log(`Path: ${colors.cyan}${folderName}${colors.reset}`);
-  if (isWildcard) {
+  if (foldersOnly) {
+    console.log(`  ${colors.yellow}Folders-only mode: Will delete folders only, preserving files${colors.reset}`);
+  } else if (isWildcard) {
     console.log(`  ${colors.yellow}Wildcard mode: Will delete files only, preserving folders${colors.reset}`);
   }
   console.log('');
 
+  // Check if rclone is available (required)
   const useRclone = checkRcloneAvailable();
-  
-  if (useRclone) {
-    const rcloneMethod = isWildcard ? 'files-only deletion' : 'recursive deletion';
-    console.log(`${colors.cyan}Using rclone for ${rcloneMethod}...${colors.reset}\n`);
-    try {
-      if (isWildcard) {
-        await deleteFilesOnlyWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
-      } else {
-        await deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
-      }
-      const duration = (Date.now() - startTime) / 1000;
-      console.log('');
-      console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
-      if (isWildcard) {
-        console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Files only (folders preserved)${colors.reset}`);
-      } else {
-        console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folder and all contents${colors.reset}`);
-      }
-      console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
-      if (dryRun) {
-        console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
-      }
-      return { deleted: 1, failed: 0, duration };
-    } catch (error) {
-      console.log(`  ${colors.yellow}⚠ rclone deletion failed: ${error.message}${colors.reset}`);
-      console.log(`  ${colors.cyan}Falling back to API method...${colors.reset}\n`);
-    }
-  } else {
-    console.log(`${colors.yellow}⚠ rclone not installed. Install with: brew install rclone${colors.reset}`);
-    console.log(`${colors.yellow}⚠ Then configure with: rclone config${colors.reset}`);
-    console.log(`${colors.cyan}Using API method for deletion...${colors.reset}\n`);
+  if (!useRclone) {
+    throw new Error('rclone is required but not installed. Install with: brew install rclone, then configure with: rclone config');
   }
-
-  // Fallback to API method
-  const basePath = parsed.basePath;
-  const prefix = basePath.endsWith('/') ? basePath : `${basePath}/`;
-  let totalDeleted = 0;
-  let totalFailed = 0;
+  
+  let rcloneMethod;
+  if (foldersOnly) {
+    rcloneMethod = 'folders-only deletion';
+  } else if (isWildcard) {
+    rcloneMethod = 'files-only deletion';
+  } else {
+    rcloneMethod = 'recursive deletion';
+  }
+  
+  console.log(`${colors.cyan}Using rclone for ${rcloneMethod}...${colors.reset}\n`);
   
   try {
-    console.log(`${colors.cyan}Scanning for objects in ${prefix}...${colors.reset}`);
-    const objects = await listAllObjects(apiToken, accountId, bucketName, prefix, true);
-    
-    let filesToDelete = objects;
-    if (isWildcard) {
-      filesToDelete = objects.filter(obj => {
-        const key = obj.key || obj;
-        const relativePath = key.replace(prefix, '');
-        return !relativePath.includes('/') && !key.endsWith('/');
-      });
-      console.log(`  ${colors.cyan}Found ${objects.length} total object(s), ${filesToDelete.length} file(s) to delete (excluding folders)${colors.reset}`);
+    if (foldersOnly) {
+      await deleteFoldersOnlyWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
+    } else if (isWildcard) {
+      await deleteFilesOnlyWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
     } else {
-      console.log(`  ${colors.cyan}Found ${objects.length} object(s) in ${prefix}${colors.reset}`);
+      await deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
     }
-    
-    if (filesToDelete.length === 0) {
-      console.log(`  ${colors.yellow}No ${isWildcard ? 'files' : 'objects'} found${colors.reset}`);
+    const duration = (Date.now() - startTime) / 1000;
+    console.log('');
+    console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
+    if (foldersOnly) {
+      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folders only (files preserved)${colors.reset}`);
+    } else if (isWildcard) {
+      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Files only (folders preserved)${colors.reset}`);
     } else {
-      if (dryRun) {
-        console.log(`  ${colors.yellow}[DRY RUN] Would delete ${filesToDelete.length} ${isWildcard ? 'file(s)' : 'object(s)'}${colors.reset}`);
-        filesToDelete.slice(0, 10).forEach(obj => {
-          const key = obj.key || obj;
-          console.log(`    - ${key}`);
-        });
-        if (filesToDelete.length > 10) {
-          console.log(`    ... and ${filesToDelete.length - 10} more`);
-        }
-        totalDeleted = filesToDelete.length;
-      } else {
-        const objectKeys = filesToDelete.map(obj => obj.key || obj);
-        console.log(`  ${colors.cyan}Deleting ${objectKeys.length} ${isWildcard ? 'file(s)' : 'object(s)'} in batches...${colors.reset}`);
-
-        const result = await deleteObjectsBatch(
-          apiToken, accountId, bucketName, objectKeys, 15,
-          (processed, total, deleted, failed) => {
-            if (processed % 100 === 0 || processed === total) {
-              console.log(`  ${colors.cyan}Progress: ${processed}/${total} processed (${deleted} deleted, ${failed} failed)...${colors.reset}`);
-            }
-          }
-        );
-
-        totalDeleted = result.deleted;
-        totalFailed = result.failed;
-
-        if (result.failed > 0) {
-          console.log(`  ${colors.red}✗ Failed to delete ${result.failed} ${isWildcard ? 'file(s)' : 'object(s)'}${colors.reset}`);
-          result.errors.slice(0, 3).forEach(error => {
-            console.log(`    ${colors.red}${error}${colors.reset}`);
-          });
-          if (result.errors.length > 3) {
-            console.log(`    ${colors.red}... and ${result.errors.length - 3} more errors${colors.reset}`);
-          }
-        }
-      }
+      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folder and all contents${colors.reset}`);
     }
+    console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
+    if (dryRun) {
+      console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
+    }
+    return { deleted: 1, failed: 0, duration };
   } catch (error) {
-    console.log(`  ${colors.red}✗ Error: ${error.message}${colors.reset}`);
-    totalFailed++;
+    throw new Error(`rclone deletion failed: ${error.message}`);
   }
-  
-  const duration = (Date.now() - startTime) / 1000;
-  console.log('');
-  console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
-  if (isWildcard) {
-    console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} file(s) (folders preserved)`);
-  } else {
-    console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
-  }
-  if (totalFailed > 0) {
-    console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} ${isWildcard ? 'file(s)' : 'object(s)'}`);
-  }
-  console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
-
-  if (dryRun && totalDeleted > 0) {
-    console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
-  }
-
-  return { deleted: totalDeleted, failed: totalFailed, duration };
 }
 
+
+async function discoverFolders(env, baseFolder) {
+  const bucketName = getBucketName(env);
+  const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = getCloudflareCredentials(env);
+  
+  // Normalize baseFolder - ensure it doesn't have trailing slash for rclone
+  const normalizedBaseFolder = baseFolder.endsWith('/') ? baseFolder.slice(0, -1) : baseFolder;
+  const prefix = `${normalizedBaseFolder}/`;
+  console.log(`${colors.cyan}Discovering folders in ${prefix} using rclone...${colors.reset}`);
+  
+  try {
+    // Use rclone to detect folders - it has native directory detection
+    let remoteInfo;
+    try {
+      remoteInfo = getRcloneRemote(bucketName, accountId, r2AccessKeyId, r2SecretAccessKey);
+    } catch (error) {
+      throw new Error(`Failed to get rclone remote: ${error.message}`);
+    }
+    
+    const { remoteName, tempConfigPath, baseArgs } = remoteInfo;
+    const remotePath = `${remoteName}:${bucketName}/${normalizedBaseFolder}`;
+    
+    // Use rclone ls to list all objects, then parse to find folders
+    // This works better with R2 than lsd/lsf commands
+    const lsArgs = [...baseArgs, 'ls', '-R', remotePath];
+    
+    return new Promise((resolve, reject) => {
+      const rclone = spawn('rclone', lsArgs, {
+        stdio: 'pipe',
+        env: process.env
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      rclone.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      rclone.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      rclone.on('close', (code) => {
+        if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+          try {
+            fs.unlinkSync(tempConfigPath);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+        
+        if (code !== 0) {
+          // If no files found, that's OK - might mean no folders
+          if (stderr.includes('directory not found') || stderr.includes('Couldn\'t find directory')) {
+            console.log(`  ${colors.yellow}No folders found${colors.reset}`);
+            resolve([]);
+            return;
+          }
+          reject(new Error(`rclone ls failed: ${stderr.substring(0, 200)}`));
+          return;
+        }
+        
+        // Parse output - rclone ls returns file paths
+        // Find folders by detecting nested paths
+        const prefix = `${normalizedBaseFolder}/`;
+        const folderSet = new Set();
+        
+        stdout.split('\n').forEach(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          
+          // rclone ls format: "size path" or just "path"
+          // Extract path (last part after spaces)
+          const parts = trimmed.split(/\s+/);
+          const fullPath = parts[parts.length - 1];
+          
+          // Check if path is under our base folder
+          if (!fullPath.startsWith(prefix)) return;
+          
+          const relativePath = fullPath.replace(prefix, '');
+          if (!relativePath) return;
+          
+          // Only identify folders if there's a nested path (file inside a folder)
+          if (relativePath.includes('/')) {
+            const pathParts = relativePath.split('/');
+            // Build folder path - everything before the last segment
+            let currentPath = prefix;
+            for (let i = 0; i < pathParts.length - 1; i++) {
+              const segment = pathParts[i];
+              // Skip segments that look like files (have extensions)
+              if (segment.includes('.') && /\.(webp|png|json|jpg|jpeg|gif|pdf|txt|zip)$/i.test(segment)) {
+                break; // This is a file, not a folder
+              }
+              currentPath += segment;
+              folderSet.add(currentPath.slice(0, -1)); // Remove trailing /
+              currentPath += '/';
+            }
+          }
+        });
+        
+        const folders = Array.from(folderSet)
+          .filter(folder => folder.startsWith(normalizedBaseFolder))
+          .sort();
+        
+        console.log(`  ${colors.green}Found ${folders.length} folder(s)${colors.reset}`);
+        if (folders.length > 0 && folders.length <= 20) {
+          folders.forEach((folder, index) => {
+            console.log(`  ${index + 1}. ${folder}`);
+          });
+        } else if (folders.length > 20) {
+          folders.slice(0, 20).forEach((folder, index) => {
+            console.log(`  ${index + 1}. ${folder}`);
+          });
+          console.log(`  ... and ${folders.length - 20} more`);
+        }
+        console.log('');
+        
+        resolve(folders);
+      });
+      
+      rclone.on('error', (error) => {
+        if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+          try {
+            fs.unlinkSync(tempConfigPath);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+        reject(error);
+      });
+    });
+  } catch (error) {
+    console.error(`${colors.red}Error discovering folders: ${error.message}${colors.reset}`);
+    throw error;
+  }
+}
 
 async function listR2Objects(env, prefix = '') {
   const bucketName = getBucketName(env);
@@ -794,6 +872,9 @@ const env = process.env.DEPLOY_ENV ||
 
 const dryRun = process.argv.includes('--dry-run') || process.argv.includes('-d');
 const listMode = process.argv.includes('--list') || process.argv.includes('-l');
+const foldersOnly = process.argv.includes('--folders-only') || process.argv.includes('--folders');
+const autoDiscover = process.argv.includes('--auto-discover') || process.argv.includes('--auto');
+const listFoldersOnly = process.argv.includes('--list-folders') || process.argv.includes('--list-folder');
 
 // Support multiple folders: --folder=folder1,folder2 or --folder=folder1 --folder=folder2
 const folderArgs = [];
@@ -837,65 +918,121 @@ if (listMode) {
       }
       process.exit(1);
     });
-} else if (folderArgs.length > 0 || process.env.DEFAULT_FOLDER) {
+} else if (listFoldersOnly || (autoDiscover && !foldersOnly)) {
+  // List folders only mode - discover and list all folders without deleting
+  const baseFolder = folderArgs.length > 0 ? folderArgs[0] : 'preset';
+  console.log(`${colors.cyan}=== Listing folders in ${baseFolder} ===${colors.reset}\n`);
+  discoverFolders(env, baseFolder)
+    .then(folders => {
+      if (folders.length === 0) {
+        console.log(`${colors.yellow}No folders found in ${baseFolder}${colors.reset}`);
+        process.exit(0);
+      }
+      console.log(`\n${colors.green}=== Found ${folders.length} folder(s) ===${colors.reset}`);
+      console.log(`${colors.cyan}Folder list (one per line):${colors.reset}\n`);
+      folders.forEach(folder => {
+        console.log(folder);
+      });
+      console.log(`\n${colors.cyan}To delete these folders, use:${colors.reset}`);
+      console.log(`${colors.yellow}node backend-cloudflare-workers/cleanup-old-thumbnails.js --folders-only --auto-discover${colors.reset}`);
+      process.exit(0);
+    })
+    .catch(error => {
+      console.error(`\n${colors.red}Error discovering folders: ${error.message}${colors.reset}`);
+      process.exit(1);
+    });
+} else if (folderArgs.length > 0 || process.env.DEFAULT_FOLDER || (autoDiscover && foldersOnly)) {
   // If no folders specified but DEFAULT_FOLDER env var is set, use it
   if (folderArgs.length === 0 && process.env.DEFAULT_FOLDER) {
     folderArgs.push(...process.env.DEFAULT_FOLDER.split(',').map(f => f.trim()).filter(f => f));
   }
   
-  if (folderArgs.length > 0) {
-    // Process multiple folders
-    (async () => {
-      let totalDeleted = 0;
-      let totalFailed = 0;
-      const startTime = Date.now();
-      
-      console.log(`${colors.cyan}=== DELETING ${folderArgs.length} folder(s) ===${colors.reset}\n`);
-      
-      for (let i = 0; i < folderArgs.length; i++) {
-        const folder = folderArgs[i];
-        console.log(`\n${colors.cyan}[${i + 1}/${folderArgs.length}] Processing folder: ${folder}${colors.reset}`);
-        console.log('─'.repeat(60));
+  // Process folders function
+  function processFolders(foldersToProcess) {
+    if (foldersToProcess.length > 0) {
+      // Process multiple folders sequentially
+      (async () => {
+        let totalDeleted = 0;
+        let totalFailed = 0;
+        const startTime = Date.now();
         
-        try {
-          const result = await deleteFolder(env, folder, dryRun);
-          totalDeleted += result.deleted;
-          totalFailed += result.failed;
-        } catch (error) {
-          console.error(`\n${colors.red}Error deleting ${folder}: ${error.message}${colors.reset}`);
-          totalFailed++;
+        console.log(`${colors.cyan}=== DELETING ${foldersToProcess.length} folder(s) ===${colors.reset}\n`);
+        
+        for (let i = 0; i < foldersToProcess.length; i++) {
+          const folder = foldersToProcess[i];
+          console.log(`\n${colors.cyan}[${i + 1}/${foldersToProcess.length}] Processing folder: ${folder}${colors.reset}`);
+          console.log('─'.repeat(60));
+          
+          try {
+            const result = await deleteFolder(env, folder, dryRun, foldersOnly);
+            totalDeleted += result.deleted;
+            totalFailed += result.failed;
+          } catch (error) {
+            console.error(`\n${colors.red}Error deleting ${folder}: ${error.message}${colors.reset}`);
+            totalFailed++;
+          }
+          
+          if (i < foldersToProcess.length - 1) {
+            console.log(''); // Add spacing between folders
+          }
         }
         
-        if (i < folderArgs.length - 1) {
-          console.log(''); // Add spacing between folders
+        const duration = (Date.now() - startTime) / 1000;
+        console.log(`\n${colors.cyan}${'='.repeat(60)}${colors.reset}`);
+        console.log(`${colors.cyan}=== Overall Summary ===${colors.reset}`);
+        console.log(`Folders processed: ${colors.cyan}${foldersToProcess.length}${colors.reset}`);
+        console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
+        if (totalFailed > 0) {
+          console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} object(s)`);
         }
-      }
-      
-      const duration = (Date.now() - startTime) / 1000;
-      console.log(`\n${colors.cyan}${'='.repeat(60)}${colors.reset}`);
-      console.log(`${colors.cyan}=== Overall Summary ===${colors.reset}`);
-      console.log(`Folders processed: ${colors.cyan}${folderArgs.length}${colors.reset}`);
-      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}${totalDeleted}${colors.reset} object(s)`);
-      if (totalFailed > 0) {
-        console.log(`Failed: ${colors.red}${totalFailed}${colors.reset} object(s)`);
-      }
-      console.log(`Total duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
-      console.log(`${colors.green}All folders processed!${colors.reset}`);
-      
-      process.exit(totalFailed > 0 ? 1 : 0);
-    })();
+        console.log(`Total duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
+        console.log(`${colors.green}All folders processed!${colors.reset}`);
+        
+        process.exit(totalFailed > 0 ? 1 : 0);
+      })();
+    } else {
+      console.error(`${colors.red}Error: No folders specified${colors.reset}`);
+      process.exit(1);
+    }
+  }
+  
+  // Auto-discover folders if enabled
+  if (autoDiscover && foldersOnly) {
+    const baseFolder = folderArgs.length > 0 ? folderArgs[0] : 'preset';
+    console.log(`${colors.cyan}=== Auto-discovering folders in ${baseFolder} ===${colors.reset}\n`);
+    discoverFolders(env, baseFolder)
+      .then(discoveredFolders => {
+        if (discoveredFolders.length === 0) {
+          console.log(`${colors.yellow}No folders found in ${baseFolder}${colors.reset}`);
+          process.exit(0);
+        }
+        processFolders(discoveredFolders);
+      })
+      .catch(error => {
+        console.error(`\n${colors.red}Error discovering folders: ${error.message}${colors.reset}`);
+        process.exit(1);
+      });
   } else {
-    console.error(`${colors.red}Error: No folders specified${colors.reset}`);
-    process.exit(1);
+    processFolders(folderArgs);
   }
 } else {
-  console.error(`${colors.red}Error: --folder argument is required${colors.reset}`);
-  console.error(`Usage: node cleanup-old-thumbnails.js --folder=<folder-name> [--folder=<folder2>] [--dry-run]`);
+  console.error(`${colors.red}Error: --folder argument is required (unless using --auto-discover with --folders-only or --list-folders)${colors.reset}`);
+  console.error(`Usage: node cleanup-old-thumbnails.js --folder=<folder-name> [--folder=<folder2>] [--dry-run] [--folders-only] [--auto-discover] [--list-folders]`);
   console.error(`Examples:`);
+  console.error(`  # List all folders in preset (no deletion):`);
+  console.error(`  node cleanup-old-thumbnails.js --list-folders`);
+  console.error(`  # List folders in specific folder:`);
+  console.error(`  node cleanup-old-thumbnails.js --list-folders --folder=preset`);
+  console.error(`  # Auto-discover and delete all folders:`);
+  console.error(`  node cleanup-old-thumbnails.js --folders-only --auto-discover`);
+  console.error(`  # Delete folders in specific folder:`);
+  console.error(`  node cleanup-old-thumbnails.js --folder=preset --folders-only --auto-discover`);
   console.error(`  # Delete folder and all contents:`);
   console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb/preset`);
   console.error(`  # Delete files only (preserve folders):`);
   console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb/*`);
+  console.error(`  # Delete folders only (preserve files) inside preset:`);
+  console.error(`  node cleanup-old-thumbnails.js --folder=preset --folders-only`);
   console.error(`  # Multiple folders:`);
   console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb --folder=folder2`);
   console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb/*,folder2/*`);
