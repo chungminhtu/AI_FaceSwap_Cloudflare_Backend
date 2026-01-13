@@ -960,7 +960,6 @@ function parseConfig(config) {
   if (config.SELFIE_MAX_4K) secrets.SELFIE_MAX_4K = config.SELFIE_MAX_4K;
   if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
   if (config.DISABLE_SAFE_SEARCH !== undefined) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
-  if (config.SAFETY_STRICTNESS) secrets.SAFETY_STRICTNESS = config.SAFETY_STRICTNESS;
   if (config.DISABLE_VERTEX_IMAGE_GEN !== undefined) secrets.DISABLE_VERTEX_IMAGE_GEN = config.DISABLE_VERTEX_IMAGE_GEN;
   if (config.DISABLE_VISION_API !== undefined) secrets.DISABLE_VISION_API = config.DISABLE_VISION_API;
   if (config.DISABLE_4K_UPSCALER !== undefined) secrets.DISABLE_4K_UPSCALER = config.DISABLE_4K_UPSCALER;

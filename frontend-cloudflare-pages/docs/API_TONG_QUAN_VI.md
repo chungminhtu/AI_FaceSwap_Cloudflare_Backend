@@ -180,36 +180,61 @@ Tập hợp các đặc điểm liên quan đến hình ảnh, được tính to
 
 #### Severity Levels (Độ nghiêm trọng)
 
-Google Vision API SafeSearch trả về các mức độ nghiêm trọng cho mỗi category. App sử dụng các mức độ này để quyết định có chặn ảnh hay không:
+Google Vision API SafeSearch trả về mức độ nghiêm trọng cho mỗi field (adult, violence, racy, medical, spoof). App kiểm tra **tất cả các fields** và sử dụng **mức độ cao nhất** trong bất kỳ field nào để quyết định có chặn ảnh hay không:
 
 | Severity Level | Giá trị | Mô tả | Có bị chặn? |
 |----------------|---------|-------|-------------|
 | **VERY_UNLIKELY** | -1 | Không có nội dung nhạy cảm, chắc chắn | ✅ **Cho phép** |
 | **UNLIKELY** | 0 | Không có nội dung nhạy cảm, nhưng chưa chắc chắn | ✅ **Cho phép** |
-| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ **Chặn** (chỉ trong strict mode) / ✅ **Cho phép** (trong lenient mode) |
-| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ❌ **Chặn** (chỉ trong strict mode) / ✅ **Cho phép** (trong lenient mode) |
-| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ❌ **Chặn** (cả strict và lenient mode) |
+| **POSSIBLE** | 1 | Có thể có nội dung nhạy cảm, nhưng chưa chắc chắn | ❌ **Chặn** |
+| **LIKELY** | 2 | Có nội dung nhạy cảm, chắc chắn | ❌ **Chặn** |
+| **VERY_LIKELY** | 3 | Có nội dung nhạy cảm, chắc chắn | ❌ **Chặn** |
 
-#### Strictness Modes (Chế độ kiểm tra)
+**Cách hoạt động:**
+- App kiểm tra tất cả 5 fields: `adult`, `violence`, `racy`, `medical`, `spoof`
+- Nếu **bất kỳ field nào** có level là `POSSIBLE`, `LIKELY`, hoặc `VERY_LIKELY` → Ảnh bị chặn
+- `statusCode` (1001-1005) được trả về dựa trên field có **mức độ cao nhất** (worst violation)
+- Error code mapping: `adult`=1001, `violence`=1002, `racy`=1003, `medical`=1004, `spoof`=1005
 
-App hỗ trợ 2 chế độ kiểm tra, được cấu hình qua biến môi trường `SAFETY_STRICTNESS`:
+**Ví dụ:**
 
-**Strict Mode (Mặc định):**
-- ✅ **Cho phép**: `VERY_UNLIKELY`, `UNLIKELY`
-- ❌ **Chặn**: `POSSIBLE`, `LIKELY`, `VERY_LIKELY`
-- Sử dụng khi: `SAFETY_STRICTNESS=strict` hoặc không set (default)
+**Ví dụ 1 - Ảnh bị chặn:**
+```json
+{
+  "adult": "VERY_UNLIKELY",
+  "violence": "POSSIBLE",
+  "racy": "UNLIKELY",
+  "medical": "VERY_UNLIKELY",
+  "spoof": "VERY_UNLIKELY"
+}
+```
+→ **Kết quả:** Bị chặn vì `violence` có level `POSSIBLE`. Trả về `code: 1002` (violence).
 
-**Lenient Mode:**
-- ✅ **Cho phép**: `VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`
-- ❌ **Chặn**: `VERY_LIKELY` only
-- Sử dụng khi: `SAFETY_STRICTNESS=lenient`
+**Ví dụ 2 - Ảnh bị chặn (nhiều violations):**
+```json
+{
+  "adult": "LIKELY",
+  "violence": "POSSIBLE",
+  "racy": "VERY_LIKELY",
+  "medical": "UNLIKELY",
+  "spoof": "VERY_UNLIKELY"
+}
+```
+→ **Kết quả:** Bị chặn. `racy` có level cao nhất (`VERY_LIKELY`), nên trả về `code: 1003` (racy).
 
-**Tóm tắt:**
-- `statusCode` (1001-1005) chỉ được trả về khi nội dung thực sự bị chặn
-- **Strict mode**: Chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` → Chỉ cho phép `VERY_UNLIKELY` và `UNLIKELY`
-- **Lenient mode**: Chỉ chặn `VERY_LIKELY` → Cho phép tất cả các mức khác (`VERY_UNLIKELY`, `UNLIKELY`, `POSSIBLE`, `LIKELY`)
+**Ví dụ 3 - Ảnh được phép:**
+```json
+{
+  "adult": "VERY_UNLIKELY",
+  "violence": "UNLIKELY",
+  "racy": "VERY_UNLIKELY",
+  "medical": "UNLIKELY",
+  "spoof": "VERY_UNLIKELY"
+}
+```
+→ **Kết quả:** Được phép vì tất cả fields đều là `VERY_UNLIKELY` hoặc `UNLIKELY`.
 
-**Ví dụ Response:**
+**Ví dụ Response khi bị chặn:**
 ```json
 {
   "data": null,
@@ -408,7 +433,7 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 **Lưu ý quan trọng:**
 - **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API. Xem chi tiết error codes tại [Vision API Safety Error Codes](#vision-api-safety-error-codes-1001-1005).
 - **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`. Xem chi tiết error codes tại [Vertex AI Safety Error Codes](#vertex-ai-safety-error-codes-2001-2004).
-- Scan level mặc định: `strict` (chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` violations)
+- Chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` violations
 - Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về error code tương ứng
 - Error code được trả về trong trường `code` của response
 - **Giới hạn số lượng selfie:** Mỗi action có giới hạn riêng và tự động xóa ảnh cũ khi vượt quá giới hạn:

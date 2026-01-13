@@ -45,14 +45,8 @@ function getSeverity(level: string): number {
   return SEVERITY_LEVELS[level] || 0;
 }
 
-// Default: Only block VERY_LIKELY (loose mode)
-// Strict mode: Block POSSIBLE, LIKELY, and VERY_LIKELY
-export const getUnsafeLevels = (strictness: 'strict' | 'lenient'): string[] => {
-  if (strictness === 'strict') {
-    return ['POSSIBLE', 'LIKELY', 'VERY_LIKELY'];
-  }
-  return ['VERY_LIKELY'];
-};
+// Block POSSIBLE, LIKELY, and VERY_LIKELY
+const UNSAFE_LEVELS = ['POSSIBLE', 'LIKELY', 'VERY_LIKELY'];
 
 const COMMON_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -358,14 +352,12 @@ export const successResponse = (data: any, status = 200, request?: Request, env?
 };
 
 export const isUnsafe = (
-  annotation: { adult: string; violence: string; racy: string },
-  strictness: 'strict' | 'lenient'
+  annotation: { adult: string; violence: string; racy: string }
 ): boolean => {
-  const unsafeLevels = getUnsafeLevels(strictness);
   return (
-    unsafeLevels.includes(annotation.adult) ||
-    unsafeLevels.includes(annotation.violence) ||
-    unsafeLevels.includes(annotation.racy)
+    UNSAFE_LEVELS.includes(annotation.adult) ||
+    UNSAFE_LEVELS.includes(annotation.violence) ||
+    UNSAFE_LEVELS.includes(annotation.racy)
   );
 };
 
@@ -690,11 +682,10 @@ export const getWorstViolation = (
     racy: string;
     medical?: string;
     spoof?: string;
-  },
-  strictness: 'strict' | 'lenient' = 'strict'
+  }
 ): { code: number; category: string; level: string } | null => {
-  // Only check levels that should be blocked based on strictness
-  const unsafeLevels = getUnsafeLevels(strictness);
+  // Only check levels that should be blocked
+  const unsafeLevels = UNSAFE_LEVELS;
   const violations: Array<{ category: string; level: string; severity: number; code: number }> = [];
 
   // Define category mappings
@@ -706,7 +697,7 @@ export const getWorstViolation = (
     { key: 'spoof', code: SAFETY_STATUS_CODES.SPOOF },
   ];
 
-  // Check each category - only include violations that match strictness (should be blocked)
+  // Check each category - only include violations that should be blocked
   for (const { key, code } of categories) {
     const level = annotation[key as keyof typeof annotation];
     if (level && unsafeLevels.includes(level)) {

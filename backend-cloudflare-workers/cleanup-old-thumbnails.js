@@ -208,8 +208,188 @@ async function deleteFilesOnlyWithRclone(bucketName, folderName, accountId, r2Ac
 }
 
 async function deleteFoldersOnlyWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun = false) {
-  // Reuse existing deleteFolderWithRclone - it already uses purge to delete folders
-  return deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
+  return new Promise(async (resolve, reject) => {
+    const parsed = parseFolderPath(folderName);
+    const folderPath = parsed.basePath;
+    let remoteInfo;
+    
+    try {
+      remoteInfo = getRcloneRemote(bucketName, accountId, r2AccessKeyId, r2SecretAccessKey);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    
+    const { remoteName, tempConfigPath, baseArgs } = remoteInfo;
+    // Remove trailing slash for purge - rclone purge works on folder path without trailing slash
+    const folderPathClean = folderPath.replace(/\/$/, '');
+    const remotePath = `${remoteName}:${bucketName}/${folderPathClean}`;
+    
+    try {
+      // Check if this is actually a file (has extension) - if so, skip it
+      const lastSegment = folderPathClean.split('/').pop() || '';
+      if (lastSegment.includes('.') && /\.(webp|png|json|jpg|jpeg|gif|pdf|txt|zip)$/i.test(lastSegment)) {
+        // This is a file, not a folder - skip deletion
+        if (!dryRun) {
+          console.log(`  ${colors.yellow}Skipping ${folderPathClean} - this is a file, not a folder${colors.reset}`);
+        }
+        resolve(true);
+        return;
+      }
+      
+      // Verify this is actually a folder with nested files before deleting
+      const folderPathWithSlash = `${folderPathClean}/`;
+      const remotePathCheck = `${remoteName}:${bucketName}/${folderPathWithSlash}`;
+      const lsArgs = [...baseArgs, 'ls', '--max-depth', '1', remotePathCheck];
+      
+      const hasNestedFiles = await new Promise((checkResolve) => {
+        const rclone = spawn('rclone', lsArgs, {
+          stdio: 'pipe',
+          env: process.env
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        rclone.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        rclone.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        rclone.on('close', (code) => {
+          if (code === 0 && stdout.trim().length > 0) {
+            const lines = stdout.trim().split('\n').filter(line => line.trim().length > 0);
+            const hasFiles = lines.some(line => {
+              const trimmed = line.trim();
+              return trimmed.length > 0 && !trimmed.endsWith('/');
+            });
+            checkResolve(hasFiles);
+          } else if (stderr.includes('is a file not a directory')) {
+            checkResolve(false);
+          } else {
+            checkResolve(false);
+          }
+        });
+        
+        rclone.on('error', () => {
+          checkResolve(false);
+        });
+      });
+      
+      if (!hasNestedFiles) {
+        // This is not a folder with nested files - skip deletion
+        if (!dryRun) {
+          console.log(`  ${colors.yellow}Skipping ${folderPathClean} - no nested files found (not a folder)${colors.reset}`);
+        }
+        resolve(true);
+        return;
+      }
+      
+      // Step 1: Delete all files inside the folder using pattern
+      const remotePathPattern = `${remoteName}:${bucketName}/${folderPathWithSlash}*`;
+      
+      const deleteArgs = [...baseArgs, 'delete', remotePathPattern];
+      if (dryRun) {
+        deleteArgs.push('--dry-run');
+      }
+      
+      await new Promise((deleteResolve, deleteReject) => {
+        const rclone = spawn('rclone', deleteArgs, {
+          stdio: 'pipe',
+          env: process.env
+        });
+        
+        let stderr = '';
+        rclone.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        rclone.on('close', (code) => {
+          if (code === 0) {
+            deleteResolve();
+          } else if (stderr.includes('No files found') || stderr.includes('no matching objects')) {
+            // No files to delete - that's OK
+            deleteResolve();
+          } else if (stderr.includes('is a file not a directory')) {
+            // This path is a file, not a folder - skip it
+            deleteResolve();
+          } else {
+            deleteReject(new Error(`rclone delete failed with code ${code}: ${stderr.substring(0, 200)}`));
+          }
+        });
+        
+        rclone.on('error', deleteReject);
+      });
+      
+      // Step 2: Purge the folder itself to remove directory structure
+      const purgeArgs = [...baseArgs, 'purge', '-P', remotePath];
+      if (dryRun) {
+        purgeArgs.splice(purgeArgs.indexOf('purge') + 1, 0, '--dry-run');
+      }
+      
+      await new Promise((purgeResolve) => {
+        const rclone = spawn('rclone', purgeArgs, {
+          stdio: 'pipe',
+          env: process.env
+        });
+        
+        let stderr = '';
+        rclone.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        rclone.on('close', () => {
+          // Purge may fail if it's not a directory - that's OK, files are already deleted
+          purgeResolve();
+        });
+        
+        rclone.on('error', () => {
+          purgeResolve();
+        });
+      });
+      
+      // Step 2: Remove empty directory markers
+      if (!dryRun) {
+        const rmdirsArgs = [...baseArgs, 'rmdirs', '-P', remotePath];
+        await new Promise((rmdirsResolve) => {
+          const rclone = spawn('rclone', rmdirsArgs, {
+            stdio: 'pipe',
+            env: process.env
+          });
+          
+          rclone.on('close', () => {
+            rmdirsResolve();
+          });
+          
+          rclone.on('error', () => {
+            rmdirsResolve();
+          });
+        });
+      }
+      
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      
+      resolve(true);
+    } catch (error) {
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      reject(error);
+    }
+  });
 }
 
 async function deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun = false) {
@@ -613,36 +793,41 @@ async function deleteObjectsBatch(apiToken, accountId, bucketName, objectKeys, c
 }
 
 
-async function deleteFolder(env, folderName, dryRun = false, foldersOnly = false) {
+async function deleteFolder(env, folderName, dryRun = false, foldersOnly = false, quiet = false) {
   const startTime = Date.now();
   const parsed = parseFolderPath(folderName);
   const isWildcard = parsed.isWildcard;
 
-  let operationType;
-  if (foldersOnly) {
-    operationType = 'DELETING FOLDERS ONLY';
-  } else if (isWildcard) {
-    operationType = 'DELETING FILES (wildcard)';
-  } else {
-    operationType = 'DELETING FOLDER';
+  if (!quiet) {
+    let operationType;
+    if (foldersOnly) {
+      operationType = 'DELETING FOLDERS ONLY';
+    } else if (isWildcard) {
+      operationType = 'DELETING FILES (wildcard)';
+    } else {
+      operationType = 'DELETING FOLDER';
+    }
+    console.log(`${colors.cyan}=== ${operationType}: ${folderName} ===${colors.reset}`);
+    console.log(`Environment: ${colors.yellow}${env}${colors.reset}`);
+    console.log(`Mode: ${dryRun ? colors.yellow + 'DRY RUN' : colors.red + 'FORCE DELETE' + colors.reset}${colors.reset}`);
+    console.log('');
+
+    const bucketName = getBucketName(env);
+    const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = getCloudflareCredentials(env);
+
+    console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
+    console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
+    console.log(`Path: ${colors.cyan}${folderName}${colors.reset}`);
+    if (foldersOnly) {
+      console.log(`  ${colors.yellow}Folders-only mode: Will delete folders only, preserving files${colors.reset}`);
+    } else if (isWildcard) {
+      console.log(`  ${colors.yellow}Wildcard mode: Will delete files only, preserving folders${colors.reset}`);
+    }
+    console.log('');
   }
-  console.log(`${colors.cyan}=== ${operationType}: ${folderName} ===${colors.reset}`);
-  console.log(`Environment: ${colors.yellow}${env}${colors.reset}`);
-  console.log(`Mode: ${dryRun ? colors.yellow + 'DRY RUN' : colors.red + 'FORCE DELETE' + colors.reset}${colors.reset}`);
-  console.log('');
 
   const bucketName = getBucketName(env);
   const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = getCloudflareCredentials(env);
-
-  console.log(`Bucket: ${colors.cyan}${bucketName}${colors.reset}`);
-  console.log(`Account ID: ${colors.cyan}${accountId}${colors.reset}`);
-  console.log(`Path: ${colors.cyan}${folderName}${colors.reset}`);
-  if (foldersOnly) {
-    console.log(`  ${colors.yellow}Folders-only mode: Will delete folders only, preserving files${colors.reset}`);
-  } else if (isWildcard) {
-    console.log(`  ${colors.yellow}Wildcard mode: Will delete files only, preserving folders${colors.reset}`);
-  }
-  console.log('');
 
   // Check if rclone is available (required)
   const useRclone = checkRcloneAvailable();
@@ -659,7 +844,9 @@ async function deleteFolder(env, folderName, dryRun = false, foldersOnly = false
     rcloneMethod = 'recursive deletion';
   }
   
-  console.log(`${colors.cyan}Using rclone for ${rcloneMethod}...${colors.reset}\n`);
+  if (!quiet) {
+    console.log(`${colors.cyan}Using rclone for ${rcloneMethod}...${colors.reset}\n`);
+  }
   
   try {
     if (foldersOnly) {
@@ -670,18 +857,20 @@ async function deleteFolder(env, folderName, dryRun = false, foldersOnly = false
       await deleteFolderWithRclone(bucketName, folderName, accountId, r2AccessKeyId, r2SecretAccessKey, env, dryRun);
     }
     const duration = (Date.now() - startTime) / 1000;
-    console.log('');
-    console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
-    if (foldersOnly) {
-      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folders only (files preserved)${colors.reset}`);
-    } else if (isWildcard) {
-      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Files only (folders preserved)${colors.reset}`);
-    } else {
-      console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folder and all contents${colors.reset}`);
-    }
-    console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
-    if (dryRun) {
-      console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
+    if (!quiet) {
+      console.log('');
+      console.log(`${colors.cyan}=== Summary ===${colors.reset}`);
+      if (foldersOnly) {
+        console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folders only (files preserved)${colors.reset}`);
+      } else if (isWildcard) {
+        console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Files only (folders preserved)${colors.reset}`);
+      } else {
+        console.log(`${dryRun ? 'Would delete' : 'Deleted'}: ${colors.green}Folder and all contents${colors.reset}`);
+      }
+      console.log(`Duration: ${colors.cyan}${duration.toFixed(2)}s${colors.reset}`);
+      if (dryRun) {
+        console.log(`\n${colors.yellow}This was a dry run. Run without --dry-run to actually delete.${colors.reset}`);
+      }
     }
     return { deleted: 1, failed: 0, duration };
   } catch (error) {
@@ -690,13 +879,85 @@ async function deleteFolder(env, folderName, dryRun = false, foldersOnly = false
 }
 
 
+async function verifyFolderHasNestedFiles(bucketName, folderPath, accountId, r2AccessKeyId, r2SecretAccessKey) {
+  return new Promise((resolve) => {
+    let remoteInfo;
+    try {
+      remoteInfo = getRcloneRemote(bucketName, accountId, r2AccessKeyId, r2SecretAccessKey);
+    } catch (error) {
+      resolve(false);
+      return;
+    }
+    
+    const { remoteName, tempConfigPath, baseArgs } = remoteInfo;
+    const folderPathClean = folderPath.replace(/\/$/, '');
+    const folderPathWithSlash = `${folderPathClean}/`;
+    const remotePath = `${remoteName}:${bucketName}/${folderPathWithSlash}`;
+    
+    // Use rclone ls to check if there are files inside this folder
+    const lsArgs = [...baseArgs, 'ls', '--max-depth', '1', remotePath];
+    
+    const rclone = spawn('rclone', lsArgs, {
+      stdio: 'pipe',
+      env: process.env
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    rclone.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    rclone.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    rclone.on('close', (code) => {
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      
+      // If we get output, there are files inside - it's a real folder
+      // If no output or error about file not directory, it's not a folder
+      if (code === 0 && stdout.trim().length > 0) {
+        // Check if output contains actual file paths (not just directory markers)
+        const lines = stdout.trim().split('\n').filter(line => line.trim().length > 0);
+        // If there are lines that don't end with /, they are files
+        const hasFiles = lines.some(line => {
+          const trimmed = line.trim();
+          return trimmed.length > 0 && !trimmed.endsWith('/');
+        });
+        resolve(hasFiles);
+      } else if (stderr.includes('is a file not a directory')) {
+        resolve(false);
+      } else {
+        resolve(false);
+      }
+    });
+    
+    rclone.on('error', () => {
+      if (tempConfigPath && fs.existsSync(tempConfigPath)) {
+        try {
+          fs.unlinkSync(tempConfigPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      resolve(false);
+    });
+  });
+}
+
 async function discoverFolders(env, baseFolder) {
   const bucketName = getBucketName(env);
   const { apiToken, accountId, r2AccessKeyId, r2SecretAccessKey } = getCloudflareCredentials(env);
   
-  // Normalize baseFolder - ensure it doesn't have trailing slash for rclone
-  const normalizedBaseFolder = baseFolder.endsWith('/') ? baseFolder.slice(0, -1) : baseFolder;
-  const prefix = `${normalizedBaseFolder}/`;
+  const prefix = baseFolder.endsWith('/') ? baseFolder : `${baseFolder}/`;
   console.log(`${colors.cyan}Discovering folders in ${prefix} using rclone...${colors.reset}`);
   
   try {
@@ -709,14 +970,13 @@ async function discoverFolders(env, baseFolder) {
     }
     
     const { remoteName, tempConfigPath, baseArgs } = remoteInfo;
-    const remotePath = `${remoteName}:${bucketName}/${normalizedBaseFolder}`;
+    const remotePath = `${remoteName}:${bucketName}/${baseFolder}`;
     
-    // Use rclone ls to list all objects, then parse to find folders
-    // This works better with R2 than lsd/lsf commands
-    const lsArgs = [...baseArgs, 'ls', '-R', remotePath];
+    // Use rclone lsf --dirs-only to list only directories
+    const lsfArgs = [...baseArgs, 'lsf', '--dirs-only', '-R', remotePath];
     
     return new Promise((resolve, reject) => {
-      const rclone = spawn('rclone', lsArgs, {
+      const rclone = spawn('rclone', lsfArgs, {
         stdio: 'pipe',
         env: process.env
       });
@@ -732,7 +992,7 @@ async function discoverFolders(env, baseFolder) {
         stderr += data.toString();
       });
       
-      rclone.on('close', (code) => {
+      rclone.on('close', async (code) => {
         if (tempConfigPath && fs.existsSync(tempConfigPath)) {
           try {
             fs.unlinkSync(tempConfigPath);
@@ -742,72 +1002,76 @@ async function discoverFolders(env, baseFolder) {
         }
         
         if (code !== 0) {
-          // If no files found, that's OK - might mean no folders
-          if (stderr.includes('directory not found') || stderr.includes('Couldn\'t find directory')) {
+          // If no directories found, rclone may return non-zero - that's OK
+          if (stderr.includes('no directories found') || stderr.includes('directory not found')) {
             console.log(`  ${colors.yellow}No folders found${colors.reset}`);
             resolve([]);
             return;
           }
-          reject(new Error(`rclone ls failed: ${stderr.substring(0, 200)}`));
+          reject(new Error(`rclone lsf failed: ${stderr.substring(0, 200)}`));
           return;
         }
         
-        // Parse output - rclone ls returns file paths
-        // Find folders by detecting nested paths
-        const prefix = `${normalizedBaseFolder}/`;
-        const folderSet = new Set();
-        
-        stdout.split('\n').forEach(line => {
-          const trimmed = line.trim();
-          if (!trimmed) return;
-          
-          // rclone ls format: "size path" or just "path"
-          // Extract path (last part after spaces)
-          const parts = trimmed.split(/\s+/);
-          const fullPath = parts[parts.length - 1];
-          
-          // Check if path is under our base folder
-          if (!fullPath.startsWith(prefix)) return;
-          
-          const relativePath = fullPath.replace(prefix, '');
-          if (!relativePath) return;
-          
-          // Only identify folders if there's a nested path (file inside a folder)
-          if (relativePath.includes('/')) {
-            const pathParts = relativePath.split('/');
-            // Build folder path - everything before the last segment
-            let currentPath = prefix;
-            for (let i = 0; i < pathParts.length - 1; i++) {
-              const segment = pathParts[i];
-              // Skip segments that look like files (have extensions)
-              if (segment.includes('.') && /\.(webp|png|json|jpg|jpeg|gif|pdf|txt|zip)$/i.test(segment)) {
-                break; // This is a file, not a folder
-              }
-              currentPath += segment;
-              folderSet.add(currentPath.slice(0, -1)); // Remove trailing /
-              currentPath += '/';
+        // Parse output - each line is a directory path
+        // Filter out paths that look like files (have extensions in the last segment)
+        const candidateFolders = stdout
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map(line => {
+            // rclone lsf returns paths relative to the remote path
+            // Ensure proper path construction with slashes
+            let fullPath;
+            if (line.startsWith(baseFolder)) {
+              fullPath = line;
+            } else {
+              // Add slash between baseFolder and line if needed
+              const baseFolderNormalized = baseFolder.endsWith('/') ? baseFolder.slice(0, -1) : baseFolder;
+              const lineNormalized = line.startsWith('/') ? line.slice(1) : line;
+              fullPath = `${baseFolderNormalized}/${lineNormalized}`;
             }
-          }
-        });
-        
-        const folders = Array.from(folderSet)
-          .filter(folder => folder.startsWith(normalizedBaseFolder))
+            return fullPath;
+          })
+          .filter(folder => {
+            // Remove trailing slash for checking
+            const folderWithoutSlash = folder.replace(/\/$/, '');
+            // Get the last segment (the folder name itself)
+            const lastSegment = folderWithoutSlash.split('/').pop() || '';
+            // Skip if last segment has a file extension - these are files, not folders
+            // Real folders shouldn't have extensions like .webp, .png, etc.
+            if (lastSegment.includes('.') && /\.(webp|png|json|jpg|jpeg|gif|pdf|txt|zip)$/i.test(lastSegment)) {
+              return false; // This looks like a file, not a folder
+            }
+            return true;
+          })
+          .filter(folder => folder.startsWith(baseFolder) || folder.startsWith(baseFolder.replace(/\/$/, '')))
           .sort();
         
-        console.log(`  ${colors.green}Found ${folders.length} folder(s)${colors.reset}`);
-        if (folders.length > 0 && folders.length <= 20) {
-          folders.forEach((folder, index) => {
+        // Verify each candidate folder actually contains nested files
+        console.log(`  ${colors.cyan}Verifying ${candidateFolders.length} candidate folder(s) contain files...${colors.reset}`);
+        const verifiedFolders = [];
+        
+        for (const folder of candidateFolders) {
+          const hasFiles = await verifyFolderHasNestedFiles(bucketName, folder, accountId, r2AccessKeyId, r2SecretAccessKey);
+          if (hasFiles) {
+            verifiedFolders.push(folder);
+          }
+        }
+        
+        console.log(`  ${colors.green}Found ${verifiedFolders.length} verified folder(s) with nested files${colors.reset}`);
+        if (verifiedFolders.length > 0 && verifiedFolders.length <= 20) {
+          verifiedFolders.forEach((folder, index) => {
             console.log(`  ${index + 1}. ${folder}`);
           });
-        } else if (folders.length > 20) {
-          folders.slice(0, 20).forEach((folder, index) => {
+        } else if (verifiedFolders.length > 20) {
+          verifiedFolders.slice(0, 20).forEach((folder, index) => {
             console.log(`  ${index + 1}. ${folder}`);
           });
-          console.log(`  ... and ${folders.length - 20} more`);
+          console.log(`  ... and ${verifiedFolders.length - 20} more`);
         }
         console.log('');
         
-        resolve(folders);
+        resolve(verifiedFolders);
       });
       
       rclone.on('error', (error) => {
@@ -941,16 +1205,19 @@ if (listMode) {
       console.error(`\n${colors.red}Error discovering folders: ${error.message}${colors.reset}`);
       process.exit(1);
     });
-} else if (folderArgs.length > 0 || process.env.DEFAULT_FOLDER || (autoDiscover && foldersOnly)) {
+} else if (folderArgs.length > 0 || process.env.DEFAULT_FOLDER) {
   // If no folders specified but DEFAULT_FOLDER env var is set, use it
   if (folderArgs.length === 0 && process.env.DEFAULT_FOLDER) {
     folderArgs.push(...process.env.DEFAULT_FOLDER.split(',').map(f => f.trim()).filter(f => f));
   }
   
-  // Process folders function
+  // Check for ** pattern - means discover all folders
+  const hasWildcardAll = folderArgs.some(f => f === '**' || f.includes('**'));
+  
+  // Process folders function - sequential processing
   function processFolders(foldersToProcess) {
     if (foldersToProcess.length > 0) {
-      // Process multiple folders sequentially
+      // Process folders sequentially
       (async () => {
         let totalDeleted = 0;
         let totalFailed = 0;
@@ -996,8 +1263,37 @@ if (listMode) {
     }
   }
   
-  // Auto-discover folders if enabled
-  if (autoDiscover && foldersOnly) {
+  // Handle ** pattern or auto-discover
+  if (hasWildcardAll && foldersOnly) {
+    // Extract base folder from pattern
+    // Handle: "**", "preset/**", or any folder with **
+    let baseFolder = 'preset'; // default
+    const wildcardArg = folderArgs.find(f => f === '**' || f.includes('**'));
+    if (wildcardArg) {
+      if (wildcardArg === '**') {
+        baseFolder = 'preset'; // default to preset
+      } else {
+        // Extract base folder from pattern like "preset/**"
+        baseFolder = wildcardArg.replace(/\*\*/g, '').replace(/\/$/, '').trim();
+        if (!baseFolder) {
+          baseFolder = 'preset';
+        }
+      }
+    }
+    console.log(`${colors.cyan}=== Discovering all folders in ${baseFolder} ===${colors.reset}\n`);
+    discoverFolders(env, baseFolder)
+      .then(discoveredFolders => {
+        if (discoveredFolders.length === 0) {
+          console.log(`${colors.yellow}No folders found in ${baseFolder}${colors.reset}`);
+          process.exit(0);
+        }
+        processFolders(discoveredFolders);
+      })
+      .catch(error => {
+        console.error(`\n${colors.red}Error discovering folders: ${error.message}${colors.reset}`);
+        process.exit(1);
+      });
+  } else if (autoDiscover && foldersOnly) {
     const baseFolder = folderArgs.length > 0 ? folderArgs[0] : 'preset';
     console.log(`${colors.cyan}=== Auto-discovering folders in ${baseFolder} ===${colors.reset}\n`);
     discoverFolders(env, baseFolder)
@@ -1017,16 +1313,12 @@ if (listMode) {
   }
 } else {
   console.error(`${colors.red}Error: --folder argument is required (unless using --auto-discover with --folders-only or --list-folders)${colors.reset}`);
-  console.error(`Usage: node cleanup-old-thumbnails.js --folder=<folder-name> [--folder=<folder2>] [--dry-run] [--folders-only] [--auto-discover] [--list-folders]`);
+  console.error(`Usage: node cleanup-old-thumbnails.js --folder=<folder-name> [--dry-run] [--folders-only]`);
   console.error(`Examples:`);
-  console.error(`  # List all folders in preset (no deletion):`);
-  console.error(`  node cleanup-old-thumbnails.js --list-folders`);
-  console.error(`  # List folders in specific folder:`);
-  console.error(`  node cleanup-old-thumbnails.js --list-folders --folder=preset`);
-  console.error(`  # Auto-discover and delete all folders:`);
-  console.error(`  node cleanup-old-thumbnails.js --folders-only --auto-discover`);
-  console.error(`  # Delete folders in specific folder:`);
-  console.error(`  node cleanup-old-thumbnails.js --folder=preset --folders-only --auto-discover`);
+  console.error(`  # Delete all folders (using ** pattern - must quote in zsh):`);
+  console.error(`  node backend-cloudflare-workers/cleanup-old-thumbnails.js --folder="**" --folders-only`);
+  console.error(`  # Delete all folders in specific base folder:`);
+  console.error(`  node backend-cloudflare-workers/cleanup-old-thumbnails.js --folder="preset/**" --folders-only`);
   console.error(`  # Delete folder and all contents:`);
   console.error(`  node cleanup-old-thumbnails.js --folder=preset_thumb/preset`);
   console.error(`  # Delete files only (preserve folders):`);

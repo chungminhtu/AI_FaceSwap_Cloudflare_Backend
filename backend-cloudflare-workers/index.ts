@@ -5365,27 +5365,21 @@ export default {
 
         // Read prompt_json from R2 metadata or cache
         let storedPromptPayload: any = null;
-        if (r2Key) {
-          const promptCacheKV = env.PROMPT_CACHE_KV;
-          const cacheKey = `prompt:${r2Key}`;
-
+        const promptCacheKV = getPromptCacheKV(env);
+        const presetImageId = hasPresetId ? body.preset_image_id : (presetResult ? (presetResult as any).id : null);
+        
+        if (presetImageId && r2Key) {
+          const cacheKey = `prompt:${presetImageId}`;
+          
           if (promptCacheKV) {
             try {
-              const cachedPrompt = await getCachedAsync(cacheKey, async () =>
-                await promptCacheKV.get(cacheKey)
-              );
-              if (cachedPrompt) {
-                try {
-                  storedPromptPayload = JSON.parse(cachedPrompt);
-                } catch {
-                  // Invalid JSON in cache, continue to R2
-                }
-              }
-            } catch {
-              // Cache read failed, continue to R2
+              const cached = await promptCacheKV.get(cacheKey, 'json');
+              if (cached) storedPromptPayload = cached;
+            } catch (error) {
+              // KV cache read failed, fallback to R2
             }
           }
-
+          
           if (!storedPromptPayload) {
             try {
               const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
@@ -5398,8 +5392,37 @@ export default {
                   promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
                 }
               }
-            } catch {
-              // R2 metadata read failed
+            } catch (error) {
+              // R2 metadata read failed, continue without cache
+            }
+          }
+        } else if (r2Key) {
+          // Fallback for preset_image_url case (no preset ID available)
+          const cacheKey = `prompt:${r2Key}`;
+          
+          if (promptCacheKV) {
+            try {
+              const cached = await promptCacheKV.get(cacheKey, 'json');
+              if (cached) storedPromptPayload = cached;
+            } catch (error) {
+              // KV cache read failed, fallback to R2
+            }
+          }
+          
+          if (!storedPromptPayload) {
+            try {
+              const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
+                await R2_BUCKET.head(r2Key)
+              );
+              const promptJson = r2Object?.customMetadata?.prompt_json;
+              if (promptJson?.trim()) {
+                storedPromptPayload = JSON.parse(promptJson);
+                if (promptCacheKV) {
+                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+                }
+              }
+            } catch (error) {
+              // R2 metadata read failed, continue without cache
             }
           }
         }

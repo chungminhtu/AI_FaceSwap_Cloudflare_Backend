@@ -1372,12 +1372,11 @@ export const checkSafeSearch = async (
       };
     }
 
-    // Get strictness from env (default: 'strict' - blocks POSSIBLE, LIKELY, and VERY_LIKELY)
-    const strictness = (env.SAFETY_STRICTNESS === 'lenient' ? 'lenient' : 'strict') as 'strict' | 'lenient';
-    const isUnsafeResult = isUnsafe(annotation, strictness);
+    // Blocks POSSIBLE, LIKELY, and VERY_LIKELY
+    const isUnsafeResult = isUnsafe(annotation);
 
-    // Find worst violation (highest severity) - only return violations that match strictness
-    const worstViolation = getWorstViolation(annotation, strictness);
+    // Find worst violation (highest severity)
+    const worstViolation = getWorstViolation(annotation);
 
     // Only set statusCode if actually unsafe (worstViolation will be null if no blocking violations)
     let statusCode: number | undefined = undefined;
