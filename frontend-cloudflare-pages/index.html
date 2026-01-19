@@ -414,15 +414,15 @@
         .lightbox-content { 
             position: relative; 
             max-width: 90vw; 
-            max-height: 80vh; 
+            max-height: 90vh; 
             height: auto;
             z-index: 10001; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            justify-content: center; 
+            justify-content: flex-start; 
             padding: 20px;
-            overflow: hidden;
+            overflow: visible;
         }
         .lightbox-single { 
             display: flex; 
@@ -430,14 +430,33 @@
             align-items: center; 
             width: 100%; 
             max-height: 100%;
-            overflow: hidden;
+            overflow: visible;
+            padding: 20px;
         }
-        .lightbox-content img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; }
-        .lightbox-info { margin-top: 16px; color: #fff; font-size: 14px; }
+        .lightbox-content img { max-width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; }
+        .lightbox-info { 
+            margin-top: 16px; 
+            margin-bottom: 16px;
+            color: #fff; 
+            font-size: 14px; 
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            max-width: 90%;
+            width: 90%;
+            word-wrap: break-word;
+            z-index: 10;
+            position: relative;
+        }
         .lightbox-actions {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
-            z-index: 10002;
+            position: relative;
+            display: flex; 
+            gap: 12px; 
+            justify-content: center; 
+            flex-wrap: wrap;
+            margin-top: 20px;
+            width: 100%;
+            padding: 0 20px;
         }
         .lightbox-action-btn {
             padding: 10px 20px; background: rgba(139, 92, 246, 0.9); border: none; border-radius: 8px;
@@ -853,20 +872,23 @@
                         <input type="file" class="file-input" id="preset-input" accept="image/*" multiple>
                     </div>
                     <div style="padding: 8px 12px; border-bottom: 1px solid var(--border);">
-                        <input type="text" id="preset-search-input" placeholder="🔍 Tìm kiếm preset..." style="width: 100%; padding: 6px 10px; margin-bottom: 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);" autocomplete="off">
-                        <div style="margin-bottom: 8px;">
-                            <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">Category:</label>
-                            <select id="preset-category-select" style="width: 100%; padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;" onchange="handlePresetCategoryChange(this.value)">
-                                <option value="all">All Categories</option>
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <input type="text" id="preset-search-input" placeholder="🔍 Tìm kiếm..." style="flex: 1; min-width: 120px; padding: 6px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary);" autocomplete="off">
+                            <select id="preset-parent-category-select" style="flex: 0 0 auto; min-width: 80px; padding: 6px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;" onchange="handlePresetParentCategoryChange(this.value)">
+                                <option value="All">All</option>
+                                <option value="fs">fs</option>
+                                <option value="ft">ft</option>
+                                <option value="Other">Other</option>
                             </select>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; flex: 1; min-width: 0;">
-                                <input type="checkbox" id="preset-filter-mode" style="cursor: pointer;">
-                                <span style="color: var(--text-secondary);">🎨 Art Style Filter Mode</span>
+                            <select id="preset-category-select" style="flex: 0 0 auto; min-width: 100px; padding: 6px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer;" onchange="handlePresetCategoryChange(this.value)">
+                                <option value="Other">Other</option>
+                            </select>
+                            <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;">
+                                <input type="checkbox" id="preset-filter-mode" style="cursor: pointer; margin: 0;">
+                                <span style="color: var(--text-secondary);">🎨 Art</span>
                             </label>
-                            <button onclick="openPromptCustomizer()" style="padding: 4px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
-                                ⚙️ Customize Prompts
+                            <button onclick="openPromptCustomizer()" style="flex: 0 0 auto; padding: 6px 8px; font-size: 11px; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; cursor: pointer; font-weight: 500; white-space: nowrap;">
+                                ⚙️
                             </button>
                         </div>
                     </div>
@@ -1009,6 +1031,27 @@
                     </div>
                 </div>
 
+                <div class="try-images-panel" style="margin-top: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0; font-size: 16px; color: var(--text-primary);">🔄 Try Images Batch Processor</h3>
+                        <button class="action-btn" id="process-try-images-btn" onclick="processTryImagesArray()" style="background: rgba(139, 92, 246, 0.9); padding: 8px 16px; font-size: 13px;">▶ Process Array</button>
+                    </div>
+                    <textarea id="try-images-array-input" placeholder="Paste array of image paths here, e.g.:&#10;['/try/ai_avatar/try_1.webp', '/try/ai_avatar/try_2.webp']&#10;or just paste paths separated by newlines" style="width: 100%; min-height: 100px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-family: monospace; font-size: 12px; background: var(--bg-primary); color: var(--text-primary); resize: vertical;"></textarea>
+                    <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary);">Filter by category:</label>
+                        <select id="try-results-filter" style="height: 32px; padding: 0 10px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 12px; border-radius: 8px; cursor: pointer;">
+                            <option value="all">All Categories</option>
+                            <option value="ai_avatar">AI Avatar</option>
+                            <option value="ai_restore">AI Restore</option>
+                            <option value="ai_enhance">AI Enhance</option>
+                            <option value="ai_beauty">AI Beauty</option>
+                            <option value="ai_upscale_4k">AI Upscale 4K</option>
+                        </select>
+                        <span id="try-results-count" style="font-size: 12px; color: var(--text-muted); margin-left: auto;">0 results</span>
+                    </div>
+                    <div id="try-results-gallery" style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; max-height: 400px; overflow-y: auto; padding: 8px;"></div>
+                </div>
+
                 <div class="results-panel">
                     <div class="results-header">
                         <span>Lịch Sử (History)</span>
@@ -1052,6 +1095,10 @@
                                         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
                                             <input type="radio" name="thumbnail-format" id="thumbnail-format-webp" value="webp" checked style="cursor: pointer; width: 16px; height: 16px;">
                                             <span style="color: var(--text-primary);">🖼️ WebP Thumbnail</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
+                                            <input type="radio" name="thumbnail-format" id="thumbnail-format-json" value="json" style="cursor: pointer; width: 16px; height: 16px;">
+                                            <span style="color: var(--text-primary);">🎬 Lottie JSON</span>
                                         </label>
                                     </div>
                                 </div>
@@ -1100,20 +1147,20 @@
             <div class="lightbox-single" id="lightbox-single">
                 <img id="lightbox-image" src="" alt="">
                 <div class="lightbox-info"><span id="lightbox-counter"></span></div>
-            </div>
-            <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
-                <button class="lightbox-action-btn" onclick="selectAsPreset()">
-                    <span>📸</span>
-                    <span>Chọn làm Mẫu</span>
-                </button>
-                <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
-                    <span>👤</span>
-                    <span>Chọn làm Selfie</span>
-                </button>
-                <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
+                <div class="lightbox-actions" id="lightbox-actions" style="display: none;">
+                    <button class="lightbox-action-btn" onclick="selectAsPreset()">
+                        <span>📸</span>
+                        <span>Chọn làm Mẫu</span>
+                    </button>
+                    <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
+                        <span>👤</span>
+                        <span>Chọn làm Selfie</span>
+                    </button>
+                    <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
                     <span>➕</span>
                     <span>Thêm vào So Sánh</span>
                 </button>
+            </div>
             </div>
             <div class="lightbox-comparison" id="lightbox-comparison" style="display: none;">
                 <div class="comparison-header">
@@ -1233,6 +1280,7 @@
     <button class="log-toggle-float" id="log-toggle-float" onclick="toggleLogPanel()" title="Hiện Nhật Ký">📋</button>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
         let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
@@ -1268,20 +1316,35 @@
             const defaultTextarea = document.getElementById('prompt-default');
             const filterTextarea = document.getElementById('prompt-filter');
             
-            if (!modal || !defaultTextarea || !filterTextarea) return;
+            if (!modal) {
+                return;
+            }
             
-            // Load current prompts
-            const { defaultPrompt, filterPrompt } = loadCustomPrompts();
-            defaultTextarea.value = defaultPrompt;
-            filterTextarea.value = filterPrompt;
+            if (!defaultTextarea) {
+            }
             
+            if (!filterTextarea) {
+            }
+            
+            // Show modal even if textareas are missing (they might be added later)
             modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+            
+            // Load current prompts if textareas exist
+            if (defaultTextarea && filterTextarea) {
+                const { defaultPrompt, filterPrompt } = loadCustomPrompts();
+                defaultTextarea.value = defaultPrompt;
+                filterTextarea.value = filterPrompt;
+            }
         }
         
         // Close prompt customizer modal
         function closePromptCustomizer() {
             const modal = document.getElementById('prompt-customizer-modal');
-            if (modal) modal.style.display = 'none';
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
         }
         
         // Reset prompt to original
@@ -1316,10 +1379,23 @@
             showStatusMessage('Custom prompts saved successfully!', 'success');
         }
         
+        // Make functions globally accessible
         window.openPromptCustomizer = openPromptCustomizer;
         window.closePromptCustomizer = closePromptCustomizer;
         window.resetPrompt = resetPrompt;
         window.saveCustomPrompts = saveCustomPrompts;
+        
+        // Also attach to button directly as fallback
+        document.addEventListener('DOMContentLoaded', () => {
+            const promptCustomizerBtn = document.querySelector('button[onclick="openPromptCustomizer()"]');
+            if (promptCustomizerBtn) {
+                promptCustomizerBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openPromptCustomizer();
+                });
+            }
+        });
         
         // Helper function to build headers object with API key for authenticated requests
         // Returns a new headers object (does not modify anything)
@@ -1350,7 +1426,7 @@
                 key: 'preset', responseKey: 'thumbnails', endpoints: { list: '/thumbnails', delete: '/presets' },
                 logName: 'Thư Viện Mẫu', labels: { selectSuccess: 'Đã chọn mẫu thành công', deleteSuccess: 'Đã xóa mẫu thành công', confirmDelete: 'Bạn có chắc chắn muốn xóa mẫu này không?' },
                 elements: { input: presetInput, preview: presetPreview, gallery: presetGallery, pagination: $('preset-pagination'), prevBtn: $('preset-prev'), nextBtn: $('preset-next') },
-                state: { items: [], selected: null, page: 1, searchQuery: '', filteredItems: [], selectedCategory: 'all', categories: [] }
+                state: { items: [], selected: null, page: 1, searchQuery: '', filteredItems: [], selectedCategory: 'All', categories: [], selectedParentCategory: 'All', parentCategories: [] }
             },
             selfie: {
                 key: 'selfie', responseKey: 'selfies', endpoints: { list: '/selfies', delete: '/selfies' },
@@ -1400,7 +1476,6 @@
                     updateImageOperationButtons();
                     return profile;
                 } catch (error) {
-                    console.error('Profile init failed:', error);
                     statusDiv.textContent = '✗ Lỗi';
                     statusDiv.style.color = 'var(--danger)';
                 }
@@ -1738,7 +1813,6 @@
                             copyBtn.style.background = 'var(--accent)';
                         }, 2000);
                     }).catch(err => {
-                        console.error('Failed to copy:', err);
                         copyBtn.textContent = 'Error';
                         setTimeout(() => {
                             copyBtn.textContent = 'Copy';
@@ -1773,6 +1847,23 @@
 
         function escapeHtml(str) {
             return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Fetch prompt_json for a preset from backend
+        async function fetchPresetPromptJson(presetId) {
+            if (!presetId) return null;
+            try {
+                const response = await fetch(`${WORKER_URL}/presets/${encodeURIComponent(presetId)}`, {
+                    method: 'GET',
+                    headers: buildHeaders()
+                });
+                if (!response.ok) return null;
+                const data = await response.json();
+                return data?.data?.prompt_json || null;
+            } catch (error) {
+                console.error('[fetchPresetPromptJson] Error:', error);
+                return null;
+            }
         }
 
         // Gallery Functions
@@ -1821,41 +1912,35 @@
                 const status = (response.ok && data !== null && typeof data === 'object') ? 'success' : 'error';
                 logApiCall({ label: `Tải ${config.logName}`, method: 'GET', url: `${config.endpoints.list}${params.toString() ? '?' + params.toString() : ''}`, fullUrl: url, status, duration, payload: data });
                 
-                // For presets, map thumbnails response to preset format - include both WebP and Lottie
+                // For presets, map thumbnails response to preset format - prefer Lottie, fallback to WebP
                 if (type === 'preset') {
                     const presetItems = [];
                     items.forEach((item) => {
                         const presetId = item.preset_id;
-                        // Add WebP if available
-                        if (item.thumbnail_url_4x && !item.thumbnail_url_4x.toLowerCase().endsWith('.json')) {
-                            presetItems.push({
-                                id: `${presetId}_webp`,
-                                image_url: item.thumbnail_url_4x,
-                                preset_id: presetId,
-                                thumbnail_url_4x: item.thumbnail_url_4x,
-                                format: 'webp'
-                            });
-                        }
-                        // Add Lottie if available
+                        // Prefer Lottie if available, otherwise use WebP
+                        let thumbnailUrl = null;
+                        let format = null;
+                        
                         if (item.thumbnail_url_4x_lottie) {
-                            presetItems.push({
-                                id: `${presetId}_lottie`,
-                                image_url: item.thumbnail_url_4x_lottie,
-                                preset_id: presetId,
-                                thumbnail_url_4x: item.thumbnail_url_4x_lottie,
-                                thumbnail_url_4x_lottie: item.thumbnail_url_4x_lottie,
-                                format: 'lottie'
-                            });
+                            thumbnailUrl = item.thumbnail_url_4x_lottie;
+                            format = 'lottie';
+                        } else if (item.thumbnail_url_4x_lottie_avif) {
+                            thumbnailUrl = item.thumbnail_url_4x_lottie_avif;
+                            format = 'lottie_avif';
+                        } else if (item.thumbnail_url_4x && !item.thumbnail_url_4x.toLowerCase().endsWith('.json')) {
+                            thumbnailUrl = item.thumbnail_url_4x;
+                            format = 'webp';
                         }
-                        // Add Lottie AVIF if available
-                        if (item.thumbnail_url_4x_lottie_avif) {
+                        
+                        if (thumbnailUrl) {
                             presetItems.push({
-                                id: `${presetId}_lottie_avif`,
-                                image_url: item.thumbnail_url_4x_lottie_avif,
+                                id: presetId,
+                                image_url: thumbnailUrl,
                                 preset_id: presetId,
-                                thumbnail_url_4x: item.thumbnail_url_4x_lottie_avif,
+                                thumbnail_url_4x: thumbnailUrl,
+                                thumbnail_url_4x_lottie: item.thumbnail_url_4x_lottie,
                                 thumbnail_url_4x_lottie_avif: item.thumbnail_url_4x_lottie_avif,
-                                format: 'lottie_avif'
+                                format: format
                             });
                         }
                     });
@@ -1879,12 +1964,51 @@
                 // Extract categories for presets
                 if (type === 'preset') {
                     const categories = new Set();
+                    const parentCategories = new Set();
                     config.state.items.forEach(item => {
                         const category = extractCategoryFromPresetId(item.preset_id || item.id || '');
+                        const parentCategory = extractParentCategoryFromPresetId(item.preset_id || item.id || '');
                         if (category) categories.add(category);
+                        if (parentCategory) parentCategories.add(parentCategory);
                     });
                     config.state.categories = Array.from(categories).sort();
+                    config.state.parentCategories = Array.from(parentCategories).sort();
+                    
+                    // Load saved parent category selection from localStorage
+                    const savedParentCategory = localStorage.getItem('preset:selectedParentCategory');
+                    if (savedParentCategory && (config.state.parentCategories.includes(savedParentCategory) || savedParentCategory === 'All' || savedParentCategory === 'Other')) {
+                        config.state.selectedParentCategory = savedParentCategory;
+                    } else {
+                        config.state.selectedParentCategory = 'All';
+                        localStorage.setItem('preset:selectedParentCategory', 'All');
+                    }
+                    
+                    // Load saved category selection from localStorage
+                    const savedCategory = localStorage.getItem('preset:selectedCategory');
+                    if (savedCategory && (config.state.categories.includes(savedCategory) || savedCategory === 'Other' || savedCategory === 'All')) {
+                        config.state.selectedCategory = savedCategory;
+                    } else if (!savedCategory) {
+                        // Default to 'All' if no saved category exists
+                        config.state.selectedCategory = 'All';
+                        localStorage.setItem('preset:selectedCategory', 'All');
+                    } else {
+                        // Saved category doesn't exist in current categories, use 'All'
+                        config.state.selectedCategory = 'All';
+                        localStorage.setItem('preset:selectedCategory', 'All');
+                    }
+                    
+                    // Update parent category dropdown
+                    const parentSelect = $('preset-parent-category-select');
+                    if (parentSelect) {
+                        parentSelect.value = config.state.selectedParentCategory;
+                    }
+                    
                     updatePresetCategoryDropdown();
+                    
+                    // Apply saved filters after dropdowns are updated
+                    if (config.state.selectedCategory || config.state.selectedParentCategory !== 'All') {
+                        renderGallery('preset');
+                    }
                 }
 
                 // Update preset counter in header
@@ -1920,6 +2044,17 @@
             }
         }
 
+        function extractParentCategoryFromPresetId(presetId) {
+            if (!presetId) return 'Other';
+            const parts = presetId.split('_');
+            if (parts.length < 1) return 'Other';
+            const firstPart = parts[0].toLowerCase();
+            if (firstPart === 'fs' || firstPart === 'ft') {
+                return firstPart;
+            }
+            return 'Other';
+        }
+
         function extractCategoryFromPresetId(presetId) {
             if (!presetId) return 'Other';
             const parts = presetId.split('_');
@@ -1937,26 +2072,94 @@
         function updatePresetCategoryDropdown() {
             const select = $('preset-category-select');
             if (!select) return;
-            const categories = galleries.preset.state.categories || [];
-            const currentValue = select.value;
-            select.innerHTML = '<option value="all">All Categories</option>';
+            const allCategories = galleries.preset.state.categories || [];
+            const selectedParentCategory = galleries.preset.state.selectedParentCategory || 'All';
+            
+            // Filter categories by selected parent category
+            let categories = [];
+            if (selectedParentCategory === 'All') {
+                categories = allCategories;
+            } else {
+                // Only show categories that belong to items with the selected parent category
+                const filteredItems = galleries.preset.state.items.filter(item => {
+                    const parentCategory = extractParentCategoryFromPresetId(item.preset_id || item.id || '');
+                    return parentCategory === selectedParentCategory;
+                });
+                const categorySet = new Set();
+                filteredItems.forEach(item => {
+                    const category = extractCategoryFromPresetId(item.preset_id || item.id || '');
+                    if (category) categorySet.add(category);
+                });
+                categories = Array.from(categorySet).sort();
+            }
+            
+            const savedCategory = localStorage.getItem('preset:selectedCategory') || 'All';
+            const currentStateCategory = galleries.preset.state.selectedCategory;
+            const categoryToUse = currentStateCategory || savedCategory;
+            
+            select.innerHTML = '';
+            const allOption = document.createElement('option');
+            allOption.value = 'All';
+            allOption.textContent = 'All';
+            select.appendChild(allOption);
+            
             categories.forEach(cat => {
                 const option = document.createElement('option');
                 option.value = cat;
                 option.textContent = cat;
                 select.appendChild(option);
             });
-            if (categories.length > 0) {
-                const otherOption = document.createElement('option');
-                otherOption.value = 'Other';
-                otherOption.textContent = 'Other';
-                select.appendChild(otherOption);
+            const otherOption = document.createElement('option');
+            otherOption.value = 'Other';
+            otherOption.textContent = 'Other';
+            select.appendChild(otherOption);
+            
+            // Set the value and update state
+            select.value = categoryToUse;
+            galleries.preset.state.selectedCategory = categoryToUse;
+            
+            // Save to localStorage if different
+            if (localStorage.getItem('preset:selectedCategory') !== categoryToUse) {
+                localStorage.setItem('preset:selectedCategory', categoryToUse);
             }
-            if (currentValue) select.value = currentValue;
+        }
+
+        function handlePresetParentCategoryChange(parentCategory) {
+            galleries.preset.state.selectedParentCategory = parentCategory;
+            localStorage.setItem('preset:selectedParentCategory', parentCategory);
+            galleries.preset.state.page = 1;
+            
+            // Determine which category to select
+            let categoryToSelect = 'All';
+            if (parentCategory !== 'All') {
+                // Get available categories for this parent category
+                const filteredItems = galleries.preset.state.items.filter(item => {
+                    const parentCategoryFromItem = extractParentCategoryFromPresetId(item.preset_id || item.id || '');
+                    return parentCategoryFromItem === parentCategory;
+                });
+                const categorySet = new Set();
+                filteredItems.forEach(item => {
+                    const category = extractCategoryFromPresetId(item.preset_id || item.id || '');
+                    if (category) categorySet.add(category);
+                });
+                const categories = Array.from(categorySet).sort();
+                // Auto-select first available category
+                categoryToSelect = categories.length > 0 ? categories[0] : 'All';
+            }
+            
+            // Set category in state before updating dropdown
+            galleries.preset.state.selectedCategory = categoryToSelect;
+            localStorage.setItem('preset:selectedCategory', categoryToSelect);
+            
+            // Update dropdown (will use the category we just set)
+            updatePresetCategoryDropdown();
+            
+            renderGallery('preset');
         }
 
         function handlePresetCategoryChange(category) {
             galleries.preset.state.selectedCategory = category;
+            localStorage.setItem('preset:selectedCategory', category);
             galleries.preset.state.page = 1;
             renderGallery('preset');
         }
@@ -1967,54 +2170,60 @@
             const { gallery, pagination, prevBtn, nextBtn } = config.elements;
             if (!gallery) return;
 
-            // Apply category filter for presets
-            if (type === 'preset' && config.state.selectedCategory && config.state.selectedCategory !== 'all') {
-                items = items.filter(item => {
-                    const category = extractCategoryFromPresetId(item.preset_id || item.id || '');
-                    return category === config.state.selectedCategory;
-                });
-            }
-
-            // Apply search filter for presets
+            // Apply search filter FIRST on full list (independent of category filters)
+            // Search matches anywhere in the text (substring matching, not just beginning or exact)
             if (type === 'preset' && config.state.searchQuery) {
-                const query = config.state.searchQuery.toLowerCase().trim();
+                const query = String(config.state.searchQuery).toLowerCase().trim();
                 if (query) {
-                    // Split query into words and remove empty strings
-                    const queryWords = query.split(/\s+/).filter(word => word.length > 0);
-                    // Also create a version without spaces/special chars for loose matching
-                    const queryNormalized = query.replace(/[_\-\s]/g, '');
+                    // Normalize query: remove special chars for flexible matching
+                    const queryNormalized = query.replace(/[_\-\s\.]/g, '');
                     
                     items = items.filter(item => {
-                        const presetId = (item.preset_id || item.id || '').toLowerCase();
-                        const id = (item.id || '').toLowerCase();
-                        const imageUrl = (item.image_url || item.thumbnail_url_4x || '').toLowerCase();
+                        const presetId = String(item.preset_id || item.id || '').toLowerCase();
+                        const id = String(item.id || '').toLowerCase();
+                        const imageUrl = String(item.image_url || item.thumbnail_url_4x || '').toLowerCase();
                         
-                        // Normalize strings for loose matching (remove spaces, underscores, hyphens)
-                        const presetIdNormalized = presetId.replace(/[_\-\s]/g, '');
-                        const idNormalized = id.replace(/[_\-\s]/g, '');
+                        // Normalize strings for loose matching (remove spaces, underscores, hyphens, dots)
+                        const presetIdNormalized = presetId.replace(/[_\-\s\.]/g, '');
+                        const idNormalized = id.replace(/[_\-\s\.]/g, '');
+                        const imageUrlNormalized = imageUrl.replace(/[_\-\s\.]/g, '');
                         
-                        // Check if query matches as substring in any field
+                        // Primary check: query as substring anywhere in the text (not just beginning)
                         if (presetId.includes(query) || id.includes(query) || imageUrl.includes(query)) {
                             return true;
                         }
                         
-                        // Check normalized matching (without spaces/special chars)
-                        if (queryNormalized && (presetIdNormalized.includes(queryNormalized) || idNormalized.includes(queryNormalized))) {
+                        // Normalized matching: match without special characters (allows matching "abc_def" with "abc def")
+                        if (queryNormalized && (
+                            presetIdNormalized.includes(queryNormalized) || 
+                            idNormalized.includes(queryNormalized) ||
+                            imageUrlNormalized.includes(queryNormalized)
+                        )) {
                             return true;
-                        }
-                        
-                        // Check if any word from query matches
-                        if (queryWords.length > 0) {
-                            return queryWords.some(word => {
-                                return presetId.includes(word) || id.includes(word) || 
-                                       presetIdNormalized.includes(word.replace(/[_\-\s]/g, '')) ||
-                                       idNormalized.includes(word.replace(/[_\-\s]/g, ''));
-                            });
                         }
                         
                         return false;
                     });
+                } else {
+                    // Clear search query if empty
+                    config.state.searchQuery = '';
                 }
+            }
+
+            // Apply parent category filter for presets (fs/ft/Other) - after search
+            if (type === 'preset' && config.state.selectedParentCategory && config.state.selectedParentCategory !== 'All') {
+                items = items.filter(item => {
+                    const parentCategory = extractParentCategoryFromPresetId(item.preset_id || item.id || '');
+                    return parentCategory === config.state.selectedParentCategory;
+                });
+            }
+            
+            // Apply category filter for presets - after search
+            if (type === 'preset' && config.state.selectedCategory && config.state.selectedCategory !== 'All') {
+                items = items.filter(item => {
+                    const category = extractCategoryFromPresetId(item.preset_id || item.id || '');
+                    return category === config.state.selectedCategory;
+                });
             }
             
             // Always set filteredItems to current items (filtered or not)
@@ -2066,7 +2275,36 @@
                     const isLottie = thumbnailUrl && (thumbnailUrl.toLowerCase().endsWith('.json') || item.format === 'lottie' || item.format === 'lottie_avif');
                     
                     if (isLottie) {
-                        mediaElement = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-secondary); font-size: 11px; padding: 8px;">📱 Lottie</div>`;
+                        const lottieId = `lottie-${item.id.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                        mediaElement = `<div id="${lottieId}" style="width: 100%; height: 100%; background: var(--bg-tertiary); border-radius: 4px; display: flex; align-items: center; justify-content: center;"></div>`;
+                        setTimeout(() => {
+                            if (typeof lottie !== 'undefined' && thumbnailUrl) {
+                                try {
+                                    const container = document.getElementById(lottieId);
+                                    if (!container) return;
+                                    
+                                    // Destroy any existing animation in this container
+                                    if (container.lottieInstance) {
+                                        container.lottieInstance.destroy();
+                                        container.lottieInstance = null;
+                                    }
+                                    
+                                    // Clear container content
+                                    container.innerHTML = '';
+                                    
+                                    const anim = lottie.loadAnimation({
+                                        container: container,
+                                        renderer: 'svg',
+                                        loop: true,
+                                        autoplay: true,
+                                        path: thumbnailUrl
+                                    });
+                                    
+                                    container.lottieInstance = anim;
+                                } catch (e) {
+                                }
+                            }
+                        }, 100);
                     } else if (thumbnailUrl) {
                         mediaElement = `<img src="${thumbnailUrl}" alt="" loading="lazy">`;
                     } else {
@@ -2102,7 +2340,8 @@
                     const allItems = galleries.preset.state.items;
                     const searchQuery = galleries.preset.state.searchQuery;
                     const selectedCategory = galleries.preset.state.selectedCategory;
-                    const hasFilter = searchQuery || (selectedCategory && selectedCategory !== 'all');
+                    const selectedParentCategory = galleries.preset.state.selectedParentCategory;
+                    const hasFilter = searchQuery || selectedCategory || (selectedParentCategory && selectedParentCategory !== 'All');
                     const displayItems = hasFilter ? items : allItems;
                     const totalCount = displayItems.length;
                     const webpCount = displayItems.filter(item => item.format === 'webp' || (!item.format && !item.thumbnail_url_4x?.toLowerCase().endsWith('.json'))).length;
@@ -2338,11 +2577,36 @@
                            selected.format === 'lottie_avif';
             
             if (isLottie) {
-                mediaElement = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 200px; height: 100%; color: var(--text-secondary); padding: 20px; text-align: center; box-sizing: border-box;">
-                    <div style="font-size: 64px; margin-bottom: 16px; line-height: 1;">📱</div>
-                    <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">Lottie Animation</div>
-                    <div style="font-size: 12px; color: var(--text-muted); word-break: break-all;">${selected.preset_id || selected.id || ''}</div>
-                </div>`;
+                const lottiePreviewId = `lottie-preview-${(selected.preset_id || selected.id || '').replace(/[^a-zA-Z0-9]/g, '-')}`;
+                mediaElement = `<div id="${lottiePreviewId}" style="width: 100%; height: 100%; min-height: 200px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 4px;"></div>`;
+                setTimeout(() => {
+                    if (typeof lottie !== 'undefined' && thumbnailUrl) {
+                        try {
+                            const container = document.getElementById(lottiePreviewId);
+                            if (!container) return;
+                            
+                            // Destroy any existing animation in this container
+                            if (container.lottieInstance) {
+                                container.lottieInstance.destroy();
+                                container.lottieInstance = null;
+                            }
+                            
+                            // Clear container content
+                            container.innerHTML = '';
+                            
+                            const anim = lottie.loadAnimation({
+                                container: container,
+                                renderer: 'svg',
+                                loop: true,
+                                autoplay: true,
+                                path: thumbnailUrl
+                            });
+                            
+                            container.lottieInstance = anim;
+                        } catch (e) {
+                        }
+                    }
+                }, 100);
             } else if (thumbnailUrl) {
                 mediaElement = `<img src="${thumbnailUrl}" alt="" style="cursor: pointer; max-width: 100%; max-height: 100%; object-fit: contain; display: block;" onclick="openPreviewLightbox('${type}')">`;
             } else {
@@ -2461,12 +2725,22 @@
         });
 
         const presetSearchInput = $('preset-search-input');
-        presetSearchInput?.addEventListener('input', (e) => {
-            const query = e.target.value;
-            galleries.preset.state.searchQuery = query;
-            galleries.preset.state.page = 1;
-            renderGallery('preset');
-        });
+        if (presetSearchInput) {
+            presetSearchInput.addEventListener('input', (e) => {
+                const query = String(e.target.value || '').trim();
+                galleries.preset.state.searchQuery = query;
+                galleries.preset.state.page = 1;
+                renderGallery('preset');
+            });
+            
+            // Also handle on change for better compatibility
+            presetSearchInput.addEventListener('change', (e) => {
+                const query = String(e.target.value || '').trim();
+                galleries.preset.state.searchQuery = query;
+                galleries.preset.state.page = 1;
+                renderGallery('preset');
+            });
+        }
 
         selfieInput?.addEventListener('change', async e => {
             const files = Array.from(e.target.files || []);
@@ -2509,7 +2783,6 @@
                             return;
                         }
                     } catch (err) {
-                        console.error('Error parsing drag data:', err);
                     }
                 }
                 
@@ -2556,18 +2829,8 @@
                     const filterModeCheckbox = document.getElementById('preset-filter-mode');
                     const isFilterMode = filterModeCheckbox && filterModeCheckbox.checked === true;
                     
-                    console.log('[Preset Upload] Filter mode checkbox:', {
-                        found: !!filterModeCheckbox,
-                        checked: filterModeCheckbox?.checked,
-                        isFilterMode: isFilterMode,
-                        checkboxType: filterModeCheckbox?.type
-                    });
-                    
                     if (isFilterMode) {
                         formData.append('is_filter_mode', 'true');
-                        console.log('[Preset Upload] Filter mode enabled - using filter prompt');
-                    } else {
-                        console.log('[Preset Upload] Filter mode disabled - using default prompt');
                     }
                     
                     // Add custom prompt if user has customized it
@@ -2578,19 +2841,10 @@
                     const originalPrompt = isFilterMode ? DEFAULT_PROMPTS.FILTER : DEFAULT_PROMPTS.DEFAULT;
                     if (currentPrompt !== originalPrompt) {
                         formData.append('custom_prompt_text', currentPrompt);
-                        console.log('[Preset Upload] Using custom prompt (different from default), length:', currentPrompt.length);
                     } else if (isFilterMode) {
-                        console.log('[Preset Upload] Using default filter prompt (not customized)');
                     } else {
-                        console.log('[Preset Upload] Using default prompt (not customized)');
                     }
                     
-                    // Log what we're sending
-                    console.log('[Preset Upload] FormData values being sent:', {
-                        enableVertexPrompt: 'true',
-                        is_filter_mode: isFilterMode ? 'true' : 'not set',
-                        custom_prompt_text: formData.has('custom_prompt_text') ? 'set' : 'not set'
-                    });
                 } else if (type === 'selfie') {
                     const actionSelect = document.getElementById('selfie-action-select');
                     const action = actionSelect?.value || 'faceswap';
@@ -2673,12 +2927,11 @@
             try {
                 const aspectRatioSelect = document.getElementById('aspect-ratio');
                 if (!aspectRatioSelect) {
-                    console.error('[Frontend] Aspect ratio select element not found!');
                 }
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
-                console.log('[Frontend] Aspect ratio select value:', aspectRatioSelect?.value);
-                console.log('[Frontend] Selected aspect ratio:', selectedAspectRatio);
-                const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                // Always prefer preset_id (filename) over URL for API calls
+                const presetId = presetSelected.preset_id || presetSelected.id;
+                const usePresetUrl = !presetId || presetId.startsWith('result-preset-');
                 
                 // Build selfie arrays (support multiple selfies for wedding faceswap)
                 const selfieIds = [];
@@ -2699,7 +2952,7 @@
                 const requestBody = {
                     ...(usePresetUrl
                         ? { preset_image_url: presetSelected.image_url }
-                        : { preset_image_id: presetSelected.id }
+                        : { preset_image_id: presetId }
                     ),
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
@@ -2714,8 +2967,6 @@
                 if (selfieIds.length > 0) {
                     requestBody.selfie_ids = selfieIds;
                 }
-                console.log('[Frontend] Full request body:', JSON.stringify(requestBody, null, 2));
-                console.log('[Frontend] Sending request with aspect_ratio:', requestBody.aspect_ratio);
 
                 const faceswapUrl = `${WORKER_URL}/faceswap`;
                 const startTime = Date.now();
@@ -2727,7 +2978,6 @@
                 if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Đổi mặt thất bại');
 
                 // Reload results from server to ensure we have the saved result with correct profile_id
-                console.log('[FaceSwap] Face swap successful, reloading results gallery');
                 await loadGallery('results');
                 
                 // Find the newly created result in the loaded items
@@ -2763,7 +3013,6 @@
                 URL.revokeObjectURL(downloadUrl);
                 return true;
             } catch (error) {
-                console.error(`Failed to download ${filename}:`, error);
                 return false;
             }
         }
@@ -2886,7 +3135,6 @@
 
                                 await new Promise(resolve => setTimeout(resolve, 1000));
                             } catch (error) {
-                                console.error(`Error processing ${category}/${preset.preset_id || preset.id}/${tryImage}:`, error);
                                 results.push({
                                     category: category,
                                     presetId: preset.preset_id || preset.id || 'unknown',
@@ -2902,18 +3150,258 @@
 
                 const summary = `Hoàn thành! Thành công: ${successCount}, Thất bại: ${failCount}`;
                 showStatusMessage(summary, successCount > 0 ? 'success' : 'error');
-                console.log('Batch processing results:', results);
 
                 await loadGallery('results');
             } catch (error) {
                 showStatusMessage(`Batch processing failed: ${error.message}`, 'error');
-                console.error('Batch processing error:', error);
             } finally {
                 batchBtn.disabled = false;
                 batchBtn.classList.remove('loading');
                 hideLoading();
             }
         }
+
+        let tryImagesResults = [];
+        
+        async function processTryImagesArray() {
+            if (!window.profileManager?.currentProfile) {
+                showStatusMessage('Vui lòng chọn hồ sơ trước khi xử lý.', 'error');
+                return;
+            }
+
+            const input = document.getElementById('try-images-array-input');
+            const processBtn = document.getElementById('process-try-images-btn');
+            if (!input || !processBtn) return;
+
+            const inputText = input.value.trim();
+            if (!inputText) {
+                showStatusMessage('Vui lòng nhập danh sách đường dẫn ảnh.', 'error');
+                return;
+            }
+
+            let imagePaths = [];
+            try {
+                if (inputText.startsWith('[') || inputText.startsWith('"')) {
+                    const parsed = JSON.parse(inputText);
+                    imagePaths = Array.isArray(parsed) ? parsed : [parsed];
+                } else {
+                    imagePaths = inputText.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//'));
+                }
+            } catch (e) {
+                imagePaths = inputText.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//'));
+            }
+
+            if (imagePaths.length === 0) {
+                showStatusMessage('Không tìm thấy đường dẫn ảnh hợp lệ.', 'error');
+                return;
+            }
+
+            await loadGallery('preset');
+            const allPresets = galleries.preset.state.items || [];
+            if (allPresets.length === 0) {
+                showStatusMessage('Không có preset nào trong gallery. Vui lòng tải presets trước.', 'error');
+                return;
+            }
+
+            const categoryMap = {
+                'ai_avatar': 'ai_avatar',
+                'ai_restore': 'ai_restore',
+                'ai_enhance': 'ai_enhance',
+                'ai_beauty': 'ai_beauty',
+                'ai_upscale_4k': 'ai_upscale_4k'
+            };
+
+            const presetMap = new Map();
+            allPresets.forEach(preset => {
+                const presetId = preset.preset_id || preset.id || '';
+                for (const [category, categoryKey] of Object.entries(categoryMap)) {
+                    if (presetId.includes(category) || presetId.toLowerCase().includes(category.replace('_', ''))) {
+                        if (!presetMap.has(category)) {
+                            presetMap.set(category, []);
+                        }
+                        presetMap.get(category).push(preset);
+                    }
+                }
+            });
+
+            let totalTasks = 0;
+            for (const imagePath of imagePaths) {
+                const category = Object.keys(categoryMap).find(cat => imagePath.includes(cat));
+                if (category) {
+                    const categoryPresets = presetMap.get(category) || [];
+                    totalTasks += categoryPresets.length;
+                }
+            }
+
+            const confirmed = confirm(`Bạn có chắc muốn xử lý ${imagePaths.length} ảnh try với ${totalTasks} tasks?`);
+            if (!confirmed) return;
+
+            processBtn.disabled = true;
+            processBtn.classList.add('loading');
+            showLoading('Đang xử lý try images...');
+            tryImagesResults = [];
+
+            try {
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                const selectedFormat = localStorage.getItem('preset:format') || 'webp';
+                const additionalPromptInput = document.getElementById('additional-prompt');
+                const additionalPrompt = additionalPromptInput?.value.trim() || '';
+
+                let currentIndex = 0;
+                for (const imagePath of imagePaths) {
+                    const normalizedPath = imagePath.trim();
+                    if (!normalizedPath) continue;
+
+                    const category = Object.keys(categoryMap).find(cat => normalizedPath.includes(cat));
+                    if (!category) {
+                        continue;
+                    }
+
+                    const categoryPresets = presetMap.get(category) || [];
+                    if (categoryPresets.length === 0) {
+                        continue;
+                    }
+
+                    for (const preset of categoryPresets) {
+                        currentIndex++;
+                        const usePresetUrl = !preset.id || preset.id?.startsWith('result-preset-');
+                        const tryImageUrl = normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`;
+                        const fullTryImageUrl = tryImageUrl.startsWith('http') ? tryImageUrl : `${WORKER_URL}${tryImageUrl}`;
+
+                        try {
+                            showLoading(`Đang xử lý: ${category} - ${preset.preset_id || preset.id} - ${normalizedPath} (${currentIndex}/${totalTasks})`);
+
+                            const requestBody = {
+                                ...(usePresetUrl
+                                    ? { preset_image_url: preset.image_url }
+                                    : { preset_image_id: preset.id || preset.preset_id }
+                                ),
+                                selfie_image_urls: [fullTryImageUrl],
+                                profile_id: window.profileManager.currentProfile.id,
+                                additional_prompt: additionalPrompt,
+                                aspect_ratio: selectedAspectRatio,
+                                model: selectedModel,
+                                format: selectedFormat
+                            };
+
+                            const faceswapUrl = `${WORKER_URL}/faceswap`;
+                            const response = await fetch(faceswapUrl, {
+                                method: 'POST',
+                                headers: buildHeaders({ 'Content-Type': 'application/json' }),
+                                body: JSON.stringify(requestBody)
+                            });
+
+                            const data = await response.json();
+
+                            if (response.ok && data.data?.resultImageUrl) {
+                                const resultUrl = data.data.resultImageUrl;
+                                const presetId = preset.preset_id || preset.id || 'unknown';
+                                
+                                tryImagesResults.push({
+                                    category: category,
+                                    presetId: presetId,
+                                    tryImage: normalizedPath,
+                                    resultUrl: resultUrl,
+                                    presetName: preset.preset_id || preset.id,
+                                    timestamp: new Date().toISOString()
+                                });
+                                
+                                renderTryResults();
+                            } else {
+                                throw new Error(data.message || 'FaceSwap failed');
+                            }
+
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        } catch (error) {
+                            console.error(`Error processing ${category}/${preset.preset_id || preset.id}/${normalizedPath}:`, error);
+                            tryImagesResults.push({
+                                category: category,
+                                presetId: preset.preset_id || preset.id || 'unknown',
+                                tryImage: normalizedPath,
+                                resultUrl: null,
+                                error: error.message,
+                                presetName: preset.preset_id || preset.id,
+                                timestamp: new Date().toISOString()
+                            });
+                            renderTryResults();
+                        }
+                    }
+                }
+
+                const successCount = tryImagesResults.filter(r => r.resultUrl).length;
+                const failCount = tryImagesResults.filter(r => !r.resultUrl).length;
+                const summary = `Hoàn thành! Thành công: ${successCount}, Thất bại: ${failCount}`;
+                showStatusMessage(summary, successCount > 0 ? 'success' : 'error');
+
+                await loadGallery('results');
+            } catch (error) {
+                showStatusMessage(`Xử lý thất bại: ${error.message}`, 'error');
+                console.error('Try images processing error:', error);
+            } finally {
+                processBtn.disabled = false;
+                processBtn.classList.remove('loading');
+                hideLoading();
+            }
+        }
+
+        function renderTryResults() {
+            const gallery = document.getElementById('try-results-gallery');
+            const filterSelect = document.getElementById('try-results-filter');
+            const countSpan = document.getElementById('try-results-count');
+            if (!gallery || !filterSelect || !countSpan) return;
+
+            const selectedCategory = filterSelect.value;
+            const filteredResults = selectedCategory === 'all' 
+                ? tryImagesResults 
+                : tryImagesResults.filter(r => r.category === selectedCategory);
+
+            countSpan.textContent = `${filteredResults.length} results`;
+
+            gallery.innerHTML = filteredResults.map((result, index) => {
+                if (!result.resultUrl) {
+                    return `<div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--danger);">
+                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">${result.category}</div>
+                        <div style="font-size: 10px; color: var(--danger); word-break: break-all;">Error: ${result.error || 'Failed'}</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">${result.tryImage}</div>
+                    </div>`;
+                }
+
+                return `<div style="position: relative; background: var(--bg-primary); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); cursor: pointer;" onclick="displayResultInPreview('${result.resultUrl}')">
+                    <img src="${result.resultUrl}" style="width: 100%; height: 120px; object-fit: cover; display: block;" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\\'padding: 20px; text-align: center; color: var(--text-muted);\\'>Failed to load</div>'">
+                    <div style="padding: 6px; background: rgba(0,0,0,0.6); position: absolute; bottom: 0; left: 0; right: 0; color: #fff; font-size: 9px;">
+                        <div style="font-weight: 600; margin-bottom: 2px;">${result.category}</div>
+                        <div style="opacity: 0.8; font-size: 8px; word-break: break-all;">${result.presetName}</div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            if (filteredResults.length === 0) {
+                gallery.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">No results yet. Process some images first.</div>';
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                const filterSelect = document.getElementById('try-results-filter');
+                if (filterSelect) {
+                    filterSelect.addEventListener('change', renderTryResults);
+                }
+                renderTryResults();
+            });
+        } else {
+            const filterSelect = document.getElementById('try-results-filter');
+            if (filterSelect) {
+                filterSelect.addEventListener('change', renderTryResults);
+            }
+            renderTryResults();
+        }
+
+        // Make Try Images functions globally accessible for onclick handlers
+        window.processTryImagesArray = processTryImagesArray;
+        window.renderTryResults = renderTryResults;
 
         async function generateBackground() {
             const presetSelected = galleries.preset.state.selected;
@@ -2949,10 +3437,11 @@
                         ? { custom_prompt: customPrompt }
                         : (() => {
                             if (!presetSelected) return {};
-                            const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                            const presetId = presetSelected.preset_id || presetSelected.id;
+                            const usePresetUrl = !presetId || presetId.startsWith('result-preset-');
                             return usePresetUrl 
                                 ? { preset_image_url: presetSelected.image_url }
-                                : { preset_image_id: presetSelected.id };
+                                : { preset_image_id: presetId };
                         })()
                     ),
                     ...(useSelfieUrl 
@@ -3078,13 +3567,14 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
-                const usePresetUrl = !presetSelected.id || presetSelected.id?.startsWith('result-preset-');
+                const presetId = presetSelected.preset_id || presetSelected.id;
+                const usePresetUrl = !presetId || presetId.startsWith('result-preset-');
                 const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
                 const additionalPromptInput = document.getElementById('additional-prompt');
                 const requestBody = {
                     ...(usePresetUrl 
                         ? { preset_image_url: presetSelected.image_url }
-                        : { preset_image_id: presetSelected.id }
+                        : { preset_image_id: presetId }
                     ),
                     ...(useSelfieUrl 
                         ? { selfie_image_url: selectedSelfie.image_url }
@@ -3128,6 +3618,7 @@
                 resultPreview.innerHTML = `<img src="${imageUrl}" alt="Result" style="cursor: pointer;" onclick="openPreviewLightbox('result')">`;
             }
         }
+        window.displayResultInPreview = displayResultInPreview;
 
         // Lightbox
         let lightboxCurrentIndex = -1, lightboxItems = [];
@@ -3259,7 +3750,8 @@
             if (presetSelected) {
                 lightboxItems.push({
                     type: 'preset',
-                    image_url: presetSelected.image_url,
+                    image_url: presetSelected.thumbnail_url_4x || presetSelected.image_url,
+                    thumbnail_url_4x: presetSelected.thumbnail_url_4x,
                     label: 'Mẫu (Preset)'
                 });
             }
@@ -3366,16 +3858,23 @@
                 }
 
                 Array.from(single.children).forEach(child => {
-                    if (!child.classList.contains('lightbox-info')) {
+                    if (!child.classList.contains('lightbox-info') && !child.classList.contains('lightbox-actions')) {
                         child.remove();
                     }
                 });
 
-                if (img && imageUrl) {
-                    img.src = imageUrl;
-                    img.alt = 'Result';
-                    img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
-                    single.insertBefore(img, info);
+                if (imageUrl) {
+                    let displayImg = img;
+                    if (!displayImg || !single.contains(displayImg)) {
+                        displayImg = document.createElement('img');
+                        displayImg.id = 'lightbox-image';
+                    }
+                    displayImg.src = imageUrl;
+                    displayImg.alt = 'Result';
+                    displayImg.style.cssText = 'max-width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; display: block;';
+                    if (!single.contains(displayImg)) {
+                        single.insertBefore(displayImg, info);
+                    }
                 }
 
                 if (counter) counter.textContent = `Kết Quả (Result) (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
@@ -3395,17 +3894,53 @@
                     single.appendChild(info);
                 }
 
+                // Find or ensure actions element exists
+                let actionsDiv = single.querySelector('.lightbox-actions');
+                if (!actionsDiv) {
+                    actionsDiv = $('lightbox-actions');
+                    if (actionsDiv && actionsDiv.parentNode !== single) {
+                        single.appendChild(actionsDiv);
+                    } else if (!actionsDiv) {
+                        // Create actions div if it doesn't exist
+                        actionsDiv = document.createElement('div');
+                        actionsDiv.className = 'lightbox-actions';
+                        actionsDiv.id = 'lightbox-actions';
+                        actionsDiv.innerHTML = `
+                            <button class="lightbox-action-btn" onclick="selectAsPreset()">
+                                <span>📸</span>
+                                <span>Chọn làm Mẫu</span>
+                            </button>
+                            <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
+                                <span>👤</span>
+                                <span>Chọn làm Selfie</span>
+                            </button>
+                            <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
+                                <span>➕</span>
+                                <span>Thêm vào So Sánh</span>
+                            </button>
+                        `;
+                        single.appendChild(actionsDiv);
+                    }
+                }
+
                 Array.from(single.children).forEach(child => {
-                    if (!child.classList.contains('lightbox-info')) {
+                    if (!child.classList.contains('lightbox-info') && !child.classList.contains('lightbox-actions')) {
                         child.remove();
                     }
                 });
 
-                if (img && imageUrl) {
-                    img.src = imageUrl;
-                    img.alt = 'Selfie';
-                    img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
-                    single.insertBefore(img, info);
+                if (imageUrl) {
+                    let displayImg = img;
+                    if (!displayImg || !single.contains(displayImg)) {
+                        displayImg = document.createElement('img');
+                        displayImg.id = 'lightbox-image';
+                    }
+                    displayImg.src = imageUrl;
+                    displayImg.alt = 'Selfie';
+                    displayImg.style.cssText = 'max-width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; display: block;';
+                    if (!single.contains(displayImg)) {
+                        single.insertBefore(displayImg, info);
+                    }
                 }
 
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
@@ -3427,9 +3962,46 @@
                     single.appendChild(info);
                 }
 
-                // Clear only media elements (img or container divs), keep info
+                // Find or ensure actions element exists
+                let actionsDiv = single.querySelector('.lightbox-actions');
+                if (!actionsDiv) {
+                    actionsDiv = $('lightbox-actions');
+                    if (actionsDiv && actionsDiv.parentNode !== single) {
+                        single.appendChild(actionsDiv);
+                    } else if (!actionsDiv) {
+                        // Create actions div if it doesn't exist
+                        actionsDiv = document.createElement('div');
+                        actionsDiv.className = 'lightbox-actions';
+                        actionsDiv.id = 'lightbox-actions';
+                        actionsDiv.innerHTML = `
+                            <button class="lightbox-action-btn" onclick="selectAsPreset()">
+                                <span>📸</span>
+                                <span>Chọn làm Mẫu</span>
+                            </button>
+                            <button class="lightbox-action-btn secondary" onclick="selectAsSelfie()">
+                                <span>👤</span>
+                                <span>Chọn làm Selfie</span>
+                            </button>
+                            <button class="lightbox-action-btn" onclick="addToComparison()" id="add-to-comparison-btn">
+                                <span>➕</span>
+                                <span>Thêm vào So Sánh</span>
+                            </button>
+                        `;
+                        single.appendChild(actionsDiv);
+                    }
+                }
+
+                // Clear only media elements (img or container divs), keep info and actions
+                // Also destroy any existing Lottie animations
                 Array.from(single.children).forEach(child => {
-                    if (!child.classList.contains('lightbox-info')) {
+                    if (!child.classList.contains('lightbox-info') && !child.classList.contains('lightbox-actions')) {
+                        if (child.lottieInstance) {
+                            try {
+                                child.lottieInstance.destroy();
+                            } catch (e) {
+                                console.error('Error destroying Lottie:', e);
+                            }
+                        }
                         child.remove();
                     }
                 });
@@ -3441,59 +4013,193 @@
                     const thumbnailUrl = item.thumbnail_url_4x || item.image_url;
                     const isLottie = thumbnailUrl && (thumbnailUrl.toLowerCase().endsWith('.json') || item.format === 'lottie' || item.format === 'lottie_avif');
                     
-                    if (isLottie && img) {
-                        // Show Lottie indicator
-                        img.style.display = 'none';
+                    if (isLottie) {
+                        const lottieLightboxId = `lottie-lightbox-${(item.preset_id || item.id || Date.now()).toString().replace(/[^a-zA-Z0-9]/g, '-')}`;
                         const lottieDiv = document.createElement('div');
-                        lottieDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 85vh; color: var(--text-secondary); padding: 40px; text-align: center;';
-                        lottieDiv.innerHTML = `
-                            <div style="font-size: 64px; margin-bottom: 16px;">📱</div>
-                            <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Lottie Animation</div>
-                            <div style="font-size: 14px; color: var(--text-muted);">${item.preset_id || ''}</div>
-                        `;
+                        lottieDiv.id = lottieLightboxId;
+                        lottieDiv.style.cssText = 'width: 100%; max-width: 100%; height: 60vh; max-height: 60vh; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 8px;';
                         mediaElement = lottieDiv;
-                    } else if (thumbnailUrl && img) {
-                        img.src = thumbnailUrl;
-                        img.alt = item.label || 'Preset';
-                        img.style.cssText = 'max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 8px;';
-                        img.style.display = 'block';
-                        mediaElement = img;
+                        
+                        // Insert first, then load animation
+                        single.insertBefore(mediaElement, info);
+                        
+                        // Load Lottie animation after element is in DOM
+                        const loadLottieAnimation = () => {
+                            const container = document.getElementById(lottieLightboxId);
+                            if (!container) {
+                                console.warn('Lottie container not found:', lottieLightboxId);
+                                return;
+                            }
+                            
+                            if (typeof lottie === 'undefined') {
+                                console.warn('Lottie library not loaded yet, retrying...');
+                                setTimeout(loadLottieAnimation, 100);
+                                return;
+                            }
+                            
+                            if (!thumbnailUrl) {
+                                console.warn('No thumbnail URL for Lottie');
+                                return;
+                            }
+                            
+                            try {
+                                // Destroy any existing animation in this container
+                                if (container.lottieInstance) {
+                                    container.lottieInstance.destroy();
+                                    container.lottieInstance = null;
+                                }
+                                
+                                // Clear container content to prevent duplicates
+                                container.innerHTML = '';
+                                
+                                const anim = lottie.loadAnimation({
+                                    container: container,
+                                    renderer: 'svg',
+                                    loop: true,
+                                    autoplay: true,
+                                    path: thumbnailUrl
+                                });
+                                
+                                container.lottieInstance = anim;
+                                
+                                // Handle errors
+                                anim.addEventListener('data_failed', () => {
+                                    console.error('Lottie data failed to load');
+                                    container.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); padding: 20px; text-align: center;">
+                                        <div style="font-size: 48px; margin-bottom: 12px;">📱</div>
+                                        <div style="font-size: 14px; font-weight: 500;">Lottie Animation</div>
+                                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Failed to load animation</div>
+                                    </div>`;
+                                });
+                            } catch (e) {
+                                console.error('Lottie lightbox load error:', e);
+                                container.innerHTML = `<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); padding: 20px; text-align: center;">
+                                    <div style="font-size: 48px; margin-bottom: 12px;">📱</div>
+                                    <div style="font-size: 14px; font-weight: 500;">Lottie Animation</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Error: ${e.message}</div>
+                                </div>`;
+                            }
+                        };
+                        
+                        setTimeout(loadLottieAnimation, 100);
+                    } else if (thumbnailUrl) {
+                        let displayImg = img;
+                        if (!displayImg || !single.contains(displayImg)) {
+                            displayImg = document.createElement('img');
+                            displayImg.id = 'lightbox-image';
+                        }
+                        displayImg.src = thumbnailUrl;
+                        displayImg.alt = item.label || 'Preset';
+                        displayImg.style.cssText = 'max-width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; display: block;';
+                        mediaElement = displayImg;
+                        if (!single.contains(mediaElement)) {
+                            single.insertBefore(mediaElement, info);
+                        }
                     }
                 } else {
                     // Regular preview mode
-                    if (img) {
-                        img.src = item.image_url || '';
-                        mediaElement = img;
+                    const previewUrl = item.image_url || item.result_url || '';
+                    if (previewUrl) {
+                        let displayImg = img;
+                        if (!displayImg || !single.contains(displayImg)) {
+                            displayImg = document.createElement('img');
+                            displayImg.id = 'lightbox-image';
+                        }
+                        displayImg.src = previewUrl;
+                        displayImg.alt = item.label || 'Preview';
+                        displayImg.style.cssText = 'max-width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; display: block;';
+                        mediaElement = displayImg;
+                        if (!single.contains(mediaElement)) {
+                            single.insertBefore(mediaElement, info);
+                        }
                     }
                 }
 
-                // Insert media before info
-                if (mediaElement) {
-                    single.insertBefore(mediaElement, info);
-                }
-
-                // Update counter text
+                // Update counter and info text
                 if (counter) counter.textContent = `${item.label} (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
+
+                // Update info with full URL and prompt_json for preset-preview
+                if (lightboxMode === 'preset-preview' && info) {
+                    const thumbnailUrl = item.thumbnail_url_4x || item.image_url || '';
+                    const presetId = item.preset_id || item.id;
+
+                    // Ensure info is visible
+                    info.style.display = 'block';
+                    info.style.visibility = 'visible';
+                    info.style.opacity = '1';
+                    info.style.marginTop = '16px';
+
+                    // Show URL first, then fetch and display prompt_json
+                    info.innerHTML = `
+                        <div style="color: #fff; font-size: 12px; word-break: break-all; font-family: 'Courier New', monospace; line-height: 1.4; margin-bottom: 12px;">${thumbnailUrl}</div>
+                        <div id="lightbox-prompt-json" style="color: var(--text-muted); font-size: 11px;">Loading prompt...</div>
+                    `;
+
+                    // Fetch prompt_json from backend
+                    if (presetId) {
+                        fetchPresetPromptJson(presetId).then(promptData => {
+                            const promptContainer = document.getElementById('lightbox-prompt-json');
+                            if (promptContainer && promptData) {
+                                const promptText = typeof promptData === 'string' ? promptData :
+                                    (promptData.prompt || JSON.stringify(promptData, null, 2));
+                                promptContainer.innerHTML = `
+                                    <div style="background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; max-height: 200px; overflow-y: auto;">
+                                        <div style="font-size: 11px; color: var(--accent); margin-bottom: 6px; font-weight: 600;">📝 Prompt JSON:</div>
+                                        <pre style="margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 10px; color: #ccc; line-height: 1.4;">${escapeHtml(promptText)}</pre>
+                                    </div>
+                                `;
+                            } else if (promptContainer) {
+                                promptContainer.innerHTML = `<div style="color: var(--text-muted); font-size: 11px;">No prompt data available</div>`;
+                            }
+                        }).catch(err => {
+                            const promptContainer = document.getElementById('lightbox-prompt-json');
+                            if (promptContainer) {
+                                promptContainer.innerHTML = `<div style="color: var(--text-muted); font-size: 11px;">No prompt data</div>`;
+                            }
+                        });
+                    }
+                } else if (info) {
+                    // For other modes, show counter in info
+                    info.innerHTML = `<span id="lightbox-counter">${counter ? counter.textContent : ''}</span>`;
+                }
             }
 
             // Show actions appropriately for each mode
-            if (lightboxMode === 'preset-preview' || lightboxMode === 'selfie-preview') {
-                const actions = $('lightbox-actions');
-                if (actions) {
+            // Ensure actions div exists in lightbox-single
+            const single = $('lightbox-single');
+            if (single) {
+                let actionsDiv = single.querySelector('.lightbox-actions');
+                if (!actionsDiv) {
+                    actionsDiv = $('lightbox-actions');
+                    if (actionsDiv && actionsDiv.parentNode !== single) {
+                        single.appendChild(actionsDiv);
+                    }
+                }
+                
+                if (actionsDiv) {
+                    if (lightboxMode === 'preset-preview' || lightboxMode === 'selfie-preview') {
+                        actionsDiv.style.display = 'flex';
+                        actionsDiv.style.visibility = 'visible';
+                        actionsDiv.style.opacity = '1';
+                        actionsDiv.style.position = 'relative';
+                        actionsDiv.style.marginTop = '20px';
+                        actionsDiv.style.width = '100%';
+                        actionsDiv.style.padding = '0 20px';
+                    } else {
+                        actionsDiv.style.display = 'none';
+                    }
+                }
+            }
+            
+            // Also update the actions variable for backward compatibility
+            if (actions) {
+                if (lightboxMode === 'preset-preview' || lightboxMode === 'selfie-preview') {
                     actions.style.display = 'flex';
                     actions.style.visibility = 'visible';
                     actions.style.opacity = '1';
-                    actions.style.zIndex = '10002';
-                }
-            } else if (lightboxMode === 'gallery') {
-                const actions = $('lightbox-actions');
-                if (actions) {
-                    actions.style.display = 'flex';
-                }
-            } else {
-                const actions = $('lightbox-actions');
-                if (actions) {
-                    actions.style.display = 'flex';
+                    actions.style.position = 'relative';
+                } else {
+                    actions.style.display = 'none';
                 }
             }
             
@@ -4114,17 +4820,14 @@
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => {
                         controller.abort();
-                        console.warn(`[Preset Upload] Request timeout on attempt ${attempt + 1}, aborting...`);
                     }, 60000); // 60s timeout for preset uploads
 
-                    console.log(`[Preset Upload] Attempt ${attempt + 1}/${maxRetries} - Starting request...`);
                     const response = await fetch(url, {
                         ...options,
                         signal: controller.signal
                     });
 
                     clearTimeout(timeoutId);
-                    console.log(`[Preset Upload] Attempt ${attempt + 1} - Response received: ${response.status}`);
 
                     // If successful, return immediately
                     if (response.ok) {
@@ -4136,7 +4839,6 @@
                         if (attempt < maxRetries - 1) {
                             const errorText = await response.text().catch(() => response.statusText);
                             errors.push(`${attempt + 1}: HTTP ${response.status}: ${errorText.substring(0, 100)}`);
-                            console.warn(`[Preset Upload] Server error ${response.status}, will retry...`);
                             // Continue to retry logic below
                         } else {
                             // Last attempt - return response anyway so caller can handle it
@@ -4181,7 +4883,6 @@
                     const jitter = Math.random() * 0.3 * baseDelay; // Add up to 30% jitter
                     const delay = Math.min(baseDelay + jitter, 120000); // Cap at 2 minutes
 
-                    console.warn(`[Preset Upload] Retrying in ${Math.round(delay/1000)}s...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
@@ -4274,7 +4975,6 @@
                                 try {
                                     const fileData = await zipEntry.async('blob');
                                     if (!fileData || fileData.size === 0) {
-                                        console.warn(`Skipping empty file: ${zipEntry.name}`);
                                         return null;
                                     }
                                     const file = new File([fileData], zipEntry.name, { type: 'image/png' });
@@ -4283,7 +4983,6 @@
                                         path: relativePath
                                     };
                                 } catch (extractError) {
-                                    console.error(`Error extracting ${zipEntry.name}:`, extractError);
                                     return null;
                                 }
                             })
@@ -4293,7 +4992,6 @@
                         const validFiles = extractedFiles.filter(f => f !== null);
                         allFiles.push(...validFiles);
                     } catch (zipError) {
-                        console.error(`Error extracting zip ${zipFile.name}:`, zipError);
                         showStatusMessage(`Lỗi giải nén ${zipFile.name}: ${zipError.message}`, 'error');
                     }
                 }
@@ -4365,7 +5063,6 @@
                         }
 
                         try {
-                            console.log(`[Preset Upload] Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
                             const response = await fetchWithRetry(uploadUrl, {
                                 method: 'POST',
                                 headers: buildHeaders(),
@@ -4891,25 +5588,22 @@
             }
 
 
+            // Initialize category selection from localStorage before loading galleries
+            const savedCategory = localStorage.getItem('preset:selectedCategory');
+            if (savedCategory) {
+                galleries.preset.state.selectedCategory = savedCategory;
+            }
+            const savedParentCategory = localStorage.getItem('preset:selectedParentCategory');
+            if (savedParentCategory) {
+                galleries.preset.state.selectedParentCategory = savedParentCategory;
+            } else {
+                galleries.preset.state.selectedParentCategory = 'All';
+            }
+            
             // Initialize profile FIRST, then load galleries
             await window.profileManager.initializeProfile();
             await init();
             
-            // Setup format selector change handler AFTER galleries are loaded
-            if (formatSelect) {
-                formatSelect.addEventListener('change', (e) => {
-                    const newValue = e.target.value;
-                    localStorage.setItem('preset:format', newValue);
-                    console.log('[Init] Preset format changed to:', newValue);
-                    // Re-render gallery and update preview when format changes
-                    if (typeof renderGallery === 'function') {
-                        renderGallery('preset');
-                    }
-                    if (galleries?.preset?.state?.selected && typeof updatePreview === 'function') {
-                        updatePreview('preset');
-                    }
-                });
-            }
             
             // Setup thumbnail drag and drop
             setupThumbnailDragDrop();

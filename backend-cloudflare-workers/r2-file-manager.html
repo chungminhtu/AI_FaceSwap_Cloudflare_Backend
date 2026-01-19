@@ -22,17 +22,21 @@
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .select-all { margin-right: 10px; }
         .file-list { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
-        .table-header { background: #f8f9fa; padding: 12px; display: grid; grid-template-columns: 30px 1fr 180px 150px; gap: 10px; border-bottom: 2px solid #dee2e6; font-weight: 600; }
-        .table-row { padding: 12px; display: grid; grid-template-columns: 30px 1fr 180px 150px; gap: 10px; border-bottom: 1px solid #dee2e6; cursor: pointer; transition: background 0.2s; }
+        .search-box { flex: 1; max-width: 300px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .table-header { background: #f8f9fa; padding: 12px; display: grid; grid-template-columns: 30px 1fr 100px 180px 150px; gap: 10px; border-bottom: 2px solid #dee2e6; font-weight: 600; }
+        .table-row { padding: 12px; display: grid; grid-template-columns: 30px 1fr 100px 180px 150px; gap: 10px; border-bottom: 1px solid #dee2e6; cursor: pointer; transition: background 0.2s; align-items: center; }
         .table-row:hover { background: #f8f9fa; }
         .table-row.selected { background: #e7f3ff; }
         .table-row.folder { font-weight: 500; }
-        .table-row.folder .name::before { content: '📁 '; }
-        .table-row.file .name::before { content: '📄 '; }
+        .file-icon { width: 20px; height: 20px; display: inline-block; margin-right: 8px; vertical-align: middle; }
         .checkbox { width: 18px; height: 18px; cursor: pointer; }
-        .name { color: #333; }
+        .name { color: #333; display: flex; align-items: center; cursor: pointer; }
+        .name:hover { text-decoration: underline; }
+        .table-row.folder { cursor: pointer; }
+        .table-row.folder:hover { background: #e8f4fd; }
         .date { color: #666; font-size: 12px; }
         .size { color: #666; font-size: 12px; text-align: right; }
+        .type { color: #666; font-size: 12px; text-align: right; }
         .pagination { padding: 15px; display: flex; justify-content: center; gap: 10px; align-items: center; }
         .pagination button { padding: 6px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
         .pagination button:hover:not(:disabled) { background: #f8f9fa; }
@@ -57,11 +61,13 @@
         <div class="toolbar">
             <input type="checkbox" class="checkbox select-all" id="selectAll" onchange="toggleSelectAll()">
             <span>Select All</span>
+            <input type="text" class="search-box" id="searchBox" placeholder="Search files..." oninput="applyFilter()">
             <div class="sort-controls">
                 <label>Sort:</label>
                 <select id="sortBy" onchange="applySort()">
                     <option value="name">Name</option>
                     <option value="date">Date</option>
+                    <option value="size">Size</option>
                     <option value="type">Type</option>
                 </select>
                 <select id="sortOrder" onchange="applySort()">
@@ -69,6 +75,10 @@
                     <option value="desc">Descending</option>
                 </select>
             </div>
+            <input type="file" id="zipFileInput" accept=".zip" style="display: none;" onchange="handleZipFileSelect()">
+            <input type="text" id="uploadBucket" value="faceswap-images-office-dev" placeholder="Bucket name" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 200px;" title="R2 bucket name">
+            <input type="text" id="uploadPrefix" value="preset" placeholder="Target folder" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 200px;" title="Target folder path (e.g. preset)">
+            <button class="btn btn-primary" id="uploadZipBtn" onclick="document.getElementById('zipFileInput').click()">Upload ZIP</button>
             <button class="btn btn-danger" onclick="deleteSelected()" id="deleteBtn" disabled>Delete Selected</button>
             <button class="btn btn-primary" onclick="refresh()">Refresh</button>
         </div>
@@ -80,254 +90,6 @@
         <div class="pagination" id="pagination"></div>
     </div>
     
-    <script>
-        let currentPath = 'preset';
-        let allItems = [];
-        let filteredItems = [];
-        let selectedItems = new Set();
-        let currentPage = 1;
-        const itemsPerPage = 50;
-        let sortBy = 'name';
-        let sortOrder = 'asc';
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        function escapeJsString(str) {
-            return "'" + str.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
-        }
-        
-        function formatDate(date) {
-            if (!date) return '-';
-            const d = new Date(date);
-            const now = new Date();
-            const diffMs = now - d;
-            const diffMins = Math.floor(diffMs / 60000);
-            const diffHours = Math.floor(diffMs / 3600000);
-            const diffDays = Math.floor(diffMs / 86400000);
-            
-            if (diffMins < 1) return 'Just now';
-            if (diffMins < 60) return diffMins + ' min ago';
-            if (diffHours < 24) return diffHours + ' hour' + (diffHours > 1 ? 's' : '') + ' ago';
-            if (diffDays < 7) return diffDays + ' day' + (diffDays > 1 ? 's' : '') + ' ago';
-            
-            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
-        
-        async function loadPath(path) {
-            currentPath = path || '';
-            currentPage = 1;
-            selectedItems.clear();
-            document.getElementById('selectAll').checked = false;
-            document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
-            document.getElementById('deleteBtn').disabled = true;
-            
-            try {
-                const response = await fetch('/api/list?path=' + encodeURIComponent(currentPath));
-                const data = await response.json();
-                
-                if (data.success) {
-                    allItems = [
-                        ...data.folders.map(f => ({ name: f, type: 'folder', path: f, date: null })),
-                        ...data.files.map(f => ({ name: f.path, type: 'file', path: f.path, date: f.date ? new Date(f.date) : null, size: f.size }))
-                    ];
-                    updateBreadcrumb(currentPath);
-                    applySort();
-                } else {
-                    showMessage('error', 'Error: ' + data.error);
-                }
-            } catch (error) {
-                showMessage('error', 'Error loading path: ' + error.message);
-            }
-        }
-        
-        function updateBreadcrumb(path) {
-            const parts = path.split('/').filter(p => p);
-            let html = '<a onclick="loadPath(\'\')">Root</a>';
-            let current = '';
-            parts.forEach(part => {
-                current += (current ? '/' : '') + part;
-                const escapedCurrent = escapeJsString(current);
-                html += ' / <a onclick="loadPath(' + escapedCurrent + ')">' + escapeHtml(part) + '</a>';
-            });
-            document.getElementById('breadcrumb').innerHTML = html;
-        }
-        
-        function applySort() {
-            sortBy = document.getElementById('sortBy').value;
-            sortOrder = document.getElementById('sortOrder').value;
-            
-            filteredItems = [...allItems].sort((a, b) => {
-                if (a.type === 'folder' && b.type === 'file') return -1;
-                if (a.type === 'file' && b.type === 'folder') return 1;
-                
-                let comparison = 0;
-                if (sortBy === 'name') {
-                    comparison = a.name.localeCompare(b.name);
-                } else if (sortBy === 'date') {
-                    const dateA = a.date ? a.date.getTime() : 0;
-                    const dateB = b.date ? b.date.getTime() : 0;
-                    comparison = dateA - dateB;
-                } else if (sortBy === 'type') {
-                    comparison = a.type.localeCompare(b.type);
-                }
-                return sortOrder === 'asc' ? comparison : -comparison;
-            });
-            
-            renderItems();
-        }
-        
-        function renderItems() {
-            const start = (currentPage - 1) * itemsPerPage;
-            const end = start + itemsPerPage;
-            const pageItems = filteredItems.slice(start, end);
-            
-            let html = '<div class="table-header"><div></div><div>Name</div><div>Date</div><div class="size">Type</div></div>';
-            
-            pageItems.forEach(item => {
-                const isSelected = selectedItems.has(item.path);
-                const displayName = item.path.split('/').pop();
-                const escapedPath = escapeJsString(item.path);
-                const escapedDisplayName = escapeHtml(displayName);
-                const dateStr = item.date ? formatDate(item.date) : '-';
-                html += '<div class="table-row ' + item.type + (isSelected ? ' selected' : '') + '" onclick="toggleSelect(' + escapedPath + ')">';
-                html += '<input type="checkbox" class="checkbox" ' + (isSelected ? 'checked' : '') + ' onclick="event.stopPropagation(); toggleSelect(' + escapedPath + ')">';
-                html += '<div class="name" onclick="' + (item.type === 'folder' ? 'navigateTo(' + escapedPath + ')' : '') + '">' + escapedDisplayName + '</div>';
-                html += '<div class="date">' + escapeHtml(dateStr) + '</div>';
-                html += '<div class="size">' + item.type + '</div>';
-                html += '</div>';
-            });
-            
-            if (pageItems.length === 0) {
-                html = '<div class="loading">No items found</div>';
-            }
-            
-            document.getElementById('fileList').innerHTML = html;
-            renderPagination();
-            updateDeleteButton();
-        }
-        
-        function renderPagination() {
-            const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
-            let html = '';
-            
-            html += '<button onclick="changePage(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? 'disabled' : '') + '>Previous</button>';
-            html += '<span>Page ' + currentPage + ' of ' + totalPages + ' (' + filteredItems.length + ' items)</span>';
-            html += '<button onclick="changePage(' + (currentPage + 1) + ')" ' + (currentPage === totalPages ? 'disabled' : '') + '>Next</button>';
-            
-            document.getElementById('pagination').innerHTML = html;
-        }
-        
-        function changePage(page) {
-            const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
-            if (page >= 1 && page <= totalPages) {
-                currentPage = page;
-                renderItems();
-            }
-        }
-        
-        function toggleSelect(path) {
-            if (selectedItems.has(path)) {
-                selectedItems.delete(path);
-            } else {
-                selectedItems.add(path);
-            }
-            document.getElementById('selectAll').checked = selectedItems.size === filteredItems.length && filteredItems.length > 0;
-            renderItems();
-        }
-        
-        function toggleSelectAll() {
-            const checked = document.getElementById('selectAll').checked;
-            if (checked) {
-                filteredItems.forEach(item => selectedItems.add(item.path));
-            } else {
-                selectedItems.clear();
-            }
-            renderItems();
-        }
-        
-        function navigateTo(path) {
-            loadPath(path);
-        }
-        
-        function updateDeleteButton() {
-            document.getElementById('deleteBtn').disabled = selectedItems.size === 0;
-        }
-        
-        async function deleteSelected() {
-            if (selectedItems.size === 0) return;
-            
-            if (!confirm('Delete ' + selectedItems.size + ' selected item(s)? This cannot be undone.')) {
-                return;
-            }
-            
-            const files = [];
-            const folders = [];
-            
-            selectedItems.forEach(path => {
-                const item = allItems.find(i => i.path === path);
-                if (item.type === 'file') {
-                    files.push(path);
-                } else {
-                    folders.push(path);
-                }
-            });
-            
-            try {
-                const promises = [];
-                if (files.length > 0) {
-                    promises.push(fetch('/api/delete/files', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ files })
-                    }));
-                }
-                if (folders.length > 0) {
-                    promises.push(fetch('/api/delete/folders', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ folders })
-                    }));
-                }
-                
-                const results = await Promise.all(promises);
-                const data = await Promise.all(results.map(r => r.json()));
-                
-                let success = true;
-                let message = 'Deleted successfully';
-                data.forEach(d => {
-                    if (!d.success) {
-                        success = false;
-                        message = 'Some deletions failed';
-                    }
-                });
-                
-                showMessage(success ? 'success' : 'error', message);
-                selectedItems.clear();
-                await loadPath(currentPath);
-            } catch (error) {
-                showMessage('error', 'Error deleting: ' + error.message);
-            }
-        }
-        
-        function refresh() {
-            loadPath(currentPath);
-        }
-        
-        function showMessage(type, text) {
-            const msgDiv = document.getElementById('message');
-            msgDiv.className = type;
-            msgDiv.textContent = text;
-            msgDiv.style.display = 'block';
-            setTimeout(() => {
-                msgDiv.style.display = 'none';
-            }, 5000);
-        }
-        
-        loadPath('');
-    </script>
+    <script src="r2-file-manager.js"></script>
 </body>
 </html>

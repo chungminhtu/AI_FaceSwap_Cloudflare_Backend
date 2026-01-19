@@ -5,7 +5,7 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
 
@@ -1913,6 +1913,18 @@ export default {
               }
             });
             
+            // Delete KV cache for this preset (invalidate old cached prompt)
+            const promptCacheKV = getPromptCacheKV(env);
+            if (promptCacheKV) {
+              const cacheKey = `prompt:${presetId}`;
+              try {
+                await promptCacheKV.delete(cacheKey);
+                console.log(`[process-thumbnail-file] Deleted KV cache for ${cacheKey}`);
+              } catch (kvError) {
+                console.warn(`[process-thumbnail-file] Failed to delete KV cache for ${cacheKey}:`, kvError);
+              }
+            }
+
             // Update database (prompt_json is stored in R2 metadata, not in D1)
             const existingPreset = await DB.prepare('SELECT id FROM presets WHERE id = ?').bind(presetId).first();
             if (existingPreset) {
@@ -1921,13 +1933,14 @@ export default {
               const ext = r2Key.split('.').pop() || 'webp';
               await DB.prepare('INSERT INTO presets (id, ext, created_at, updated_at) VALUES (?, ?, datetime(\'now\'), datetime(\'now\'))').bind(presetId, ext).run();
             }
-            
+
             return successResponse({
               success: true,
               preset_id: presetId,
               r2_key: r2Key,
               url: publicUrl,
               hasPrompt: true,
+              kvCacheDeleted: true,
               vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) }
             }, 200, request, env);
           }
@@ -1944,7 +1957,6 @@ export default {
 
         // Check if this is a zip file upload for preset processing
         if (zipFile && zipFile.type === 'application/zip') {
-          console.log('[process-thumbnail-file] Processing zip file for preset upload, size:', zipFile.size);
 
           const zipData = await zipFile.arrayBuffer();
           const zip = await JSZip.loadAsync(zipData);
@@ -1974,7 +1986,6 @@ export default {
             return errorResponse('No PNG files found in the preset folder', 400, undefined, request, env);
           }
 
-          console.log(`[process-thumbnail-file] Found ${presetFiles.length} PNG files in preset folder`);
 
           // Process preset files in parallel with controlled concurrency
           const processPresetFile = async ({ filename, relativePath, zipEntry }: { filename: string; relativePath: string; zipEntry: JSZip.JSZipObject }) => {
@@ -2045,7 +2056,6 @@ export default {
               const presetR2Key = `${folderPath}/${presetId}.webp`;
               const promptJson = JSON.stringify(promptResult.prompt);
 
-              console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes`);
               
               // Retry R2 upload operation with exponential backoff
               let uploadSuccess = false;
@@ -2070,7 +2080,6 @@ export default {
                     throw new Error('Upload verification failed: file not found after upload');
                   }
                   
-                  console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key} (attempt ${uploadAttempt + 1})`);
                   uploadSuccess = true;
                   break;
                 } catch (uploadError) {
@@ -2113,10 +2122,18 @@ export default {
 
               const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
 
-              // Thumbnails are uploaded separately via yyy.zip, so we don't generate them here
-              // Just return the preset URL
+              // Create placeholder thumbnail entries for all resolutions based on thumbnail_format
+              // These will be replaced when actual thumbnail files are uploaded via yyy.zip
+              const resolutions = ['1x', '1.5x', '2x', '3x', '4x'];
+              const ext = thumbnailFormat === 'json' ? 'json' : 'webp';
+              const formatPrefix = thumbnailFormat === 'json' ? 'lottie' : 'webp';
+
               let thumbnailData: Record<string, string> = {};
-              let thumbnailUrl: string | null = null;
+              resolutions.forEach(res => {
+                thumbnailData[`${formatPrefix}_${res}`] = `preset_thumb/${formatPrefix}_${res}/${presetId}.${ext}`;
+              });
+
+              let thumbnailUrl: string | null = getR2PublicUrl(env, thumbnailData[`${formatPrefix}_4x`], requestUrl.origin);
 
               // Update database
               const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
@@ -2144,12 +2161,25 @@ export default {
                 JSON.stringify(thumbnailData)
               ).run();
 
+              // Delete KV cache for this preset (invalidate old cached prompt)
+              const promptCacheKV = getPromptCacheKV(env);
+              if (promptCacheKV) {
+                const cacheKey = `prompt:${presetId}`;
+                try {
+                  await promptCacheKV.delete(cacheKey);
+                  console.log(`[process-thumbnail-file] Deleted KV cache for ${cacheKey}`);
+                } catch (kvError) {
+                  console.warn(`[process-thumbnail-file] Failed to delete KV cache for ${cacheKey}:`, kvError);
+                }
+              }
+
               return {
                 success: true,
                 type: 'preset',
                 preset_id: presetId,
                 url: presetPublicUrl,
                 hasPrompt: true,
+                kvCacheDeleted: true,
                 vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) },
                 thumbnail_url: thumbnailUrl,
                 thumbnail_format: thumbnailFormat,
@@ -2183,7 +2213,6 @@ export default {
             }
 
             const batch = presetFiles.slice(i, i + concurrency);
-            console.log(`[process-thumbnail-file] Processing batch ${Math.floor(i / concurrency) + 1}, files ${i + 1}-${Math.min(i + concurrency, presetFiles.length)}`);
 
             const batchResults = await Promise.all(batch.map(processPresetFile));
             processedCount += batch.length;
@@ -2209,7 +2238,6 @@ export default {
           }
 
           const totalTime = Date.now() - startTime;
-          console.log(`[process-thumbnail-file] Zip processing complete. Time: ${totalTime}ms, Processed: ${processedCount}/${presetFiles.length}, Success: ${successful}, Failed: ${failed}`);
 
           return successResponse({
             success: true,
@@ -2298,7 +2326,7 @@ export default {
           let folderPath = 'preset';
           if (filePath) {
             const normalizedPath = filePath.replace(/\\/g, '/');
-            const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
+            const pathParts = normalizedPath.split('/').filter(p => p && p !== basename);
             // Filter out any path segments that match presetId to prevent duplicates
             const cleanPathParts = pathParts.filter(part => {
               const partWithoutExt = part.replace(/\.(webp|png|json)$/i, '');
@@ -2312,7 +2340,6 @@ export default {
           const presetR2Key = `${folderPath}/${presetId}.webp`;
           const promptJson = JSON.stringify(promptResult.prompt);
           
-          console.log(`[process-thumbnail-file] Uploading preset ${presetId} to R2: ${presetR2Key}, file size: ${fileData.byteLength} bytes, original filename: ${filename}`);
           
           // Retry R2 upload operation with exponential backoff
           let uploadSuccess = false;
@@ -2337,7 +2364,6 @@ export default {
                 throw new Error('Upload verification failed: file not found after upload');
               }
               
-              console.log(`[process-thumbnail-file] Successfully uploaded and verified preset ${presetId} to R2: ${presetR2Key}, size: ${verifyUpload.size} bytes (attempt ${uploadAttempt + 1})`);
               uploadSuccess = true;
               break;
             } catch (uploadError) {
@@ -2381,13 +2407,20 @@ export default {
           }
           
           const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
-          console.log(`[process-thumbnail-file] Preset public URL: ${presetPublicUrl}`);
-          
-          // Thumbnails are uploaded separately via yyy.zip, so we don't generate them here
-          // Just return the preset URL
+
+          // Create placeholder thumbnail entries for all resolutions based on thumbnail_format
+          // These will be replaced when actual thumbnail files are uploaded via yyy.zip
+          const resolutions = ['1x', '1.5x', '2x', '3x', '4x'];
+          const thumbExt = thumbnailFormat === 'json' ? 'json' : 'webp';
+          const formatPrefix = thumbnailFormat === 'json' ? 'lottie' : 'webp';
+
           let thumbnailData: Record<string, string> = {};
-          let thumbnailUrl: string | null = null;
-          
+          resolutions.forEach(res => {
+            thumbnailData[`${formatPrefix}_${res}`] = `preset_thumb/${formatPrefix}_${res}/${presetId}.${thumbExt}`;
+          });
+
+          let thumbnailUrl: string | null = getR2PublicUrl(env, thumbnailData[`${formatPrefix}_4x`], requestUrl.origin);
+
           // Update database - use INSERT OR REPLACE to handle concurrent requests
           const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
           const createdAt = existingPreset && (existingPreset as any).created_at 
@@ -2409,18 +2442,31 @@ export default {
           await DB.prepare(
             'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
           ).bind(
-            presetId, 
-            ext, 
+            presetId,
+            ext,
             createdAt,
             JSON.stringify(thumbnailData)
           ).run();
-          
+
+          // Delete KV cache for this preset (invalidate old cached prompt)
+          const promptCacheKV = getPromptCacheKV(env);
+          if (promptCacheKV) {
+            const cacheKey = `prompt:${presetId}`;
+            try {
+              await promptCacheKV.delete(cacheKey);
+              console.log(`[process-thumbnail-file] Deleted KV cache for ${cacheKey}`);
+            } catch (kvError) {
+              console.warn(`[process-thumbnail-file] Failed to delete KV cache for ${cacheKey}:`, kvError);
+            }
+          }
+
           return successResponse({
             success: true,
             type: 'preset',
             preset_id: presetId,
             url: presetPublicUrl,
             hasPrompt: true,
+            kvCacheDeleted: true,
             vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) },
             thumbnail_url: thumbnailUrl,
             thumbnail_format: thumbnailFormat,
@@ -2432,7 +2478,7 @@ export default {
           let folderPath = 'preset_thumb';
           if (filePath) {
             const normalizedPath = filePath.replace(/\\/g, '/');
-            const pathParts = normalizedPath.split('/').filter(p => p && p !== filename);
+            const pathParts = normalizedPath.split('/').filter(p => p && p !== basename);
             // Filter out any path segments that match presetId to prevent duplicates
             const cleanPathParts = pathParts.filter(part => {
               const partWithoutExt = part.replace(/\.(webp|png|json)$/i, '');
@@ -2689,21 +2735,19 @@ export default {
                 : Math.floor(Date.now() / 1000);
               const ext = filename.toLowerCase().endsWith('.json') ? 'json' : 'webp'; // Presets are always WebP (or JSON for Lottie)
 
-              let existingThumbnailR2: string | null = null;
+              // Use existing thumbnail_r2 if available, otherwise use preset image as default thumbnail
+              let thumbnailR2Json: string;
               if (existingPreset && (existingPreset as any).thumbnail_r2) {
-                existingThumbnailR2 = (existingPreset as any).thumbnail_r2 as string;
+                // Preserve existing thumbnail data
+                thumbnailR2Json = (existingPreset as any).thumbnail_r2 as string;
+              } else {
+                // Set preset image as default 4x thumbnail for new presets
+                thumbnailR2Json = JSON.stringify({ webp_4x: r2Key });
               }
 
               await DB.prepare(
-                existingThumbnailR2
-                  ? 'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
-                  : 'INSERT OR REPLACE INTO presets (id, ext, created_at) VALUES (?, ?, ?)'
-              ).bind(
-                presetId,
-                ext,
-                createdAt,
-                ...(existingThumbnailR2 ? [existingThumbnailR2] : [])
-              ).run();
+                'INSERT OR REPLACE INTO presets (id, ext, created_at, thumbnail_r2) VALUES (?, ?, ?, ?)'
+              ).bind(presetId, ext, createdAt, thumbnailR2Json).run();
 
               return {
                 success: true,
@@ -2969,21 +3013,30 @@ export default {
       }
     }
 
-    // Handle profile retrieval
+    // Handle profile retrieval (supports both profile ID and device ID)
     if (path.startsWith('/profiles/') && request.method === 'GET') {
       try {
-        const profileId = extractPathId(path, '/profiles/');
-        if (!profileId) {
+        const idParam = extractPathId(path, '/profiles/');
+        if (!idParam) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
-        const result = await DB.prepare(
+
+        // Try to find by profile ID first, then by device_id
+        let result = await DB.prepare(
           'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
-        ).bind(profileId).first();
+        ).bind(idParam).first();
+
+        // If not found by ID, try by device_id
+        if (!result) {
+          result = await DB.prepare(
+            'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE device_id = ?'
+          ).bind(idParam).first();
+        }
 
         if (!result) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Profile not found', 404, debugEnabled ? { profileId, path } : undefined, request, env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { idParam, searchedBy: 'id and device_id', path } : undefined, request, env);
         }
 
         const profile: Profile = {
@@ -3003,11 +3056,11 @@ export default {
           status: 'success',
           message: 'Profile retrieved successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { profileId } } : {})
+          ...(debugEnabled ? { debug: { idParam, foundById: (result as any).id === idParam ? 'profile_id' : 'device_id' } } : {})
         }, 200, request, env);
       } catch (error) {
         logCriticalError('/profiles/{id} (GET)', error, request, env, {
-          profileId: extractPathId(path, '/profiles/')
+          idParam: extractPathId(path, '/profiles/')
         });
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -5033,18 +5086,42 @@ export default {
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
-        const modelParam = body.model;
-        
-        // Get image dimensions for debug
-        let imageDimensions: { width: number; height: number } | null = null;
-        if (body.aspect_ratio === 'original' || !body.aspect_ratio) {
-          const { getImageDimensions } = await import('./utils');
-          imageDimensions = await getImageDimensions(body.image_url, env);
+        // Safety pre-check with Gemini 2.5 Flash Lite before processing
+        const safetyCheck = await checkImageSafetyWithFlashLite(body.image_url, env);
+        if (!safetyCheck.safe) {
+          console.log('[Enhance] Safety check failed:', safetyCheck.reason || safetyCheck.error);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(
+            safetyCheck.reason || 'Image failed safety check',
+            400,
+            debugEnabled ? {
+              path,
+              safetyCheck: {
+                safe: false,
+                reason: safetyCheck.reason,
+                category: safetyCheck.category,
+                error: safetyCheck.error
+              }
+            } : undefined,
+            request,
+            env
+          );
         }
 
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
+        const modelParam = body.model;
+
+        // Get extended image dimensions for debug (includes EXIF orientation)
+        let imageDimensionsExtended: import('./utils').ImageDimensionsExtended | null = null;
+        if (body.aspect_ratio === 'original' || !body.aspect_ratio) {
+          const { getImageDimensionsExtended } = await import('./utils');
+          imageDimensionsExtended = await getImageDimensionsExtended(body.image_url, env);
+        }
+
+        const enhancePrompt = `Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance. CRITICAL: Preserve the ENTIRE image content - do not crop, cut off, or remove any parts of the image. Maintain the original composition, framing, and all visible elements. Keep the full subject visible including all edges and corners. Maintain the correct horizontal orientation and do not rotate or flip the image. The output must show the complete original image with enhanced quality, not a cropped or modified composition.`;
+        
         const enhancedResult = await callNanoBanana(
-          'Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance.',
+          enhancePrompt,
           body.image_url,
           body.image_url,
           env,
@@ -5086,10 +5163,15 @@ export default {
           requested: body.aspect_ratio || 'undefined',
           resolved: validAspectRatio,
           imageUrl: body.image_url,
-          imageDimensions: imageDimensions ? {
-            width: imageDimensions.width,
-            height: imageDimensions.height,
-            calculatedRatio: (imageDimensions.width / imageDimensions.height).toFixed(4),
+          imageDimensions: imageDimensionsExtended ? {
+            width: imageDimensionsExtended.width,
+            height: imageDimensionsExtended.height,
+            rawWidth: imageDimensionsExtended.rawWidth,
+            rawHeight: imageDimensionsExtended.rawHeight,
+            exifOrientation: imageDimensionsExtended.orientation,
+            rotated90: imageDimensionsExtended.rotated,
+            calculatedRatio: (imageDimensionsExtended.width / imageDimensionsExtended.height).toFixed(4),
+            orientation: imageDimensionsExtended.width > imageDimensionsExtended.height ? 'landscape' : imageDimensionsExtended.width < imageDimensionsExtended.height ? 'portrait' : 'square',
           } : null,
         } : undefined;
 
@@ -5150,6 +5232,28 @@ export default {
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
+
+        // Safety pre-check with Gemini 2.5 Flash Lite before processing
+        const safetyCheck = await checkImageSafetyWithFlashLite(body.image_url, env);
+        if (!safetyCheck.safe) {
+          console.log('[Beauty] Safety check failed:', safetyCheck.reason || safetyCheck.error);
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(
+            safetyCheck.reason || 'Image failed safety check',
+            400,
+            debugEnabled ? {
+              path,
+              safetyCheck: {
+                safe: false,
+                reason: safetyCheck.reason,
+                category: safetyCheck.category,
+                error: safetyCheck.error
+              }
+            } : undefined,
+            request,
+            env
+          );
         }
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
@@ -5361,6 +5465,27 @@ export default {
           if (!validateImageUrl(selfieImageUrl, env)) {
             return errorResponse('Invalid selfie image URL', 400, debugEnabled ? { path } : undefined, request, env);
           }
+        }
+
+        // Safety pre-check with Gemini 2.5 Flash Lite before processing
+        const safetyCheck = await checkImageSafetyWithFlashLite(selfieImageUrl, env);
+        if (!safetyCheck.safe) {
+          console.log('[Filter] Safety check failed:', safetyCheck.reason || safetyCheck.error);
+          return errorResponse(
+            safetyCheck.reason || 'Image failed safety check',
+            400,
+            debugEnabled ? {
+              path,
+              safetyCheck: {
+                safe: false,
+                reason: safetyCheck.reason,
+                category: safetyCheck.category,
+                error: safetyCheck.error
+              }
+            } : undefined,
+            request,
+            env
+          );
         }
 
         // Read prompt_json from R2 metadata or cache

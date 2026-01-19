@@ -1,6 +1,7 @@
 // backend-cloudflare-workers/utils.ts
 import type { Env } from './types';
 import { ASPECT_RATIO_CONFIG } from './config';
+import { PhotonImage } from '@cf-wasm/photon/workerd';
 
 // Safety violation status codes (1000+) Loại nhạy cảm
 // Tìm kiếm An toàn: Tập hợp các đặc điểm liên quan đến hình ảnh, được tính toán bằng các phương pháp thị giác máy tính
@@ -16,10 +17,14 @@ export const SAFETY_STATUS_CODES = {
 // Note: Status codes in utils.ts are maintained for backward compatibility
 // but should be migrated to use VERTEX_AI_CONFIG.SAFETY_STATUS_CODES
 export const VERTEX_SAFETY_STATUS_CODES = {
+  // Vertex AI structured safety filter blocks (safetyRatings with blocked=true)
   HATE_SPEECH: 2001, // Lời lẽ kích động thù hận: Những bình luận tiêu cực hoặc gây hại nhắm vào danh tính và/hoặc các thuộc tính được bảo vệ.
   HARASSMENT: 2002, // Quấy rối: Những lời lẽ đe dọa, hăm dọa, bắt nạt hoặc lăng mạ nhắm vào người khác.
   SEXUALLY_EXPLICIT: 2003, // Nội dung khiêu dâm: Có chứa nội dung liên quan đến hành vi tình dục hoặc các nội dung khiêu dâm khác.
   DANGEROUS_CONTENT: 2004, // Nội dung nguy hiểm: Thúc đẩy hoặc tạo điều kiện tiếp cận các hàng hóa, dịch vụ và hoạt động có hại.
+  // Prompt-based content policy refusal (model text-based refusal from our CONTENT_SAFETY_INSTRUCTION)
+  PROMPT_CONTENT_POLICY: 3001, // Model refused due to our prompt content policy instruction - NOT from Vertex AI safety filters
+  // Unknown errors
   UNKNOWN_ERROR: 3000, // Vertex AI unknown error: Safety violation detected but specific category cannot be determined
 } as const;
 
@@ -468,66 +473,198 @@ export const promisePoolWithConcurrency = async <T, R>(
   return results;
 };
 
-// Get image dimensions from URL by parsing image headers (simplest working solution)
+// Extended image info including raw dimensions and EXIF orientation for debugging
+export interface ImageDimensionsExtended {
+  width: number;          // Display width (after EXIF rotation)
+  height: number;         // Display height (after EXIF rotation)
+  rawWidth: number;       // Original pixel width from file
+  rawHeight: number;      // Original pixel height from file
+  orientation: number;    // EXIF orientation (1-8), 1 = normal
+  rotated: boolean;       // True if orientation 5-8 (90° rotation applied)
+}
+
+// Get image dimensions from URL using @cf-wasm/photon (100% reliable for all image formats)
 export const getImageDimensions = async (imageUrl: string, env: any): Promise<{ width: number; height: number } | null> => {
   try {
-    // Fetch enough bytes to read headers (WebP VP8X needs 30+ bytes)
     const IMAGE_FETCH_TIMEOUT = 60000;
-    const response = await fetchWithTimeout(imageUrl, {
-      headers: { Range: 'bytes=0-32767' }
-    }, IMAGE_FETCH_TIMEOUT);
-    
-    if (!response.ok && response.status !== 206) {
-      // If Range not supported, fetch full image
-      const fullResponse = await fetchWithTimeout(imageUrl, {}, IMAGE_FETCH_TIMEOUT);
-      if (!fullResponse.ok) {
-        return null;
-      }
-      const arrayBuffer = await fullResponse.arrayBuffer();
-      return parseImageDimensions(new Uint8Array(arrayBuffer));
+    const response = await fetchWithTimeout(imageUrl, {}, IMAGE_FETCH_TIMEOUT);
+    if (!response.ok) {
+      return null;
     }
-    
-    const arrayBuffer = await response.arrayBuffer();
-    return parseImageDimensions(new Uint8Array(arrayBuffer));
+
+    const bytes = new Uint8Array(await response.arrayBuffer());
+
+    // Use photon for reliable dimension detection (handles JPEG, PNG, WebP, GIF, etc.)
+    const img = PhotonImage.new_from_byteslice(bytes);
+    const width = img.get_width();
+    const height = img.get_height();
+    img.free(); // Important: free WASM memory
+
+    if (width > 0 && height > 0) {
+      return { width, height };
+    }
+    return null;
   } catch (error) {
     return null;
   }
 };
 
-// Parse image dimensions from JPEG, PNG, or WebP headers
-const parseImageDimensions = (data: Uint8Array): { width: number; height: number } | null => {
-  if (data.length < 24) return null;
-  
-  // Check for JPEG (starts with FF D8)
-  if (data[0] === 0xFF && data[1] === 0xD8) {
-    let i = 2;
-    while (i < data.length - 8) {
-      // Check for SOF markers (Start of Frame): C0, C1, C2, C3, C5, C6, C7, C9, CA, CB, CD, CE, CF
-      if (data[i] === 0xFF) {
-        const marker = data[i + 1];
-        // SOF markers (Start of Frame) contain dimension info
-        if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) || 
-            (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)) {
-          if (i + 8 < data.length) {
-            // JPEG SOF format: bytes 5-6 = height (Y dimension), bytes 7-8 = width (X dimension)
-            const height = (data[i + 5] << 8) | data[i + 6];
-            const width = (data[i + 7] << 8) | data[i + 8];
-            if (width > 0 && height > 0 && width < 65536 && height < 65536) {
-              return { width, height };
+// Get extended image dimensions with EXIF info for debugging
+export const getImageDimensionsExtended = async (imageUrl: string, env: any): Promise<ImageDimensionsExtended | null> => {
+  try {
+    const IMAGE_FETCH_TIMEOUT = 60000;
+    const response = await fetchWithTimeout(imageUrl, {
+      headers: { Range: 'bytes=0-65535' }
+    }, IMAGE_FETCH_TIMEOUT);
+
+    let arrayBuffer: ArrayBuffer;
+    if (!response.ok && response.status !== 206) {
+      const fullResponse = await fetchWithTimeout(imageUrl, {}, IMAGE_FETCH_TIMEOUT);
+      if (!fullResponse.ok) return null;
+      arrayBuffer = await fullResponse.arrayBuffer();
+    } else {
+      arrayBuffer = await response.arrayBuffer();
+    }
+
+    return parseImageDimensionsExtended(new Uint8Array(arrayBuffer));
+  } catch (error) {
+    return null;
+  }
+};
+
+// Parse EXIF orientation from JPEG APP1 segment
+// Returns orientation value 1-8, or 1 (normal) if not found
+// Orientation values: 1=normal, 2=flip-h, 3=180°, 4=flip-v, 5=90°CW+flip-h, 6=90°CW, 7=90°CCW+flip-h, 8=90°CCW
+// For orientations 5,6,7,8 the displayed width/height are swapped from stored pixels
+const parseJpegExifOrientation = (data: Uint8Array): number => {
+  let i = 2;
+  while (i < data.length - 4) {
+    if (data[i] !== 0xFF) { i++; continue; }
+    const marker = data[i + 1];
+
+    // APP1 marker (0xE1) contains EXIF data
+    if (marker === 0xE1) {
+      const segmentLength = (data[i + 2] << 8) | data[i + 3];
+      if (segmentLength < 8 || i + 2 + segmentLength > data.length) break;
+
+      // Check for "Exif\0\0" identifier at offset i+4
+      if (data[i + 4] === 0x45 && data[i + 5] === 0x78 && data[i + 6] === 0x69 &&
+          data[i + 7] === 0x66 && data[i + 8] === 0x00 && data[i + 9] === 0x00) {
+
+        const tiffStart = i + 10; // TIFF header starts after "Exif\0\0"
+        if (tiffStart + 8 > data.length) break;
+
+        // Check byte order: "II" (0x4949) = little-endian, "MM" (0x4D4D) = big-endian
+        const isLittleEndian = data[tiffStart] === 0x49 && data[tiffStart + 1] === 0x49;
+        const isBigEndian = data[tiffStart] === 0x4D && data[tiffStart + 1] === 0x4D;
+        if (!isLittleEndian && !isBigEndian) break;
+
+        // Read functions based on endianness
+        const readU16 = (offset: number): number => {
+          if (offset + 1 >= data.length) return 0;
+          return isLittleEndian
+            ? (data[offset] | (data[offset + 1] << 8))
+            : ((data[offset] << 8) | data[offset + 1]);
+        };
+        const readU32 = (offset: number): number => {
+          if (offset + 3 >= data.length) return 0;
+          return isLittleEndian
+            ? (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24))
+            : ((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
+        };
+
+        // Get IFD0 offset (at TIFF header + 4)
+        const ifd0Offset = readU32(tiffStart + 4);
+        if (ifd0Offset < 8 || tiffStart + ifd0Offset + 2 > data.length) break;
+
+        // Read IFD0 entries
+        const numEntries = readU16(tiffStart + ifd0Offset);
+        for (let e = 0; e < numEntries && e < 50; e++) {
+          const entryOffset = tiffStart + ifd0Offset + 2 + (e * 12);
+          if (entryOffset + 12 > data.length) break;
+
+          const tag = readU16(entryOffset);
+          // Orientation tag = 0x0112
+          if (tag === 0x0112) {
+            const orientation = readU16(entryOffset + 8);
+            if (orientation >= 1 && orientation <= 8) {
+              return orientation;
             }
           }
         }
-        // Skip segment (skip marker byte + length bytes)
-        if (marker !== 0xFF && i + 3 < data.length) {
-          const segmentLength = (data[i + 2] << 8) | data[i + 3];
-          if (segmentLength > 0 && segmentLength < 65536) {
-            i += 2 + segmentLength;
-            continue;
+      }
+      break; // Only check first APP1 segment
+    }
+
+    // Skip to next segment
+    if (marker === 0xD8 || marker === 0xD9) { i += 2; continue; } // SOI/EOI have no length
+    if (marker === 0x00 || marker === 0xFF) { i++; continue; } // Padding
+    if (i + 3 >= data.length) break;
+    const segLen = (data[i + 2] << 8) | data[i + 3];
+    if (segLen < 2) break;
+    i += 2 + segLen;
+  }
+  return 1; // Default: normal orientation
+};
+
+// Parse image dimensions from JPEG, PNG, or WebP headers
+// Based on proven image-size npm package algorithm
+const parseImageDimensions = (data: Uint8Array): { width: number; height: number } | null => {
+  if (data.length < 24) return null;
+
+  // Check for JPEG (starts with FF D8)
+  if (data[0] === 0xFF && data[1] === 0xD8) {
+    // Algorithm from image-size npm package (proven, widely used)
+    // Start after SOI (FFD8) + first marker (FFxx) = skip 4 bytes
+    let offset = 4;
+    let bestDimensions: { width: number; height: number } | null = null;
+
+    while (offset < data.length) {
+      // Read segment length (2 bytes, big-endian)
+      if (offset + 1 >= data.length) break;
+      const blockLength = (data[offset] << 8) | data[offset + 1];
+      if (blockLength < 2) break;
+
+      // Check if we have enough data
+      if (offset + blockLength >= data.length) break;
+
+      // Every JPEG block must begin with 0xFF
+      if (data[offset + blockLength] !== 0xFF) {
+        offset += 1;
+        continue;
+      }
+
+      // Check for SOF markers at blockLength + 1
+      const marker = data[offset + blockLength + 1];
+      // 0xC0 = baseline, 0xC1 = extended, 0xC2 = progressive
+      if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+        // SOF found! Read dimensions at blockLength + 5
+        // Structure: FF Cx LL LL PP HH HH WW WW
+        // blockLength points to LL LL of current segment
+        // blockLength + 5 points to HH HH of SOF
+        if (offset + blockLength + 8 < data.length) {
+          const height = (data[offset + blockLength + 5] << 8) | data[offset + blockLength + 6];
+          const width = (data[offset + blockLength + 7] << 8) | data[offset + blockLength + 8];
+          if (width > 0 && height > 0 && width < 65536 && height < 65536) {
+            // Skip thumbnail dimensions (typically < 300px) - keep looking for main image
+            // EXIF thumbnails are embedded within APP1 segment but parser may find them
+            if (width >= 300 || height >= 300) {
+              return { width, height }; // Found main image dimensions
+            }
+            // Store as fallback in case no larger dimensions found
+            if (!bestDimensions || (width * height > bestDimensions.width * bestDimensions.height)) {
+              bestDimensions = { width, height };
+            }
           }
         }
       }
-      i++;
+
+      // Move to next block: skip marker (2 bytes) + current block
+      offset += blockLength + 2;
     }
+
+    // Return best dimensions found (could be thumbnail if main not found)
+    return bestDimensions;
   }
   
   // Check for PNG (starts with 89 50 4E 47 0D 0A 1A 0A)
@@ -590,6 +727,96 @@ const parseImageDimensions = (data: Uint8Array): { width: number; height: number
   return null;
 };
 
+// Parse image dimensions with extended info (for debugging)
+// Returns both raw and display dimensions plus EXIF orientation
+const parseImageDimensionsExtended = (data: Uint8Array): ImageDimensionsExtended | null => {
+  if (data.length < 24) return null;
+
+  // Check for JPEG (starts with FF D8)
+  if (data[0] === 0xFF && data[1] === 0xD8) {
+    const orientation = parseJpegExifOrientation(data);
+    const rotated = orientation >= 5 && orientation <= 8;
+
+    let i = 2;
+    while (i < data.length - 8) {
+      if (data[i] === 0xFF) {
+        const marker = data[i + 1];
+        if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) ||
+            (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)) {
+          if (i + 8 < data.length) {
+            const rawHeight = (data[i + 5] << 8) | data[i + 6];
+            const rawWidth = (data[i + 7] << 8) | data[i + 8];
+            if (rawWidth > 0 && rawHeight > 0 && rawWidth < 65536 && rawHeight < 65536) {
+              return {
+                width: rotated ? rawHeight : rawWidth,
+                height: rotated ? rawWidth : rawHeight,
+                rawWidth,
+                rawHeight,
+                orientation,
+                rotated,
+              };
+            }
+          }
+        }
+        if (marker !== 0xFF && i + 3 < data.length) {
+          const segmentLength = (data[i + 2] << 8) | data[i + 3];
+          if (segmentLength > 0 && segmentLength < 65536) {
+            i += 2 + segmentLength;
+            continue;
+          }
+        }
+      }
+      i++;
+    }
+  }
+
+  // PNG - no EXIF rotation
+  if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47 &&
+      data[4] === 0x0D && data[5] === 0x0A && data[6] === 0x1A && data[7] === 0x0A) {
+    if (data.length >= 24) {
+      const width = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+      const height = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+      if (width > 0 && height > 0 && width < 2147483647 && height < 2147483647) {
+        return { width, height, rawWidth: width, rawHeight: height, orientation: 1, rotated: false };
+      }
+    }
+  }
+
+  // WebP - no EXIF rotation in standard parsing
+  if (data.length >= 30 &&
+      data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 &&
+      data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) {
+    if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x20) {
+      if (data.length >= 30) {
+        const width = ((data[26] | (data[27] << 8)) & 0x3FFF) + 1;
+        const height = ((data[28] | (data[29] << 8)) & 0x3FFF) + 1;
+        if (width > 0 && height > 0 && width < 65536 && height < 65536) {
+          return { width, height, rawWidth: width, rawHeight: height, orientation: 1, rotated: false };
+        }
+      }
+    } else if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x4C) {
+      if (data.length >= 25) {
+        const bits = (data[21] | (data[22] << 8) | (data[23] << 16) | (data[24] << 24));
+        const width = (bits & 0x3FFF) + 1;
+        const height = ((bits >> 14) & 0x3FFF) + 1;
+        if (width > 0 && height > 0 && width < 65536 && height < 65536) {
+          return { width, height, rawWidth: width, rawHeight: height, orientation: 1, rotated: false };
+        }
+      }
+    } else if (data[12] === 0x56 && data[13] === 0x50 && data[14] === 0x38 && data[15] === 0x58) {
+      if (data.length >= 30) {
+        const width = (data[24] | (data[25] << 8) | (data[26] << 16)) + 1;
+        const height = (data[27] | (data[28] << 8) | (data[29] << 16)) + 1;
+        if (width > 0 && height > 0 && width < 16777216 && height < 16777216) {
+          return { width, height, rawWidth: width, rawHeight: height, orientation: 1, rotated: false };
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
 // Calculate aspect ratio from dimensions and find closest supported Vertex ratio
 // Vertex AI only accepts: 1:1, 3:2, 2:3, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
 export const getClosestAspectRatio = (width: number, height: number, supportedRatios: string[]): string => {
@@ -604,11 +831,42 @@ export const getClosestAspectRatio = (width: number, height: number, supportedRa
   }
   
   const actualRatio = width / height;
+  const isPortrait = height > width;
+  const isLandscape = width > height;
+  const isSquare = Math.abs(width - height) < 10; // Allow small tolerance for square images
   
-  let closestRatio = validRatios[0];
+  // Filter ratios by orientation to prevent cropping
+  // For portrait images, prefer portrait ratios (height > width)
+  // For landscape images, prefer landscape ratios (width > height)
+  // For square images, prefer square or closest match
+  let orientationFilteredRatios = validRatios;
+  if (isPortrait) {
+    // Prefer portrait ratios (2:3, 3:4, 4:5, 9:16) - height > width
+    orientationFilteredRatios = validRatios.filter(r => {
+      const [w, h] = r.split(':').map(Number);
+      return h > w;
+    });
+    // If no portrait ratios found, fall back to all ratios
+    if (orientationFilteredRatios.length === 0) {
+      orientationFilteredRatios = validRatios;
+    }
+  } else if (isLandscape) {
+    // Prefer landscape ratios (3:2, 4:3, 5:4, 16:9, 21:9) - width > height
+    orientationFilteredRatios = validRatios.filter(r => {
+      const [w, h] = r.split(':').map(Number);
+      return w > h;
+    });
+    // If no landscape ratios found, fall back to all ratios
+    if (orientationFilteredRatios.length === 0) {
+      orientationFilteredRatios = validRatios;
+    }
+  }
+  // For square images, prefer 1:1 but allow all ratios
+  
+  let closestRatio = orientationFilteredRatios[0];
   let minDiff = Infinity;
   
-  for (const ratioStr of validRatios) {
+  for (const ratioStr of orientationFilteredRatios) {
     const [w, h] = ratioStr.split(':').map(Number);
     if (w <= 0 || h <= 0) continue;
     
@@ -844,7 +1102,59 @@ export const getVertexSafetyViolation = (responseData: any): { code: number; cat
         }
       }
       
-      // If safety ratings found but no specific category, return unknown error
+      // If safety ratings found but no specific category blocked, try to detect from text
+      // Combine finishMessage and refusalText for keyword analysis
+      const analysisText = (finishMessage + ' ' + refusalText).toLowerCase();
+
+      // Detect specific harm categories from text keywords (Vertex AI internal blocks)
+      // SEXUALLY_EXPLICIT (2003): sexual, nude, explicit, adult, pornographic, nsfw
+      if (/sexual|nude|naked|explicit|adult|pornograph|nsfw|genital|breast|buttock/i.test(analysisText)) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.SEXUALLY_EXPLICIT,
+          category: 'sexually explicit',
+          reason: finishMessage || refusalText || `Output blocked: ${finishReason} - sexually explicit content detected`,
+        };
+      }
+
+      // DANGEROUS_CONTENT (2004): weapon, violence, harm, kill, dangerous, drug, bomb
+      if (/weapon|gun|violen|harm|kill|danger|drug|bomb|explos|attack|murder|shoot|stab/i.test(analysisText)) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.DANGEROUS_CONTENT,
+          category: 'dangerous content',
+          reason: finishMessage || refusalText || `Output blocked: ${finishReason} - dangerous content detected`,
+        };
+      }
+
+      // HATE_SPEECH (2001): hate, racist, discrimination, slur, bigot
+      if (/hate|racist|discriminat|slur|bigot|ethnic|antisemit|homophob|xenophob/i.test(analysisText)) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.HATE_SPEECH,
+          category: 'hate speech',
+          reason: finishMessage || refusalText || `Output blocked: ${finishReason} - hate speech detected`,
+        };
+      }
+
+      // HARASSMENT (2002): harass, bully, threaten, intimidate, abuse
+      if (/harass|bully|threaten|intimidat|abus|stalk|torment/i.test(analysisText)) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.HARASSMENT,
+          category: 'harassment',
+          reason: finishMessage || refusalText || `Output blocked: ${finishReason} - harassment detected`,
+        };
+      }
+
+      // Check if refusal is from our CONTENT_SAFETY_INSTRUCTION (prompt-based policy - 3001)
+      // Keywords specific to our instruction: "content policy", "exposed sensitive body", "wholesome", "modest"
+      const isPromptPolicyRefusal = /content policy|exposed sensitive|provocative|wholesome|modest|non-revealing|appropriate for all audiences/i.test(analysisText);
+      if (isPromptPolicyRefusal) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.PROMPT_CONTENT_POLICY,
+          category: 'prompt content policy',
+          reason: refusalText || finishMessage,
+        };
+      }
+
+      // If safetyRatings exist but no specific match, return unknown
       if (safetyRatings.length > 0) {
         return {
           code: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
@@ -852,20 +1162,16 @@ export const getVertexSafetyViolation = (responseData: any): { code: number; cat
           reason: finishMessage || 'Output blocked - Unable to determine specific violation category',
         };
       }
-      
-      // If no safety ratings but has refusal text, treat as capability refusal
-      if (refusalText) {
-        const lowerText = refusalText.toLowerCase();
-        const isRefusal = /i cannot|beyond my|unable to fulfill|not able to/i.test(lowerText);
-        if (isRefusal) {
-          return {
-            code: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-            category: 'vertex unknown error',
-            reason: refusalText,
-          };
-        }
+
+      // Generic model refusal with no specific category detected
+      if (refusalText && /i cannot|beyond my|unable to|not able to|can't help|cannot help/i.test(refusalText.toLowerCase())) {
+        return {
+          code: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+          category: 'vertex unknown error',
+          reason: refusalText,
+        };
       }
-      
+
       // Default: return unknown error
       return {
         code: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,

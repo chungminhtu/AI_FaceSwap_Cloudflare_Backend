@@ -125,7 +125,7 @@ Khi API key không hợp lệ hoặc thiếu:
 8. POST `/aging` - AI lão hóa khuôn mặt
 9. POST `/upscaler4k` - AI upscale ảnh lên 4K
 10. POST `/profiles` - Tạo profile
-11. GET `/profiles/{id}` - Lấy profile
+11. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
 12. GET `/selfies` - Liệt kê selfies
 13. GET `/results` - Liệt kê results (generated images)
 14. DELETE `/results/{id}` - Xóa result
@@ -239,7 +239,7 @@ Google Vision API SafeSearch trả về mức độ nghiêm trọng cho mỗi fi
 {
   "data": null,
   "status": "error",
-  "message": "Content blocked: Image contains adult content (VERY_LIKELY)",
+  "message": "Upload failed",
   "code": 1001
 }
 ```
@@ -248,14 +248,14 @@ Google Vision API SafeSearch trả về mức độ nghiêm trọng cho mỗi fi
 
 ### Vertex AI Safety Error Codes (2001-2004)
 
-Các error codes này được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Được sử dụng cho:
-- POST `/faceswap` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/background` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/enhance` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/beauty` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/filter` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/restore` - Khi Vertex AI chặn prompt hoặc generated image
-- POST `/aging` - Khi Vertex AI chặn prompt hoặc generated image
+Các error codes này được trả về khi Vertex AI Gemini safety filters chặn generated image. Được sử dụng cho:
+- POST `/faceswap` - Khi Vertex AI chặn generated image
+- POST `/background` - Khi Vertex AI chặn generated image
+- POST `/enhance` - Khi Vertex AI chặn generated image
+- POST `/beauty` - Khi Vertex AI chặn generated image
+- POST `/filter` - Khi Vertex AI chặn generated image
+- POST `/restore` - Khi Vertex AI chặn generated image
+- POST `/aging` - Khi Vertex AI chặn generated image
 
 #### Các loại tác hại
 
@@ -297,24 +297,14 @@ Bộ lọc nội dung đánh giá nội dung dựa trên các loại tác hại 
 - App chỉ chặn nội dung khi phát hiện vi phạm với `HIGH` confidence level
 - Nội dung với `NEGLIGIBLE`, `LOW`, hoặc `MEDIUM` confidence level đều được cho phép
 - Safety violations trả về HTTP 422 với internal error codes 2001-2004 trong trường `code`
-- Message trả về là lý do cụ thể từ hệ thống (ví dụ: finishMessage từ Vertex AI)
+- Message trả về từ Vertex AI API response (có thể là finishMessage, refusalText, hoặc generic message)
 
-**Ví dụ Response (Input Blocked):**
+**Ví dụ Response:**
 ```json
 {
   "data": null,
   "status": "error",
-  "message": "Unable to show the generated image. The image was filtered out because it violated usage guidelines. You will not be charged for blocked images. Try rephrasing the prompt. If you think this was an error, send feedback. Support code: 14952152.",
-  "code": 2001
-}
-```
-
-**Ví dụ Response (Output Blocked):**
-```json
-{
-  "data": null,
-  "status": "error",
-  "message": "Unable to show the generated image. The image was filtered out because it violated usage guidelines. You will not be charged for blocked images. Try rephrasing the prompt. If you think this was an error, send feedback. Support code: 14952152.",
+  "message": "Processing failed",
   "code": 2003
 }
 ```
@@ -432,7 +422,7 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
 
 **Lưu ý quan trọng:**
 - **Vision API Error Codes (1001-1005):** Chỉ selfie uploads với `action="4k"` hoặc `action="4K"` mới được quét bởi Vision API trước khi lưu vào database. Các action khác (như `"faceswap"`, `"wedding"`, `"default"`, v.v.) **không** được kiểm tra bằng Vision API. Xem chi tiết error codes tại [Vision API Safety Error Codes](#vision-api-safety-error-codes-1001-1005).
-- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn nội dung trong prompt hoặc generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`. Xem chi tiết error codes tại [Vertex AI Safety Error Codes](#vertex-ai-safety-error-codes-2001-2004).
+- **Vertex AI Error Codes (2001-2004):** Được trả về khi Vertex AI Gemini safety filters chặn generated image. Áp dụng cho các endpoints: `/faceswap`, `/background`, `/enhance`, `/beauty`, `/filter`, `/restore`, `/aging`. Xem chi tiết error codes tại [Vertex AI Safety Error Codes](#vertex-ai-safety-error-codes-2001-2004).
 - Chặn `POSSIBLE`, `LIKELY`, và `VERY_LIKELY` violations
 - Nếu ảnh không an toàn, file sẽ bị xóa khỏi R2 storage và trả về error code tương ứng
 - Error code được trả về trong trường `code` của response
@@ -1389,13 +1379,21 @@ curl -X POST https://api.d.shotpix.app/profiles \
 
 #### 3.2. GET `/profiles/{id}` - Lấy profile
 
-**Mục đích:** Lấy thông tin profile theo ID.
+**Mục đích:** Lấy thông tin profile theo ID hoặc Device ID.
 
 **Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
+**Path Parameters:**
+- `id` (string, required): Có thể là **Profile ID** hoặc **Device ID**. API sẽ tìm theo profile ID trước, nếu không tìm thấy sẽ tìm theo device ID.
+
 **Request:**
 ```bash
-curl https://api.d.shotpix.app/profiles/profile_1234567890 \
+# Tìm bằng Profile ID
+curl https://api.d.shotpix.app/profiles/uYNgRR70Ry9OFuMV \
+  -H "X-API-Key: your_api_key_here"
+
+# Tìm bằng Device ID
+curl https://api.d.shotpix.app/profiles/device_1765774126587_yaq0uh6rvz \
   -H "X-API-Key: your_api_key_here"
 ```
 
@@ -1417,6 +1415,8 @@ curl https://api.d.shotpix.app/profiles/profile_1234567890 \
   "code": 200
 }
 ```
+
+**Lưu ý:** Cả hai cách tìm (bằng Profile ID hoặc Device ID) đều trả về cùng một profile với đầy đủ thông tin.
 
 ---
 

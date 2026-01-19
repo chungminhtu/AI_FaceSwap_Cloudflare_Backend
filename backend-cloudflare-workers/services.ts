@@ -195,8 +195,8 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(prompt);
     }
 
-    // Use enhanced prompt with facial preservation instruction
-    const faceSwapPrompt = promptText;
+    // Use enhanced prompt with facial preservation instruction + content safety
+    const faceSwapPrompt = `${promptText}\n\n${VERTEX_AI_PROMPTS.CONTENT_SAFETY_INSTRUCTION}`;
 
     // Vertex AI requires OAuth token for service account authentication
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -279,14 +279,14 @@ export const callNanoBanana = async (
       safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
-    // Generate curl command for testing (with sanitized base64)
-    const sanitizedRequestBody = sanitizeObject(requestBody);
-
-    const curlCommand = `curl -X POST \\
+    // Only generate expensive debug info when debug mode is enabled
+    const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+    const sanitizedRequestBody = debugEnabled ? sanitizeObject(requestBody) : undefined;
+    const curlCommand = debugEnabled ? `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
       endpoint: geminiEndpoint,
@@ -298,8 +298,8 @@ export const callNanoBanana = async (
       promptLength: faceSwapPrompt.length,
       targetUrl,
       sourceUrl: Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl],
-      receivedAspectRatio: aspectRatio, // Log the aspect ratio received
-      normalizedAspectRatio: normalizedAspectRatio, // Log the normalized value
+      receivedAspectRatio: aspectRatio,
+      normalizedAspectRatio: normalizedAspectRatio,
     };
 
     // Performance testing mode: skip API call if disabled
@@ -405,8 +405,27 @@ export const callNanoBanana = async (
       } as any;
     }
 
+    // Parse JSON once upfront - avoid double parsing in error handler
+    let data: any = null;
     try {
-      const data = JSON.parse(rawResponse);
+      data = JSON.parse(rawResponse);
+    } catch (jsonError) {
+      const errorMsg = jsonError instanceof Error ? jsonError.message : String(jsonError);
+      console.error('[Vertex-NanoBanana] JSON parse error:', errorMsg);
+      return {
+        Success: false,
+        Message: `Failed to parse response: ${errorMsg}`,
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: `Failed to parse response: ${errorMsg}`,
+        Debug: {
+          ...debugInfo,
+          rawResponse: rawResponse ? rawResponse.substring(0, 1000) : undefined,
+          parseError: errorMsg,
+        },
+      } as any;
+    }
+
+    try {
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
@@ -516,33 +535,27 @@ export const callNanoBanana = async (
         CurlCommand: debugInfo?.curlCommand,
         Debug: debugInfo,
       } as any;
-    } catch (parseError) {
-      // Try to parse and check for safety violations even on parse error
-      try {
-        const data = JSON.parse(rawResponse);
-        const safetyViolation = getVertexSafetyViolation(data);
-        if (safetyViolation) {
-          return {
-            Success: false,
-            Message: safetyViolation.reason,
-            StatusCode: safetyViolation.code,
-            Error: safetyViolation.reason,
-          };
-        }
-      } catch {
-        // If parse fails, continue with unknown error
+    } catch (processError) {
+      // Data already parsed - check for safety violations
+      const safetyViolation = data ? getVertexSafetyViolation(data) : null;
+      if (safetyViolation) {
+        return {
+          Success: false,
+          Message: safetyViolation.reason,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+        };
       }
-      const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
-      console.error('[Vertex-NanoBanana] Parse error:', errorMsg);
+      const errorMsg = processError instanceof Error ? processError.message : String(processError);
+      console.error('[Vertex-NanoBanana] Process error:', errorMsg);
       return {
         Success: false,
-        Message: `Failed to parse response: ${errorMsg}`,
+        Message: `Processing failed: ${errorMsg}`,
         StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
-        Error: `Failed to parse response: ${errorMsg}`,
+        Error: `Processing failed: ${errorMsg}`,
         Debug: {
           ...debugInfo,
-          rawResponse: rawResponse ? (typeof rawResponse === 'string' ? rawResponse.substring(0, 1000) : rawResponse) : undefined,
-          parseError: errorMsg,
+          processError: errorMsg,
         },
       } as any;
     }
@@ -622,11 +635,14 @@ export const generateBackgroundFromPrompt = async (
       normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
     }
 
+    // Append content safety instruction to prompt
+    const safePrompt = `${prompt}\n\n${VERTEX_AI_PROMPTS.CONTENT_SAFETY_INSTRUCTION}`;
+
     const requestBody = {
       contents: [{
         role: "user",
         parts: [
-          { text: prompt }
+          { text: safePrompt }
         ]
       }],
       generationConfig: {
@@ -638,18 +654,20 @@ export const generateBackgroundFromPrompt = async (
       }, safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
-    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+    // Only generate expensive debug info when debug mode is enabled
+    const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+    const sanitizedRequestBody = debugEnabled ? JSON.parse(JSON.stringify(requestBody, (key, value) => {
       if (key === 'data' && typeof value === 'string' && value.length > 100) {
         return '...';
       }
       return value;
-    }));
+    })) : undefined;
 
-    const curlCommand = `curl -X POST \\
+    const curlCommand = debugEnabled ? `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
       endpoint: geminiEndpoint,
@@ -733,8 +751,21 @@ export const generateBackgroundFromPrompt = async (
       } as any;
     }
 
+    // Parse JSON once upfront - avoid double parsing in error handler
+    let data: any = null;
     try {
-      const data = JSON.parse(rawResponse);
+      data = JSON.parse(rawResponse);
+    } catch (jsonError) {
+      console.error('[Vertex-GenerateBackground] JSON parse error:', jsonError instanceof Error ? jsonError.message : String(jsonError));
+      return {
+        Success: false,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
+      };
+    }
+
+    try {
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
@@ -826,16 +857,17 @@ export const generateBackgroundFromPrompt = async (
 
       const resultImageUrl = `r2://${resultKey}`;
 
-      const sanitizedData = sanitizeObject(data);
-
-      const sanitizedRequestBodyForCurl = sanitizeObject(requestBody);
-
-      const curlCommandFinal = `curl -X POST \\
+      // Only generate expensive debug info when debug mode is enabled
+      const debugEnabledFinal = env.ENABLE_DEBUG_RESPONSE === 'true';
+      const sanitizedData = debugEnabledFinal ? sanitizeObject(data) : undefined;
+      const sanitizedRequestBodyForCurl = debugEnabledFinal ? sanitizeObject(requestBody) : undefined;
+      const curlCommandFinal = debugEnabledFinal ? `curl -X POST \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'`;
-      if (debugInfo) {
+  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+
+      if (debugInfo && debugEnabledFinal) {
         debugInfo.requestPayload = sanitizedRequestBodyForCurl;
         debugInfo.curlCommand = curlCommandFinal;
         debugInfo.response = sanitizedData;
@@ -854,22 +886,18 @@ export const generateBackgroundFromPrompt = async (
         CurlCommand: curlCommandFinal,
         Debug: debugInfo,
       };
-    } catch (parseError) {
-      // Try to parse and check for safety violations even on parse error
-      try {
-        const data = JSON.parse(rawResponse);
-        const safetyViolation = getVertexSafetyViolation(data);
-        if (safetyViolation) {
-          return {
-            Success: false,
-            Message: safetyViolation.reason,
-            StatusCode: safetyViolation.code,
-            Error: safetyViolation.reason,
-          };
-        }
-      } catch {
-        // If parse fails, continue with unknown error
+    } catch (processError) {
+      // Data already parsed - check for safety violations
+      const safetyViolation = data ? getVertexSafetyViolation(data) : null;
+      if (safetyViolation) {
+        return {
+          Success: false,
+          Message: safetyViolation.reason,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+        };
       }
+      console.error('[Vertex-GenerateBackground] Process error:', processError instanceof Error ? processError.message : String(processError));
       return {
         Success: false,
         Message: 'Processing failed',
@@ -969,6 +997,9 @@ export const callNanoBananaMerge = async (
       normalizedAspectRatio = ASPECT_RATIO_CONFIG.DEFAULT;
     }
 
+    // Append content safety instruction to merge prompt
+    const safeMergePrompt = `${mergePrompt}\n\n${VERTEX_AI_PROMPTS.CONTENT_SAFETY_INSTRUCTION}`;
+
     const requestBody = {
       contents: [{
         role: "user",
@@ -985,7 +1016,7 @@ export const callNanoBananaMerge = async (
               data: presetImageData
             }
           },
-          { text: mergePrompt }
+          { text: safeMergePrompt }
         ]
       }],
       generationConfig: {
@@ -998,18 +1029,20 @@ export const callNanoBananaMerge = async (
       },
       safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
-    const sanitizedRequestBody = JSON.parse(JSON.stringify(requestBody, (key, value) => {
+    // Only generate expensive debug info when debug mode is enabled
+    const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+    const sanitizedRequestBody = debugEnabled ? JSON.parse(JSON.stringify(requestBody, (key, value) => {
       if (key === 'data' && typeof value === 'string' && value.length > 100) {
         return '...';
       }
       return value;
-    }));
+    })) : undefined;
 
-    const curlCommand = `curl -X POST \\
+    const curlCommand = debugEnabled ? `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
       endpoint: geminiEndpoint,
@@ -1125,8 +1158,21 @@ export const callNanoBananaMerge = async (
       } as any;
     }
 
+    // Parse JSON once upfront - avoid double parsing in error handler
+    let data: any = null;
     try {
-      const data = JSON.parse(rawResponse);
+      data = JSON.parse(rawResponse);
+    } catch (jsonError) {
+      console.error('[Vertex-NanoBananaMerge] JSON parse error:', jsonError instanceof Error ? jsonError.message : String(jsonError));
+      return {
+        Success: false,
+        Message: 'Processing failed',
+        StatusCode: VERTEX_SAFETY_STATUS_CODES.UNKNOWN_ERROR,
+        Error: 'Processing failed',
+      };
+    }
+
+    try {
       if (debugInfo) {
         debugInfo.rawResponse = sanitizeObject(data);
       }
@@ -1219,16 +1265,17 @@ export const callNanoBananaMerge = async (
 
       const resultImageUrl = `r2://${resultKey}`;
 
-      const sanitizedData = sanitizeObject(data);
-
-      const sanitizedRequestBodyForCurl = sanitizeObject(requestBody);
-
-      const curlCommandFinal = `curl -X POST \\
+      // Only generate expensive debug info when debug mode is enabled
+      const debugEnabledFinal = env.ENABLE_DEBUG_RESPONSE === 'true';
+      const sanitizedData = debugEnabledFinal ? sanitizeObject(data) : undefined;
+      const sanitizedRequestBodyForCurl = debugEnabledFinal ? sanitizeObject(requestBody) : undefined;
+      const curlCommandFinal = debugEnabledFinal ? `curl -X POST \\
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'`;
-      if (debugInfo) {
+  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+
+      if (debugInfo && debugEnabledFinal) {
         debugInfo.requestPayload = sanitizedRequestBodyForCurl;
         debugInfo.curlCommand = curlCommandFinal;
         debugInfo.response = sanitizedData;
@@ -1247,22 +1294,18 @@ export const callNanoBananaMerge = async (
         CurlCommand: curlCommandFinal,
         Debug: debugInfo,
       };
-    } catch (parseError) {
-      // Try to parse and check for safety violations even on parse error
-      try {
-        const data = JSON.parse(rawResponse);
-        const safetyViolation = getVertexSafetyViolation(data);
-        if (safetyViolation) {
-          return {
-            Success: false,
-            Message: safetyViolation.reason,
-            StatusCode: safetyViolation.code,
-            Error: safetyViolation.reason,
-          };
-        }
-      } catch {
-        // If parse fails, continue with unknown error
+    } catch (processError) {
+      // Data already parsed - check for safety violations
+      const safetyViolation = data ? getVertexSafetyViolation(data) : null;
+      if (safetyViolation) {
+        return {
+          Success: false,
+          Message: safetyViolation.reason,
+          StatusCode: safetyViolation.code,
+          Error: safetyViolation.reason,
+        };
       }
+      console.error('[Vertex-NanoBananaMerge] Process error:', processError instanceof Error ? processError.message : String(processError));
       return {
         Success: false,
         Message: 'Processing failed',
@@ -1403,6 +1446,192 @@ export const checkSafeSearch = async (
   }
 };
 
+// Gemini 2.5 Flash Lite safety pre-check for filter, beauty, enhance operations
+// This check runs BEFORE the main Vertex AI image generation to ensure image is appropriate
+export const checkImageSafetyWithFlashLite = async (
+  imageUrl: string,
+  env: Env
+): Promise<{
+  safe: boolean;
+  reason?: string;
+  category?: string;
+  error?: string;
+  debug?: {
+    endpoint?: string;
+    model?: string;
+    location?: string;
+    responseTimeMs?: number;
+    httpStatus?: number;
+    rawResponse?: any;
+    rawError?: string;
+    disabled?: boolean;
+    mode?: string;
+    errorDetails?: string;
+  };
+}> => {
+  const startTime = Date.now();
+  const debugInfo: any = {};
+
+  try {
+    // Skip safety check if disabled via config or env
+    if (!VERTEX_AI_CONFIG.SAFETY_CHECK_ENABLED || env.DISABLE_SAFETY_CHECK === 'true' || env.DISABLE_VERTEX_IMAGE_GEN === 'true') {
+      return {
+        safe: true,
+        debug: { disabled: true, mode: 'safety_check_disabled', responseTimeMs: Date.now() - startTime }
+      };
+    }
+
+    // Validate required credentials
+    if (!env.GOOGLE_VERTEX_PROJECT_ID) {
+      console.error('[SafetyCheck] GOOGLE_VERTEX_PROJECT_ID is required');
+      return {
+        safe: false,
+        error: 'GOOGLE_VERTEX_PROJECT_ID is required',
+        debug: { errorDetails: 'Vertex AI project ID is missing' }
+      };
+    }
+
+    if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      console.error('[SafetyCheck] Service account credentials missing');
+      return {
+        safe: false,
+        error: 'Service account credentials required',
+        debug: { errorDetails: 'Service account credentials missing' }
+      };
+    }
+
+    const model = VERTEX_AI_CONFIG.MODELS.SAFETY_CHECK;
+    const projectId = env.GOOGLE_VERTEX_PROJECT_ID;
+    const location = env.GOOGLE_VERTEX_LOCATION || VERTEX_AI_CONFIG.LOCATIONS.MODEL_LOCATIONS[model as keyof typeof VERTEX_AI_CONFIG.LOCATIONS.MODEL_LOCATIONS] || VERTEX_AI_CONFIG.LOCATIONS.DEFAULT;
+    const endpoint = VERTEX_AI_CONFIG.ENDPOINTS.REGIONAL(location, projectId, model);
+
+    debugInfo.endpoint = endpoint;
+    debugInfo.model = model;
+    debugInfo.location = location;
+
+    // Fetch image as base64
+    const imageData = await fetchImageAsBase64(imageUrl, env);
+
+    // Send image with simple prompt - let Vertex AI's built-in safety filters do the work
+    // If the image violates safety policies, it will be blocked automatically
+    const requestBody = {
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: 'Describe this image briefly.' },
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: imageData
+            }
+          }
+        ]
+      }],
+      generationConfig: VERTEX_AI_CONFIG.SAFETY_CHECK,
+      safetySettings: VERTEX_AI_CONFIG.SAFETY_CHECK_SETTINGS,
+    };
+
+    // Get OAuth token
+    const accessToken = await getAccessToken(
+      env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+      env
+    );
+
+    console.log('[SafetyCheck] Calling Gemini 2.5 Flash Lite for safety pre-check');
+
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    }, TIMEOUT_CONFIG.VERTEX_AI);
+
+    debugInfo.responseTimeMs = Date.now() - startTime;
+    debugInfo.httpStatus = response.status;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[SafetyCheck] API error:', response.status, errorText.substring(0, 200));
+
+      // Check if it's a safety block from the API itself
+      if (response.status === 400 && errorText.includes('SAFETY')) {
+        return {
+          safe: false,
+          reason: 'Image blocked by safety filters',
+          category: 'safety_block',
+          debug: debugInfo
+        };
+      }
+
+      return {
+        safe: false,
+        error: `API error: ${response.status}`,
+        debug: { ...debugInfo, rawError: errorText.substring(0, 500) }
+      };
+    }
+
+    const data = await response.json() as any;
+    debugInfo.rawResponse = data;
+
+    // Check 1: promptFeedback.blockReason - image itself was blocked
+    if (data.promptFeedback?.blockReason) {
+      console.log('[SafetyCheck] Image blocked by promptFeedback:', data.promptFeedback.blockReason);
+      return {
+        safe: false,
+        reason: `Image blocked: ${data.promptFeedback.blockReason}`,
+        category: data.promptFeedback.blockReason.toLowerCase(),
+        debug: debugInfo
+      };
+    }
+
+    // Check 2: finishReason === "SAFETY" - response was blocked due to safety
+    const candidate = data.candidates?.[0];
+    if (candidate?.finishReason === 'SAFETY') {
+      console.log('[SafetyCheck] Response blocked by safety filter (finishReason: SAFETY)');
+      // Find which category caused the block
+      const blockedRating = candidate.safetyRatings?.find((r: any) => r.blocked === true);
+      return {
+        safe: false,
+        reason: blockedRating ? `Safety blocked: ${blockedRating.category}` : 'Image blocked by safety filter',
+        category: blockedRating?.category?.toLowerCase() || 'safety',
+        debug: debugInfo
+      };
+    }
+
+    // Check 3: safetyRatings with blocked === true
+    const safetyRatings = candidate?.safetyRatings || [];
+    for (const rating of safetyRatings) {
+      if (rating.blocked === true) {
+        console.log('[SafetyCheck] Safety rating blocked:', rating.category);
+        return {
+          safe: false,
+          reason: `Safety blocked: ${rating.category}`,
+          category: rating.category?.toLowerCase(),
+          debug: debugInfo
+        };
+      }
+    }
+
+    // If we got here, the image passed the safety check
+    console.log('[SafetyCheck] Image passed safety check');
+    return {
+      safe: true,
+      debug: debugInfo
+    };
+
+  } catch (error) {
+    console.error('[SafetyCheck] Exception:', error instanceof Error ? error.message : String(error));
+    return {
+      safe: false,
+      error: error instanceof Error ? error.message : String(error),
+      debug: { ...debugInfo, responseTimeMs: Date.now() - startTime }
+    };
+  }
+};
+
 // Vertex AI API integration for automatic prompt generation
 // Note: Prompts are cached in database (prompt_json column), so no in-memory cache needed
 // artStyle parameter: filter for specialized art style analysis (auto, photorealistic, figurine, popmart, clay, disney, anime, etc.)
@@ -1514,13 +1743,14 @@ export const generateVertexPrompt = async (
       safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
-    // Generate curl command for testing (with sanitized base64)
-    const sanitizedRequestBody = sanitizeObject(requestBody);
-    const curlCommand = `curl -X POST \\
+    // Only generate expensive debug info when debug mode is enabled
+    const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+    const sanitizedRequestBody = debugEnabled ? sanitizeObject(requestBody) : undefined;
+    const curlCommand = debugEnabled ? `curl -X POST \\
   -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
   ${vertexEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'`;
+  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo.requestSent = true;
     debugInfo.requestPayload = {
@@ -1528,7 +1758,7 @@ export const generateVertexPrompt = async (
       imageBytes: imageData.length,
       imageUrl,
     };
-    debugInfo.curlCommand = curlCommand;
+    if (curlCommand) debugInfo.curlCommand = curlCommand;
 
     // Vertex AI requires OAuth token
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -1659,14 +1889,10 @@ export const generateVertexPrompt = async (
             const openBrackets = (jsonText.match(/\[/g) || []).length;
             const closeBrackets = (jsonText.match(/\]/g) || []).length;
 
-            // Add missing closing braces
-            for (let i = 0; i < openBraces - closeBraces; i++) {
-              completedJson += '}';
-            }
-            // Add missing closing brackets
-            for (let i = 0; i < openBrackets - closeBrackets; i++) {
-              completedJson += ']';
-            }
+            // Add missing closing braces/brackets - O(1) instead of O(n²) loop
+            const missingBraces = Math.max(0, openBraces - closeBraces);
+            const missingBrackets = Math.max(0, openBrackets - closeBrackets);
+            completedJson += '}'.repeat(missingBraces) + ']'.repeat(missingBrackets);
 
             try {
               promptJson = JSON.parse(completedJson);
@@ -1798,11 +2024,16 @@ const fetchImageAsBase64 = async (imageUrl: string, env: Env): Promise<string> =
 
   const arrayBuffer = await response.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
-  let binary = '';
-  for (let i = 0; i < uint8Array.length; i++) {
-    binary += String.fromCharCode(uint8Array[i]);
+
+  // O(n) chunked base64 encoding - avoids O(n²) string concatenation
+  // Old code: for loop with += was O(n²) and killed CPU with large images
+  const CHUNK_SIZE = 0x8000; // 32KB chunks - safe for String.fromCharCode.apply
+  const chunks: string[] = [];
+  for (let i = 0; i < uint8Array.length; i += CHUNK_SIZE) {
+    const chunk = uint8Array.subarray(i, Math.min(i + CHUNK_SIZE, uint8Array.length));
+    chunks.push(String.fromCharCode.apply(null, chunk as unknown as number[]));
   }
-  return btoa(binary);
+  return btoa(chunks.join(''));
 };
 
 export const streamImageToR2 = async (
@@ -1977,81 +2208,43 @@ export const callUpscaler4k = async (
 
         const pollStatus = resultData.status || resultData.data?.status;
 
-        // Early success detection - check for completed status first
-        if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success') {
-          if (resultData.output && typeof resultData.output === 'string') {
-            resultImageUrl = resultData.output;
-            break;
-          } else if (resultData.output?.url) {
-            resultImageUrl = resultData.output.url;
-            break;
-          } else if (resultData.data?.output && typeof resultData.data.output === 'string') {
-            resultImageUrl = resultData.data.output;
-            break;
-          } else if (resultData.data?.output?.url) {
-            resultImageUrl = resultData.data.output.url;
-            break;
-          } else if (resultData.url) {
-            resultImageUrl = resultData.url;
-            break;
-          } else if (resultData.data?.url) {
-            resultImageUrl = resultData.data.url;
-            break;
-          } else if (resultData.image_url) {
-            resultImageUrl = resultData.image_url;
-            break;
-          } else if (resultData.data?.image_url) {
-            resultImageUrl = resultData.data.image_url;
-            break;
-          } else if (resultData.output_url) {
-            resultImageUrl = resultData.output_url;
-            break;
-          } else if (resultData.data?.output_url) {
-            resultImageUrl = resultData.data.output_url;
-            break;
-          } else if (resultData.data?.outputs && Array.isArray(resultData.data.outputs) && resultData.data.outputs.length > 0) {
-            const output = resultData.data.outputs[0];
-            if (typeof output === 'string') {
-              resultImageUrl = output;
-              break;
-            } else if (output?.url) {
-              resultImageUrl = output.url;
-              break;
-            }
-          } else if (resultData.outputs && Array.isArray(resultData.outputs) && resultData.outputs.length > 0) {
-            const output = resultData.outputs[0];
-            if (typeof output === 'string') {
-              resultImageUrl = output;
-              break;
-            } else if (output?.url) {
-              resultImageUrl = output.url;
-              break;
-            }
+        // Helper to extract URL from various response formats - avoids duplicate code
+        const extractResultUrl = (data: any): string | null => {
+          if (data.output && typeof data.output === 'string') return data.output;
+          if (data.output?.url) return data.output.url;
+          if (data.data?.output && typeof data.data.output === 'string') return data.data.output;
+          if (data.data?.output?.url) return data.data.output.url;
+          if (data.url) return data.url;
+          if (data.data?.url) return data.data.url;
+          if (data.image_url) return data.image_url;
+          if (data.data?.image_url) return data.data.image_url;
+          if (data.output_url) return data.output_url;
+          if (data.data?.output_url) return data.data.output_url;
+          if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
+            const output = data.data.outputs[0];
+            if (typeof output === 'string') return output;
+            if (output?.url) return output.url;
           }
+          if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
+            const output = data.outputs[0];
+            if (typeof output === 'string') return output;
+            if (output?.url) return output.url;
+          }
+          return null;
+        };
+
+        // Check status and extract URL
+        if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success') {
+          const url = extractResultUrl(resultData);
+          if (url) { resultImageUrl = url; break; }
         } else if (pollStatus === 'failed' || pollStatus === 'error') {
           throw new Error(`Upscaling failed: ${resultData.error || resultData.message || resultData.data?.error || 'Unknown error'}`);
         } else if (pollStatus === 'processing' || pollStatus === 'pending' || pollStatus === 'starting') {
           continue;
         } else {
-          if (resultData.output && typeof resultData.output === 'string') {
-            resultImageUrl = resultData.output;
-            break;
-          } else if (resultData.output?.url) {
-            resultImageUrl = resultData.output.url;
-            break;
-          } else if (resultData.data?.output && typeof resultData.data.output === 'string') {
-            resultImageUrl = resultData.data.output;
-            break;
-          } else if (resultData.data?.output?.url) {
-            resultImageUrl = resultData.data.output.url;
-            break;
-          } else if (resultData.url) {
-            resultImageUrl = resultData.url;
-            break;
-          } else if (resultData.data?.url) {
-            resultImageUrl = resultData.data.url;
-            break;
-          }
+          // Unknown status - try to extract URL anyway
+          const url = extractResultUrl(resultData);
+          if (url) { resultImageUrl = url; break; }
         }
       }
 

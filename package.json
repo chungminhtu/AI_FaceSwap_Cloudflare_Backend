@@ -22,12 +22,13 @@
     "cleanup:old-thumbnails:list": "node backend-cloudflare-workers/cleanup-old-thumbnails.js --folder=preset --list-folders",
     "upload:zip:ai-office-dev": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js  /Users/minhtu/Downloads/Lottie_All_517_20260108_003144.zip ai-office-dev faceswap-images-office-dev preset_thumb",
     "upload:zip:ai-office-dev_Lottie": "node _deploy-cli-cloudflare-gcp/upload-zip-to-r2.js /Users/minhtu/Downloads/Lottie_All_297_20260107_124901.zip ai-office-dev faceswap-images-office-dev preset_thumb",
-    "r2:manager": "node backend-cloudflare-workers/delete-r2-files.js"
+    "r2:manager": "nodemon backend-cloudflare-workers/delete-r2-files.js"
   },
   "dependencies": {
+    "@cf-wasm/photon": "^0.3.4",
     "express": "^4.18.2",
-    "nanoid": "^5.0.0",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "nanoid": "^5.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241106.0",

@@ -2,20 +2,15 @@
 export const VERTEX_AI_PROMPTS = {
   FACIAL_PRESERVATION_INSTRUCTION: 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.',
 
+  // Content safety instruction - appended to ALL image generation prompts
+  // Ensures generated images comply with Google Play Store content policies
+  // This mirrors Vision API SafeSearch blocking for: adult, racy, violence, explicit content
+  CONTENT_SAFETY_INSTRUCTION: 'IMPORTANT CONTENT POLICY: The generated image must NOT contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content. No exposed sensitive body areas (chest, buttocks, genitals). No provocative poses, wording, or implications. No violence, gore, or disturbing imagery. The entire scene must remain wholesome, respectful, and appropriate for all audiences. Clothing must be modest and non-revealing.',
+
   MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`,
 
   // Default prompt for normal face-swap preset generation
-  PROMPT_GENERATION_DEFAULT: `IMPORTANT: You MUST respond with VALID JSON only. No explanations, no markdown, no code blocks, no additional text. Start your response with { and end with }.
-
-Analyze the provided image and return a JSON object with exactly these 6 keys:
-- "prompt": A detailed HDR scene description (2-3 sentences) including pose, outfit, environment, lighting, and mood. MUST include this exact text: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching."
-- "style": One word (photorealistic, cinematic, artistic, etc.)
-- "lighting": One word (natural, studio, dramatic, soft, etc.)
-- "composition": One word (portrait, closeup, fullbody, etc.)
-- "camera": One word (professional, smartphone, dslr, etc.)
-- "background": One word (neutral, urban, nature, studio, etc.)
-
-The entire response must be valid JSON only. Example: {"prompt":"A beautiful woman...","style":"photorealistic","lighting":"natural","composition":"portrait","camera":"professional","background":"neutral"}`,
+  PROMPT_GENERATION_DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
 
   // Filter mode prompt for art style analysis (when checkbox is checked)
   PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.`,
@@ -52,7 +47,9 @@ export const VERTEX_AI_CONFIG = {
     SUPPORTED: ['us-central1', 'us-east1', 'us-west1', 'europe-west1', 'asia-southeast1', 'global'],
     // Model-specific preferred locations
     MODEL_LOCATIONS: {
+      'gemini-2.0-flash-lite': 'us-central1',
       'gemini-2.5-flash-image': 'us-central1',
+      'gemini-2.5-flash-lite': 'us-central1',
       'gemini-3-pro-image-preview': 'global',
       'gemini-3-flash-preview': 'us-central1',
     },
@@ -70,6 +67,7 @@ export const VERTEX_AI_CONFIG = {
   MODELS: {
     IMAGE_GENERATION: 'gemini-2.5-flash-image',
     PROMPT_GENERATION: 'gemini-3-flash-preview',
+    SAFETY_CHECK: 'gemini-2.0-flash-lite',
     MAPPING: {
       '2.5': 'gemini-2.5-flash-image',
       '3p': 'gemini-3-pro-image-preview',
@@ -142,6 +140,26 @@ export const VERTEX_AI_CONFIG = {
       required: ['prompt', 'style', 'lighting', 'composition', 'camera', 'background'],
     },
   },
+
+  // Safety Pre-Check Configuration (Gemini 2.5 Flash Lite)
+  // Used to validate images before processing with filter, beauty, enhance
+  // Simply sends image through Vertex AI and lets built-in safety filters block unsafe content
+  SAFETY_CHECK: {
+    temperature: 0,
+    maxOutputTokens: 64,
+    topP: 1,
+  },
+
+  // Enable/disable safety pre-check (set to false to disable)
+  SAFETY_CHECK_ENABLED: false,
+
+  // Safety settings for pre-check (block only HIGH, allow MEDIUM and below)
+  SAFETY_CHECK_SETTINGS: [
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' as const },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' as const },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' as const },
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' as const },
+  ],
 
   // Safety Settings - Only block HIGH confidence, allow NEGLIGIBLE, LOW, and MEDIUM
   SAFETY_SETTINGS: [

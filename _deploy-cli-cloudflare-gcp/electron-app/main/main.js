@@ -5,6 +5,7 @@ const ConfigManager = require('./config-manager');
 const AuthChecker = require('./auth-checker');
 const AccountSwitcher = require('./account-switcher');
 const CommandRunner = require('./command-runner');
+const R2Manager = require('./r2-manager');
 const { deployFromConfig } = require('../../deploy.js');
 
 if (process.argv.includes('--dev')) {

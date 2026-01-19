@@ -45,6 +45,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Helper functions
   helperGetCloudflareInfo: () => ipcRenderer.invoke('helper:get-cloudflare-info'),
   helperGetGCPProjects: () => ipcRenderer.invoke('helper:get-gcp-projects'),
-  helperGetServiceAccountCredentials: () => ipcRenderer.invoke('helper:get-service-account-credentials')
+  helperGetServiceAccountCredentials: () => ipcRenderer.invoke('helper:get-service-account-credentials'),
+
+  // R2 File Manager
+  r2List: (deploymentId, folderPath) => ipcRenderer.invoke('r2:list', deploymentId, folderPath),
+  r2Count: (deploymentId, folderPath) => ipcRenderer.invoke('r2:count', deploymentId, folderPath),
+  r2DeleteFiles: (deploymentId, filePaths) => ipcRenderer.invoke('r2:delete-files', deploymentId, filePaths),
+  r2DeleteFolders: (deploymentId, folderPaths) => ipcRenderer.invoke('r2:delete-folders', deploymentId, folderPaths),
+  r2DeleteWildcard: (deploymentId, pattern) => ipcRenderer.invoke('r2:delete-wildcard', deploymentId, pattern),
+  r2Move: (deploymentId, sourcePath, destPath) => ipcRenderer.invoke('r2:move', deploymentId, sourcePath, destPath),
+  r2Copy: (deploymentId, sourcePath, destPath) => ipcRenderer.invoke('r2:copy', deploymentId, sourcePath, destPath),
+  r2Rename: (deploymentId, oldPath, newPath) => ipcRenderer.invoke('r2:rename', deploymentId, oldPath, newPath),
+  r2GetFileContent: (deploymentId, filePath) => ipcRenderer.invoke('r2:get-file-content', deploymentId, filePath),
+  r2GetFileUrl: (deploymentId, filePath) => ipcRenderer.invoke('r2:get-file-url', deploymentId, filePath)
 });
 
