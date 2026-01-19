@@ -1093,11 +1093,11 @@
                                     </div>
                                     <div style="display: flex; align-items: center; gap: 12px; padding-top: 8px; border-top: 1px solid var(--border);">
                                         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
-                                            <input type="radio" name="thumbnail-format" id="thumbnail-format-webp" value="webp" checked style="cursor: pointer; width: 16px; height: 16px;">
+                                            <input type="checkbox" id="thumbnail-format-webp" value="webp" checked style="cursor: pointer; width: 16px; height: 16px;">
                                             <span style="color: var(--text-primary);">🖼️ WebP Thumbnail</span>
                                         </label>
                                         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">
-                                            <input type="radio" name="thumbnail-format" id="thumbnail-format-json" value="json" style="cursor: pointer; width: 16px; height: 16px;">
+                                            <input type="checkbox" id="thumbnail-format-json" value="json" style="cursor: pointer; width: 16px; height: 16px;">
                                             <span style="color: var(--text-primary);">🎬 Lottie JSON</span>
                                         </label>
                                     </div>
@@ -3203,35 +3203,20 @@
                 return;
             }
 
-            const categoryMap = {
-                'ai_avatar': 'ai_avatar',
-                'ai_restore': 'ai_restore',
-                'ai_enhance': 'ai_enhance',
-                'ai_beauty': 'ai_beauty',
-                'ai_upscale_4k': 'ai_upscale_4k'
-            };
+            const categoryList = ['ai_avatar', 'ai_restore', 'ai_enhance', 'ai_beauty', 'ai_upscale_4k'];
 
-            const presetMap = new Map();
-            allPresets.forEach(preset => {
-                const presetId = preset.preset_id || preset.id || '';
-                for (const [category, categoryKey] of Object.entries(categoryMap)) {
-                    if (presetId.includes(category) || presetId.toLowerCase().includes(category.replace('_', ''))) {
-                        if (!presetMap.has(category)) {
-                            presetMap.set(category, []);
-                        }
-                        presetMap.get(category).push(preset);
+            // Extract category from try image path (e.g., /try/ai_avatar/try_1.webp -> ai_avatar)
+            function extractCategoryFromPath(path) {
+                for (const cat of categoryList) {
+                    if (path.includes(`/${cat}/`) || path.includes(`/try/${cat}`)) {
+                        return cat;
                     }
                 }
-            });
-
-            let totalTasks = 0;
-            for (const imagePath of imagePaths) {
-                const category = Object.keys(categoryMap).find(cat => imagePath.includes(cat));
-                if (category) {
-                    const categoryPresets = presetMap.get(category) || [];
-                    totalTasks += categoryPresets.length;
-                }
+                return 'unknown';
             }
+
+            // Use all loaded presets for all try images
+            const totalTasks = imagePaths.length * allPresets.length;
 
             const confirmed = confirm(`Bạn có chắc muốn xử lý ${imagePaths.length} ảnh try với ${totalTasks} tasks?`);
             if (!confirmed) return;
@@ -3255,20 +3240,16 @@
                     const normalizedPath = imagePath.trim();
                     if (!normalizedPath) continue;
 
-                    const category = Object.keys(categoryMap).find(cat => normalizedPath.includes(cat));
-                    if (!category) {
-                        continue;
-                    }
+                    const category = extractCategoryFromPath(normalizedPath);
 
-                    const categoryPresets = presetMap.get(category) || [];
-                    if (categoryPresets.length === 0) {
-                        continue;
-                    }
+                    // Extract try image name (e.g., try_1 from try_1.webp or try/ai_avatar/try_1.webp)
+                    const tryImageMatch = normalizedPath.match(/try_(\d+)/);
+                    const tryImageName = tryImageMatch ? `try_${tryImageMatch[1]}` : 'try_unknown';
 
-                    for (const preset of categoryPresets) {
+                    for (const preset of allPresets) {
                         currentIndex++;
                         const usePresetUrl = !preset.id || preset.id?.startsWith('result-preset-');
-                        const tryImageUrl = normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`;
+                        const tryImageUrl = normalizedPath.startsWith('http') ? normalizedPath : (normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`);
                         const fullTryImageUrl = tryImageUrl.startsWith('http') ? tryImageUrl : `${WORKER_URL}${tryImageUrl}`;
 
                         try {
@@ -3299,16 +3280,19 @@
                             if (response.ok && data.data?.resultImageUrl) {
                                 const resultUrl = data.data.resultImageUrl;
                                 const presetId = preset.preset_id || preset.id || 'unknown';
-                                
+                                const targetR2Path = `try_results/${category}/${presetId}_${tryImageName}.webp`;
+
                                 tryImagesResults.push({
                                     category: category,
                                     presetId: presetId,
                                     tryImage: normalizedPath,
+                                    tryImageName: tryImageName,
                                     resultUrl: resultUrl,
+                                    targetR2Path: targetR2Path,
                                     presetName: preset.preset_id || preset.id,
                                     timestamp: new Date().toISOString()
                                 });
-                                
+
                                 renderTryResults();
                             } else {
                                 throw new Error(data.message || 'FaceSwap failed');
@@ -3321,7 +3305,9 @@
                                 category: category,
                                 presetId: preset.preset_id || preset.id || 'unknown',
                                 tryImage: normalizedPath,
+                                tryImageName: tryImageName,
                                 resultUrl: null,
+                                targetR2Path: `try_results/${category}/${preset.preset_id || preset.id || 'unknown'}_${tryImageName}.webp`,
                                 error: error.message,
                                 presetName: preset.preset_id || preset.id,
                                 timestamp: new Date().toISOString()
@@ -3362,18 +3348,18 @@
 
             gallery.innerHTML = filteredResults.map((result, index) => {
                 if (!result.resultUrl) {
-                    return `<div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--danger);">
-                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">${result.category}</div>
+                    return `<div style="padding: 12px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--danger);" title="${result.targetR2Path || ''}">
+                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">${result.presetId}_${result.tryImageName || 'try'}</div>
                         <div style="font-size: 10px; color: var(--danger); word-break: break-all;">Error: ${result.error || 'Failed'}</div>
-                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">${result.tryImage}</div>
+                        <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">${result.category}</div>
                     </div>`;
                 }
 
-                return `<div style="position: relative; background: var(--bg-primary); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); cursor: pointer;" onclick="displayResultInPreview('${result.resultUrl}')">
+                return `<div style="position: relative; background: var(--bg-primary); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); cursor: pointer;" onclick="displayResultInPreview('${result.resultUrl}')" title="${result.targetR2Path || ''}">
                     <img src="${result.resultUrl}" style="width: 100%; height: 120px; object-fit: cover; display: block;" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\\'padding: 20px; text-align: center; color: var(--text-muted);\\'>Failed to load</div>'">
                     <div style="padding: 6px; background: rgba(0,0,0,0.6); position: absolute; bottom: 0; left: 0; right: 0; color: #fff; font-size: 9px;">
-                        <div style="font-weight: 600; margin-bottom: 2px;">${result.category}</div>
-                        <div style="opacity: 0.8; font-size: 8px; word-break: break-all;">${result.presetName}</div>
+                        <div style="font-weight: 600; margin-bottom: 2px;">${result.presetId}_${result.tryImageName || 'try'}</div>
+                        <div style="opacity: 0.8; font-size: 8px; word-break: break-all;">${result.category}</div>
                     </div>
                 </div>`;
             }).join('');
@@ -4930,10 +4916,13 @@
             const originalPrompt = isFilterMode ? DEFAULT_PROMPTS.FILTER : DEFAULT_PROMPTS.DEFAULT;
             const customPromptText = currentPrompt !== originalPrompt ? currentPrompt : null;
             
-            // Get thumbnail format (webp or json)
+            // Get thumbnail formats (can be both webp and json)
             const formatWebp = document.getElementById('thumbnail-format-webp');
             const formatJson = document.getElementById('thumbnail-format-json');
-            const thumbnailFormat = formatJson && formatJson.checked ? 'json' : 'webp';
+            const thumbnailFormats = [];
+            if (formatWebp && formatWebp.checked) thumbnailFormats.push('webp');
+            if (formatJson && formatJson.checked) thumbnailFormats.push('json');
+            if (thumbnailFormats.length === 0) thumbnailFormats.push('webp'); // Default to webp if none selected
             
             // Extract all files from zip files client-side
             const allFiles = [];
@@ -4987,7 +4976,7 @@
                                 }
                             })
                         );
-                        
+
                         // Filter out null entries (failed extractions)
                         const validFiles = extractedFiles.filter(f => f !== null);
                         allFiles.push(...validFiles);
@@ -4999,15 +4988,12 @@
             
             // Add regular files (non-zip) to the upload queue
             if (regularFiles.length > 0) {
-                // Get thumbnail format to construct proper path
-                const formatWebp = document.getElementById('thumbnail-format-webp');
-                const formatJson = document.getElementById('thumbnail-format-json');
-                const thumbnailFormat = formatJson && formatJson.checked ? 'json' : 'webp';
-
                 regularFiles.forEach(file => {
-                    // Construct path with format and resolution (default to 4x for best quality)
                     const resolution = '4x';
-                    const path = `${thumbnailFormat}_${resolution}/${file.name}`;
+                    // Use first format for path, backend will generate all formats
+                    const primaryFormat = thumbnailFormats[0] || 'webp';
+                    const formatPrefix = primaryFormat === 'json' ? 'lottie' : 'webp';
+                    const path = `${formatPrefix}_${resolution}/${file.name}`;
                     allFiles.push({
                         file: file,
                         path: path
@@ -5054,7 +5040,8 @@
                         const formData = new FormData();
                         formData.append('file', file);
                         formData.append('path', path);
-                        formData.append('thumbnail_format', thumbnailFormat);
+                        // Send all selected formats as comma-separated list
+                        formData.append('thumbnail_formats', thumbnailFormats.join(','));
                         if (isFilterMode) {
                             formData.append('is_filter_mode', 'true');
                         }

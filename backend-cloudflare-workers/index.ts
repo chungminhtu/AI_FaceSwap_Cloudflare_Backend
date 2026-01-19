@@ -1951,7 +1951,9 @@ export default {
         // Handle file upload (thumbnail files or zip files)
         const formData = await request.formData();
         const zipFile = formData.get('zip') as File | null;
-        const thumbnailFormat = (formData.get('thumbnail_format') as string | null) || 'webp';
+        // Support both thumbnail_formats (comma-separated) and thumbnail_format (single)
+        const thumbnailFormatsRaw = (formData.get('thumbnail_formats') as string | null) || (formData.get('thumbnail_format') as string | null) || 'webp';
+        const thumbnailFormats = thumbnailFormatsRaw.split(',').map(f => f.trim()).filter(f => f);
         const isFilterMode = formData.get('is_filter_mode') === 'true';
         const customPromptText = formData.get('custom_prompt_text') as string | null;
 
@@ -2122,18 +2124,36 @@ export default {
 
               const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
 
-              // Create placeholder thumbnail entries for all resolutions based on thumbnail_format
+              // Create placeholder thumbnail entries for all resolutions and ALL selected formats
               // These will be replaced when actual thumbnail files are uploaded via yyy.zip
               const resolutions = ['1x', '1.5x', '2x', '3x', '4x'];
-              const ext = thumbnailFormat === 'json' ? 'json' : 'webp';
-              const formatPrefix = thumbnailFormat === 'json' ? 'lottie' : 'webp';
 
               let thumbnailData: Record<string, string> = {};
-              resolutions.forEach(res => {
-                thumbnailData[`${formatPrefix}_${res}`] = `preset_thumb/${formatPrefix}_${res}/${presetId}.${ext}`;
-              });
+              // Generate paths for each selected format (webp, json/lottie, avif, lottie_avif)
+              for (const format of thumbnailFormats) {
+                const ext = format === 'json' ? 'json' : 'webp';
+                const formatPrefix = format === 'json' ? 'lottie' : 'webp';
+                resolutions.forEach(res => {
+                  thumbnailData[`${formatPrefix}_${res}`] = `preset_thumb/${formatPrefix}_${res}/${presetId}.${ext}`;
+                });
+                // Also add avif variants if webp is selected
+                if (format === 'webp') {
+                  resolutions.forEach(res => {
+                    thumbnailData[`webp_avif_${res}`] = `preset_thumb/webp_avif_${res}/${presetId}.avif`;
+                  });
+                }
+                // Also add lottie_avif variants if json/lottie is selected
+                if (format === 'json') {
+                  resolutions.forEach(res => {
+                    thumbnailData[`lottie_avif_${res}`] = `preset_thumb/lottie_avif_${res}/${presetId}.avif`;
+                  });
+                }
+              }
 
-              let thumbnailUrl: string | null = getR2PublicUrl(env, thumbnailData[`${formatPrefix}_4x`], requestUrl.origin);
+              // Use first format's 4x as primary thumbnail URL
+              const primaryFormat = thumbnailFormats[0] || 'webp';
+              const primaryPrefix = primaryFormat === 'json' ? 'lottie' : 'webp';
+              let thumbnailUrl: string | null = getR2PublicUrl(env, thumbnailData[`${primaryPrefix}_4x`], requestUrl.origin);
 
               // Update database
               const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
@@ -2182,7 +2202,7 @@ export default {
                 kvCacheDeleted: true,
                 vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) },
                 thumbnail_url: thumbnailUrl,
-                thumbnail_format: thumbnailFormat,
+                thumbnail_formats: thumbnailFormats,
                 thumbnail_created: true
               };
 
@@ -2249,7 +2269,7 @@ export default {
             presets_with_prompts: presetsWithPrompts,
             timeout_reached: timeoutReached,
             processing_time_ms: totalTime,
-            thumbnail_format: thumbnailFormat
+            thumbnail_formats: thumbnailFormats
           }, 200, request, env);
         }
 
@@ -2286,7 +2306,9 @@ export default {
           // Preset file processing
           const fileData = await file.arrayBuffer();
           const contentType = file.type || 'image/png';
-          const thumbnailFormat = (formData.get('thumbnail_format') as string | null) || 'webp';
+          // Support both thumbnail_formats (comma-separated) and thumbnail_format (single)
+          const singleFileThumbnailFormatsRaw = (formData.get('thumbnail_formats') as string | null) || (formData.get('thumbnail_format') as string | null) || 'webp';
+          const singleFileThumbnailFormats = singleFileThumbnailFormatsRaw.split(',').map(f => f.trim()).filter(f => f);
           
           // Upload to temp location first for prompt generation
           const tempR2Key = `temp/${presetId}_${Date.now()}.${filename.split('.').pop()}`;
@@ -2408,18 +2430,36 @@ export default {
           
           const presetPublicUrl = getR2PublicUrl(env, presetR2Key, requestUrl.origin);
 
-          // Create placeholder thumbnail entries for all resolutions based on thumbnail_format
+          // Create placeholder thumbnail entries for all resolutions and ALL selected formats
           // These will be replaced when actual thumbnail files are uploaded via yyy.zip
           const resolutions = ['1x', '1.5x', '2x', '3x', '4x'];
-          const thumbExt = thumbnailFormat === 'json' ? 'json' : 'webp';
-          const formatPrefix = thumbnailFormat === 'json' ? 'lottie' : 'webp';
 
           let thumbnailData: Record<string, string> = {};
-          resolutions.forEach(res => {
-            thumbnailData[`${formatPrefix}_${res}`] = `preset_thumb/${formatPrefix}_${res}/${presetId}.${thumbExt}`;
-          });
+          // Generate paths for each selected format (webp, json/lottie, avif, lottie_avif)
+          for (const format of singleFileThumbnailFormats) {
+            const thumbExt = format === 'json' ? 'json' : 'webp';
+            const formatPrefix = format === 'json' ? 'lottie' : 'webp';
+            resolutions.forEach(res => {
+              thumbnailData[`${formatPrefix}_${res}`] = `preset_thumb/${formatPrefix}_${res}/${presetId}.${thumbExt}`;
+            });
+            // Also add avif variants if webp is selected
+            if (format === 'webp') {
+              resolutions.forEach(res => {
+                thumbnailData[`webp_avif_${res}`] = `preset_thumb/webp_avif_${res}/${presetId}.avif`;
+              });
+            }
+            // Also add lottie_avif variants if json/lottie is selected
+            if (format === 'json') {
+              resolutions.forEach(res => {
+                thumbnailData[`lottie_avif_${res}`] = `preset_thumb/lottie_avif_${res}/${presetId}.avif`;
+              });
+            }
+          }
 
-          let thumbnailUrl: string | null = getR2PublicUrl(env, thumbnailData[`${formatPrefix}_4x`], requestUrl.origin);
+          // Use first format's 4x as primary thumbnail URL
+          const primaryFormat = singleFileThumbnailFormats[0] || 'webp';
+          const primaryPrefix = primaryFormat === 'json' ? 'lottie' : 'webp';
+          let thumbnailUrl: string | null = getR2PublicUrl(env, thumbnailData[`${primaryPrefix}_4x`], requestUrl.origin);
 
           // Update database - use INSERT OR REPLACE to handle concurrent requests
           const existingPreset = await DB.prepare('SELECT id, thumbnail_r2, created_at FROM presets WHERE id = ?').bind(presetId).first();
@@ -2469,7 +2509,7 @@ export default {
             kvCacheDeleted: true,
             vertex_info: { success: true, promptKeys: Object.keys(promptResult.prompt) },
             thumbnail_url: thumbnailUrl,
-            thumbnail_format: thumbnailFormat,
+            thumbnail_formats: singleFileThumbnailFormats,
             thumbnail_created: true
           }, 200, request, env);
         } else {
