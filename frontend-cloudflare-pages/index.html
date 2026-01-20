@@ -3228,20 +3228,47 @@
 
             const categoryList = ['ai_avatar', 'ai_restore', 'ai_enhance', 'ai_beauty', 'ai_upscale_4k'];
 
+            // Get selected category from dropdown (default to ai_avatar)
+            const categoryFilterSelect = document.getElementById('try-results-filter');
+            const selectedCategory = categoryFilterSelect?.value || 'ai_avatar';
+
             // Extract category from try image path (e.g., /try/ai_avatar/try_1.webp -> ai_avatar)
+            // Falls back to dropdown selection if path doesn't contain category
             function extractCategoryFromPath(path) {
                 for (const cat of categoryList) {
                     if (path.includes(`/${cat}/`) || path.includes(`/try/${cat}`)) {
                         return cat;
                     }
                 }
-                return 'unknown';
+                // Use dropdown selection if path doesn't match any category
+                return selectedCategory !== 'all' ? selectedCategory : 'ai_avatar';
             }
 
-            // Use all loaded presets for all try images
-            const totalTasks = imagePaths.length * allPresets.length;
+            // Filter presets based on category prefix
+            function filterPresetsForCategory(presets, category) {
+                if (category === 'ai_avatar') {
+                    // For AI Avatar, only use presets with 'fs_' prefix (face swap)
+                    const filtered = presets.filter(p => {
+                        const presetId = p.preset_id || p.id || '';
+                        return presetId.startsWith('fs_');
+                    });
+                    console.log(`Filtered presets for ai_avatar: ${filtered.length} of ${presets.length} (fs_ prefix)`);
+                    return filtered;
+                }
+                // For other categories, use all presets
+                return presets;
+            }
 
-            const confirmed = confirm(`Bạn có chắc muốn xử lý ${imagePaths.length} ảnh try với ${totalTasks} tasks?`);
+            // Calculate total tasks based on filtered presets per category
+            let totalTasks = 0;
+            const fsPresets = filterPresetsForCategory(allPresets, 'ai_avatar');
+            for (const imagePath of imagePaths) {
+                const category = extractCategoryFromPath(imagePath);
+                const filteredCount = category === 'ai_avatar' ? fsPresets.length : allPresets.length;
+                totalTasks += filteredCount;
+            }
+
+            const confirmed = confirm(`Bạn có chắc muốn xử lý ${imagePaths.length} ảnh try với ${totalTasks} tasks?\n(AI Avatar sẽ chỉ dùng ${fsPresets.length} presets có prefix 'fs_')`);
             if (!confirmed) return;
 
             processBtn.disabled = true;
@@ -3265,11 +3292,18 @@
 
                     const category = extractCategoryFromPath(normalizedPath);
 
+                    // Filter presets based on category
+                    const filteredPresets = filterPresetsForCategory(allPresets, category);
+                    if (filteredPresets.length === 0) {
+                        console.warn(`No presets found for category: ${category} (looking for fs_ prefix)`);
+                        continue;
+                    }
+
                     // Extract try image name (e.g., try_1 from try_1.webp or try/ai_avatar/try_1.webp)
                     const tryImageMatch = normalizedPath.match(/try_(\d+)/);
                     const tryImageName = tryImageMatch ? `try_${tryImageMatch[1]}` : 'try_unknown';
 
-                    for (const preset of allPresets) {
+                    for (const preset of filteredPresets) {
                         currentIndex++;
                         // Skip invalid presets
                         if (!preset || (!preset.id && !preset.preset_id && !preset.image_url)) {

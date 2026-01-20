@@ -755,14 +755,14 @@
     var running = false;
 
     var templates = {
-        faceswap: '{\n  "preset_image_id": "dSNInHEvazSPv7Ou",\n  "selfie_ids": ["EcwHlU1K5kcHY9fF"],\n  "profile_id": "PROFILE",\n  "additional_prompt": "",\n  "aspect_ratio": "original"\n}',
-        background: '{\n  "preset_image_id": "rOEj4FWPM8jbPFzO",\n  "selfie_id": "6VkRta5pf8CW5lHm",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
-        enhance: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/wkFLZqlehNL3IO8J.png",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
-        beauty: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/EcwHlU1K5kcHY9fF.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original"\n}',
-        filter: '{\n  "preset_image_id": "DmhzwnEuglGvewiS",\n  "selfie_id": "EcwHlU1K5kcHY9fF",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "additional_prompt": "Add dramatic lighting"\n}',
-        restore: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/6VkRta5pf8CW5lHm.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
-        aging: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/oc320eTTRgZsXpgE.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5",\n  "age_years": 20\n}',
-        upscaler4k: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/example.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original"\n}'
+        faceswap: '{\n  "preset_image_id": "Ag4Rp2q0BVX1EUVo",\n  "selfie_ids": ["f2cmkYWGeuWnLeTc"],\n  "profile_id": "PROFILE",\n  "additional_prompt": "",\n  "aspect_ratio": "original"\n}',
+        background: '{\n  "preset_image_id": "Ag4Rp2q0BVX1EUVo",\n  "selfie_id": "f2cmkYWGeuWnLeTc",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
+        enhance: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/f2cmkYWGeuWnLeTc.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
+        beauty: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/f2cmkYWGeuWnLeTc.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original"\n}',
+        filter: '{\n  "preset_image_id": "Ag4Rp2q0BVX1EUVo",\n  "selfie_id": "f2cmkYWGeuWnLeTc",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "additional_prompt": "Add dramatic lighting"\n}',
+        restore: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/f2cmkYWGeuWnLeTc.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
+        aging: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/f2cmkYWGeuWnLeTc.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5",\n  "age_years": 20\n}',
+        upscaler4k: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/f2cmkYWGeuWnLeTc.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original"\n}'
     };
 
     function init() {
@@ -1156,9 +1156,9 @@
         if (!images || images.length === 0) return null;
 
         var apiConfig = {
-            faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: 'original', additional_prompt: '' },
-            background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: 'original', model: '2.5' },
-            filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
+            faceswap: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', additional_prompt: '' },
+            background: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', model: '2.5' },
+            filter: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
             enhance: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
             beauty: { useUrl: true, aspect_ratio: 'original' },
             restore: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
@@ -1572,9 +1572,9 @@
 
         // Check if this API supports presets
         var apiConfig = {
-            faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: 'original', additional_prompt: '' },
-            background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: 'original', model: '2.5' },
-            filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
+            faceswap: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', additional_prompt: '' },
+            background: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', model: '2.5' },
+            filter: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
             enhance: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
             beauty: { useUrl: true, aspect_ratio: 'original' },
             restore: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
@@ -1918,9 +1918,9 @@
 
             // Check if this API supports presets
             var apiConfig = {
-                faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: 'original', additional_prompt: '' },
-                background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: 'original', model: '2.5' },
-                filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
+                faceswap: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', additional_prompt: '' },
+                background: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', model: '2.5' },
+                filter: { preset_image_id: 'Ag4Rp2q0BVX1EUVo', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
                 enhance: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
                 beauty: { useUrl: true, aspect_ratio: 'original' },
                 restore: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
