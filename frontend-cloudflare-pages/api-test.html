@@ -1,0 +1,1824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Auto-Test Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #ffffff;
+            --bg-card: #f8fafc;
+            --bg-input: #f1f5f9;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --danger-dark: #dc2626;
+            --primary: #3b82f6;
+            --secondary: #64748b;
+            --info: #06b6d4;
+            --light: #f8fafc;
+            --dark: #1e293b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-dark);
+            color: #000000;
+            min-height: 100vh;
+            font-size: 14px;
+            line-height: 1.5;
+            width: 100%;
+            margin: 0;
+        }
+        .app {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            padding: 12px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--accent);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+            grid-column: 1 / -1;
+        }
+        .header h1 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 0;
+        }
+        .header-config {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            margin: 0 16px;
+        }
+        .config-fields {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .config-field {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .config-field label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .config-field input {
+            padding: 4px 6px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            font-size: 11px;
+            width: 120px;
+            min-width: 0;
+        }
+        .config-field input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .header-actions { display: flex; gap: 6px; }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: opacity 0.2s;
+        }
+        .btn-primary { background: var(--accent); color: #ffffff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-success { background: var(--success); color: #ffffff; }
+        .btn-success:hover { background: #059669; }
+        .btn-secondary { background: var(--secondary); color: #ffffff; }
+        .btn-secondary:hover { background: #475569; }
+        .btn-danger { background: var(--danger); color: #ffffff; }
+        .btn-danger:hover { background: var(--danger-dark); }
+        .btn-warning { background: var(--warning); color: #ffffff; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-info { background: var(--info); color: #ffffff; }
+        .btn-info:hover { background: #0891b2; }
+        .btn-light { background: var(--light); color: var(--text); border: 1px solid var(--border); }
+        .btn-light:hover { background: var(--bg-input); }
+        .btn-dark { background: var(--dark); color: #ffffff; }
+        .btn-dark:hover { background: #0f172a; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+            background: var(--bg-card);
+            padding: 6px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            flex-wrap: wrap;
+            grid-column: 1 / -1;
+        }
+        .tab {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            background: transparent;
+            color: #000000;
+        }
+        .tab:hover { background: var(--bg-input); color: #000000; }
+        .tab.active { background: var(--accent); color: #ffffff; }
+        .tab.run-all { background: var(--success); color: #ffffff; margin-left: auto; }
+        .tab.run-all:hover { background: #059669; }
+
+        /* Panels Container */
+        #panels {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        /* Panel */
+        .panel {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .panel.active { display: block; }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-input);
+            border-bottom: 1px solid var(--border);
+        }
+        .panel-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .panel-header code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--accent);
+            color: #ffffff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .panel-body {
+            padding: 6px;
+            display: grid;
+            grid-template-columns: 1fr 3fr;
+            grid-template-rows: auto 1fr;
+            gap: 8px;
+            align-items: start;
+        }
+        .preset-section {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .panel-body > .curl-section {
+            grid-column: 1;
+            grid-row: 2;
+        }
+        .panel-body > .results {
+            grid-column: 2;
+            grid-row: 2;
+            align-self: start;
+        }
+        .preset-section label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .preset-preview {
+            max-width: 80px;
+            max-height: 80px;
+            min-width: 60px;
+            min-height: 60px;
+        }
+        .preset-preview img {
+            width: 100%;
+            height: auto;
+            max-height: 80px;
+            object-fit: contain;
+            cursor: pointer;
+            display: block;
+        }
+        .preset-preview img:hover {
+            opacity: 0.8;
+        }
+
+        /* Editor Section */
+        .editor-section {
+            grid-column: 1;
+        }
+        .editor-section.hidden {
+            display: none;
+        }
+        .editor-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .editor {
+            width: 100%;
+            min-height: 120px;
+            padding: 10px;
+            border: 1px solid #000000;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            background: #ffffff;
+            color: #000000;
+            resize: none;
+            overflow: hidden;
+            outline: none;
+        }
+        .editor:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+        .editor-help {
+            font-size: 12px;
+            color: #000000;
+            margin-top: 6px;
+        }
+
+        /* cURL Section */
+        .curl-section {
+            margin-top: 6px;
+            padding: 4px;
+            background: #f8f9fa;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            max-width: 350px;
+        }
+        .curl-section h5 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 8px;
+        }
+        .curl-block {
+            margin-bottom: 12px;
+        }
+        .curl-block:last-child {
+            margin-bottom: 0;
+        }
+        .curl-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .curl-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            background: #ffffff;
+            border: 1px solid #000000;
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #000000;
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow-x: auto;
+        }
+
+        /* Results */
+        .results {
+            margin-top: 6px;
+        }
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+            padding: 0;
+        }
+        .results-header h4 { font-size: 11px; font-weight: 600; margin: 0; }
+        .summary { display: flex; gap: 6px; font-size: 10px; flex-wrap: wrap; margin: 0; }
+        .summary .ok { color: var(--success); font-weight: 600; }
+        .summary .fail { color: var(--danger); font-weight: 600; }
+        .summary .block { color: var(--danger-dark); font-weight: 600; }
+        /* Progress */
+        .progress {
+            height: 4px;
+            background: var(--bg-input);
+            border-radius: 2px;
+            margin: 4px 0;
+            overflow: hidden;
+            display: none;
+        }
+        .progress.show { display: block; }
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+        }
+
+        /* Table */
+        .table-wrap {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow-x: auto;
+            overflow-y: visible;
+            background: #ffffff;
+            width: 100%;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            table-layout: auto;
+        }
+        th, td {
+            padding: 4px 6px;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+        }
+        td.details {
+            text-align: left;
+            white-space: normal;
+        }
+        th {
+            background: var(--accent);
+            font-weight: 600;
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #ffffff;
+            letter-spacing: 0.3px;
+            position: sticky;
+            top: 0;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) { background: var(--bg-card); }
+        tr:hover { background: var(--bg-input); }
+        tr.blocked { background: #fee2e2; }
+
+        /* Thumbnails */
+        .thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: #ffffff;
+        }
+        .thumb:hover { border-color: var(--accent); }
+        .thumb-placeholder {
+            width: 120px;
+            height: 120px;
+            border-radius: 4px;
+            background: var(--bg-input);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000000;
+            font-size: 20px;
+        }
+
+        /* Status */
+        .status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .status-ok { background: var(--success); color: #ffffff; }
+        .status-err { background: var(--danger); color: #ffffff; }
+        .status-run { background: var(--warning); color: #ffffff; }
+
+        /* Safety */
+        .safety {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 500;
+            font-size: 12px;
+            color: #000000;
+        }
+        .s-vunlikely { background: var(--success); color: #ffffff; }
+        .s-unlikely { background: #34d399; color: #ffffff; }
+        .s-possible { background: var(--warning); color: #ffffff; }
+        .s-likely { background: #f97316; color: #ffffff; }
+        .s-vlikely { background: var(--danger); color: #ffffff; }
+        .s-na { background: var(--secondary); color: #ffffff; }
+
+        /* Details */
+        .details {
+            max-width: none;
+            min-width: 200px;
+            text-align: left;
+        }
+        .details pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            background: var(--bg-dark);
+            padding: 6px 8px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            word-break: break-all;
+            overflow: visible;
+            max-width: 100%;
+            cursor: text;
+        }
+
+        /* Empty */
+        .empty {
+            text-align: center;
+            padding: 24px;
+            color: #000000;
+        }
+        .empty-icon { font-size: 32px; margin-bottom: 8px; }
+
+        /* All APIs Grid */
+        .api-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 12px;
+        }
+        .api-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .api-card h5 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .api-card code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--accent);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .api-card .card-summary { font-size: 13px; color: #000000; }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+        .lightbox.show { display: flex; }
+        .lightbox img {
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: 12px;
+            border: 4px solid var(--accent);
+        }
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 48px;
+            height: 48px;
+            border: none;
+            background: var(--danger);
+            color: #ffffff;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        .lightbox-close:hover { background: var(--danger-dark); }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 8px;
+            right: 8px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            background: var(--dark);
+            border: 1px solid var(--border);
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 500;
+            z-index: 9998;
+            transform: translateY(100px);
+            opacity: 0;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.ok { border-color: var(--success); background: var(--success); }
+        .toast.err { border-color: var(--danger); background: var(--danger); }
+
+        /* Spinner */
+        .spin {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #6c757d;
+            border-top-color: #007bff;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Image URL Input */
+        .image-url-item {
+            position: relative;
+        }
+        .image-urls-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 4px;
+        }
+        .image-preview {
+            max-width: 120px;
+            max-height: 120px;
+            min-width: 80px;
+            min-height: 80px;
+        }
+        .image-preview img {
+            width: 100%;
+            height: auto;
+            max-height: 120px;
+            object-fit: contain;
+            cursor: pointer;
+            display: block;
+        }
+        .image-preview img:hover {
+            opacity: 0.8;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            #panels {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .app {
+                grid-template-columns: 1fr;
+                padding: 8px;
+            }
+            .header {
+                flex-direction: column;
+                gap: 8px;
+                text-align: center;
+                padding: 10px;
+            }
+            .header-config {
+                margin: 0;
+                order: 2;
+            }
+            .config-fields {
+                flex-direction: column;
+                gap: 6px;
+                width: 100%;
+            }
+            .config-field {
+                align-items: center;
+            }
+            .config-field input {
+                width: 200px;
+                max-width: 100%;
+            }
+            .header-actions {
+                justify-content: center;
+                order: 3;
+            }
+            .tabs { padding: 6px; }
+            .tab { padding: 6px 12px; font-size: 13px; }
+            .panel-header { flex-direction: column; gap: 8px; text-align: center; padding: 10px; }
+            .api-grid { grid-template-columns: 1fr; gap: 8px; }
+            .image-urls-container { grid-template-columns: 1fr; }
+            th, td { padding: 8px 10px; font-size: 12px; }
+            .btn { padding: 6px 12px; font-size: 13px; }
+        }
+
+        @media (max-width: 480px) {
+            .app { padding: 6px; }
+            .header { padding: 8px; }
+            .config-field input { width: 100%; }
+            .tabs { flex-direction: column; gap: 6px; }
+            .tab { width: 100%; text-align: center; }
+            .table-wrap { font-size: 11px; }
+            th, td { padding: 6px; }
+            .thumb { width: 60px; height: 60px; }
+            .image-preview { max-width: 60px !important; max-height: 60px !important; min-width: 50px !important; min-height: 50px !important; }
+            .image-preview img { max-height: 60px !important; }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <div class="header">
+        <h1>Bộ Test API Tự Động</h1>
+        <div class="header-config">
+            <div class="config-fields">
+                <div class="config-field">
+                    <label>Profile ID</label>
+                    <input type="text" id="cfg-profile" value="RcSsl0UootcwVUcb">
+                </div>
+                <div class="config-field">
+                    <label>API Key</label>
+                    <input type="text" id="cfg-key" placeholder="Tùy chọn">
+                </div>
+                <div class="config-field">
+                    <label>API Base URL</label>
+                    <input type="text" id="cfg-base" value="https://api.d.shotpix.app">
+                </div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="location.href='index.html'">Quay lại App</button>
+            <button class="btn btn-secondary" onclick="exportResults()" id="btn-export" disabled>Xuất HTML</button>
+        </div>
+    </div>
+
+        <div class="config-group full-width">
+            <label>Image URLs (Nhập từng ảnh, mỗi ảnh test 1 lần cho mỗi API)</label>
+            <div id="image-urls-container" class="image-urls-container">
+                <div class="image-url-item" style="display: flex; gap: 8px; align-items: flex-start;">
+                    <div style="flex: 1;">
+                        <input type="text" class="image-url-input" placeholder="https://resources.d.shotpix.app/selfie/xxx.jpg" style="width: 100%; padding: 8px 12px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 14px;">
+                    </div>
+                    <div class="image-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
+                        <span style="color: #000000; font-size: 12px;">Preview</span>
+                    </div>
+                    <button type="button" class="btn-remove-image" onclick="removeImageUrl(this)" style="padding: 8px 12px; background: #dc3545; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: none;">Xóa</button>
+                </div>
+            </div>
+            <button type="button" onclick="addImageUrl()" class="btn btn-secondary" style="margin-top: 4px;">+ Thêm Ảnh</button>
+        </div>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+    <div id="panels"></div>
+
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+        <img id="lightbox-img" src="">
+    </div>
+    <div class="toast" id="toast"></div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    var APIS = ['faceswap', 'background', 'enhance', 'beauty', 'filter', 'restore', 'aging', 'upscaler4k'];
+    var results = {};
+    var running = false;
+
+    var templates = {
+        faceswap: '{\n  "preset_image_id": "dSNInHEvazSPv7Ou",\n  "selfie_ids": ["EcwHlU1K5kcHY9fF"],\n  "profile_id": "PROFILE",\n  "additional_prompt": "",\n  "aspect_ratio": "3:4"\n}',
+        background: '{\n  "preset_image_id": "rOEj4FWPM8jbPFzO",\n  "selfie_id": "6VkRta5pf8CW5lHm",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "21:9",\n  "model": "2.5"\n}',
+        enhance: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/wkFLZqlehNL3IO8J.png",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "1:1",\n  "model": "2.5"\n}',
+        beauty: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/EcwHlU1K5kcHY9fF.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "3:4"\n}',
+        filter: '{\n  "preset_image_id": "DmhzwnEuglGvewiS",\n  "selfie_id": "EcwHlU1K5kcHY9fF",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "3:4",\n  "additional_prompt": "Add dramatic lighting"\n}',
+        restore: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/6VkRta5pf8CW5lHm.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "21:9",\n  "model": "2.5"\n}',
+        aging: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/oc320eTTRgZsXpgE.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "21:9",\n  "model": "2.5",\n  "age_years": 20\n}',
+        upscaler4k: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/example.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "1:1"\n}'
+    };
+
+    function init() {
+        buildTabs();
+        loadConfig();
+        buildPanels();
+        loadResults();
+        loadUIState();
+        updateRunButtonCounts();
+        updateExportButtons();
+
+        var profileEl = document.getElementById('cfg-profile');
+        var baseEl = document.getElementById('cfg-base');
+        var keyEl = document.getElementById('cfg-key');
+
+        if (profileEl) {
+            profileEl.addEventListener('input', function() { updateRunButtonCounts(); updateCurlSections(); saveConfig(); });
+            profileEl.addEventListener('change', saveConfig);
+        }
+        if (baseEl) {
+            baseEl.addEventListener('input', function() { updateCurlSections(); saveConfig(); });
+            baseEl.addEventListener('change', saveConfig);
+        }
+        if (keyEl) {
+            keyEl.addEventListener('input', function() { updateCurlSections(); saveConfig(); });
+            keyEl.addEventListener('change', saveConfig);
+        }
+        
+        document.querySelectorAll('.image-url-input').forEach(function(input) {
+            input.addEventListener('input', function() {
+                updateImagePreview(this);
+                updateRunButtonCounts();
+                saveConfig();
+            });
+            input.addEventListener('paste', function() {
+                updateImagePreview(input);
+                updateRunButtonCounts();
+                saveConfig();
+            });
+            input.addEventListener('blur', function() {
+                updateImagePreview(this);
+                saveConfig();
+            });
+            input.addEventListener('change', saveConfig);
+            input.addEventListener('keyup', saveConfig);
+        });
+        
+        updateRemoveButtons();
+
+        // Save initial state
+        saveConfig();
+        saveUIState();
+
+        // Periodic save every 5 seconds
+        setInterval(function() {
+            saveConfig();
+            saveResults();
+            saveUIState();
+        }, 5000);
+
+        // Save all state before page unload
+        window.addEventListener('beforeunload', function() {
+            saveConfig();
+            saveResults();
+            saveUIState();
+        });
+
+        // Save state when page becomes hidden (user switches tabs)
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                saveConfig();
+                saveResults();
+                saveUIState();
+            }
+        });
+
+        // Save on window blur (user switches windows)
+        window.addEventListener('blur', function() {
+            saveConfig();
+            saveResults();
+            saveUIState();
+        });
+    }
+
+    function buildTabs() {
+        var html = '';
+        for (var i = 0; i < APIS.length; i++) {
+            var cls = i === 0 ? 'tab active' : 'tab';
+            html += '<button class="' + cls + '" data-api="' + APIS[i] + '">' + APIS[i] + '</button>';
+        }
+        html += '<button class="tab run-all" data-api="all">Run All APIs</button>';
+        document.getElementById('tabs').innerHTML = html;
+
+        document.getElementById('tabs').onclick = function(e) {
+            if (e.target.classList.contains('tab')) {
+                var api = e.target.getAttribute('data-api');
+                switchTab(api);
+            }
+        };
+    }
+
+    function generateApiCurl(api, baseUrl, apiKey, body) {
+        var curl = "curl --location '" + baseUrl + "/" + api + "' \\\n";
+        curl += "--header 'Content-Type: application/json'";
+        if (apiKey) {
+            curl += " \\\n--header 'X-API-Key: " + apiKey + "'";
+        }
+        curl += " \\\n--data '" + JSON.stringify(body) + "'";
+        return curl;
+    }
+
+    function generateVisionApiCurl(baseUrl, apiKey, profileId) {
+        var curl = "curl --location '" + baseUrl + "/upload-url' \\\n";
+        curl += "--header 'Content-Type: multipart/form-data'";
+        if (apiKey) {
+            curl += " \\\n--header 'X-API-Key: " + apiKey + "'";
+        }
+        curl += " \\\n--form 'file=@result.jpg' \\\n";
+        curl += "--form 'type=selfie' \\\n";
+        curl += "--form 'action=4k' \\\n";
+        curl += "--form 'profile_id=" + profileId + "'";
+        return curl;
+    }
+
+    function buildPanels() {
+        var html = '';
+        var profile = document.getElementById('cfg-profile').value;
+        var baseUrl = document.getElementById('cfg-base').value || 'https://api.d.shotpix.app';
+        var apiKey = document.getElementById('cfg-key').value || '';
+
+        for (var i = 0; i < APIS.length; i++) {
+            var api = APIS[i];
+            var tpl = templates[api].replace(/PROFILE/g, profile);
+            var cls = i === 0 ? 'panel active' : 'panel';
+            var sampleBody = JSON.parse(tpl);
+
+            // Update preset_image_id if this API has a preset field
+            if (sampleBody.preset_image_id) {
+                var presetEl = document.getElementById('preset-' + api);
+                if (presetEl) {
+                    sampleBody.preset_image_id = presetEl.value.trim();
+                }
+            }
+
+            var apiCurl = generateApiCurl(api, baseUrl, apiKey, sampleBody);
+            var visionCurl = generateVisionApiCurl(baseUrl, apiKey, profile);
+
+            html += '<div class="' + cls + '" data-api="' + api + '">';
+            html += '<div class="panel-header">';
+            html += '<h3><code>POST /' + api + '</code> Test API</h3>';
+            html += '<button class="btn btn-primary" id="btn-run-' + api + '" onclick="runTests(\'' + api + '\')">Chạy Test (0)</button>';
+            html += '</div>';
+            html += '<div class="panel-body">';
+
+            // Add preset input for APIs that support it (check if template has preset_image_id)
+            var tpl = templates[api].replace(/PROFILE/g, profile);
+            var sampleBody = JSON.parse(tpl);
+            if (sampleBody.preset_image_id) {
+                html += '<div class="preset-section">';
+                html += '<label>Preset Image URL:</label>';
+                html += '<div class="preset-input-group" style="display: flex; gap: 8px; align-items: flex-start;">';
+                html += '<div style="flex: 1;"><input type="text" id="preset-' + api + '" placeholder="https://resources.d.shotpix.app/preset/xxx.jpg" value="' + sampleBody.preset_image_id + '" style="width: 100%; padding: 4px 8px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 12px;"></div>';
+                html += '<div class="preset-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;"><span style="color: #000000; font-size: 12px;">Preview</span></div>';
+                html += '</div>';
+                html += '</div>';
+            }
+
+            html += '<div class="curl-section" id="curl-' + api + '">';
+            html += '<h5>cURL Commands</h5>';
+            html += '<div class="curl-block"><span class="curl-label">API Call:</span><pre class="curl-code" id="curl-api-' + api + '">' + escapeHtml(apiCurl) + '</pre></div>';
+            html += '<div class="curl-block"><span class="curl-label">Safety Check (Upload resultImageUrl for Vision API):</span><pre class="curl-code" id="curl-vision-' + api + '">' + escapeHtml(visionCurl) + '</pre></div>';
+            html += '</div>';
+            html += '<div class="results" id="results-' + api + '">';
+            html += '<div class="results-header"><h4>Results</h4><div class="summary" id="summary-' + api + '"></div></div>';
+            html += '<div class="progress" id="progress-' + api + '"><div class="progress-fill" id="fill-' + api + '"></div></div>';
+            html += '<div class="table-wrap" id="table-' + api + '"><div class="empty"><div class="empty-icon">&#128300;</div><p>Chưa có test nào</p></div></div>';
+            html += '</div></div></div>';
+        }
+
+        // All panel
+        html += '<div class="panel" data-api="all">';
+        html += '<div class="panel-header">';
+        html += '<h3>Chạy Test Tất Cả API</h3>';
+        html += '<button class="btn btn-success" onclick="runAllApis()">Chạy Tất Cả API</button>';
+        html += '</div>';
+        html += '<div class="panel-body">';
+        html += '<p style="margin-bottom:16px;color:#000000">Chạy test cho tất cả API sử dụng request body đã cấu hình.</p>';
+        html += '<div class="progress" id="progress-all"><div class="progress-fill" id="fill-all"></div></div>';
+        html += '<div class="api-grid" id="grid-all"></div>';
+        html += '</div></div>';
+
+        document.getElementById('panels').innerHTML = html;
+        buildAllGrid();
+        updateCurlSections();
+
+        // Add event listeners for preset fields
+        APIS.forEach(function(api) {
+            var presetEl = document.getElementById('preset-' + api);
+            if (presetEl) {
+                presetEl.addEventListener('input', function() { updatePresetPreview(this); updateRunButtonCounts(); updateCurlSections(); saveConfig(); });
+                presetEl.addEventListener('paste', function() { updatePresetPreview(this); updateRunButtonCounts(); updateCurlSections(); saveConfig(); });
+                presetEl.addEventListener('blur', function() { updatePresetPreview(this); saveConfig(); });
+                presetEl.addEventListener('change', saveConfig);
+                presetEl.addEventListener('keyup', saveConfig);
+                // Initialize preview on load
+                updatePresetPreview(presetEl);
+            }
+        });
+    }
+
+    function updateCurlSections() {
+        var baseUrl = document.getElementById('cfg-base').value || 'https://api.d.shotpix.app';
+        var apiKey = document.getElementById('cfg-key').value || '';
+        var profile = document.getElementById('cfg-profile').value;
+
+        for (var i = 0; i < APIS.length; i++) {
+            var api = APIS[i];
+            try {
+                var tpl = templates[api].replace(/PROFILE/g, profile);
+                var sampleBody = JSON.parse(tpl);
+                var apiCurl = generateApiCurl(api, baseUrl, apiKey, sampleBody);
+                var curlEl = document.getElementById('curl-api-' + api);
+                if (curlEl) curlEl.textContent = apiCurl;
+            } catch(e) {}
+        }
+    }
+
+    function buildAllGrid() {
+        var html = '';
+        for (var i = 0; i < APIS.length; i++) {
+            var api = APIS[i];
+            html += '<div class="api-card" id="card-' + api + '">';
+            html += '<h5><code>/' + api + '</code> <span id="card-status-' + api + '"></span></h5>';
+            html += '<div class="card-summary" id="card-summary-' + api + '">Chưa bắt đầu</div>';
+            html += '</div>';
+        }
+        document.getElementById('grid-all').innerHTML = html;
+    }
+
+    function switchTab(api) {
+        var tabs = document.querySelectorAll('.tab');
+        var panels = document.querySelectorAll('.panel');
+
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].classList.remove('active');
+            if (tabs[i].getAttribute('data-api') === api) {
+                tabs[i].classList.add('active');
+            }
+        }
+
+        for (var j = 0; j < panels.length; j++) {
+            panels[j].classList.remove('active');
+            if (panels[j].getAttribute('data-api') === api) {
+                panels[j].classList.add('active');
+            }
+        }
+
+        saveUIState();
+    }
+
+    function autoResizeTextarea(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    }
+
+    function getConfig() {
+        var imageInputs = document.querySelectorAll('.image-url-input');
+        var images = [];
+        for (var i = 0; i < imageInputs.length; i++) {
+            var url = imageInputs[i].value.trim();
+            if (url) images.push(url);
+        }
+        // Get per-API presets
+        var presets = {};
+        APIS.forEach(function(api) {
+            var presetEl = document.getElementById('preset-' + api);
+            if (presetEl) {
+                presets[api] = presetEl.value.trim();
+            }
+        });
+
+        return {
+            profile: document.getElementById('cfg-profile').value.trim(),
+            key: document.getElementById('cfg-key').value.trim(),
+            base: document.getElementById('cfg-base').value.trim().replace(/\/$/, ''),
+            presets: presets,
+            images: images
+        };
+    }
+
+
+    function createImageUrlItem() {
+        var item = document.createElement('div');
+        item.className = 'image-url-item';
+        item.style.cssText = 'display: flex; gap: 8px; align-items: flex-start;';
+        item.innerHTML = '<div style="flex: 1;"><input type="text" class="image-url-input" placeholder="https://resources.d.shotpix.app/selfie/xxx.jpg" style="width: 100%; padding: 8px 12px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 14px;"></div><div class="image-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;"><span style="color: #000000; font-size: 12px;">Preview</span></div><button type="button" class="btn-remove-image" onclick="removeImageUrl(this)" style="padding: 8px 12px; background: #dc3545; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Xóa</button>';
+        var input = item.querySelector('.image-url-input');
+        input.addEventListener('input', function() {
+            updateImagePreview(this);
+            updateRunButtonCounts();
+            saveConfig();
+        });
+            input.addEventListener('paste', function() {
+                updateImagePreview(input);
+                updateRunButtonCounts();
+                saveConfig();
+            });
+        input.addEventListener('blur', function() {
+            updateImagePreview(this);
+            saveConfig();
+        });
+        input.addEventListener('change', saveConfig);
+        input.addEventListener('keyup', saveConfig);
+        return item;
+    }
+
+    window.addImageUrl = function() {
+        document.getElementById('image-urls-container').appendChild(createImageUrlItem());
+        updateRemoveButtons();
+        updateRunButtonCounts();
+        saveConfig();
+    };
+
+    window.removeImageUrl = function(btn) {
+        var item = btn.closest('.image-url-item');
+        if (item) {
+            item.remove();
+            updateRemoveButtons();
+            updateRunButtonCounts();
+            saveConfig();
+        }
+    };
+
+    function updateRemoveButtons() {
+        var items = document.querySelectorAll('.image-url-item');
+        var show = items.length > 1;
+        items.forEach(function(item) {
+            var btn = item.querySelector('.btn-remove-image');
+            if (btn) btn.style.display = show ? 'block' : 'none';
+        });
+    }
+
+    function updateImagePreview(input) {
+        var url = input.value.trim();
+        var preview = input.closest('.image-url-item').querySelector('.image-preview');
+        preview.innerHTML = (url && (url.startsWith('http://') || url.startsWith('https://'))) ?
+            '<img src="' + escapeHtml(url) + '" onerror="this.parentElement.innerHTML=\'<span style=\\\'color: #dc3545; font-size: 12px;\\\'>Lỗi</span>\'" onclick="openLightbox(this.src)">' :
+            '<span style="color: #000000; font-size: 12px;">Preview</span>';
+    }
+
+    function updatePresetPreview(input) {
+        var url = input.value.trim();
+        var preview = input.closest('.preset-section').querySelector('.preset-preview');
+        preview.innerHTML = (url && (url.startsWith('http://') || url.startsWith('https://'))) ?
+            '<img src="' + escapeHtml(url) + '" onerror="this.parentElement.innerHTML=\'<span style=\\\'color: #dc3545; font-size: 12px;\\\'>Lỗi</span>\'" onclick="openLightbox(this.src)">' :
+            '<span style="color: #000000; font-size: 12px;">Preview</span>';
+    }
+
+    function getTestCount(api) {
+        var cfg = getConfig();
+        return cfg.images && cfg.images.length > 0 ? cfg.images.length * 3 : 0;
+    }
+
+
+    function updateRunButtonCounts() {
+        for (var i = 0; i < APIS.length; i++) {
+            var api = APIS[i];
+            var btn = document.getElementById('btn-run-' + api);
+            if (btn) {
+                var count = getTestCount(api);
+                btn.textContent = 'Chạy Test (' + count + ')';
+            }
+        }
+    }
+
+    function hasResults() {
+        for (var i = 0; i < APIS.length; i++) {
+            var data = results[APIS[i]];
+            if (data && data.length > 0 && data.some(function(r) { return r; })) return true;
+        }
+        return false;
+    }
+
+    function updateExportButtons() {
+        var hasData = hasResults();
+        var btnExport = document.getElementById('btn-export');
+        if (btnExport) btnExport.disabled = !hasData;
+    }
+
+    function extractImageId(url) {
+        if (!url) return null;
+        var match = url.match(/\/([^\/]+)\.(jpg|jpeg|png|webp)$/i);
+        return match ? match[1] : null;
+    }
+
+    function generateRequestsFromImages(api, imageUrls, profileId) {
+        var images = Array.isArray(imageUrls) ? imageUrls : 
+            (typeof imageUrls === 'string' && imageUrls.trim() ? 
+                (function() { try { var p = JSON.parse(imageUrls); return Array.isArray(p) ? p : [p]; } catch(e) { return null; } })() : null);
+        if (!images || images.length === 0) return null;
+
+        var apiConfig = {
+            faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: '3:4', additional_prompt: '' },
+            background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: '21:9', model: '2.5' },
+            filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: '3:4', additional_prompt: 'Add dramatic lighting' },
+            enhance: { useUrl: true, aspect_ratio: '1:1', model: '2.5' },
+            beauty: { useUrl: true, aspect_ratio: '3:4' },
+            restore: { useUrl: true, aspect_ratio: '21:9', model: '2.5' },
+            aging: { useUrl: true, aspect_ratio: '21:9', model: '2.5', age_years: 20 },
+            upscaler4k: { useUrl: true, aspect_ratio: '1:1' }
+        };
+        var cfg = apiConfig[api];
+        if (!cfg) return null;
+
+        var requests = [];
+        for (var i = 0; i < images.length; i++) {
+            // Create 3 variations per image per API
+            for (var variation = 0; variation < 3; variation++) {
+                var req = { profile_id: profileId, variation: variation + 1 };
+
+                if (cfg.useId) {
+                    var imgId = extractImageId(images[i]);
+                    var presetEl = document.getElementById('preset-' + api);
+                    var presetValue = presetEl ? presetEl.value.trim() : cfg.preset_image_id;
+                    // If preset is a full URL, extract the ID; otherwise use as-is (for backward compatibility)
+                    var presetId = presetValue.startsWith('http') ? extractImageId(presetValue) : presetValue;
+                    req.preset_image_id = presetId || cfg.preset_image_id;
+                    if (api === 'faceswap') req.selfie_ids = imgId ? [imgId] : null;
+                    else req.selfie_id = imgId;
+                } else {
+                    req.image_url = images[i];
+                }
+
+                // Apply base config
+                if (cfg.aspect_ratio) req.aspect_ratio = cfg.aspect_ratio;
+                if (cfg.model) req.model = cfg.model;
+                if (cfg.additional_prompt !== undefined) req.additional_prompt = cfg.additional_prompt;
+                if (cfg.age_years) req.age_years = cfg.age_years;
+
+                // Create variations
+                if (variation === 1) {
+                    // Variation 1: Different model if available
+                    if (api === 'enhance' || api === 'restore') {
+                        req.model = '1.0'; // Try different model
+                        req.test_type = 'model_v1';
+                    } else if (api === 'filter') {
+                        req.additional_prompt = 'High contrast, dramatic shadows';
+                        req.test_type = 'prompt_var1';
+                    } else {
+                        req.test_type = 'default';
+                    }
+                } else if (variation === 2) {
+                    // Variation 2: Different aspect ratio
+                    var ratios = ['1:1', '3:4', '16:9', '21:9'];
+                    var currentRatio = cfg.aspect_ratio || '3:4';
+                    var nextRatio = ratios[(ratios.indexOf(currentRatio) + 1) % ratios.length];
+                    req.aspect_ratio = nextRatio;
+                    req.test_type = 'aspect_' + nextRatio.replace(':', 'x');
+                } else {
+                    // Variation 0: Default
+                    req.test_type = 'default';
+                }
+
+                requests.push(req);
+            }
+        }
+        return requests;
+    }
+
+    function loadConfig() {
+        try {
+            var saved = localStorage.getItem('api-test-cfg');
+            if (saved) {
+                var cfg = JSON.parse(saved);
+
+                // Load basic config
+                var profileEl = document.getElementById('cfg-profile');
+                var keyEl = document.getElementById('cfg-key');
+                var baseEl = document.getElementById('cfg-base');
+
+                if (profileEl && cfg.profile) profileEl.value = cfg.profile;
+                if (keyEl && cfg.key) keyEl.value = cfg.key;
+                if (baseEl && cfg.base) baseEl.value = cfg.base;
+
+                // Load per-API presets
+                if (cfg.presets) {
+                    APIS.forEach(function(api) {
+                        var presetEl = document.getElementById('preset-' + api);
+                        if (presetEl && cfg.presets[api]) {
+                            presetEl.value = cfg.presets[api];
+                            updatePresetPreview(presetEl);
+                        }
+                    });
+                }
+
+                // Load images
+                if (cfg.images && Array.isArray(cfg.images) && cfg.images.length > 0) {
+                    var container = document.getElementById('image-urls-container');
+                    if (container) {
+                        try {
+                            container.innerHTML = '';
+                        // Create one input for each saved image
+                        cfg.images.forEach(function() {
+                            container.appendChild(createImageUrlItem());
+                        });
+
+                        // Set values for all inputs
+                        var inputs = container.querySelectorAll('.image-url-input');
+                        cfg.images.forEach(function(url, i) {
+                            if (inputs[i] && typeof url === 'string' && url.trim()) {
+                                inputs[i].value = url.trim();
+                                updateImagePreview(inputs[i]);
+                            }
+                        });
+                            updateRemoveButtons();
+                        } catch(e) {
+                            console.error('Failed to load images:', e);
+                        }
+                    }
+                }
+
+                // Update UI after loading config
+                updateCurlSections();
+                updateRunButtonCounts();
+            }
+        } catch(e) {
+            console.error('Failed to load config:', e);
+        }
+    }
+
+    function saveConfig() {
+        var config = getConfig();
+        localStorage.setItem('api-test-cfg', JSON.stringify(config));
+    }
+
+    function saveResults() {
+        // Clean results to ensure serializable data
+        var cleanResults = {};
+        for (var api in results) {
+            if (results[api] && Array.isArray(results[api])) {
+                cleanResults[api] = results[api].map(function(result) {
+                    return {
+                        index: result.index,
+                        inputUrl: result.inputUrl,
+                        body: result.body, // Include body for test_type
+                        status: result.status,
+                        code: result.code,
+                        time: result.time,
+                        resultUrl: result.resultUrl,
+                        safety: result.safety,
+                        error: result.error
+                    };
+                }).filter(function(result) { return result; });
+            }
+        }
+        localStorage.setItem('api-test-results', JSON.stringify(cleanResults));
+    }
+
+    function saveUIState() {
+        var uiState = {
+            activeTab: document.querySelector('.tab.active') ? document.querySelector('.tab.active').getAttribute('data-api') : 'faceswap',
+            timestamp: Date.now()
+        };
+        localStorage.setItem('api-test-ui-state', JSON.stringify(uiState));
+    }
+
+    function clearAllData() {
+        try {
+            localStorage.removeItem('api-test-cfg');
+            localStorage.removeItem('api-test-results');
+            localStorage.removeItem('api-test-ui-state');
+            location.reload();
+        } catch(e) {
+            console.error('Failed to clear data:', e);
+        }
+    }
+
+    function loadResults() {
+        var saved = localStorage.getItem('api-test-results');
+        if (saved) {
+            var loaded = JSON.parse(saved);
+            if (loaded && typeof loaded === 'object') {
+                results = loaded;
+                for (var i = 0; i < APIS.length; i++) {
+                    var api = APIS[i];
+                    if (results[api] && results[api].length > 0) {
+                        renderTable(api, results[api].filter(function(x) { return x; }));
+                        updateSummary(api);
+                    }
+                }
+                updateExportButtons();
+            }
+        }
+    }
+
+    function loadUIState() {
+        var saved = localStorage.getItem('api-test-ui-state');
+        if (saved) {
+            var uiState = JSON.parse(saved);
+            if (uiState && uiState.activeTab) {
+                switchTab(uiState.activeTab);
+            }
+        }
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function toast(msg, type) {
+        var t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast show ' + (type || '');
+        setTimeout(function() { t.classList.remove('show'); }, 3000);
+    }
+
+    // Run tests for single API
+    window.runTests = function(api) {
+        if (running) { toast('Đang chạy rồi', 'err'); return; }
+
+        var cfg = getConfig();
+        saveConfig();
+
+        var reqs = generateRequestsFromImages(api, cfg.images, cfg.profile);
+
+        if (!reqs || reqs.length === 0) {
+            toast('Image URLs không hợp lệ hoặc chưa có ảnh', 'err');
+            return;
+        }
+
+        running = true;
+        results[api] = new Array(reqs.length);
+
+        var progress = document.getElementById('progress-' + api);
+        var fill = document.getElementById('fill-' + api);
+        progress.classList.add('show');
+        fill.style.width = '0%';
+
+        renderTable(api, []);
+
+        var promises = reqs.map(function(req, idx) {
+            return runSingleTest(api, req, idx + 1, cfg).then(function(r) {
+                results[api][idx] = r;
+                fill.style.width = ((idx + 1) / reqs.length * 100) + '%';
+                saveResults();
+                return r;
+            });
+        });
+
+        Promise.all(promises).then(function(allResults) {
+            renderTable(api, allResults);
+            progress.classList.remove('show');
+            running = false;
+            updateSummary(api);
+            updateExportButtons();
+            saveResults();
+            toast('Hoàn thành ' + reqs.length + ' test cho /' + api, 'ok');
+        }).catch(function(err) {
+            renderTable(api, results[api].filter(function(x) { return x; }));
+            progress.classList.remove('show');
+            running = false;
+            updateSummary(api);
+            updateExportButtons();
+            saveResults();
+            toast('Có lỗi xảy ra: ' + err.message, 'err');
+        });
+    };
+
+    function runSingleTest(api, body, idx, cfg) {
+        var start = Date.now();
+        var result = {
+            index: idx,
+            inputUrl: getInputUrl(api, body),
+            body: body,
+            status: 'running',
+            code: null,
+            time: null,
+            resultUrl: null,
+            safety: null,
+            debug: null,
+            error: null
+        };
+
+        var headers = { 'Content-Type': 'application/json' };
+        if (cfg.key) headers['X-API-Key'] = cfg.key;
+
+        return fetch(cfg.base + '/' + api, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            result.code = data.code || 200;
+            result.time = ((Date.now() - start) / 1000).toFixed(1);
+            result.debug = data.debug || null;
+
+            var isBlocked = result.code === 3000 || (data.debug && data.debug.provider && data.debug.provider.statusCode === 3000);
+            if (isBlocked) {
+                result.status = 'blocked';
+                result.error = (data.debug && data.debug.provider && data.debug.provider.message) || 'Vertex AI Safety Block';
+                return result;
+            }
+
+            if (data.status === 'error') {
+                result.status = 'error';
+                result.error = data.message || 'API Error';
+                return result;
+            }
+
+            result.resultUrl = (data.data && data.data.resultImageUrl) || (data.data && data.data.result_image_url);
+            if (!result.resultUrl) {
+                result.status = 'error';
+                result.error = 'No result URL';
+                return result;
+            }
+
+            return checkSafety(result.resultUrl, cfg).then(function(safety) {
+                result.safety = safety.details;
+                result.safetyDebug = safety.debug;
+                result.status = 'success';
+                return result;
+            });
+        })
+        .catch(function(e) {
+            result.status = 'error';
+            result.error = e.message;
+            result.time = ((Date.now() - start) / 1000).toFixed(1);
+            return result;
+        });
+    }
+
+    function getInputUrl(api, body) {
+        if (api === 'faceswap') {
+            var id = (body.selfie_ids && body.selfie_ids[0]) || (body.selfie_image_urls && body.selfie_image_urls[0]);
+            return id ? (id.startsWith('http') ? id : 'https://resources.d.shotpix.app/selfie/' + id + '.jpg') : null;
+        }
+        if (api === 'background' || api === 'filter') {
+            var id = body.selfie_id || body.selfie_image_url;
+            return id ? (id.startsWith('http') ? id : 'https://resources.d.shotpix.app/selfie/' + id + '.jpg') : null;
+        }
+        return body.image_url || null;
+    }
+
+    function checkSafety(url, cfg) {
+        return fetch(url)
+            .then(function(res) { return res.blob(); })
+            .then(function(blob) {
+                var fd = new FormData();
+                fd.append('file', blob, 'result.jpg');
+                fd.append('type', 'selfie');
+                fd.append('action', '4k');
+                fd.append('profile_id', cfg.profile);
+
+                var headers = {};
+                if (cfg.key) headers['X-API-Key'] = cfg.key;
+
+                return fetch(cfg.base + '/upload-url', {
+                    method: 'POST',
+                    headers: headers,
+                    body: fd
+                });
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                return {
+                    details: data.debug && data.debug.vision && data.debug.vision.details,
+                    debug: data.debug && data.debug.vision
+                };
+            })
+            .catch(function(e) {
+                return { details: null, debug: { error: e.message } };
+            });
+    }
+
+    function renderTable(api, data) {
+        var wrap = document.getElementById('table-' + api);
+
+        if (!data || data.length === 0) {
+            wrap.innerHTML = '<div class="empty"><div class="empty-icon">&#128300;</div><p>Chưa có test nào</p></div>';
+            return;
+        }
+
+        var html = '<table><thead><tr>';
+        html += '<th>Input</th><th>Result</th><th>Code</th>';
+        html += '<th>adult</th><th>spoof</th><th>medical</th><th>violence</th><th>racy</th><th>Debug</th>';
+        html += '</tr></thead><tbody>';
+
+        for (var i = 0; i < data.length; i++) {
+            var r = data[i];
+            if (!r) continue;
+
+            var inputImg = r.inputUrl ? '<img class="thumb" src="' + escapeHtml(r.inputUrl) + '" onclick="openLightbox(this.src)">' : '-';
+            var isError = r.status === 'blocked' || r.status === 'error';
+            var rowClass = r.status === 'blocked' ? ' class="blocked"' : '';
+
+            html += '<tr' + rowClass + '><td>' + inputImg + '</td>';
+
+            if (isError) {
+                html += '<td>' + (r.status === 'blocked' ? 'X' : '!') + '</td>';
+                html += '<td><span class="status status-err">' + (r.code || 'ERR') + '</span></td>';
+                var errorData = {
+                    status: r.status,
+                    code: r.code,
+                    error: r.error,
+                    debug: r.debug,
+                    time: r.time + 's'
+                };
+                html += '<td colspan="7" style="text-align:left;color:#991b1b">' + (r.status === 'blocked' ? 'BLOCKED - ' : '') + escapeHtml(r.error || '') + '<br><br><pre style="margin:0;font-size:10px;background:#f8f9fa;padding:4px;border-radius:2px">' + escapeHtml(JSON.stringify(errorData, null, 1)) + '</pre></td>';
+            } else {
+                var s = r.safety || {};
+                var resultImg = r.resultUrl ? '<img class="thumb" src="' + escapeHtml(r.resultUrl) + '" onclick="openLightbox(this.src)">' : '-';
+                html += '<td>' + resultImg + '</td>';
+                html += '<td><span class="status status-ok">' + r.code + '</span></td>';
+                html += '<td>' + formatSafetyLevel(s.adult) + '</td>';
+                html += '<td>' + formatSafetyLevel(s.spoof) + '</td>';
+                html += '<td>' + formatSafetyLevel(s.medical) + '</td>';
+                html += '<td>' + formatSafetyLevel(s.violence) + '</td>';
+                html += '<td>' + formatSafetyLevel(s.racy) + '</td>';
+                var debugData = {
+                    response: r.code,
+                    resultUrl: r.resultUrl,
+                    safety: r.safety,
+                    safetyDebug: r.safetyDebug,
+                    time: r.time + 's'
+                };
+                html += '<td class="details"><pre>' + escapeHtml(JSON.stringify(debugData, null, 1)) + '</pre></td>';
+            }
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+    }
+
+    function formatSafetyLevel(level) {
+        if (!level || level === 'N/A') return '<span style="color: #64748b;">N/A</span>';
+        var l = level.toUpperCase();
+        var color = '#64748b';
+        var bg = '#f1f5f9';
+        if (l === 'VERY_UNLIKELY' || l === 'UNLIKELY') {
+            color = '#059669';
+            bg = '#d1fae5';
+        } else if (l === 'POSSIBLE') {
+            color = '#d97706';
+            bg = '#fef3c7';
+        } else if (l === 'LIKELY' || l === 'VERY_LIKELY') {
+            color = '#dc2626';
+            bg = '#fee2e2';
+        }
+        return '<span style="background: ' + bg + '; color: ' + color + '; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">' + level + '</span>';
+    }
+
+    function debugHtml(debug) {
+        if (!debug) return '-';
+        var json = JSON.stringify(debug);
+        var short = json.length > 40 ? json.substring(0, 37) + '...' : json;
+        return '<pre title="' + escapeHtml(json) + '">' + escapeHtml(short) + '</pre>';
+    }
+
+    function updateSummary(api) {
+        var data = results[api] || [];
+        var stats = { passed: 0, failed: 0, blocked: 0, time: 0 };
+        for (var i = 0; i < data.length; i++) {
+            if (!data[i]) continue;
+            var s = data[i].status;
+            if (s === 'success') stats.passed++;
+            else if (s === 'blocked') stats.blocked++;
+            else stats.failed++;
+            stats.time += parseFloat(data[i].time) || 0;
+        }
+        var total = stats.passed + stats.failed + stats.blocked;
+        var html = '<span class="ok">' + stats.passed + '/' + total + ' passed</span>';
+        if (stats.failed > 0) html += ' <span class="fail">' + stats.failed + ' failed</span>';
+        if (stats.blocked > 0) html += ' <span class="block">' + stats.blocked + ' blocked</span>';
+        html += ' <span>Total: ' + stats.time.toFixed(1) + 's</span>';
+        document.getElementById('summary-' + api).innerHTML = html;
+    }
+
+    // Run all APIs
+    window.runAllApis = function() {
+        if (running) { toast('Đang chạy rồi', 'err'); return; }
+
+        var cfg = getConfig();
+        saveConfig();
+        running = true;
+
+        var progress = document.getElementById('progress-all');
+        var fill = document.getElementById('fill-all');
+        progress.classList.add('show');
+        fill.style.width = '0%';
+
+        for (var i = 0; i < APIS.length; i++) {
+            document.getElementById('card-status-' + APIS[i]).innerHTML = '<span class="spin"></span>';
+            document.getElementById('card-summary-' + APIS[i]).textContent = 'Đang chạy...';
+        }
+
+        var completed = 0;
+        var apiPromises = [];
+
+        function markApiError(api, msg, skip) {
+            document.getElementById('card-status-' + api).innerHTML = '<span class="status status-err">' + (skip ? 'SKIP' : 'ERR') + '</span>';
+            document.getElementById('card-summary-' + api).textContent = msg;
+            completed++;
+            fill.style.width = (completed / APIS.length * 100) + '%';
+        }
+
+        for (var j = 0; j < APIS.length; j++) {
+            (function(api) {
+                var reqs = generateRequestsFromImages(api, cfg.images, cfg.profile);
+
+                if (!reqs || reqs.length === 0) {
+                    markApiError(api, 'Image URLs không hợp lệ hoặc chưa có ảnh', false);
+                    return;
+                }
+
+                results[api] = new Array(reqs.length);
+                var testPromises = reqs.map(function(req, idx) {
+                    return runSingleTest(api, req, idx + 1, cfg).then(function(r) {
+                        results[api][idx] = r;
+                        return r;
+                    });
+                });
+
+                var p = Promise.all(testPromises).then(function(allResults) {
+                    var data = results[api];
+                    var stats = { passed: 0, failed: 0, blocked: 0 };
+                    for (var m = 0; m < data.length; m++) {
+                        var s = data[m] && data[m].status;
+                        if (s === 'success') stats.passed++;
+                        else if (s === 'blocked') stats.blocked++;
+                        else stats.failed++;
+                    }
+
+                    var statusEl = document.getElementById('card-status-' + api);
+                    var summaryEl = document.getElementById('card-summary-' + api);
+                    statusEl.innerHTML = '<span class="status status-' + (stats.failed || stats.blocked ? 'err' : 'ok') + '">' + (stats.failed || stats.blocked ? 'FAIL' : 'OK') + '</span>';
+                    
+                    var txt = stats.passed + '/' + data.length + ' passed';
+                    if (stats.failed > 0) txt += ', ' + stats.failed + ' failed';
+                    if (stats.blocked > 0) txt += ', ' + stats.blocked + ' blocked';
+                    summaryEl.textContent = txt;
+
+                    renderTable(api, data);
+                    updateSummary(api);
+                    completed++;
+                    fill.style.width = (completed / APIS.length * 100) + '%';
+                });
+
+                apiPromises.push(p);
+            })(APIS[j]);
+        }
+
+        Promise.all(apiPromises).then(function() {
+            progress.classList.remove('show');
+            running = false;
+            updateExportButtons();
+            toast('Hoàn thành tất cả test API', 'ok');
+        });
+    };
+
+    // Lightbox
+    window.openLightbox = function(url) {
+        document.getElementById('lightbox-img').src = url;
+        document.getElementById('lightbox').classList.add('show');
+    };
+
+    window.closeLightbox = function() {
+        document.getElementById('lightbox').classList.remove('show');
+    };
+
+    // Preview
+    // Export
+    window.exportResults = function() {
+        if (!hasResults()) {
+            toast('Không có results để xuất', 'err');
+            return;
+        }
+        var cfg = getConfig();
+        var ts = new Date().toLocaleString();
+
+        var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
+        html += '<title>API Test Results - ' + ts + '</title>';
+        html += '<style>';
+        html += 'body{font-family:Arial,sans-serif;font-size:11px;padding:20px;max-width:1200px;margin:0 auto}';
+        html += 'h1{font-size:18px}h2{font-size:14px;margin:20px 0 10px;padding:8px;background:#f1f5f9;border-radius:4px}';
+        html += '.meta{color:#000000;margin-bottom:20px}';
+        html += 'table{width:100%;border-collapse:collapse;margin-bottom:20px}';
+        html += 'th,td{border:1px solid #e2e8f0;padding:8px;text-align:center}';
+        html += 'th{background:#f1f5f9;font-weight:600;font-size:10px;text-transform:uppercase}';
+        html += 'img{width:80px;height:80px;object-fit:contain;border-radius:3px;background:#ffffff;border:1px solid #e2e8f0}';
+        html += '.ok{background:#22c55e;color:white;padding:2px 6px;border-radius:4px}';
+        html += '.err{background:#ef4444;color:white;padding:2px 6px;border-radius:4px}';
+        html += '.blocked{background:#fef2f2}';
+        html += '.s-ok{background:#dcfce7}.s-warn{background:#fef3c7}.s-bad{background:#fecaca}';
+        html += 'pre{font-size:9px;background:#f8fafc;padding:4px;border-radius:2px;white-space:pre-wrap;max-width:150px}';
+        html += '</style></head><body>';
+        html += '<h1>API Test Results</h1>';
+        html += '<p class="meta">Generated: ' + ts + ' | Base: ' + cfg.base + ' | Profile: ' + cfg.profile + '</p>';
+
+        for (var i = 0; i < APIS.length; i++) {
+            var api = APIS[i];
+            var data = results[api];
+            if (!data || data.length === 0) continue;
+
+            var stats = { passed: 0, failed: 0, blocked: 0 };
+            data.forEach(function(r) {
+                var s = r.status;
+                if (s === 'success') stats.passed++;
+                else if (s === 'blocked') stats.blocked++;
+                else stats.failed++;
+            });
+
+            var titleText = '/ ' + api + ' (' + data.length + ' tests: ' + stats.passed + ' passed';
+            if (stats.failed > 0) titleText += ', ' + stats.failed + ' failed';
+            if (stats.blocked > 0) titleText += ', ' + stats.blocked + ' blocked';
+            html += '<h2>' + titleText + ')</h2>';
+
+            html += '<table><tr><th>Input</th><th>Result</th><th>Code</th>';
+            html += '<th>adult</th><th>spoof</th><th>medical</th><th>violence</th><th>racy</th><th>Debug</th></tr>';
+
+            data.forEach(function(r) {
+                var inputImg = r.inputUrl ? '<img src="' + r.inputUrl + '">' : '-';
+                var isError = r.status === 'blocked' || r.status === 'error';
+                var rowClass = r.status === 'blocked' ? ' class="blocked"' : '';
+
+                html += '<tr' + rowClass + '><td>' + inputImg + '</td>';
+                
+                if (isError) {
+                    html += '<td>' + (r.status === 'blocked' ? 'X' : '!') + '</td>';
+                    html += '<td><span class="err">' + (r.code || 'ERR') + '</span></td>';
+                    var errorData = {
+                        status: r.status,
+                        code: r.code,
+                        error: r.error,
+                        debug: r.debug,
+                        time: r.time + 's'
+                    };
+                    html += '<td colspan="7" style="text-align:left;color:#991b1b">' + (r.status === 'blocked' ? 'BLOCKED - ' : '') + escapeHtml(r.error || '') + '<br><br><pre style="margin:0;font-size:9px;background:#f8fafc;padding:4px;border-radius:2px">' + escapeHtml(JSON.stringify(errorData, null, 1)) + '</pre></td>';
+                } else {
+                    var s = r.safety || {};
+                    var resultImg = r.resultUrl ? '<img src="' + r.resultUrl + '">' : '-';
+                    html += '<td>' + resultImg + '</td>';
+                    html += '<td><span class="ok">' + r.code + '</span></td>';
+                    ['adult', 'spoof', 'medical', 'violence', 'racy'].forEach(function(key) {
+                        html += '<td class="' + getSafetyClass(s[key]) + '">' + (s[key] || 'N/A') + '</td>';
+                    });
+                    html += '<td><pre>' + escapeHtml(JSON.stringify(r.safetyDebug || {}, null, 1)) + '</pre></td>';
+                }
+                html += '</tr>';
+            });
+
+            html += '</table>';
+        }
+
+        html += '</' + 'body></' + 'html>';
+
+        var blob = new Blob([html], { type: 'text/html' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'api-test-' + new Date().toISOString().slice(0, 10) + '.html';
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('Đã xuất ra HTML', 'ok');
+    };
+
+    function getSafetyClass(level) {
+        if (!level) return '';
+        var l = level.toUpperCase();
+        if (l === 'VERY_UNLIKELY' || l === 'UNLIKELY') return 's-ok';
+        if (l === 'POSSIBLE') return 's-warn';
+        return 's-bad';
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeLightbox();
+    });
+
+    init();
+})();
+</script>
+</body>
+</html>
