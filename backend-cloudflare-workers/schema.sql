@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS profiles (
   id TEXT PRIMARY KEY,
   device_id TEXT, -- Device identifier for searchable indexing
+  user_id TEXT, -- External user ID for searchable indexing
   name TEXT,
   email TEXT,
   avatar_url TEXT,
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS presets (
 CREATE INDEX IF NOT EXISTS idx_presets_created_at ON presets(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_presets_thumbnail_r2 ON presets(thumbnail_r2);
 CREATE INDEX IF NOT EXISTS idx_profiles_device_id ON profiles(device_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);
 
 -- Selfies table: Store uploaded selfie images
 CREATE TABLE IF NOT EXISTS selfies (

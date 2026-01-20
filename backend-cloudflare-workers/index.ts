@@ -2955,11 +2955,12 @@ export default {
 
     // Handle profile creation
     if (path === '/profiles' && request.method === 'POST') {
-      let body: Partial<Profile & { userID?: string; id?: string; device_id?: string }> | undefined;
+      let body: Partial<Profile & { userID?: string; id?: string; device_id?: string; user_id?: string }> | undefined;
       try {
-        body = await request.json() as Partial<Profile & { userID?: string; id?: string; device_id?: string }>;
+        body = await request.json() as Partial<Profile & { userID?: string; id?: string; device_id?: string; user_id?: string }>;
         const deviceId = body.device_id || request.headers.get('x-device-id') || null;
-        const profileId = body.userID || body.id || nanoid(16);
+        const userId = body.userID || body.user_id || null; // External user ID for searching
+        const profileId = body.id || nanoid(16); // Profile ID is always auto-generated or provided via id field
 
         const tableCheck = await DB.prepare(
           "SELECT name FROM sqlite_master WHERE type='table' AND name='profiles'"
@@ -2972,14 +2973,27 @@ export default {
           return errorResponse('', 500, debugEnabled ? { path } : undefined, request, env);
         }
 
-        if (body.userID || body.id) {
-          const existingProfile = await DB.prepare(
-            'SELECT id FROM profiles WHERE id = ?'
-          ).bind(profileId).first();
-          
+        // Check for existing profile by id or user_id
+        if (body.id || userId) {
+          let existingProfile = null;
+
+          // Check by profile ID
+          if (body.id) {
+            existingProfile = await DB.prepare(
+              'SELECT id FROM profiles WHERE id = ?'
+            ).bind(profileId).first();
+          }
+
+          // Also check by user_id if provided
+          if (!existingProfile && userId) {
+            existingProfile = await DB.prepare(
+              'SELECT id FROM profiles WHERE user_id = ?'
+            ).bind(userId).first();
+          }
+
           if (existingProfile) {
             const debugEnabled = isDebugEnabled(env);
-            return errorResponse('Profile already exists', 409, debugEnabled ? { profileId, path } : undefined, request, env);
+            return errorResponse('Profile already exists', 409, debugEnabled ? { profileId, userId, path } : undefined, request, env);
           }
         }
 
@@ -2992,10 +3006,11 @@ export default {
           : null;
 
         const result = await DB.prepare(
-          'INSERT INTO profiles (id, device_id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO profiles (id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).bind(
           profileId,
           deviceId,
+          userId,
           body.name || null,
           body.email || null,
           body.avatar_url || null,
@@ -3021,6 +3036,7 @@ export default {
         const profile = {
           id: profileId,
           device_id: deviceId || undefined,
+          user_id: userId || undefined,
           name: body.name || undefined,
           email: body.email || undefined,
           avatar_url: body.avatar_url || undefined,
@@ -3035,15 +3051,15 @@ export default {
           status: 'success',
           message: 'Profile created successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { profileId, deviceId } } : {})
+          ...(debugEnabled ? { debug: { profileId, deviceId, userId } } : {})
         }, 200, request, env);
       } catch (error) {
         logCriticalError('/profiles (POST)', error, request, env, {
           body: {
             device_id: body?.device_id ? '***present***' : 'missing',
-            userID: body?.userID,
+            userID: body?.userID || body?.user_id,
             id: body?.id,
-            profile_id: body?.userID || body?.id || 'auto-generated'
+            profile_id: body?.id || 'auto-generated'
           }
         });
         const debugEnabled = isDebugEnabled(env);
@@ -3052,7 +3068,7 @@ export default {
       }
     }
 
-    // Handle profile retrieval (supports both profile ID and device ID)
+    // Handle profile retrieval (supports profile ID, device ID, and user_id)
     if (path.startsWith('/profiles/') && request.method === 'GET') {
       try {
         const idParam = extractPathId(path, '/profiles/');
@@ -3061,26 +3077,39 @@ export default {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        // Try to find by profile ID first, then by device_id
+        let foundBy = '';
+
+        // Try to find by profile ID first
         let result = await DB.prepare(
-          'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(idParam).first();
+        if (result) foundBy = 'profile_id';
 
         // If not found by ID, try by device_id
         if (!result) {
           result = await DB.prepare(
-            'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE device_id = ?'
+            'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE device_id = ?'
           ).bind(idParam).first();
+          if (result) foundBy = 'device_id';
+        }
+
+        // If not found by device_id, try by user_id
+        if (!result) {
+          result = await DB.prepare(
+            'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE user_id = ?'
+          ).bind(idParam).first();
+          if (result) foundBy = 'user_id';
         }
 
         if (!result) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Profile not found', 404, debugEnabled ? { idParam, searchedBy: 'id and device_id', path } : undefined, request, env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { idParam, searchedBy: 'id, device_id, and user_id', path } : undefined, request, env);
         }
 
         const profile: Profile = {
           id: (result as any).id,
           device_id: (result as any).device_id || undefined,
+          user_id: (result as any).user_id || undefined,
           name: (result as any).name || undefined,
           email: (result as any).email || undefined,
           avatar_url: (result as any).avatar_url || undefined,
@@ -3095,7 +3124,7 @@ export default {
           status: 'success',
           message: 'Profile retrieved successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { idParam, foundById: (result as any).id === idParam ? 'profile_id' : 'device_id' } } : {})
+          ...(debugEnabled ? { debug: { idParam, foundBy } } : {})
         }, 200, request, env);
       } catch (error) {
         logCriticalError('/profiles/{id} (GET)', error, request, env, {
@@ -3140,7 +3169,7 @@ export default {
 
         // Return updated profile
         const updatedResult = await DB.prepare(
-          'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
         if (!updatedResult) {
@@ -3151,6 +3180,7 @@ export default {
         const profile: Profile = {
           id: profileId,
           device_id: (updatedResult as any).device_id || undefined,
+          user_id: (updatedResult as any).user_id || undefined,
           name: (updatedResult as any).name || undefined,
           email: (updatedResult as any).email || undefined,
           avatar_url: (updatedResult as any).avatar_url || undefined,
@@ -3178,12 +3208,13 @@ export default {
     if (path === '/profiles' && request.method === 'GET') {
       try {
         const results = await DB.prepare(
-          'SELECT id, device_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
+          'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
         ).all();
 
         const profiles: Profile[] = results.results?.map((row: any) => ({
           id: row.id,
           device_id: row.device_id || undefined,
+          user_id: row.user_id || undefined,
           name: row.name || undefined,
           email: row.email || undefined,
           avatar_url: row.avatar_url || undefined,

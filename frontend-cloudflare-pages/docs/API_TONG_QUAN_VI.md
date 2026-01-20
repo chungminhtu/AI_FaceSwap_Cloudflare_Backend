@@ -1311,7 +1311,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
   -H "X-API-Key: your_api_key_here" \
   -d '{
     "device_id": "device_1765774126587_yaq0uh6rvz",
-    "userID": "profile_1234567890",
+    "userID": "user_external_123",
     "name": "John Doe",
     "email": "john@example.com",
     "avatar_url": "https://example.com/avatar.jpg",
@@ -1350,11 +1350,17 @@ curl -X POST https://api.d.shotpix.app/profiles \
 
 **Request Parameters:**
 - `device_id` (string, optional): ID thiết bị. Có thể gửi trong body hoặc header `x-device-id`. Nếu không có, sẽ là `null`.
-- `userID` hoặc `id` (string, optional): ID profile. Nếu không có, hệ thống tự tạo bằng `nanoid(16)`.
+- `userID` hoặc `user_id` (string, optional): **User ID bên ngoài** dùng để tìm kiếm profile. Đây là ID từ hệ thống của bạn (ví dụ: Firebase UID, Auth0 ID, v.v.). Có thể dùng để tìm profile sau này.
+- `id` (string, optional): ID profile nội bộ. Nếu không có, hệ thống tự tạo bằng `nanoid(16)`.
 - `name` (string, optional): tên profile.
 - `email` (string, optional): email.
 - `avatar_url` (string, optional): URL avatar.
 - `preferences` (string hoặc object, optional): preferences dạng JSON string hoặc object. Nếu là object, hệ thống tự động chuyển thành JSON string trước khi lưu vào D1 database (vì D1 không hỗ trợ JSON object trực tiếp).
+
+**Lưu ý về ID:**
+- `id` (profile_id): ID nội bộ của profile, tự động tạo nếu không cung cấp.
+- `user_id`: ID từ hệ thống bên ngoài (Firebase, Auth0, v.v.), dùng để liên kết với user của bạn.
+- `device_id`: ID thiết bị, dùng để theo dõi user chưa đăng nhập.
 
 **Response:**
 ```json
@@ -1362,6 +1368,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
   "data": {
     "id": "uYNgRR70Ry9OFuMV",
     "device_id": "device_1765774126587_yaq0uh6rvz",
+    "user_id": "user_external_123",
     "created_at": "2025-12-15T04:48:47.676Z",
     "updated_at": "2025-12-15T04:48:47.676Z"
   },
@@ -1370,7 +1377,8 @@ curl -X POST https://api.d.shotpix.app/profiles \
   "code": 200,
   "debug": {
     "profileId": "uYNgRR70Ry9OFuMV",
-    "deviceId": "device_1765774126587_yaq0uh6rvz"
+    "deviceId": "device_1765774126587_yaq0uh6rvz",
+    "userId": "user_external_123"
   }
 }
 ```
@@ -1379,12 +1387,12 @@ curl -X POST https://api.d.shotpix.app/profiles \
 
 #### 3.2. GET `/profiles/{id}` - Lấy profile
 
-**Mục đích:** Lấy thông tin profile theo ID hoặc Device ID.
+**Mục đích:** Lấy thông tin profile theo Profile ID, Device ID, hoặc User ID.
 
 **Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Path Parameters:**
-- `id` (string, required): Có thể là **Profile ID** hoặc **Device ID**. API sẽ tìm theo profile ID trước, nếu không tìm thấy sẽ tìm theo device ID.
+- `id` (string, required): Có thể là **Profile ID**, **Device ID**, hoặc **User ID**. API sẽ tìm theo thứ tự: profile_id → device_id → user_id.
 
 **Request:**
 ```bash
@@ -1395,6 +1403,10 @@ curl https://api.d.shotpix.app/profiles/uYNgRR70Ry9OFuMV \
 # Tìm bằng Device ID
 curl https://api.d.shotpix.app/profiles/device_1765774126587_yaq0uh6rvz \
   -H "X-API-Key: your_api_key_here"
+
+# Tìm bằng User ID (từ hệ thống bên ngoài)
+curl https://api.d.shotpix.app/profiles/user_external_123 \
+  -H "X-API-Key: your_api_key_here"
 ```
 
 **Response:**
@@ -1403,6 +1415,7 @@ curl https://api.d.shotpix.app/profiles/device_1765774126587_yaq0uh6rvz \
   "data": {
     "id": "uYNgRR70Ry9OFuMV",
     "device_id": "device_1765774126587_yaq0uh6rvz",
+    "user_id": "user_external_123",
     "name": "John Doe",
     "email": "john@example.com",
     "avatar_url": "https://example.com/avatar.jpg",
@@ -1416,7 +1429,7 @@ curl https://api.d.shotpix.app/profiles/device_1765774126587_yaq0uh6rvz \
 }
 ```
 
-**Lưu ý:** Cả hai cách tìm (bằng Profile ID hoặc Device ID) đều trả về cùng một profile với đầy đủ thông tin.
+**Lưu ý:** Cả ba cách tìm (bằng Profile ID, Device ID, hoặc User ID) đều trả về cùng một profile với đầy đủ thông tin.
 
 ---
 
@@ -1455,6 +1468,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
   "data": {
     "id": "uYNgRR70Ry9OFuMV",
     "device_id": "device_1765774126587_yaq0uh6rvz",
+    "user_id": "user_external_123",
     "name": "John Doe Updated",
     "email": "john.updated@example.com",
     "avatar_url": "https://example.com/new-avatar.jpg",
@@ -1489,6 +1503,7 @@ curl https://api.d.shotpix.app/profiles
       {
         "id": "uYNgRR70Ry9OFuMV",
         "device_id": "device_1765774126587_yaq0uh6rvz",
+        "user_id": "user_external_123",
         "name": "John Doe",
         "email": "john@example.com",
         "avatar_url": "https://example.com/avatar.jpg",

@@ -128,6 +128,7 @@ export interface PromptJson {
 export interface Profile {
   id: string;
   device_id?: string;
+  user_id?: string; // External user ID for searching
   name?: string;
   email?: string;
   avatar_url?: string;

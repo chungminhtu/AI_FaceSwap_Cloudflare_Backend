@@ -380,24 +380,23 @@
             border-collapse: collapse;
             font-size: 14px;
             table-layout: fixed;
-            min-width: 100%;
         }
-        /* Column widths: Input(10%), Preset(10%), #(4%), Result(10%), Code(6%), Safety(15%), Debug(45%) */
-        th:nth-child(1), td:nth-child(1) { width: 10%; } /* Input */
-        th:nth-child(2), td:nth-child(2) { width: 10%; } /* Preset (conditional) */
-        th:nth-child(3), td:nth-child(3) { width: 4%; }  /* # */
-        th:nth-child(4), td:nth-child(4) { width: 10%; } /* Result */
-        th:nth-child(5), td:nth-child(5) { width: 6%; }  /* Code */
-        th:nth-child(6), td:nth-child(6) { width: 15%; } /* Safety */
-        th:nth-child(7), td:nth-child(7) { width: 45%; } /* Debug */
+        /* Fixed columns, debug auto fills remaining */
+        th:nth-child(1), td:nth-child(1) { width: 400px; min-width: 400px; max-width: 400px; padding: 0 !important; } /* Input - fixed */
+        th:nth-child(2), td:nth-child(2) { width: 400px; min-width: 400px; max-width: 400px; padding: 0 !important; } /* Preset - fixed */
+        th:nth-child(3), td:nth-child(3) { width: 30px; min-width: 30px; max-width: 30px; padding: 1px !important; }  /* # - fixed */
+        th:nth-child(4), td:nth-child(4) { width: 400px; min-width: 400px; max-width: 400px; padding: 0 !important; } /* Result - fixed */
+        th:nth-child(5), td:nth-child(5) { width: 45px; min-width: 45px; max-width: 45px; }  /* Code - fixed */
+        th:nth-child(6), td:nth-child(6) { width: 180px; min-width: 180px; max-width: 180px; white-space: nowrap; text-align: left; } /* Safety - fixed */
+        th:nth-child(7), td:nth-child(7) { width: auto; } /* Debug - auto */
 
         /* Alternative widths when no preset column */
-        .no-preset th:nth-child(1), .no-preset td:nth-child(1) { width: 10%; } /* Input */
-        .no-preset th:nth-child(2), .no-preset td:nth-child(2) { width: 4%; }  /* # */
-        .no-preset th:nth-child(3), .no-preset td:nth-child(3) { width: 10%; } /* Result */
-        .no-preset th:nth-child(4), .no-preset td:nth-child(4) { width: 6%; }  /* Code */
-        .no-preset th:nth-child(5), .no-preset td:nth-child(5) { width: 17%; } /* Safety */
-        .no-preset th:nth-child(6), .no-preset td:nth-child(6) { width: 53%; } /* Debug */
+        .no-preset th:nth-child(1), .no-preset td:nth-child(1) { width: 400px; min-width: 400px; max-width: 400px; padding: 0 !important; } /* Input - fixed */
+        .no-preset th:nth-child(2), .no-preset td:nth-child(2) { width: 30px; min-width: 30px; max-width: 30px; padding: 1px !important; }  /* # - fixed */
+        .no-preset th:nth-child(3), .no-preset td:nth-child(3) { width: 400px; min-width: 400px; max-width: 400px; padding: 0 !important; } /* Result - fixed */
+        .no-preset th:nth-child(4), .no-preset td:nth-child(4) { width: 45px; min-width: 45px; max-width: 45px; }  /* Code - fixed */
+        .no-preset th:nth-child(5), .no-preset td:nth-child(5) { width: 180px; min-width: 180px; max-width: 180px; white-space: nowrap; text-align: left; } /* Safety - fixed */
+        .no-preset th:nth-child(6), .no-preset td:nth-child(6) { width: auto; } /* Debug - auto */
         th, td {
             padding: 4px 6px;
             text-align: center;
@@ -435,15 +434,12 @@
 
         /* Thumbnails */
         .thumb {
-            max-width: 200px;
-            max-height: 200px;
-            object-fit: contain;
             cursor: pointer;
         }
-        table .thumb {
+        td img.thumb {
             width: 100%;
-            height: 100%;
-            object-fit: cover;
+            height: auto;
+            object-fit: contain;
             display: block;
         }
         .thumb:hover { opacity: 0.9; }
@@ -705,7 +701,7 @@
             <div class="config-fields">
                 <div class="config-field">
                     <label>Profile ID</label>
-                    <input type="text" id="cfg-profile" value="RcSsl0UootcwVUcb">
+                    <input type="text" id="cfg-profile" value="3iaSwwSTcjJGdJ-B">
                 </div>
                 <div class="config-field">
                     <label>API Key</label>
@@ -1224,62 +1220,73 @@
         return requests;
     }
 
+    // Default test values
+    var DEFAULT_SELFIE_URLS = [
+        'https://resources.d.shotpix.app/selfie/f2cmkYWGeuWnLeTc.jpg',
+        'https://resources.d.shotpix.app/selfie/GBgyH5dEvfyYR4K2.jpg'
+    ];
+    var DEFAULT_PRESET_URL = 'https://resources.d.shotpix.app/preset/Ag4Rp2q0BVX1EUVo.png';
+
     function loadConfig() {
         try {
             var saved = localStorage.getItem('api-test-cfg');
-            if (saved) {
-                var cfg = JSON.parse(saved);
+            var cfg = saved ? JSON.parse(saved) : null;
 
-                // Load basic config
-                var profileEl = document.getElementById('cfg-profile');
-                var keyEl = document.getElementById('cfg-key');
-                var baseEl = document.getElementById('cfg-base');
+            // Load basic config
+            var profileEl = document.getElementById('cfg-profile');
+            var keyEl = document.getElementById('cfg-key');
+            var baseEl = document.getElementById('cfg-base');
 
+            if (cfg) {
                 if (profileEl && cfg.profile) profileEl.value = cfg.profile;
                 if (keyEl && cfg.key) keyEl.value = cfg.key;
                 if (baseEl && cfg.base) baseEl.value = cfg.base;
+            }
 
-                // Load per-API presets
-                if (cfg.presets) {
-                    APIS.forEach(function(api) {
-                        var presetEl = document.getElementById('preset-' + api);
-                        if (presetEl && cfg.presets[api]) {
-                            presetEl.value = cfg.presets[api];
-                            updatePresetPreview(presetEl);
+            // Load per-API presets (use default if no saved config)
+            APIS.forEach(function(api) {
+                var presetEl = document.getElementById('preset-' + api);
+                if (presetEl) {
+                    if (cfg && cfg.presets && cfg.presets[api]) {
+                        presetEl.value = cfg.presets[api];
+                    } else {
+                        presetEl.value = DEFAULT_PRESET_URL;
+                    }
+                    updatePresetPreview(presetEl);
+                }
+            });
+
+            // Load images (use default if no saved config)
+            var container = document.getElementById('image-urls-container');
+            if (container) {
+                try {
+                    var imagesToLoad = (cfg && cfg.images && Array.isArray(cfg.images) && cfg.images.length > 0)
+                        ? cfg.images
+                        : DEFAULT_SELFIE_URLS;
+
+                    container.innerHTML = '';
+                    // Create one input for each image
+                    imagesToLoad.forEach(function() {
+                        container.appendChild(createImageUrlItem());
+                    });
+
+                    // Set values for all inputs
+                    var inputs = container.querySelectorAll('.image-url-input');
+                    imagesToLoad.forEach(function(url, i) {
+                        if (inputs[i] && typeof url === 'string' && url.trim()) {
+                            inputs[i].value = url.trim();
+                            updateImagePreview(inputs[i]);
                         }
                     });
+                    updateRemoveButtons();
+                } catch(e) {
+                    console.error('Failed to load images:', e);
                 }
-
-                // Load images
-                if (cfg.images && Array.isArray(cfg.images) && cfg.images.length > 0) {
-                    var container = document.getElementById('image-urls-container');
-                    if (container) {
-                        try {
-                            container.innerHTML = '';
-                        // Create one input for each saved image
-                        cfg.images.forEach(function() {
-                            container.appendChild(createImageUrlItem());
-                        });
-
-                        // Set values for all inputs
-                        var inputs = container.querySelectorAll('.image-url-input');
-                        cfg.images.forEach(function(url, i) {
-                            if (inputs[i] && typeof url === 'string' && url.trim()) {
-                                inputs[i].value = url.trim();
-                                updateImagePreview(inputs[i]);
-                            }
-                        });
-                            updateRemoveButtons();
-                        } catch(e) {
-                            console.error('Failed to load images:', e);
-                        }
-                    }
-                }
-
-                // Update UI after loading config
-                updateCurlSections();
-                updateRunButtonCounts();
             }
+
+            // Update UI after loading config
+            updateCurlSections();
+            updateRunButtonCounts();
         } catch(e) {
             console.error('Failed to load config:', e);
         }

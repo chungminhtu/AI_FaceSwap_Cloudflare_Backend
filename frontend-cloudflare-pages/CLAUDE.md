@@ -7,6 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #512 | 3:21 PM | ✅ | Increased test run number column width from 20px to 30px | ~235 |
 | #471 | 2:29 PM | 🔵 | Test variation logic creates 3 tests per image per API | ~353 |
 | #452 | 2:18 PM | 🔴 | Added type="button" to prevent form submission on Run Test buttons | ~269 |
 | #369 | 9:36 AM | 🔵 | API endpoint usage patterns identified in fetch calls | ~418 |
