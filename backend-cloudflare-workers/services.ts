@@ -283,23 +283,18 @@ export const callNanoBanana = async (
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
     const sanitizedRequestBody = debugEnabled ? sanitizeObject(requestBody) : undefined;
     const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \\
   -H "Content-Type: application/json" \\
-  ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+  "${geminiEndpoint}" \\
+  -d '${JSON.stringify(sanitizedRequestBody).replace(/'/g, "'\\''")}'` : undefined;
 
+    // Simplified debug info - curl contains full request details
     debugInfo = {
-      endpoint: geminiEndpoint,
+      curl: curlCommand,
       model: geminiModel,
-      requestPayload: sanitizedRequestBody,
-      curlCommand,
-      inputImageBytes: selfieImageDataArray.map(d => d.length),
-      inputImageCount: selfieImageDataArray.length,
-      promptLength: faceSwapPrompt.length,
-      targetUrl,
-      sourceUrl: Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl],
-      receivedAspectRatio: aspectRatio,
-      normalizedAspectRatio: normalizedAspectRatio,
+      endpoint: geminiEndpoint,
+      aspectRatio: normalizedAspectRatio,
+      inputImages: selfieImageDataArray.length,
     };
 
     // Performance testing mode: skip API call if disabled
@@ -1367,19 +1362,25 @@ export const checkSafeSearch = async (
     }, 60000);
 
     const durationMs = Date.now() - startTime;
+
+    // Generate curl command for Vision API call
+    const curlCommand = `curl -X POST \\
+  "${env.GOOGLE_VISION_ENDPOINT}?key=YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(requestBody)}'`;
+
     const debugInfo: Record<string, any> = {
+      curl: curlCommand,
       endpoint: env.GOOGLE_VISION_ENDPOINT,
-      status: response.status,
-      statusText: response.statusText,
-      durationMs,
-      requestPayload: requestBody,
       imageUrl,
+      durationMs,
+      status: response.status,
     };
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[SafeSearch] API error:', response.status, response.statusText);
-      debugInfo.rawResponse = errorText.substring(0, 200);
+      debugInfo.error = errorText.substring(0, 200);
 
       // Provide helpful error message for billing errors
       let errorMessage = `API error: ${response.status} - ${errorText.substring(0, 200)}`;
@@ -1391,26 +1392,24 @@ export const checkSafeSearch = async (
     }
 
     const data = await response.json() as GoogleVisionResponse;
-    debugInfo.response = data;
 
     const annotation = data.responses?.[0]?.safeSearchAnnotation;
 
     if (data.responses?.[0]?.error) {
       const errorObj: any = data.responses[0].error;
-      const errorMsg = typeof errorObj === 'string' ? errorObj.substring(0, 200) : (errorObj?.message ? String(errorObj.message).substring(0, 200) : JSON.stringify(errorObj).substring(0, 200));
+      debugInfo.error = errorObj?.message || JSON.stringify(errorObj).substring(0, 200);
       return {
         isSafe: false,
         error: data.responses[0].error.message,
-        rawResponse: data, // Include full raw response even on error
         debug: debugInfo,
       };
     }
 
     if (!annotation) {
+      debugInfo.error = 'No safe search annotation returned';
       return {
         isSafe: false,
         error: 'No safe search annotation',
-        rawResponse: data, // Include full raw response
         debug: debugInfo,
       };
     }
@@ -1436,8 +1435,7 @@ export const checkSafeSearch = async (
       statusCode: statusCode,
       violationCategory: worstViolation?.category,
       violationLevel: worstViolation?.level,
-      details: annotation, // Return full safeSearchAnnotation details
-      rawResponse: data, // Include full raw Vision API response
+      details: annotation, // SafeSearch levels: adult, spoof, medical, violence, racy
       debug: debugInfo,
     };
   } catch (error) {

@@ -561,22 +561,22 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record<string, any> =>
-  compact({
-    success: result.Success,
+const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record<string, any> => {
+  const debug = (result as any).Debug;
+  // Simplified provider debug - only essential info
+  return compact({
+    curl: debug?.curl,
+    model: debug?.model,
     statusCode: result.StatusCode,
-    message: result.Message,
-    processingTime: result.ProcessingTime || result.ProcessingTimeSpan,
-    processStarted: result.ProcessStartedDateTime,
-    faceSwapCount: result.FaceSwapCount,
-    error: result.Error,
-    originalResultImageUrl: result.ResultImageUrl,
-    finalResultImageUrl: finalUrl,
-    debug: (result as any).Debug,
-    fullResponse: (result as any).FullResponse,
-    httpStatus: (result as any).HttpStatus,
-    httpStatusText: (result as any).HttpStatusText,
+    durationMs: debug?.durationMs,
+    error: result.Error || debug?.error,
+    // Only include on error for debugging
+    ...(result.StatusCode >= 400 || result.Error ? {
+      message: result.Message,
+      endpoint: debug?.endpoint,
+    } : {}),
   });
+};
 
 const buildVertexDebug = (result: FaceSwapResponse): Record<string, any> | undefined => {
   const extended = result as FaceSwapResponse & {
@@ -584,13 +584,13 @@ const buildVertexDebug = (result: FaceSwapResponse): Record<string, any> | undef
     Prompt?: any;
     CurlCommand?: string;
   };
-  if (!extended.VertexResponse && !extended.Prompt && !extended.CurlCommand) {
+  if (!extended.CurlCommand && !extended.Prompt) {
     return undefined;
   }
+  // Simplified vertex debug - curl command is most useful
   return compact({
-    prompt: extended.Prompt,
-    response: extended.VertexResponse,
-    curlCommand: extended.CurlCommand,
+    curl: extended.CurlCommand,
+    prompt: extended.Prompt ? (typeof extended.Prompt === 'string' ? extended.Prompt.substring(0, 500) : extended.Prompt) : undefined,
   });
 };
 
@@ -638,16 +638,15 @@ const buildVisionDebug = (vision?: SafetyCheckDebug | null): Record<string, any>
   if (!vision) {
     return undefined;
   }
+  // Simplified debug - only meaningful info
   return compact({
-    checked: vision.checked,
+    curl: vision.debug?.curl,
     isSafe: vision.isSafe,
     statusCode: vision.statusCode,
-    violationCategory: vision.violationCategory,
-    violationLevel: vision.violationLevel,
-    details: vision.details,
+    violation: vision.violationCategory ? `${vision.violationCategory}: ${vision.violationLevel}` : undefined,
+    details: vision.details, // SafeSearch levels: adult, spoof, medical, violence, racy
+    durationMs: vision.debug?.durationMs,
     error: vision.error,
-    rawResponse: vision.rawResponse,
-    debug: vision.debug,
   });
 };
 
