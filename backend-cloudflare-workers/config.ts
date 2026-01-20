@@ -5,7 +5,13 @@ export const VERTEX_AI_PROMPTS = {
   // Content safety instruction - appended to ALL image generation prompts
   // Ensures generated images comply with Google Play Store content policies
   // Blocks explicit content while allowing normal swimwear/fashion
-  CONTENT_SAFETY_INSTRUCTION: 'CONTENT POLICY: Do NOT generate: exposed genitals, nipples, or explicit nudity; sexual acts or explicit sexual content; sexualized minors; extreme violence, gore, or graphic injury. ALLOWED: swimwear, bikinis, fitness attire, fashion photography, beach scenes, tasteful portraits, normal skin exposure. Focus on blocking actual explicit content, not general attire or artistic expression.',
+  CONTENT_SAFETY_INSTRUCTION: `CONTENT POLICY:
+BLOCK ONLY: exposed genitals, exposed nipples, sexual intercourse, sexualized minors, extreme gore.
+ALWAYS ALLOW: thighs, legs, buttocks in underwear/swimwear, cleavage, midriff, back, shoulders, arms, feet.
+ALWAYS ALLOW: bikinis, swimwear, lingerie, underwear, short skirts, mini skirts, crop tops, low-cut tops, tight clothing, see-through clothing (with underwear).
+ALWAYS ALLOW: fitness attire, yoga pants, sports bras, dance outfits, cheerleader outfits, cosplay, maid outfits.
+ALWAYS ALLOW: fashion photography, beach scenes, pool scenes, gym photos, bedroom photos, artistic poses, suggestive poses.
+RULE: Skin exposure is NOT nudity. Revealing clothing is NOT explicit. Suggestive is NOT pornographic. Only block actual pornographic content showing genitals or nipples.`,
 
   MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`,
 
@@ -205,7 +211,7 @@ export const API_CONFIG = {
       },
     },
   },
-  
+
   PROMPT_GENERATION: {
     temperature: 0.1,
     topK: 1,

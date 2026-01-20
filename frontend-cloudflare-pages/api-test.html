@@ -1694,20 +1694,27 @@
     function formatSafetyLevel(level) {
         if (!level || level === 'N/A') return '<span style="color: #64748b;">N/A</span>';
         var l = String(level).toUpperCase().trim();
-        var color = '#64748b';
-        var bg = '#f1f5f9';
-        // Green - safe
-        if (l === 'VERY_UNLIKELY' || l === 'UNLIKELY') {
-            color = '#059669';
-            bg = '#d1fae5';
-        // Yellow - warning
-        } else if (l === 'POSSIBLE') {
-            color = '#d97706';
-            bg = '#fef3c7';
-        // Red - unsafe
-        } else if (l === 'LIKELY' || l === 'VERY_LIKELY' || l.indexOf('LIKELY') >= 0) {
-            color = '#dc2626';
-            bg = '#fee2e2';
+        var color, bg;
+
+        // Map levels to colors explicitly
+        switch (l) {
+            case 'VERY_UNLIKELY':
+            case 'UNLIKELY':
+            case 'POSSIBLE':
+            case 'LIKELY':
+                // Green - safe (includes LIKELY per user preference)
+                color = '#059669';
+                bg = '#d1fae5';
+                break;
+            case 'VERY_LIKELY':
+                // Red - only VERY_LIKELY is unsafe
+                color = '#dc2626';
+                bg = '#fee2e2';
+                break;
+            default:
+                // Gray - unknown
+                color = '#64748b';
+                bg = '#f1f5f9';
         }
         return '<span style="background: ' + bg + '; color: ' + color + '; padding: 4px 10px; border-radius: 4px; font-size: 14px; font-weight: 600;">' + level + '</span>';
     }
