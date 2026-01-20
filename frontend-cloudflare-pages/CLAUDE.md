@@ -7,6 +7,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #471 | 2:29 PM | 🔵 | Test variation logic creates 3 tests per image per API | ~353 |
+| #452 | 2:18 PM | 🔴 | Added type="button" to prevent form submission on Run Test buttons | ~269 |
 | #369 | 9:36 AM | 🔵 | API endpoint usage patterns identified in fetch calls | ~418 |
 | #367 | " | 🔵 | Core JavaScript functions for API operations and gallery management identified | ~507 |
 | #365 | " | 🔵 | JavaScript configuration and profile management system identified | ~441 |

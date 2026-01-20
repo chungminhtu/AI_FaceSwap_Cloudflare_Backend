@@ -26,7 +26,7 @@
             --light: #f8fafc;
             --dark: #1e293b;
         }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-size: 14px !important; }
         body {
             font-family: 'Inter', -apple-system, sans-serif;
             background: var(--bg-dark);
@@ -80,30 +80,32 @@
         }
         .config-field {
             display: flex;
-            flex-direction: column;
-            gap: 2px;
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
         }
         .config-field label {
-            font-size: 10px;
+            font-size: 14px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: rgba(255, 255, 255, 0.8);
+            white-space: nowrap;
         }
         .config-field input {
             padding: 4px 6px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border: 1px solid #ccc;
             border-radius: 3px;
-            background: rgba(255, 255, 255, 0.1);
-            color: #ffffff;
-            font-size: 11px;
+            background: #fff;
+            color: #333;
+            font-size: 14px;
             width: 120px;
             min-width: 0;
         }
         .config-field input:focus {
             outline: none;
-            border-color: rgba(255, 255, 255, 0.8);
-            background: rgba(255, 255, 255, 0.2);
+            border-color: #667eea;
+            background: #fff;
         }
         .header-actions { display: flex; gap: 6px; }
 
@@ -205,53 +207,39 @@
             color: #ffffff;
             padding: 4px 8px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 14px;
         }
         .panel-body {
             padding: 6px;
             display: grid;
-            grid-template-columns: 1fr 3fr;
-            grid-template-rows: auto 1fr;
+            grid-template-columns: 280px 1fr;
+            grid-template-rows: 1fr;
             gap: 8px;
             align-items: start;
         }
-        .preset-section {
-            grid-column: 1 / -1;
-            grid-row: 1;
-            margin-bottom: 8px;
-            padding: 8px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-        }
         .panel-body > .curl-section {
             grid-column: 1;
-            grid-row: 2;
+            grid-row: 1;
         }
         .panel-body > .results {
             grid-column: 2;
-            grid-row: 2;
+            grid-row: 1;
             align-self: start;
-        }
-        .preset-section label {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: #000000;
-            margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            justify-self: stretch;
+            width: 100%;
+            min-width: 0;
+            overflow-x: auto;
         }
         .preset-preview {
-            max-width: 80px;
-            max-height: 80px;
-            min-width: 60px;
-            min-height: 60px;
+            max-width: 120px;
+            max-height: 120px;
+            min-width: 80px;
+            min-height: 80px;
         }
         .preset-preview img {
             width: 100%;
             height: auto;
-            max-height: 80px;
+            max-height: 120px;
             object-fit: contain;
             cursor: pointer;
             display: block;
@@ -268,7 +256,7 @@
             display: none;
         }
         .editor-label {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 600;
             color: #000000;
             margin-bottom: 6px;
@@ -281,7 +269,7 @@
             border: 1px solid #000000;
             border-radius: 4px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
+            font-size: 14px;
             line-height: 1.5;
             background: #ffffff;
             color: #000000;
@@ -291,7 +279,7 @@
         }
         .editor:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
         .editor-help {
-            font-size: 12px;
+            font-size: 14px;
             color: #000000;
             margin-top: 6px;
         }
@@ -318,7 +306,7 @@
             margin-bottom: 0;
         }
         .curl-label {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 600;
             color: #000000;
             margin-bottom: 6px;
@@ -326,7 +314,7 @@
         }
         .curl-code {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
+            font-size: 14px;
             background: #ffffff;
             border: 1px solid #000000;
             border-radius: 4px;
@@ -340,6 +328,12 @@
         /* Results */
         .results {
             margin-top: 6px;
+            width: 100%;
+            box-sizing: border-box;
+            min-width: 0; /* Allow shrinking below content width */
+            display: flex;
+            flex-direction: column;
+            flex: 1;
         }
         .results-header {
             display: flex;
@@ -348,8 +342,8 @@
             margin-bottom: 4px;
             padding: 0;
         }
-        .results-header h4 { font-size: 11px; font-weight: 600; margin: 0; }
-        .summary { display: flex; gap: 6px; font-size: 10px; flex-wrap: wrap; margin: 0; }
+        .results-header h4 { font-size: 14px; font-weight: 600; margin: 0; }
+        .summary { display: flex; gap: 6px; font-size: 14px; flex-wrap: wrap; margin: 0; }
         .summary .ok { color: var(--success); font-weight: 600; }
         .summary .fail { color: var(--danger); font-weight: 600; }
         .summary .block { color: var(--danger-dark); font-weight: 600; }
@@ -377,26 +371,57 @@
             overflow-y: visible;
             background: #ffffff;
             width: 100%;
+            box-sizing: border-box;
+            flex: 1;
+            min-height: 0; /* Allow flex shrinking */
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 11px;
-            table-layout: auto;
+            font-size: 14px;
+            table-layout: fixed;
+            min-width: 100%;
         }
+        /* Column widths: Input(10%), Preset(10%), #(4%), Result(10%), Code(6%), Safety(15%), Debug(45%) */
+        th:nth-child(1), td:nth-child(1) { width: 10%; } /* Input */
+        th:nth-child(2), td:nth-child(2) { width: 10%; } /* Preset (conditional) */
+        th:nth-child(3), td:nth-child(3) { width: 4%; }  /* # */
+        th:nth-child(4), td:nth-child(4) { width: 10%; } /* Result */
+        th:nth-child(5), td:nth-child(5) { width: 6%; }  /* Code */
+        th:nth-child(6), td:nth-child(6) { width: 15%; } /* Safety */
+        th:nth-child(7), td:nth-child(7) { width: 45%; } /* Debug */
+
+        /* Alternative widths when no preset column */
+        .no-preset th:nth-child(1), .no-preset td:nth-child(1) { width: 10%; } /* Input */
+        .no-preset th:nth-child(2), .no-preset td:nth-child(2) { width: 4%; }  /* # */
+        .no-preset th:nth-child(3), .no-preset td:nth-child(3) { width: 10%; } /* Result */
+        .no-preset th:nth-child(4), .no-preset td:nth-child(4) { width: 6%; }  /* Code */
+        .no-preset th:nth-child(5), .no-preset td:nth-child(5) { width: 17%; } /* Safety */
+        .no-preset th:nth-child(6), .no-preset td:nth-child(6) { width: 53%; } /* Debug */
         th, td {
             padding: 4px 6px;
             text-align: center;
             border-bottom: 1px solid var(--border);
         }
+        td:has(.thumb), th:has(.thumb) {
+            padding: 0;
+            vertical-align: middle;
+        }
         td.details {
             text-align: left;
             white-space: normal;
         }
+        /* Safety column left align */
+        td:nth-child(6), td:nth-child(7) {
+            text-align: left;
+        }
+        .no-preset td:nth-child(5), .no-preset td:nth-child(6) {
+            text-align: left;
+        }
         th {
             background: var(--accent);
             font-weight: 600;
-            font-size: 10px;
+            font-size: 14px;
             text-transform: uppercase;
             color: #ffffff;
             letter-spacing: 0.3px;
@@ -410,15 +435,18 @@
 
         /* Thumbnails */
         .thumb {
-            width: 80px;
-            height: 80px;
+            max-width: 200px;
+            max-height: 200px;
             object-fit: contain;
-            border-radius: 3px;
             cursor: pointer;
-            border: 1px solid var(--border);
-            background: #ffffff;
         }
-        .thumb:hover { border-color: var(--accent); }
+        table .thumb {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .thumb:hover { opacity: 0.9; }
         .thumb-placeholder {
             width: 120px;
             height: 120px;
@@ -437,7 +465,7 @@
             padding: 4px 10px;
             border-radius: 4px;
             font-weight: 600;
-            font-size: 12px;
+            font-size: 14px;
         }
         .status-ok { background: var(--success); color: #ffffff; }
         .status-err { background: var(--danger); color: #ffffff; }
@@ -449,7 +477,7 @@
             padding: 4px 10px;
             border-radius: 4px;
             font-weight: 500;
-            font-size: 12px;
+            font-size: 14px;
             color: #000000;
         }
         .s-vunlikely { background: var(--success); color: #ffffff; }
@@ -467,7 +495,7 @@
         }
         .details pre {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
+            font-size: 14px;
             background: var(--bg-dark);
             padding: 6px 8px;
             border-radius: 4px;
@@ -513,9 +541,9 @@
             background: var(--accent);
             padding: 4px 8px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 14px;
         }
-        .api-card .card-summary { font-size: 13px; color: #000000; }
+        .api-card .card-summary { font-size: 14px; color: #000000; }
 
         /* Lightbox */
         .lightbox {
@@ -559,7 +587,7 @@
             background: var(--dark);
             border: 1px solid var(--border);
             color: #ffffff;
-            font-size: 10px;
+            font-size: 14px;
             font-weight: 500;
             z-index: 9998;
             transform: translateY(100px);
@@ -646,12 +674,12 @@
                 order: 3;
             }
             .tabs { padding: 6px; }
-            .tab { padding: 6px 12px; font-size: 13px; }
+            .tab { padding: 6px 12px; font-size: 14px; }
             .panel-header { flex-direction: column; gap: 8px; text-align: center; padding: 10px; }
             .api-grid { grid-template-columns: 1fr; gap: 8px; }
             .image-urls-container { grid-template-columns: 1fr; }
-            th, td { padding: 8px 10px; font-size: 12px; }
-            .btn { padding: 6px 12px; font-size: 13px; }
+            th, td { padding: 8px 10px; font-size: 14px; }
+            .btn { padding: 6px 12px; font-size: 14px; }
         }
 
         @media (max-width: 480px) {
@@ -660,9 +688,10 @@
             .config-field input { width: 100%; }
             .tabs { flex-direction: column; gap: 6px; }
             .tab { width: 100%; text-align: center; }
-            .table-wrap { font-size: 11px; }
+            .table-wrap { font-size: 14px; }
             th, td { padding: 6px; }
-            .thumb { width: 60px; height: 60px; }
+            .thumb { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+            td:has(.thumb), th:has(.thumb) { min-width: 100px; }
             .image-preview { max-width: 60px !important; max-height: 60px !important; min-width: 50px !important; min-height: 50px !important; }
             .image-preview img { max-height: 60px !important; }
         }
@@ -689,8 +718,8 @@
             </div>
         </div>
         <div class="header-actions">
-            <button class="btn btn-secondary" onclick="location.href='index.html'">Quay lại App</button>
-            <button class="btn btn-secondary" onclick="exportResults()" id="btn-export" disabled>Xuất HTML</button>
+            <button type="button" class="btn btn-secondary" onclick="location.href='index.html'">Quay lại App</button>
+            <button type="button" class="btn btn-secondary" onclick="exportResults()" id="btn-export" disabled>Xuất HTML</button>
         </div>
     </div>
 
@@ -702,9 +731,9 @@
                         <input type="text" class="image-url-input" placeholder="https://resources.d.shotpix.app/selfie/xxx.jpg" style="width: 100%; padding: 8px 12px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 14px;">
                     </div>
                     <div class="image-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;">
-                        <span style="color: #000000; font-size: 12px;">Preview</span>
+                        <span style="color: #000000; font-size: 14px;">Preview</span>
                     </div>
-                    <button type="button" class="btn-remove-image" onclick="removeImageUrl(this)" style="padding: 8px 12px; background: #dc3545; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; display: none;">Xóa</button>
+                    <button type="button" class="btn-remove-image" onclick="removeImageUrl(this)" style="padding: 8px 12px; background: #dc3545; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; display: none;">Xóa</button>
                 </div>
             </div>
             <button type="button" onclick="addImageUrl()" class="btn btn-secondary" style="margin-top: 4px;">+ Thêm Ảnh</button>
@@ -715,7 +744,7 @@
     <div id="panels"></div>
 
     <div class="lightbox" id="lightbox" onclick="closeLightbox()">
-        <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+        <button type="button" class="lightbox-close" onclick="closeLightbox()">&times;</button>
         <img id="lightbox-img" src="">
     </div>
     <div class="toast" id="toast"></div>
@@ -730,20 +759,20 @@
     var running = false;
 
     var templates = {
-        faceswap: '{\n  "preset_image_id": "dSNInHEvazSPv7Ou",\n  "selfie_ids": ["EcwHlU1K5kcHY9fF"],\n  "profile_id": "PROFILE",\n  "additional_prompt": "",\n  "aspect_ratio": "3:4"\n}',
-        background: '{\n  "preset_image_id": "rOEj4FWPM8jbPFzO",\n  "selfie_id": "6VkRta5pf8CW5lHm",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "21:9",\n  "model": "2.5"\n}',
-        enhance: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/wkFLZqlehNL3IO8J.png",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "1:1",\n  "model": "2.5"\n}',
-        beauty: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/EcwHlU1K5kcHY9fF.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "3:4"\n}',
-        filter: '{\n  "preset_image_id": "DmhzwnEuglGvewiS",\n  "selfie_id": "EcwHlU1K5kcHY9fF",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "3:4",\n  "additional_prompt": "Add dramatic lighting"\n}',
-        restore: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/6VkRta5pf8CW5lHm.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "21:9",\n  "model": "2.5"\n}',
-        aging: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/oc320eTTRgZsXpgE.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "21:9",\n  "model": "2.5",\n  "age_years": 20\n}',
-        upscaler4k: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/example.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "1:1"\n}'
+        faceswap: '{\n  "preset_image_id": "dSNInHEvazSPv7Ou",\n  "selfie_ids": ["EcwHlU1K5kcHY9fF"],\n  "profile_id": "PROFILE",\n  "additional_prompt": "",\n  "aspect_ratio": "original"\n}',
+        background: '{\n  "preset_image_id": "rOEj4FWPM8jbPFzO",\n  "selfie_id": "6VkRta5pf8CW5lHm",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
+        enhance: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/wkFLZqlehNL3IO8J.png",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
+        beauty: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/EcwHlU1K5kcHY9fF.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original"\n}',
+        filter: '{\n  "preset_image_id": "DmhzwnEuglGvewiS",\n  "selfie_id": "EcwHlU1K5kcHY9fF",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "additional_prompt": "Add dramatic lighting"\n}',
+        restore: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/6VkRta5pf8CW5lHm.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5"\n}',
+        aging: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/oc320eTTRgZsXpgE.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original",\n  "model": "2.5",\n  "age_years": 20\n}',
+        upscaler4k: '{\n  "image_url": "https://resources.d.shotpix.app/selfie/example.jpg",\n  "profile_id": "PROFILE",\n  "aspect_ratio": "original"\n}'
     };
 
     function init() {
         buildTabs();
-        loadConfig();
         buildPanels();
+        loadConfig();
         loadResults();
         loadUIState();
         updateRunButtonCounts();
@@ -826,9 +855,8 @@
         var html = '';
         for (var i = 0; i < APIS.length; i++) {
             var cls = i === 0 ? 'tab active' : 'tab';
-            html += '<button class="' + cls + '" data-api="' + APIS[i] + '">' + APIS[i] + '</button>';
+            html += '<button type="button" class="' + cls + '" data-api="' + APIS[i] + '">' + APIS[i] + '</button>';
         }
-        html += '<button class="tab run-all" data-api="all">Run All APIs</button>';
         document.getElementById('tabs').innerHTML = html;
 
         document.getElementById('tabs').onclick = function(e) {
@@ -888,25 +916,26 @@
             html += '<div class="' + cls + '" data-api="' + api + '">';
             html += '<div class="panel-header">';
             html += '<h3><code>POST /' + api + '</code> Test API</h3>';
-            html += '<button class="btn btn-primary" id="btn-run-' + api + '" onclick="runTests(\'' + api + '\')">Chạy Test (0)</button>';
+            html += '<button type="button" class="btn btn-primary" id="btn-run-' + api + '" onclick="runTests(\'' + api + '\')">Chạy Test (0)</button>';
             html += '</div>';
             html += '<div class="panel-body">';
+
+            html += '<div class="curl-section" id="curl-' + api + '">';
+            html += '<h5>cURL Commands</h5>';
 
             // Add preset input for APIs that support it (check if template has preset_image_id)
             var tpl = templates[api].replace(/PROFILE/g, profile);
             var sampleBody = JSON.parse(tpl);
             if (sampleBody.preset_image_id) {
-                html += '<div class="preset-section">';
-                html += '<label>Preset Image URL:</label>';
-                html += '<div class="preset-input-group" style="display: flex; gap: 8px; align-items: flex-start;">';
-                html += '<div style="flex: 1;"><input type="text" id="preset-' + api + '" placeholder="https://resources.d.shotpix.app/preset/xxx.jpg" value="' + sampleBody.preset_image_id + '" style="width: 100%; padding: 4px 8px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 12px;"></div>';
-                html += '<div class="preset-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;"><span style="color: #000000; font-size: 12px;">Preview</span></div>';
+                html += '<div class="curl-block">';
+                html += '<span class="curl-label">Preset Image ID:</span>';
+                html += '<div class="preset-input-group" style="display: flex; gap: 8px; align-items: flex-start; margin-top: 8px;">';
+                html += '<div style="flex: 1;"><input type="text" id="preset-' + api + '" placeholder="https://resources.d.shotpix.app/preset/xxx.jpg" value="' + sampleBody.preset_image_id + '" style="width: 100%; padding: 4px 8px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 14px;"></div>';
+                html += '<div class="preset-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;"><span style="color: #000000; font-size: 14px;">Preview</span></div>';
                 html += '</div>';
                 html += '</div>';
             }
 
-            html += '<div class="curl-section" id="curl-' + api + '">';
-            html += '<h5>cURL Commands</h5>';
             html += '<div class="curl-block"><span class="curl-label">API Call:</span><pre class="curl-code" id="curl-api-' + api + '">' + escapeHtml(apiCurl) + '</pre></div>';
             html += '<div class="curl-block"><span class="curl-label">Safety Check (Upload resultImageUrl for Vision API):</span><pre class="curl-code" id="curl-vision-' + api + '">' + escapeHtml(visionCurl) + '</pre></div>';
             html += '</div>';
@@ -917,20 +946,7 @@
             html += '</div></div></div>';
         }
 
-        // All panel
-        html += '<div class="panel" data-api="all">';
-        html += '<div class="panel-header">';
-        html += '<h3>Chạy Test Tất Cả API</h3>';
-        html += '<button class="btn btn-success" onclick="runAllApis()">Chạy Tất Cả API</button>';
-        html += '</div>';
-        html += '<div class="panel-body">';
-        html += '<p style="margin-bottom:16px;color:#000000">Chạy test cho tất cả API sử dụng request body đã cấu hình.</p>';
-        html += '<div class="progress" id="progress-all"><div class="progress-fill" id="fill-all"></div></div>';
-        html += '<div class="api-grid" id="grid-all"></div>';
-        html += '</div></div>';
-
         document.getElementById('panels').innerHTML = html;
-        buildAllGrid();
         updateCurlSections();
 
         // Add event listeners for preset fields
@@ -1033,7 +1049,7 @@
         var item = document.createElement('div');
         item.className = 'image-url-item';
         item.style.cssText = 'display: flex; gap: 8px; align-items: flex-start;';
-        item.innerHTML = '<div style="flex: 1;"><input type="text" class="image-url-input" placeholder="https://resources.d.shotpix.app/selfie/xxx.jpg" style="width: 100%; padding: 8px 12px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 14px;"></div><div class="image-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;"><span style="color: #000000; font-size: 12px;">Preview</span></div><button type="button" class="btn-remove-image" onclick="removeImageUrl(this)" style="padding: 8px 12px; background: #dc3545; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Xóa</button>';
+        item.innerHTML = '<div style="flex: 1;"><input type="text" class="image-url-input" placeholder="https://resources.d.shotpix.app/selfie/xxx.jpg" style="width: 100%; padding: 8px 12px; border: 1px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; font-size: 14px;"></div><div class="image-preview" style="border: 1px solid #000000; border-radius: 4px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0;"><span style="color: #000000; font-size: 14px;">Preview</span></div><button type="button" class="btn-remove-image" onclick="removeImageUrl(this)" style="padding: 8px 12px; background: #dc3545; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Xóa</button>';
         var input = item.querySelector('.image-url-input');
         input.addEventListener('input', function() {
             updateImagePreview(this);
@@ -1084,16 +1100,20 @@
         var url = input.value.trim();
         var preview = input.closest('.image-url-item').querySelector('.image-preview');
         preview.innerHTML = (url && (url.startsWith('http://') || url.startsWith('https://'))) ?
-            '<img src="' + escapeHtml(url) + '" onerror="this.parentElement.innerHTML=\'<span style=\\\'color: #dc3545; font-size: 12px;\\\'>Lỗi</span>\'" onclick="openLightbox(this.src)">' :
-            '<span style="color: #000000; font-size: 12px;">Preview</span>';
+            '<img src="' + escapeHtml(url) + '" onerror="this.parentElement.innerHTML=\'<span style=\\\'color: #dc3545; font-size: 14px;\\\'>Lỗi</span>\'" onclick="openLightbox(this.src)">' :
+            '<span style="color: #000000; font-size: 14px;">Preview</span>';
     }
 
     function updatePresetPreview(input) {
         var url = input.value.trim();
-        var preview = input.closest('.preset-section').querySelector('.preset-preview');
+        // Find the preview element by navigating up to the input group and then to the preview
+        var inputGroup = input.closest('.preset-input-group');
+        if (!inputGroup) return; // Safety check
+        var preview = inputGroup.querySelector('.preset-preview');
+        if (!preview) return; // Safety check
         preview.innerHTML = (url && (url.startsWith('http://') || url.startsWith('https://'))) ?
-            '<img src="' + escapeHtml(url) + '" onerror="this.parentElement.innerHTML=\'<span style=\\\'color: #dc3545; font-size: 12px;\\\'>Lỗi</span>\'" onclick="openLightbox(this.src)">' :
-            '<span style="color: #000000; font-size: 12px;">Preview</span>';
+            '<img src="' + escapeHtml(url) + '" onerror="this.parentElement.innerHTML=\'<span style=\\\'color: #dc3545; font-size: 14px;\\\'>Lỗi</span>\'" onclick="openLightbox(this.src)">' :
+            '<span style="color: #000000; font-size: 14px;">Preview</span>';
     }
 
     function getTestCount(api) {
@@ -1140,14 +1160,14 @@
         if (!images || images.length === 0) return null;
 
         var apiConfig = {
-            faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: '3:4', additional_prompt: '' },
-            background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: '21:9', model: '2.5' },
-            filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: '3:4', additional_prompt: 'Add dramatic lighting' },
-            enhance: { useUrl: true, aspect_ratio: '1:1', model: '2.5' },
-            beauty: { useUrl: true, aspect_ratio: '3:4' },
-            restore: { useUrl: true, aspect_ratio: '21:9', model: '2.5' },
-            aging: { useUrl: true, aspect_ratio: '21:9', model: '2.5', age_years: 20 },
-            upscaler4k: { useUrl: true, aspect_ratio: '1:1' }
+            faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: 'original', additional_prompt: '' },
+            background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: 'original', model: '2.5' },
+            filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
+            enhance: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
+            beauty: { useUrl: true, aspect_ratio: 'original' },
+            restore: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
+            aging: { useUrl: true, aspect_ratio: 'original', model: '2.5', age_years: 20 },
+            upscaler4k: { useUrl: true, aspect_ratio: 'original' }
         };
         var cfg = apiConfig[api];
         if (!cfg) return null;
@@ -1190,12 +1210,9 @@
                         req.test_type = 'default';
                     }
                 } else if (variation === 2) {
-                    // Variation 2: Different aspect ratio
-                    var ratios = ['1:1', '3:4', '16:9', '21:9'];
-                    var currentRatio = cfg.aspect_ratio || '3:4';
-                    var nextRatio = ratios[(ratios.indexOf(currentRatio) + 1) % ratios.length];
-                    req.aspect_ratio = nextRatio;
-                    req.test_type = 'aspect_' + nextRatio.replace(':', 'x');
+                    // Variation 2: Keep original aspect ratio
+                    req.aspect_ratio = 'original';
+                    req.test_type = 'aspect_original';
                 } else {
                     // Variation 0: Default
                     req.test_type = 'default';
@@ -1406,7 +1423,9 @@
         });
     };
 
-    function runSingleTest(api, body, idx, cfg) {
+    function runSingleTest(api, body, idx, cfg, retryCount) {
+        retryCount = retryCount || 0;
+        var maxRetries = 3;
         var start = Date.now();
         var result = {
             index: idx,
@@ -1429,11 +1448,34 @@
             headers: headers,
             body: JSON.stringify(body)
         })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-            result.code = data.code || 200;
+        .then(function(res) { return res.json().then(function(data) { return { status: res.status, data: data }; }); })
+        .then(function(resp) {
+            var data = resp.data;
+            result.code = data.code || resp.status;
             result.time = ((Date.now() - start) / 1000).toFixed(1);
             result.debug = data.debug || null;
+
+            // Handle 429 rate limit with retry
+            if (resp.status === 429 || result.code === 429) {
+                if (retryCount < maxRetries) {
+                    var delay = (retryCount + 1) * 2000; // 2s, 4s, 6s
+                    return new Promise(function(resolve) {
+                        setTimeout(function() {
+                            resolve(runSingleTest(api, body, idx, cfg, retryCount + 1));
+                        }, delay);
+                    });
+                }
+                result.status = 'error';
+                result.error = 'Rate limit (429) - max retries exceeded';
+                return result;
+            }
+
+            // Handle 422 - skip Vision safety check (no result to scan)
+            if (resp.status === 422 || result.code === 422) {
+                result.status = 'error';
+                result.error = data.message || 'Unprocessable Entity (422)';
+                return result;
+            }
 
             var isBlocked = result.code === 3000 || (data.debug && data.debug.provider && data.debug.provider.statusCode === 3000);
             if (isBlocked) {
@@ -1521,52 +1563,128 @@
             return;
         }
 
-        var html = '<table><thead><tr>';
-        html += '<th>Input</th><th>Result</th><th>Code</th>';
-        html += '<th>adult</th><th>spoof</th><th>medical</th><th>violence</th><th>racy</th><th>Debug</th>';
-        html += '</tr></thead><tbody>';
+        // Check if this API supports presets
+        var apiConfig = {
+            faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: 'original', additional_prompt: '' },
+            background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: 'original', model: '2.5' },
+            filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
+            enhance: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
+            beauty: { useUrl: true, aspect_ratio: 'original' },
+            restore: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
+            aging: { useUrl: true, aspect_ratio: 'original', model: '2.5', age_years: 20 },
+            upscaler4k: { useUrl: true, aspect_ratio: 'original' }
+        };
+        var hasPreset = apiConfig[api] && apiConfig[api].preset_image_id;
 
+        // Group results by input image (3 tests per image)
+        var groupedResults = {};
         for (var i = 0; i < data.length; i++) {
             var r = data[i];
-            if (!r) continue;
+            if (!r || !r.inputUrl) continue;
 
-            var inputImg = r.inputUrl ? '<img class="thumb" src="' + escapeHtml(r.inputUrl) + '" onclick="openLightbox(this.src)">' : '-';
-            var isError = r.status === 'blocked' || r.status === 'error';
-            var rowClass = r.status === 'blocked' ? ' class="blocked"' : '';
-
-            html += '<tr' + rowClass + '><td>' + inputImg + '</td>';
-
-            if (isError) {
-                html += '<td>' + (r.status === 'blocked' ? 'X' : '!') + '</td>';
-                html += '<td><span class="status status-err">' + (r.code || 'ERR') + '</span></td>';
-                var errorData = {
-                    status: r.status,
-                    code: r.code,
-                    error: r.error,
-                    debug: r.debug,
-                    time: r.time + 's'
-                };
-                html += '<td colspan="7" style="text-align:left;color:#991b1b">' + (r.status === 'blocked' ? 'BLOCKED - ' : '') + escapeHtml(r.error || '') + '<br><br><pre style="margin:0;font-size:10px;background:#f8f9fa;padding:4px;border-radius:2px">' + escapeHtml(JSON.stringify(errorData, null, 1)) + '</pre></td>';
-            } else {
-                var s = r.safety || {};
-                var resultImg = r.resultUrl ? '<img class="thumb" src="' + escapeHtml(r.resultUrl) + '" onclick="openLightbox(this.src)">' : '-';
-                html += '<td>' + resultImg + '</td>';
-                html += '<td><span class="status status-ok">' + r.code + '</span></td>';
-                html += '<td>' + formatSafetyLevel(s.adult) + '</td>';
-                html += '<td>' + formatSafetyLevel(s.spoof) + '</td>';
-                html += '<td>' + formatSafetyLevel(s.medical) + '</td>';
-                html += '<td>' + formatSafetyLevel(s.violence) + '</td>';
-                html += '<td>' + formatSafetyLevel(s.racy) + '</td>';
-                var debugData = {
-                    response: r.code,
-                    resultUrl: r.resultUrl,
-                    safety: r.safety,
-                    safetyDebug: r.safetyDebug,
-                    time: r.time + 's'
-                };
-                html += '<td class="details"><pre>' + escapeHtml(JSON.stringify(debugData, null, 1)) + '</pre></td>';
+            var inputKey = r.inputUrl;
+            if (!groupedResults[inputKey]) {
+                groupedResults[inputKey] = [];
             }
-            html += '</tr>';
+            groupedResults[inputKey].push(r);
+        }
+
+        var html = '<table class="' + (hasPreset ? '' : 'no-preset') + '"><thead><tr>';
+        html += '<th>Input</th>';
+        if (hasPreset) {
+            html += '<th>Preset</th>';
+        }
+        html += '<th>#</th><th>Result</th><th>Code</th><th>Safety</th><th>Debug</th>';
+        html += '</tr></thead><tbody>';
+
+        for (var inputUrl in groupedResults) {
+            var results = groupedResults[inputUrl];
+            var numResults = results.length || 1;
+            var inputImg = '<img class="thumb" src="' + escapeHtml(inputUrl) + '" onclick="openLightbox(this.src)">';
+
+            // Get preset value once for this input group
+            var presetValue = '';
+            if (hasPreset) {
+                var presetEl = document.getElementById('preset-' + api);
+                if (presetEl) {
+                    presetValue = presetEl.value.trim();
+                }
+                if (presetValue && presetValue.startsWith('http')) {
+                    presetValue = '<img class="thumb" src="' + escapeHtml(presetValue) + '" onclick="openLightbox(this.src)">';
+                } else if (presetValue) {
+                    presetValue = '<small style="font-size: 12px;">' + escapeHtml(presetValue) + '</small>';
+                } else {
+                    presetValue = '-';
+                }
+            }
+
+            // Create a row for each result
+            for (var j = 0; j < numResults; j++) {
+                var r = results[j];
+                html += '<tr>';
+
+                // First row gets rowspan for Input and Preset columns
+                if (j === 0) {
+                    html += '<td rowspan="' + numResults + '" style="vertical-align: middle;">' + inputImg + '</td>';
+                    if (hasPreset) {
+                        html += '<td rowspan="' + numResults + '" style="vertical-align: middle;">' + presetValue + '</td>';
+                    }
+                }
+
+                // Run number
+                html += '<td>' + (j + 1) + '</td>';
+
+                // Result image
+                if (r && (r.status === 'blocked' || r.status === 'error')) {
+                    html += '<td>' + (r.status === 'blocked' ? 'X' : '!') + '</td>';
+                } else if (r && r.resultUrl) {
+                    var resultImg = '<img class="thumb" src="' + escapeHtml(r.resultUrl) + '" onclick="openLightbox(this.src)">';
+                    html += '<td>' + resultImg + '</td>';
+                } else {
+                    html += '<td>-</td>';
+                }
+
+                // Status code
+                if (r) {
+                    if (r.status === 'blocked' || r.status === 'error') {
+                        html += '<td><span class="status status-err">' + (r.code || 'ERR') + '</span></td>';
+                    } else {
+                        html += '<td><span class="status status-ok">' + r.code + '</span></td>';
+                    }
+                } else {
+                    html += '<td>-</td>';
+                }
+
+                // Safety for this result
+                var safetyHtml = '-';
+                if (r && r.safety) {
+                    var s = r.safety;
+                    safetyHtml = '<div style="padding: 2px;">';
+                    safetyHtml += 'Adult: ' + formatSafetyLevel(s.adult) + '<br>';
+                    safetyHtml += 'Spoof: ' + formatSafetyLevel(s.spoof) + '<br>';
+                    safetyHtml += 'Medical: ' + formatSafetyLevel(s.medical) + '<br>';
+                    safetyHtml += 'Violence: ' + formatSafetyLevel(s.violence) + '<br>';
+                    safetyHtml += 'Racy: ' + formatSafetyLevel(s.racy);
+                    safetyHtml += '</div>';
+                }
+                html += '<td>' + safetyHtml + '</td>';
+
+                // Debug for this result - only show when blocked/error
+                var debugHtml = '-';
+                if (r && (r.status === 'blocked' || r.status === 'error')) {
+                    var errorData = {
+                        status: r.status,
+                        code: r.code,
+                        error: r.error
+                    };
+                    debugHtml = '<div style="padding: 4px; background: #fef2f2; border-radius: 2px;">';
+                    debugHtml += '<pre style="margin:0;font-size:12px;color:#991b1b;white-space:pre-wrap;word-break:break-word;">' + escapeHtml(JSON.stringify(errorData, null, 1)) + '</pre>';
+                    debugHtml += '</div>';
+                }
+                html += '<td class="details">' + debugHtml + '</td>';
+
+                html += '</tr>';
+            }
         }
 
         html += '</tbody></table>';
@@ -1575,20 +1693,23 @@
 
     function formatSafetyLevel(level) {
         if (!level || level === 'N/A') return '<span style="color: #64748b;">N/A</span>';
-        var l = level.toUpperCase();
+        var l = String(level).toUpperCase().trim();
         var color = '#64748b';
         var bg = '#f1f5f9';
+        // Green - safe
         if (l === 'VERY_UNLIKELY' || l === 'UNLIKELY') {
             color = '#059669';
             bg = '#d1fae5';
+        // Yellow - warning
         } else if (l === 'POSSIBLE') {
             color = '#d97706';
             bg = '#fef3c7';
-        } else if (l === 'LIKELY' || l === 'VERY_LIKELY') {
+        // Red - unsafe
+        } else if (l === 'LIKELY' || l === 'VERY_LIKELY' || l.indexOf('LIKELY') >= 0) {
             color = '#dc2626';
             bg = '#fee2e2';
         }
-        return '<span style="background: ' + bg + '; color: ' + color + '; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">' + level + '</span>';
+        return '<span style="background: ' + bg + '; color: ' + color + '; padding: 4px 10px; border-radius: 4px; font-size: 14px; font-weight: 600;">' + level + '</span>';
     }
 
     function debugHtml(debug) {
@@ -1596,6 +1717,16 @@
         var json = JSON.stringify(debug);
         var short = json.length > 40 ? json.substring(0, 37) + '...' : json;
         return '<pre title="' + escapeHtml(json) + '">' + escapeHtml(short) + '</pre>';
+    }
+
+    function formatVietnameseDate(date) {
+        var d = date || new Date();
+        var hours = d.getHours();
+        var minutes = d.getMinutes().toString().padStart(2, '0');
+        var day = d.getDate();
+        var month = d.getMonth() + 1;
+        var year = d.getFullYear();
+        return hours + ':' + minutes + ', ' + day + '/' + month + '/' + year;
     }
 
     function updateSummary(api) {
@@ -1613,7 +1744,8 @@
         var html = '<span class="ok">' + stats.passed + '/' + total + ' passed</span>';
         if (stats.failed > 0) html += ' <span class="fail">' + stats.failed + ' failed</span>';
         if (stats.blocked > 0) html += ' <span class="block">' + stats.blocked + ' blocked</span>';
-        html += ' <span>Total: ' + stats.time.toFixed(1) + 's</span>';
+        html += ' <span>Tổng: ' + stats.time.toFixed(1) + 's</span>';
+        html += ' <span style="color:#64748b;">• ' + formatVietnameseDate() + '</span>';
         document.getElementById('summary-' + api).innerHTML = html;
     }
 
@@ -1722,18 +1854,21 @@
         var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
         html += '<title>API Test Results - ' + ts + '</title>';
         html += '<style>';
-        html += 'body{font-family:Arial,sans-serif;font-size:11px;padding:20px;max-width:1200px;margin:0 auto}';
-        html += 'h1{font-size:18px}h2{font-size:14px;margin:20px 0 10px;padding:8px;background:#f1f5f9;border-radius:4px}';
+        html += 'body{font-family:Arial,sans-serif;font-size:14px;padding:20px;max-width:1200px;margin:0 auto}';
+        html += 'h1{font-size:18px}h2{font-size:16px;margin:20px 0 10px;padding:8px;background:#f1f5f9;border-radius:4px}';
         html += '.meta{color:#000000;margin-bottom:20px}';
-        html += 'table{width:100%;border-collapse:collapse;margin-bottom:20px}';
+        html += 'table{width:100%;border-collapse:collapse;margin-bottom:20px;table-layout:fixed}';
         html += 'th,td{border:1px solid #e2e8f0;padding:8px;text-align:center}';
-        html += 'th{background:#f1f5f9;font-weight:600;font-size:10px;text-transform:uppercase}';
-        html += 'img{width:80px;height:80px;object-fit:contain;border-radius:3px;background:#ffffff;border:1px solid #e2e8f0}';
+        html += 'td:nth-child(1),td:nth-child(2){padding:2px;min-width:150px}'; // First two columns (Input, Result) have less padding and minimum width
+        html += 'th:nth-child(1),td:nth-child(1){width:13%}th:nth-child(2),td:nth-child(2){width:8%}th:nth-child(3),td:nth-child(3){width:6%}th:nth-child(4),td:nth-child(4){width:6%}th:nth-child(5),td:nth-child(5){width:6%}th:nth-child(6),td:nth-child(6){width:5%}th:nth-child(7),td:nth-child(7){width:5%}th:nth-child(8),td:nth-child(8){width:5%}th:nth-child(9),td:nth-child(9){width:12%}th:nth-child(10),td:nth-child(10){width:20%}';
+        html += '.no-preset th:nth-child(1),.no-preset td:nth-child(1){width:15%}.no-preset th:nth-child(2),.no-preset td:nth-child(2){width:8%}.no-preset th:nth-child(3),.no-preset td:nth-child(3){width:8%}.no-preset th:nth-child(4),.no-preset td:nth-child(4){width:8%}.no-preset th:nth-child(5),.no-preset td:nth-child(5){width:6%}.no-preset th:nth-child(6),.no-preset td:nth-child(6){width:6%}.no-preset th:nth-child(7),.no-preset td:nth-child(7){width:6%}.no-preset th:nth-child(8),.no-preset td:nth-child(8){width:15%}.no-preset th:nth-child(9),.no-preset td:nth-child(9){width:28%}';
+        html += 'td img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:3px;background:#ffffff;border:1px solid #e2e8f0}';
+        html += 'th{background:#f1f5f9;font-weight:600;font-size:14px;text-transform:uppercase}';
         html += '.ok{background:#22c55e;color:white;padding:2px 6px;border-radius:4px}';
         html += '.err{background:#ef4444;color:white;padding:2px 6px;border-radius:4px}';
         html += '.blocked{background:#fef2f2}';
         html += '.s-ok{background:#dcfce7}.s-warn{background:#fef3c7}.s-bad{background:#fecaca}';
-        html += 'pre{font-size:9px;background:#f8fafc;padding:4px;border-radius:2px;white-space:pre-wrap;max-width:150px}';
+        html += 'pre{font-size:14px;background:#f8fafc;padding:4px;border-radius:2px;white-space:pre-wrap;word-wrap:break-word;max-width:none;overflow:visible}';
         html += '</style></head><body>';
         html += '<h1>API Test Results</h1>';
         html += '<p class="meta">Generated: ' + ts + ' | Base: ' + cfg.base + ' | Profile: ' + cfg.profile + '</p>';
@@ -1756,39 +1891,118 @@
             if (stats.blocked > 0) titleText += ', ' + stats.blocked + ' blocked';
             html += '<h2>' + titleText + ')</h2>';
 
-            html += '<table><tr><th>Input</th><th>Result</th><th>Code</th>';
-            html += '<th>adult</th><th>spoof</th><th>medical</th><th>violence</th><th>racy</th><th>Debug</th></tr>';
-
+            // Group results by input image for export
+            var groupedResults = {};
             data.forEach(function(r) {
-                var inputImg = r.inputUrl ? '<img src="' + r.inputUrl + '">' : '-';
-                var isError = r.status === 'blocked' || r.status === 'error';
-                var rowClass = r.status === 'blocked' ? ' class="blocked"' : '';
-
-                html += '<tr' + rowClass + '><td>' + inputImg + '</td>';
-                
-                if (isError) {
-                    html += '<td>' + (r.status === 'blocked' ? 'X' : '!') + '</td>';
-                    html += '<td><span class="err">' + (r.code || 'ERR') + '</span></td>';
-                    var errorData = {
-                        status: r.status,
-                        code: r.code,
-                        error: r.error,
-                        debug: r.debug,
-                        time: r.time + 's'
-                    };
-                    html += '<td colspan="7" style="text-align:left;color:#991b1b">' + (r.status === 'blocked' ? 'BLOCKED - ' : '') + escapeHtml(r.error || '') + '<br><br><pre style="margin:0;font-size:9px;background:#f8fafc;padding:4px;border-radius:2px">' + escapeHtml(JSON.stringify(errorData, null, 1)) + '</pre></td>';
-                } else {
-                    var s = r.safety || {};
-                    var resultImg = r.resultUrl ? '<img src="' + r.resultUrl + '">' : '-';
-                    html += '<td>' + resultImg + '</td>';
-                    html += '<td><span class="ok">' + r.code + '</span></td>';
-                    ['adult', 'spoof', 'medical', 'violence', 'racy'].forEach(function(key) {
-                        html += '<td class="' + getSafetyClass(s[key]) + '">' + (s[key] || 'N/A') + '</td>';
-                    });
-                    html += '<td><pre>' + escapeHtml(JSON.stringify(r.safetyDebug || {}, null, 1)) + '</pre></td>';
+                if (!r || !r.inputUrl) return;
+                var inputKey = r.inputUrl;
+                if (!groupedResults[inputKey]) {
+                    groupedResults[inputKey] = [];
                 }
-                html += '</tr>';
+                groupedResults[inputKey].push(r);
             });
+
+            // Check if this API supports presets
+            var apiConfig = {
+                faceswap: { preset_image_id: 'dSNInHEvazSPv7Ou', useId: true, aspect_ratio: 'original', additional_prompt: '' },
+                background: { preset_image_id: 'rOEj4FWPM8jbPFzO', useId: true, aspect_ratio: 'original', model: '2.5' },
+                filter: { preset_image_id: 'DmhzwnEuglGvewiS', useId: true, aspect_ratio: 'original', additional_prompt: 'Add dramatic lighting' },
+                enhance: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
+                beauty: { useUrl: true, aspect_ratio: 'original' },
+                restore: { useUrl: true, aspect_ratio: 'original', model: '2.5' },
+                aging: { useUrl: true, aspect_ratio: 'original', model: '2.5', age_years: 20 },
+                upscaler4k: { useUrl: true, aspect_ratio: 'original' }
+            };
+            var hasPreset = apiConfig[api] && apiConfig[api].preset_image_id;
+
+            html += '<table class="' + (hasPreset ? '' : 'no-preset') + '"><tr>';
+            html += '<th>Input</th>';
+            if (hasPreset) {
+                html += '<th>Preset</th>';
+            }
+            html += '<th>#</th><th>Result</th><th>Code</th><th>Safety</th><th>Debug</th>';
+            html += '</tr>';
+
+            for (var inputUrl in groupedResults) {
+                var results = groupedResults[inputUrl];
+                var numResults = results.length || 1;
+                var inputImg = inputUrl ? '<img src="' + inputUrl + '">' : '-';
+
+                // Get preset value once for this input group
+                var presetValue = '';
+                if (hasPreset) {
+                    var presetEl = document.getElementById('preset-' + api);
+                    if (presetEl) {
+                        presetValue = presetEl.value.trim();
+                    }
+                    if (presetValue && presetValue.startsWith('http')) {
+                        presetValue = '<img src="' + presetValue + '">';
+                    } else if (presetValue) {
+                        presetValue = '<small style="font-size:12px;">' + escapeHtml(presetValue) + '</small>';
+                    } else {
+                        presetValue = '-';
+                    }
+                }
+
+                // Create a row for each result
+                for (var j = 0; j < numResults; j++) {
+                    var r = results[j];
+                    html += '<tr>';
+
+                    // First row gets rowspan for Input and Preset columns
+                    if (j === 0) {
+                        html += '<td rowspan="' + numResults + '" style="vertical-align:middle;">' + inputImg + '</td>';
+                        if (hasPreset) {
+                            html += '<td rowspan="' + numResults + '" style="vertical-align:middle;">' + presetValue + '</td>';
+                        }
+                    }
+
+                    // Run number
+                    html += '<td>' + (j + 1) + '</td>';
+
+                    // Result image
+                    if (r && (r.status === 'blocked' || r.status === 'error')) {
+                        html += '<td>' + (r.status === 'blocked' ? 'X' : '!') + '</td>';
+                    } else if (r && r.resultUrl) {
+                        html += '<td><img src="' + r.resultUrl + '"></td>';
+                    } else {
+                        html += '<td>-</td>';
+                    }
+
+                    // Status code
+                    if (r) {
+                        if (r.status === 'blocked' || r.status === 'error') {
+                            html += '<td><span class="err">' + (r.code || 'ERR') + '</span></td>';
+                        } else {
+                            html += '<td><span class="ok">' + r.code + '</span></td>';
+                        }
+                    } else {
+                        html += '<td>-</td>';
+                    }
+
+                    // Safety for this result
+                    var safetyHtml = '-';
+                    if (r && r.safety) {
+                        var s = r.safety;
+                        safetyHtml = 'A:' + (s.adult || 'N/A') + ' S:' + (s.spoof || 'N/A') + ' M:' + (s.medical || 'N/A') + ' V:' + (s.violence || 'N/A') + ' R:' + (s.racy || 'N/A');
+                    }
+                    html += '<td>' + safetyHtml + '</td>';
+
+                    // Debug for this result - only show when blocked/error
+                    var debugHtml = '-';
+                    if (r && (r.status === 'blocked' || r.status === 'error')) {
+                        var errorData = {
+                            status: r.status,
+                            code: r.code,
+                            error: r.error
+                        };
+                        debugHtml = '<pre style="margin:0;font-size:12px;color:#991b1b;">' + escapeHtml(JSON.stringify(errorData, null, 1)) + '</pre>';
+                    }
+                    html += '<td style="text-align:left;">' + debugHtml + '</td>';
+
+                    html += '</tr>';
+                }
+            }
 
             html += '</table>';
         }
