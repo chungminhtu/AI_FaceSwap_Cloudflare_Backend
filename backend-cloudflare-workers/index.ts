@@ -561,59 +561,49 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record<string, any> => {
+// Build a single flat debug object - no nested provider/vertex structure
+const buildFlatDebug = (result: FaceSwapResponse, promptPayload?: any): Record<string, any> | undefined => {
   const debug = (result as any).Debug;
-  // Simplified provider debug - only essential info
-  return compact({
-    curl: debug?.curl,
-    model: debug?.model,
-    statusCode: result.StatusCode,
-    durationMs: debug?.durationMs,
-    error: result.Error || debug?.error,
-    // Only include on error for debugging
-    ...(result.StatusCode >= 400 || result.Error ? {
-      message: result.Message,
-      endpoint: debug?.endpoint,
-    } : {}),
-  });
-};
-
-const buildVertexDebug = (result: FaceSwapResponse): Record<string, any> | undefined => {
   const extended = result as FaceSwapResponse & {
     VertexResponse?: any;
     Prompt?: any;
     CurlCommand?: string;
   };
-  if (!extended.CurlCommand && !extended.Prompt) {
-    return undefined;
-  }
-  // Simplified vertex debug - curl command is most useful
-  return compact({
-    curl: extended.CurlCommand,
-    prompt: extended.Prompt ? (typeof extended.Prompt === 'string' ? extended.Prompt.substring(0, 500) : extended.Prompt) : undefined,
+
+  // Get curl from Debug object (preferred) or CurlCommand field
+  const curl = debug?.curl || extended.CurlCommand;
+
+  // Get prompt - from promptPayload, Prompt field, or Debug
+  const prompt = promptPayload || extended.Prompt || debug?.prompt;
+
+  // Build flat debug object with no duplicates
+  const flatDebug = compact({
+    curl,
+    model: debug?.model,
+    prompt: prompt ? (typeof prompt === 'string' ? prompt.substring(0, 500) : prompt) : undefined,
+    aspectRatio: debug?.aspectRatio,
+    durationMs: debug?.durationMs || debug?.responseTimeMs,
+    // Only include on error
+    ...(result.StatusCode >= 400 || result.Error ? {
+      error: result.Error || debug?.error,
+      message: result.Message,
+    } : {}),
   });
+
+  return Object.keys(flatDebug).length > 0 ? flatDebug : undefined;
+};
+
+// Legacy functions for backwards compatibility - now just call buildFlatDebug
+const buildProviderDebug = (result: FaceSwapResponse, finalUrl?: string): Record<string, any> => {
+  return buildFlatDebug(result) || {};
+};
+
+const buildVertexDebug = (result: FaceSwapResponse): Record<string, any> | undefined => {
+  return undefined; // No longer needed - merged into flat debug
 };
 
 const mergeVertexDebug = (result: FaceSwapResponse, promptPayload: any): Record<string, any> | undefined => {
-  const base = buildVertexDebug(result);
-  const debugDetails = (result as any).Debug;
-  let merged = base ? { ...base } : undefined;
-  if (promptPayload && (!merged || !('prompt' in merged))) {
-    merged = {
-      ...(merged ?? {}),
-      prompt: promptPayload,
-    };
-  }
-  if (debugDetails) {
-    merged = {
-      ...(merged ?? {}),
-      debug: debugDetails,
-    };
-  }
-  if (!merged) {
-    return undefined;
-  }
-  return compact(merged);
+  return undefined; // No longer needed - merged into flat debug
 };
 
 type SafetyCheckDebug = {
@@ -1797,7 +1787,8 @@ export default {
         const url = new URL(request.url);
         const contentType = url.searchParams.get('contentType') || 'application/octet-stream';
         
-        if (!uploadKey || !uploadKey.startsWith('temp/')) {
+        // Allow temp/ and try_results/ prefixes
+        if (!uploadKey || (!uploadKey.startsWith('temp/') && !uploadKey.startsWith('try_results/'))) {
           return errorResponse('Invalid upload key', 400, { uploadKey }, request, env);
         }
 
@@ -4468,20 +4459,13 @@ export default {
             // Keep message simple - detailed error is in debug section
             const enhancedMessage = faceSwapResult.Message || 'Nano Banana provider failed to generate image';
 
-            const vertexDebugFailure = compact({
-              prompt: vertexPromptPayload,
-              response: sanitizedVertexFailure || (faceSwapResult as any).VertexResponse,
-              curlCommand: (faceSwapResult as any).CurlCommand,
+            const flatDebug = buildFlatDebug(faceSwapResult, vertexPromptPayload);
+            const debugPayload = debugEnabled ? compact({
+              request: requestDebug,
+              ...flatDebug,
               fullError: errorDetails,
               parsedError: (faceSwapResult as any).ParsedError,
               fullResponse: (faceSwapResult as any).FullResponse,
-              error: (faceSwapResult as any).Error,
-            });
-
-            const debugPayload = debugEnabled ? compact({
-              request: requestDebug,
-              provider: buildProviderDebug(faceSwapResult),
-              vertex: vertexDebugFailure,
             }) : undefined;
 
             const failureCode = faceSwapResult.StatusCode || 500;
@@ -4506,10 +4490,10 @@ export default {
           const failureCode = faceSwapResult.StatusCode || 500;
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const flatDebug = debugEnabled ? buildFlatDebug(faceSwapResult, vertexPromptPayload) : undefined;
           const debugPayload = debugEnabled ? compact({
             request: requestDebug,
-            provider: buildProviderDebug(faceSwapResult),
-            vertex: mergeVertexDebug(faceSwapResult, vertexPromptPayload),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -4610,15 +4594,12 @@ export default {
           }
         }
 
-        const providerDebug = debugEnabled ? buildProviderDebug(faceSwapResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(faceSwapResult, vertexPromptPayload) : undefined;
+        const flatDebug = debugEnabled ? buildFlatDebug(faceSwapResult, vertexPromptPayload) : undefined;
         const visionDebug = debugEnabled ? buildVisionDebug(safetyDebug) : undefined;
         const storageDebugPayload = debugEnabled ? compact(storageDebug as unknown as Record<string, any>) : undefined;
         const databaseDebugPayload = debugEnabled ? compact(databaseDebug as unknown as Record<string, any>) : undefined;
         const debugPayload = debugEnabled ? compact({
-          request: requestDebug,
-          provider: providerDebug,
-          vertex: vertexDebug,
+          ...flatDebug,
           vision: visionDebug,
           storage: Object.keys(storageDebugPayload || {}).length ? storageDebugPayload : undefined,
           database: Object.keys(databaseDebugPayload || {}).length ? databaseDebugPayload : undefined,
@@ -4773,9 +4754,10 @@ export default {
             const failureCode = backgroundGenResult.StatusCode || 500;
             const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
             const debugEnabled = isDebugEnabled(env);
+            const flatDebug = debugEnabled ? buildFlatDebug(backgroundGenResult) : undefined;
             const debugPayload = debugEnabled ? compact({
               customPrompt: body.custom_prompt,
-              provider: buildProviderDebug(backgroundGenResult),
+              ...flatDebug,
             }) : undefined;
             return jsonResponse({
               data: null,
@@ -4860,9 +4842,10 @@ export default {
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(mergeResult) : undefined;
           const debugPayload = debugEnabled ? compact({
             request: requestDebug,
-            provider: buildProviderDebug(mergeResult),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -4959,13 +4942,12 @@ export default {
         }
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(mergeResult, resultUrl) : undefined;
+        const flatDebug = debugEnabled ? buildFlatDebug(mergeResult) : undefined;
         const visionDebug = debugEnabled ? buildVisionDebug(safetyDebug) : undefined;
         const storageDebugPayload = debugEnabled ? compact(storageDebug as unknown as Record<string, any>) : undefined;
         const databaseDebugPayload = debugEnabled ? compact(databaseDebug as unknown as Record<string, any>) : undefined;
         const debugPayload = debugEnabled ? compact({
-          request: requestDebug,
-          provider: providerDebug,
+          ...flatDebug,
           vision: visionDebug,
           storage: Object.keys(storageDebugPayload || {}).length ? storageDebugPayload : undefined,
           database: Object.keys(databaseDebugPayload || {}).length ? databaseDebugPayload : undefined,
@@ -5066,14 +5048,11 @@ export default {
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
-          const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult) : undefined;
-          const vertexDebug = debugEnabled ? buildVertexDebug(upscalerResult) : undefined;
+          const flatDebug = debugEnabled ? buildFlatDebug(upscalerResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: providerDebug,
-            vertex: vertexDebug,
+            ...flatDebug,
             rawError: upscalerResult.Error,
             fullResponse: (upscalerResult as any).FullResponse,
-            wavespeedDebug: (upscalerResult as any).Debug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -5094,12 +5073,9 @@ export default {
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(upscalerResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? buildVertexDebug(upscalerResult) : undefined;
+        const flatDebug = debugEnabled ? buildFlatDebug(upscalerResult) : undefined;
         const debugPayload = debugEnabled ? compact({
-          provider: providerDebug,
-          vertex: vertexDebug,
-          wavespeedDebug: (upscalerResult as any).Debug,
+          ...flatDebug,
         }) : undefined;
 
         return jsonResponse({
@@ -5204,9 +5180,9 @@ export default {
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(enhancedResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(enhancedResult),
-            vertex: mergeVertexDebug(enhancedResult, undefined),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -5227,8 +5203,6 @@ export default {
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(enhancedResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(enhancedResult, undefined) : undefined;
         const aspectRatioDebug = debugEnabled ? {
           requested: body.aspect_ratio || 'undefined',
           resolved: validAspectRatio,
@@ -5245,6 +5219,7 @@ export default {
           } : null,
         } : undefined;
 
+        const flatDebug = debugEnabled ? buildFlatDebug(enhancedResult) : undefined;
         return jsonResponse({
           data: {
             id: savedResultId !== null ? String(savedResultId) : null,
@@ -5254,8 +5229,7 @@ export default {
           message: enhancedResult.Message || 'Image enhancement completed',
           code: 200,
           ...(debugEnabled ? { debug: compact({
-            provider: providerDebug,
-            vertex: vertexDebug,
+            ...flatDebug,
             aspectRatio: aspectRatioDebug,
           }) } : {}),
         });
@@ -5330,7 +5304,7 @@ export default {
         const modelParam = body.model;
 
         const beautyResult = await callNanoBanana(
-          IMAGE_PROCESSING_PROMPTS.ENHANCE,
+          IMAGE_PROCESSING_PROMPTS.BEAUTY,
           body.image_url,
           body.image_url,
           env,
@@ -5343,9 +5317,9 @@ export default {
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(beautyResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(beautyResult),
-            vertex: mergeVertexDebug(beautyResult, undefined),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -5366,9 +5340,7 @@ export default {
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(beautyResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(beautyResult, undefined) : undefined;
-
+        const flatDebug = debugEnabled ? buildFlatDebug(beautyResult) : undefined;
         return jsonResponse({
           data: {
             id: savedResultId !== null ? String(savedResultId) : null,
@@ -5377,9 +5349,8 @@ export default {
           status: 'success',
           message: beautyResult.Message || 'Image beautification completed',
           code: 200,
-          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
-            provider: providerDebug,
-            vertex: vertexDebug,
+          ...(debugEnabled && flatDebug ? { debug: compact({
+            ...flatDebug,
           }) } : {}),
         });
       } catch (error) {
@@ -5647,9 +5618,9 @@ export default {
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
           const failureCode = filterResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(filterResult),
-            vertex: mergeVertexDebug(filterResult, undefined),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -5669,9 +5640,7 @@ export default {
         // Save result to database for history
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
-        const providerDebug = debugEnabled ? buildProviderDebug(filterResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(filterResult, undefined) : undefined;
-
+        const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
         return jsonResponse({
           data: {
             resultImageUrl: resultUrl,
@@ -5684,9 +5653,8 @@ export default {
           status: 'success',
           message: filterResult.Message || 'Style filter applied successfully',
           code: 200,
-          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
-            provider: providerDebug,
-            vertex: vertexDebug,
+          ...(debugEnabled && flatDebug ? { debug: compact({
+            ...flatDebug,
             database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false },
           }) } : {}),
         });
@@ -5753,9 +5721,9 @@ export default {
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(restoredResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(restoredResult),
-            vertex: mergeVertexDebug(restoredResult, undefined),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -5776,9 +5744,7 @@ export default {
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(restoredResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(restoredResult, undefined) : undefined;
-
+        const flatDebug = debugEnabled ? buildFlatDebug(restoredResult) : undefined;
         return jsonResponse({
           data: {
             id: savedResultId !== null ? String(savedResultId) : null,
@@ -5787,9 +5753,8 @@ export default {
           status: 'success',
           message: restoredResult.Message || 'Image restoration completed',
           code: 200,
-          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
-            provider: providerDebug,
-            vertex: vertexDebug,
+          ...(debugEnabled && flatDebug ? { debug: compact({
+            ...flatDebug,
           }) } : {}),
         });
       } catch (error) {
@@ -5856,9 +5821,9 @@ export default {
           // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            provider: buildProviderDebug(agingResult),
-            vertex: mergeVertexDebug(agingResult, undefined),
+            ...flatDebug,
           }) : undefined;
           return jsonResponse({
             data: null,
@@ -5879,9 +5844,7 @@ export default {
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
 
         const debugEnabled = isDebugEnabled(env);
-        const providerDebug = debugEnabled ? buildProviderDebug(agingResult, resultUrl) : undefined;
-        const vertexDebug = debugEnabled ? mergeVertexDebug(agingResult, undefined) : undefined;
-
+        const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
         return jsonResponse({
           data: {
             id: savedResultId !== null ? String(savedResultId) : null,
@@ -5890,9 +5853,8 @@ export default {
           status: 'success',
           message: agingResult.Message || 'Aging transformation completed',
           code: 200,
-          ...(debugEnabled && providerDebug && vertexDebug ? { debug: compact({
-            provider: providerDebug,
-            vertex: vertexDebug,
+          ...(debugEnabled && flatDebug ? { debug: compact({
+            ...flatDebug,
           }) } : {}),
         });
       } catch (error) {

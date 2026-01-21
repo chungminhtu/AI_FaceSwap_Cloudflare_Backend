@@ -1,38 +1,56 @@
 // API Prompts Configuration - Centralized all prompts
 export const VERTEX_AI_PROMPTS = {
-  FACIAL_PRESERVATION_INSTRUCTION: 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.',
+  // Face preservation instruction - specifically for face-swap operations (requires human faces)
+  // This is appended to face-swap prompts to ensure facial identity is preserved
+  FACIAL_PRESERVATION_INSTRUCTION: 'Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching.',
 
   // Content safety instruction - appended to ALL image generation prompts
-  // Ensures generated images comply with Google Play Store content policies
-  // Blocks explicit content while allowing normal swimwear/fashion
-  CONTENT_SAFETY_INSTRUCTION: `CONTENT POLICY:
-BLOCK ONLY: exposed genitals, exposed nipples, sexual intercourse, sexualized minors, extreme gore.
-ALWAYS ALLOW: thighs, legs, buttocks in underwear/swimwear, cleavage, midriff, back, shoulders, arms, feet.
-ALWAYS ALLOW: bikinis, swimwear, lingerie, underwear, short skirts, mini skirts, crop tops, low-cut tops, tight clothing, see-through clothing (with underwear).
-ALWAYS ALLOW: fitness attire, yoga pants, sports bras, dance outfits, cheerleader outfits, cosplay, maid outfits.
-ALWAYS ALLOW: fashion photography, beach scenes, pool scenes, gym photos, bedroom photos, artistic poses, suggestive poses.
-RULE: Skin exposure is NOT nudity. Revealing clothing is NOT explicit. Suggestive is NOT pornographic. Only block actual pornographic content showing genitals or nipples.`,
+  // Works for any image type (people, objects, landscapes, etc.)
+  // Blocks illegal/harmful content, allows all normal content
+  CONTENT_SAFETY_INSTRUCTION: `CONTENT SAFETY POLICY:
 
-  MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The subject is naturally with corrected, realistic proportions, fix unnatural anatomical distortions, ensure legs are proportioned correctly and not artificially shortened by perspective, ensure hands and feet are realistically sized and shaped, avoiding any disproportionate scaling. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the existing outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects' body shapes and proportions correctly.`,
+MUST BLOCK (illegal/harmful):
+- CSAM: Any sexual or sexualized content involving minors (under 18)
+- Explicit nudity: Exposed genitals, exposed nipples (including through see-through clothing/wet fabric)
+- Sexual acts: Intercourse, oral sex, masturbation, or any explicit sexual activity
+- Extreme violence: Gore, torture, mutilation, graphic injury
+- Non-consensual imagery: Revenge porn, deepfakes for harassment
 
-  // Default prompt for normal face-swap preset generation
-  PROMPT_GENERATION_DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 1:1 aspect ratio, 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with Google Play Store content policies: the description must not contain any sexual, explicit, suggestive, racy, erotic, fetish, or adult content; no exposed sensitive body areas; no provocative wording or implications; and the entire scene must remain wholesome, respectful, and appropriate for all audiences. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
+ALWAYS ALLOW (legal/appropriate):
+- Children in normal contexts: Family photos, school photos, birthday parties, beach/pool in appropriate swimwear
+- Adults in swimwear/lingerie: Bikinis, underwear, revealing clothing (without exposed genitals/nipples)
+- All non-human subjects: Objects, products, animals, pets, landscapes, food, art, architecture
+- Fashion/fitness: Athletic wear, yoga poses, dance, modeling
+- Artistic content: Paintings, sculptures, illustrations, digital art
+- Old/damaged photos: Vintage photos, historical images for restoration`,
+
+  // Merge/composite prompt - works for any subject type
+  MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. Seamlessly integrate the subject with corrected, realistic proportions. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and naturally integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. For people: preserve facial features and expressions, adjust clothing if needed to match the scene. For objects/animals: preserve key characteristics and scale appropriately. Ensure the final composite looks like a natural, unedited photograph.`,
+
+  // Default prompt for face-swap preset generation - analyzes preset images to generate prompts
+  // This is specifically for face-swap operations where a user's face will be swapped onto a preset image
+  PROMPT_GENERATION_DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with content policies. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
 
   // Filter mode prompt for art style analysis (when checkbox is checked)
-  PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.`,
+  PROMPT_GENERATION_FILTER: `Analyze the image's art and thematic styles and return a detailed description of its specific art styles and contents. For example: figurine, pop mart style, clay, disney, anime, watercolor, oil painting, sketch, etc. Describe the style in a way that can be applied to reimagine any image. Ensure the description is generic and can apply to any subject type.`,
 
-  // Complete filter style application instruction (includes selfie preservation)
-  FILTER_STYLE_APPLICATION_INSTRUCTION: 'Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
+  // Style application instruction - preserves original image characteristics
+  FILTER_STYLE_APPLICATION_INSTRUCTION: 'Maintain the exact composition, subject positioning, and key visual elements of the original image. For images with people: preserve facial features, body proportions, posture, clothing, and hair. For other images: preserve shapes, colors, and distinctive characteristics.',
 
   // Default filter prompt (when prompt is not a string)
-  FILTER_DEFAULT_PROMPT: 'Maintain the exact facial features, composition, clothing of the selfie. Keeps hands, arms, legs, torso length, shoulder width, posture, and scale unchanged in the selfie, and the hair and hair colour.',
+  FILTER_DEFAULT_PROMPT: 'Maintain the exact composition, subject positioning, and key visual elements of the original image. Preserve all distinctive characteristics while applying the requested transformation.',
 };
 
 // Image Processing Prompts Configuration
 export const IMAGE_PROCESSING_PROMPTS = {
-  ENHANCE: 'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure.',
+  // Enhancement prompt - works for any image (people, objects, landscapes, products, etc.)
+  ENHANCE: 'Enhance and beautify this image to professional quality. Improve sharpness, clarity, and detail. Optimize colors, contrast, and lighting for a vibrant, natural look. Remove noise, artifacts, and imperfections. For images with people: smooth skin texture, remove blemishes, enhance natural features while maintaining realistic appearance. For other images: enhance textures, colors, and visual appeal. Output in 8K ultra-high detail with professional-grade quality.',
 
-  FILTER: 'Restore and enhance this damaged photo to a hyper-realistic, ultra-detailed image, 16K DSLR quality. Fix scratches, tears, noise, and blurriness. Enhance colors to vivid, vibrant tones while keeping natural skin tones. Perfectly sharpen details in face, eyes, hair, and clothing. Add realistic lighting, shadows, and depth of field. Photoshop-level professional retouching. High dynamic range, ultra-HD, lifelike textures, cinematic finish, crisp and clean background, fully restored and enhanced version of the original photo.',
+  // Beauty prompt - specifically for face/portrait beautification (requires human face)
+  BEAUTY: 'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure. Output in 8K ultra-high detail with professional skin retouching.',
+
+  // Restoration/Filter prompt - works for any damaged or old photo
+  FILTER: 'Restore and enhance this photo to hyper-realistic, ultra-detailed 16K DSLR quality. Fix scratches, tears, fading, noise, and blurriness. Enhance colors to vivid, vibrant tones while maintaining natural appearance. Perfectly sharpen all details and subjects. Add realistic lighting, shadows, and depth of field. Professional-level restoration with high dynamic range, ultra-HD quality, lifelike textures, cinematic finish, and crisp clean output. Fully restored and enhanced version of the original photo.',
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings
@@ -111,7 +129,7 @@ export const VERTEX_AI_CONFIG = {
       properties: {
         prompt: {
           type: 'string',
-          description: 'Detailed HDR scene description including character pose, outfit, environment, atmosphere, visual mood, and face-swap rule',
+          description: 'Detailed HDR scene description including subject, environment, atmosphere, visual mood, and preservation instructions',
         },
         style: {
           type: 'string',
@@ -135,11 +153,11 @@ export const VERTEX_AI_CONFIG = {
         },
         art_style: {
           type: 'object',
-          description: 'Art style metadata for face-swap reimagining',
+          description: 'Art style metadata for image transformation',
           properties: {
             type: { type: 'string', description: 'Detected or specified art style type' },
             keywords: { type: 'array', items: { type: 'string' }, description: 'Style-specific keywords' },
-            face_swap_instruction: { type: 'string', description: 'Style-specific face preservation instruction' },
+            face_swap_instruction: { type: 'string', description: 'Style-specific subject preservation instruction' },
           },
         },
       },
@@ -223,7 +241,7 @@ export const API_CONFIG = {
       properties: {
         prompt: {
           type: 'string',
-          description: 'Detailed HDR scene description including character pose, outfit, environment, atmosphere, visual mood, and face-swap rule',
+          description: 'Detailed HDR scene description including subject, environment, atmosphere, visual mood, and preservation instructions',
         },
         style: {
           type: 'string',
@@ -247,11 +265,11 @@ export const API_CONFIG = {
         },
         art_style: {
           type: 'object',
-          description: 'Art style metadata for face-swap reimagining',
+          description: 'Art style metadata for image transformation',
           properties: {
             type: { type: 'string', description: 'Detected or specified art style type' },
             keywords: { type: 'array', items: { type: 'string' }, description: 'Style-specific keywords' },
-            face_swap_instruction: { type: 'string', description: 'Style-specific face preservation instruction' },
+            face_swap_instruction: { type: 'string', description: 'Style-specific subject preservation instruction' },
           },
         },
       },

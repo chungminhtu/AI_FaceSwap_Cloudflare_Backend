@@ -225,14 +225,11 @@ export const callNanoBanana = async (
       };
     }
 
-    // Fetch selfie image(s) as base64
-    // For Nano Banana (Vertex AI), we send the selfie image(s) and text prompt
+    // Use fileUri instead of base64 - URLs must be publicly accessible
+    // For Nano Banana (Vertex AI), we send the selfie image(s) + text prompt (not preset image)
     // The preset image style is described in the prompt_json text
     // Support multiple selfies for wedding faceswap (e.g., bride and groom)
     const sourceUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
-    const selfieImageDataArray: string[] = await Promise.all(
-      sourceUrls.map(url => fetchImageAsBase64(url, env))
-    );
 
     // Normalize aspect ratio: resolveAspectRatio should have already calculated closest ratio from "original"
     // This is a safety check - if "original" somehow gets through, treat as invalid and use default
@@ -249,15 +246,15 @@ export const callNanoBanana = async (
     }
 
     // Vertex AI Gemini API request format with image generation
-    // Based on official documentation format
+    // Using fileData with fileUri instead of inline_data with base64
     // IMPORTANT: For Nano Banana, we send the selfie image(s) + text prompt (not preset image)
     // The preset image style is described in the prompt_json text
     // contents must be an ARRAY (as per Vertex AI API documentation)
     // For multiple selfies, include all images in the parts array
-    const imageParts = selfieImageDataArray.map(imageData => ({
-      inline_data: {
-        mime_type: "image/jpeg",
-        data: imageData
+    const imageParts = sourceUrls.map(url => ({
+      fileData: {
+        mimeType: "image/jpeg",
+        fileUri: url
       }
     }));
 
@@ -281,20 +278,19 @@ export const callNanoBanana = async (
 
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const sanitizedRequestBody = debugEnabled ? sanitizeObject(requestBody) : undefined;
     const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" \\
+  -H "Authorization: Bearer ${accessToken}" \\
   -H "Content-Type: application/json" \\
   "${geminiEndpoint}" \\
-  -d '${JSON.stringify(sanitizedRequestBody).replace(/'/g, "'\\''")}'` : undefined;
+  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
-    // Simplified debug info - curl contains full request details
+    // Simplified debug info - curl has full body embedded (small since using fileUri)
     debugInfo = {
       curl: curlCommand,
       model: geminiModel,
       endpoint: geminiEndpoint,
       aspectRatio: normalizedAspectRatio,
-      inputImages: selfieImageDataArray.length,
+      inputImages: sourceUrls.length,
     };
 
     // Performance testing mode: skip API call if disabled
@@ -651,24 +647,16 @@ export const generateBackgroundFromPrompt = async (
 
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const sanitizedRequestBody = debugEnabled ? JSON.parse(JSON.stringify(requestBody, (key, value) => {
-      if (key === 'data' && typeof value === 'string' && value.length > 100) {
-        return '...';
-      }
-      return value;
-    })) : undefined;
-
     const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Authorization: Bearer ${accessToken}" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
       endpoint: geminiEndpoint,
       model: geminiModel,
-      requestPayload: sanitizedRequestBody,
-      curlCommand,
+      curl: curlCommand,
       promptLength: prompt.length,
       receivedAspectRatio: aspectRatio,
       normalizedAspectRatio: normalizedAspectRatio,
@@ -855,16 +843,14 @@ export const generateBackgroundFromPrompt = async (
       // Only generate expensive debug info when debug mode is enabled
       const debugEnabledFinal = env.ENABLE_DEBUG_RESPONSE === 'true';
       const sanitizedData = debugEnabledFinal ? sanitizeObject(data) : undefined;
-      const sanitizedRequestBodyForCurl = debugEnabledFinal ? sanitizeObject(requestBody) : undefined;
       const curlCommandFinal = debugEnabledFinal ? `curl -X POST \\
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+  -H "Authorization: Bearer ${accessToken}" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
       if (debugInfo && debugEnabledFinal) {
-        debugInfo.requestPayload = sanitizedRequestBodyForCurl;
-        debugInfo.curlCommand = curlCommandFinal;
+        debugInfo.curl = curlCommandFinal;
         debugInfo.response = sanitizedData;
         if (data.usageMetadata) {
           debugInfo.usageMetadata = data.usageMetadata;
@@ -878,7 +864,6 @@ export const generateBackgroundFromPrompt = async (
         StatusCode: response.status,
         VertexResponse: sanitizedData,
         Prompt: prompt,
-        CurlCommand: curlCommandFinal,
         Debug: debugInfo,
       };
     } catch (processError) {
@@ -973,10 +958,7 @@ export const callNanoBananaMerge = async (
       };
     }
 
-    const [selfieImageData, presetImageData] = await Promise.all([
-      fetchImageAsBase64(selfieUrl, env),
-      fetchImageAsBase64(presetUrl, env)
-    ]);
+    // Use fileUri instead of base64 - URLs must be publicly accessible
 
     // Normalize aspect ratio: resolveAspectRatio should have already calculated closest ratio from "original"
     // This is a safety check - if "original" somehow gets through, treat as invalid and use default
@@ -1000,15 +982,15 @@ export const callNanoBananaMerge = async (
         role: "user",
         parts: [
           {
-            inline_data: {
-              mime_type: DEFAULT_VALUES.IMAGE_MIME_TYPE,
-              data: selfieImageData
+            fileData: {
+              mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
+              fileUri: selfieUrl
             }
           },
           {
-            inline_data: {
-              mime_type: DEFAULT_VALUES.IMAGE_MIME_TYPE,
-              data: presetImageData
+            fileData: {
+              mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
+              fileUri: presetUrl
             }
           },
           { text: safeMergePrompt }
@@ -1026,31 +1008,18 @@ export const callNanoBananaMerge = async (
     };
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const sanitizedRequestBody = debugEnabled ? JSON.parse(JSON.stringify(requestBody, (key, value) => {
-      if (key === 'data' && typeof value === 'string' && value.length > 100) {
-        return '...';
-      }
-      return value;
-    })) : undefined;
-
     const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+  -H "Authorization: Bearer ${accessToken}" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
-      endpoint: geminiEndpoint,
+      curl: curlCommand,
       model: geminiModel,
-      requestPayload: sanitizedRequestBody,
-      curlCommand,
-      selfieImageBytes: selfieImageData.length,
-      presetImageBytes: presetImageData.length,
-      promptLength: mergePrompt.length,
       selfieUrl,
       presetUrl,
-      receivedAspectRatio: aspectRatio,
-      normalizedAspectRatio: normalizedAspectRatio,
+      aspectRatio: normalizedAspectRatio,
     };
 
     // Performance testing mode: skip API call if disabled
@@ -1263,16 +1232,14 @@ export const callNanoBananaMerge = async (
       // Only generate expensive debug info when debug mode is enabled
       const debugEnabledFinal = env.ENABLE_DEBUG_RESPONSE === 'true';
       const sanitizedData = debugEnabledFinal ? sanitizeObject(data) : undefined;
-      const sanitizedRequestBodyForCurl = debugEnabledFinal ? sanitizeObject(requestBody) : undefined;
       const curlCommandFinal = debugEnabledFinal ? `curl -X POST \\
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+  -H "Authorization: Bearer ${accessToken}" \\
   -H "Content-Type: application/json" \\
   ${geminiEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBodyForCurl, null, 2).replace(/'/g, "'\\''")}'` : undefined;
+  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
       if (debugInfo && debugEnabledFinal) {
-        debugInfo.requestPayload = sanitizedRequestBodyForCurl;
-        debugInfo.curlCommand = curlCommandFinal;
+        debugInfo.curl = curlCommandFinal;
         debugInfo.response = sanitizedData;
         if (data.usageMetadata) {
           debugInfo.usageMetadata = data.usageMetadata;
@@ -1286,7 +1253,6 @@ export const callNanoBananaMerge = async (
         StatusCode: response.status,
         VertexResponse: sanitizedData,
         Prompt: prompt,
-        CurlCommand: curlCommandFinal,
         Debug: debugInfo,
       };
     } catch (processError) {
@@ -1365,7 +1331,7 @@ export const checkSafeSearch = async (
 
     // Generate curl command for Vision API call
     const curlCommand = `curl -X POST \\
-  "${env.GOOGLE_VISION_ENDPOINT}?key=YOUR_API_KEY" \\
+  "${env.GOOGLE_VISION_ENDPOINT}?key=${apiKey}" \\
   -H "Content-Type: application/json" \\
   -d '${JSON.stringify(requestBody)}'`;
 
@@ -1507,9 +1473,7 @@ export const checkImageSafetyWithFlashLite = async (
     debugInfo.model = model;
     debugInfo.location = location;
 
-    // Fetch image as base64
-    const imageData = await fetchImageAsBase64(imageUrl, env);
-
+    // Use fileUri instead of base64 - URL must be publicly accessible
     // Send image with simple prompt - let Vertex AI's built-in safety filters do the work
     // If the image violates safety policies, it will be blocked automatically
     const requestBody = {
@@ -1518,9 +1482,9 @@ export const checkImageSafetyWithFlashLite = async (
         parts: [
           { text: 'Describe this image briefly.' },
           {
-            inlineData: {
+            fileData: {
               mimeType: 'image/jpeg',
-              data: imageData
+              fileUri: imageUrl
             }
           }
         ]
@@ -1721,18 +1685,16 @@ export const generateVertexPrompt = async (
       promptPreview: prompt.substring(0, 100) + '...'
     });
 
-    // Fetch image as base64
-    const imageData = await fetchImageAsBase64(imageUrl, env);
-
+    // Use fileUri instead of base64 - URL must be publicly accessible
     const requestBody = {
       contents: [{
         role: "user",
         parts: [
           { text: prompt },
           {
-            inline_data: {
-              mime_type: DEFAULT_VALUES.IMAGE_MIME_TYPE,
-              data: imageData
+            fileData: {
+              mimeType: DEFAULT_VALUES.IMAGE_MIME_TYPE,
+              fileUri: imageUrl
             }
           }
         ]
@@ -1740,23 +1702,6 @@ export const generateVertexPrompt = async (
       generationConfig: VERTEX_AI_CONFIG.PROMPT_GENERATION,
       safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
-
-    // Only generate expensive debug info when debug mode is enabled
-    const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const sanitizedRequestBody = debugEnabled ? sanitizeObject(requestBody) : undefined;
-    const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
-  -H "Content-Type: application/json" \\
-  ${vertexEndpoint} \\
-  -d '${JSON.stringify(sanitizedRequestBody, null, 2).replace(/'/g, "'\\''")}'` : undefined;
-
-    debugInfo.requestSent = true;
-    debugInfo.requestPayload = {
-      promptLength: prompt.length,
-      imageBytes: imageData.length,
-      imageUrl,
-    };
-    if (curlCommand) debugInfo.curlCommand = curlCommand;
 
     // Vertex AI requires OAuth token
     if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -1782,6 +1727,19 @@ export const generateVertexPrompt = async (
         error: `Failed to authenticate with Vertex AI: ${tokenError instanceof Error ? tokenError.message : String(tokenError)}`,
         debug: { errorDetails: String(tokenError) }
       };
+    }
+
+    // Only generate expensive debug info when debug mode is enabled
+    const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+    const curlCommand = debugEnabled ? `curl -X POST \\
+  -H "Authorization: Bearer ${accessToken}" \\
+  -H "Content-Type: application/json" \\
+  ${vertexEndpoint} \\
+  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+
+    debugInfo.requestSent = true;
+    if (curlCommand) {
+      debugInfo.curl = curlCommand;
     }
 
     const response = await fetchWithTimeout(vertexEndpoint, {
