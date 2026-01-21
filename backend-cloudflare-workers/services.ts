@@ -142,7 +142,8 @@ export const callNanoBanana = async (
   sourceUrl: string | string[],
   env: Env,
   aspectRatio?: string,
-  modelParam?: string | number
+  modelParam?: string | number,
+  options?: { skipFacialPreservation?: boolean }
 ): Promise<FaceSwapResponse> => {
   // Use Vertex AI Gemini API with image generation support
   // Based on official documentation: responseModalities: ["TEXT", "IMAGE"] is supported
@@ -169,24 +170,25 @@ export const callNanoBanana = async (
     const geminiEndpoint = getVertexAIEndpoint(projectId, location, geminiModel);
 
     // Convert prompt_json to text string for Vertex AI
-    // Enhance prompt with strong facial preservation instruction
+    // Enhance prompt with facial preservation instruction (unless skipped for generic image processing)
+    const skipFacial = options?.skipFacialPreservation === true;
     let promptText = '';
     if (prompt && typeof prompt === 'object') {
       // Clone the prompt object to avoid mutating the original
       const enhancedPrompt = { ...prompt } as any;
 
       if (enhancedPrompt.prompt && typeof enhancedPrompt.prompt === 'string') {
-        if (!enhancedPrompt.prompt.includes('100% identical facial features')) {
+        if (!skipFacial && !enhancedPrompt.prompt.includes('100% identical facial features')) {
           enhancedPrompt.prompt = `${enhancedPrompt.prompt} ${VERTEX_AI_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
         }
-      } else {
+      } else if (!skipFacial) {
         enhancedPrompt.prompt = VERTEX_AI_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION;
       }
 
       // Convert the enhanced prompt object to a formatted text string
       promptText = JSON.stringify(enhancedPrompt, null, 2);
     } else if (typeof prompt === 'string') {
-      if (!prompt.includes('100% identical facial features')) {
+      if (!skipFacial && !prompt.includes('100% identical facial features')) {
         promptText = `${prompt} ${VERTEX_AI_PROMPTS.FACIAL_PRESERVATION_INSTRUCTION}`;
       } else {
         promptText = prompt;
@@ -225,7 +227,7 @@ export const callNanoBanana = async (
       };
     }
 
-    // Use fileUri instead of base64 - URLs must be publicly accessible
+    // Use fileUri for Vertex AI - URLs must be publicly accessible
     // For Nano Banana (Vertex AI), we send the selfie image(s) + text prompt (not preset image)
     // The preset image style is described in the prompt_json text
     // Support multiple selfies for wedding faceswap (e.g., bride and groom)
@@ -246,7 +248,7 @@ export const callNanoBanana = async (
     }
 
     // Vertex AI Gemini API request format with image generation
-    // Using fileData with fileUri instead of inline_data with base64
+    // Using fileData with fileUri for URL-based image input
     // IMPORTANT: For Nano Banana, we send the selfie image(s) + text prompt (not preset image)
     // The preset image style is described in the prompt_json text
     // contents must be an ARRAY (as per Vertex AI API documentation)
@@ -278,13 +280,8 @@ export const callNanoBanana = async (
 
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer ${accessToken}" \\
-  -H "Content-Type: application/json" \\
-  "${geminiEndpoint}" \\
-  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+    const curlCommand = debugEnabled ? `curl -X POST "${geminiEndpoint}" -H "Authorization: Bearer ${accessToken}" -H "Content-Type: application/json" -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
-    // Simplified debug info - curl has full body embedded (small since using fileUri)
     debugInfo = {
       curl: curlCommand,
       model: geminiModel,
@@ -308,22 +305,58 @@ export const callNanoBanana = async (
       };
     }
 
-    const startTime = Date.now();
-    const response = await fetchWithTimeout(geminiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: JSON.stringify(requestBody),
-    }, 60000);
+    // Retry logic for Vertex AI 429 rate limit errors (1 retry = 2 total attempts)
+    const maxRetries = 1;
+    let lastResponse: Response | null = null;
+    let lastRawResponse: string = '';
+    let totalDurationMs = 0;
+    let retryAttempts = 0;
 
-    const rawResponse = await response.text();
-    const durationMs = Date.now() - startTime;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const startTime = Date.now();
+      const response = await fetchWithTimeout(geminiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(requestBody),
+      }, 60000);
+
+      const rawResponse = await response.text();
+      const durationMs = Date.now() - startTime;
+      totalDurationMs += durationMs;
+      lastResponse = response;
+      lastRawResponse = rawResponse;
+
+      // If 429, retry with exponential backoff
+      if (response.status === 429 && attempt < maxRetries) {
+        retryAttempts = attempt + 1;
+        const retryAfter = response.headers.get('Retry-After');
+        const delayMs = retryAfter 
+          ? parseInt(retryAfter, 10) * 1000 
+          : Math.min(1000 * Math.pow(2, attempt), 10000); // Exponential backoff: 1s, 2s (max 10s)
+        
+        console.warn(`[Vertex-NanoBanana] 429 rate limit, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      // Not 429 or last attempt, break and process response
+      break;
+    }
+
+    const response = lastResponse!;
+    const rawResponse = lastRawResponse;
+    const durationMs = totalDurationMs;
     if (debugInfo) {
       debugInfo.status = response.status;
       debugInfo.statusText = response.statusText;
       debugInfo.durationMs = durationMs;
+      if (retryAttempts > 0) {
+        debugInfo.retryAttempts = retryAttempts;
+        debugInfo.totalAttempts = retryAttempts + 1;
+      }
     }
 
     if (!response.ok) {
@@ -523,7 +556,7 @@ export const callNanoBanana = async (
         ResultImageUrl: resultImageUrl,
         Message: 'Processing successful',
         StatusCode: 200,
-        CurlCommand: debugInfo?.curlCommand,
+        CurlCommand: debugInfo?.curl,
         Debug: debugInfo,
       } as any;
     } catch (processError) {
@@ -647,11 +680,7 @@ export const generateBackgroundFromPrompt = async (
 
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer ${accessToken}" \\
-  -H "Content-Type: application/json" \\
-  ${geminiEndpoint} \\
-  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+    const curlCommand = debugEnabled ? `curl -X POST "${geminiEndpoint}" -H "Authorization: Bearer ${accessToken}" -H "Content-Type: application/json" -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
       endpoint: geminiEndpoint,
@@ -677,26 +706,66 @@ export const generateBackgroundFromPrompt = async (
       };
     }
 
-    const startTime = Date.now();
-    const response = await fetchWithTimeout(geminiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: JSON.stringify(requestBody),
-    }, 60000);
+    // Retry logic for Vertex AI 429 rate limit errors (1 retry = 2 total attempts)
+    const maxRetries = 1;
+    let lastResponse: Response | null = null;
+    let lastRawResponse: string = '';
+    let totalDurationMs = 0;
+    let retryAttempts = 0;
 
-    const rawResponse = await response.text();
-    const durationMs = Date.now() - startTime;
-    if (debugInfo) {
-      debugInfo.status = response.status;
-      debugInfo.statusText = response.statusText;
-      debugInfo.durationMs = durationMs;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const startTime = Date.now();
+      const response = await fetchWithTimeout(geminiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(requestBody),
+      }, 60000);
+
+      const rawResponse = await response.text();
+      const durationMs = Date.now() - startTime;
+      totalDurationMs += durationMs;
+      lastResponse = response;
+      lastRawResponse = rawResponse;
+
+      if (debugInfo) {
+        debugInfo.status = response.status;
+        debugInfo.statusText = response.statusText;
+        debugInfo.durationMs = durationMs;
+      }
+
+      // If 429, retry with exponential backoff
+      if (response.status === 429 && attempt < maxRetries) {
+        retryAttempts = attempt + 1;
+        const retryAfter = response.headers.get('Retry-After');
+        const delayMs = retryAfter 
+          ? parseInt(retryAfter, 10) * 1000 
+          : Math.min(1000 * Math.pow(2, attempt), 10000); // Exponential backoff: 1s, 2s (max 10s)
+        
+        console.warn(`[Vertex-GenerateBackground] 429 rate limit, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      // Not 429 or last attempt, break and process response
+      if (!response.ok) {
+        console.error('[Vertex-GenerateBackground] API error:', response.status, response.statusText);
+        break;
+      }
+      break;
+    }
+
+    const response = lastResponse!;
+    const rawResponse = lastRawResponse;
+    const durationMs = totalDurationMs;
+    if (debugInfo && retryAttempts > 0) {
+      debugInfo.retryAttempts = retryAttempts;
+      debugInfo.totalAttempts = retryAttempts + 1;
     }
 
     if (!response.ok) {
-      console.error('[Vertex-GenerateBackground] API error:', response.status, response.statusText);
       let parsedError: any = null;
       if (debugInfo) {
         try {
@@ -843,11 +912,7 @@ export const generateBackgroundFromPrompt = async (
       // Only generate expensive debug info when debug mode is enabled
       const debugEnabledFinal = env.ENABLE_DEBUG_RESPONSE === 'true';
       const sanitizedData = debugEnabledFinal ? sanitizeObject(data) : undefined;
-      const curlCommandFinal = debugEnabledFinal ? `curl -X POST \\
-  -H "Authorization: Bearer ${accessToken}" \\
-  -H "Content-Type: application/json" \\
-  ${geminiEndpoint} \\
-  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+      const curlCommandFinal = debugEnabledFinal ? `curl -X POST "${geminiEndpoint}" -H "Authorization: Bearer ${accessToken}" -H "Content-Type: application/json" -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
       if (debugInfo && debugEnabledFinal) {
         debugInfo.curl = curlCommandFinal;
@@ -958,7 +1023,7 @@ export const callNanoBananaMerge = async (
       };
     }
 
-    // Use fileUri instead of base64 - URLs must be publicly accessible
+    // Use fileUri for Vertex AI - URLs must be publicly accessible
 
     // Normalize aspect ratio: resolveAspectRatio should have already calculated closest ratio from "original"
     // This is a safety check - if "original" somehow gets through, treat as invalid and use default
@@ -1008,11 +1073,7 @@ export const callNanoBananaMerge = async (
     };
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer ${accessToken}" \\
-  -H "Content-Type: application/json" \\
-  ${geminiEndpoint} \\
-  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+    const curlCommand = debugEnabled ? `curl -X POST "${geminiEndpoint}" -H "Authorization: Bearer ${accessToken}" -H "Content-Type: application/json" -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo = {
       curl: curlCommand,
@@ -1037,26 +1098,66 @@ export const callNanoBananaMerge = async (
       };
     }
 
-    const startTime = Date.now();
-    const response = await fetchWithTimeout(geminiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: JSON.stringify(requestBody),
-    }, 60000);
+    // Retry logic for Vertex AI 429 rate limit errors (1 retry = 2 total attempts)
+    const maxRetries = 1;
+    let lastResponse: Response | null = null;
+    let lastRawResponse: string = '';
+    let totalDurationMs = 0;
+    let retryAttempts = 0;
 
-    const rawResponse = await response.text();
-    const durationMs = Date.now() - startTime;
-    if (debugInfo) {
-      debugInfo.status = response.status;
-      debugInfo.statusText = response.statusText;
-      debugInfo.durationMs = durationMs;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const startTime = Date.now();
+      const response = await fetchWithTimeout(geminiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(requestBody),
+      }, 60000);
+
+      const rawResponse = await response.text();
+      const durationMs = Date.now() - startTime;
+      totalDurationMs += durationMs;
+      lastResponse = response;
+      lastRawResponse = rawResponse;
+
+      if (debugInfo) {
+        debugInfo.status = response.status;
+        debugInfo.statusText = response.statusText;
+        debugInfo.durationMs = durationMs;
+      }
+
+      // If 429, retry with exponential backoff
+      if (response.status === 429 && attempt < maxRetries) {
+        retryAttempts = attempt + 1;
+        const retryAfter = response.headers.get('Retry-After');
+        const delayMs = retryAfter 
+          ? parseInt(retryAfter, 10) * 1000 
+          : Math.min(1000 * Math.pow(2, attempt), 10000); // Exponential backoff: 1s, 2s (max 10s)
+        
+        console.warn(`[Vertex-NanoBananaMerge] 429 rate limit, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      // Not 429 or last attempt, break and process response
+      if (!response.ok) {
+        console.error('[Vertex-NanoBananaMerge] API error:', response.status, response.statusText);
+        break;
+      }
+      break;
+    }
+
+    const response = lastResponse!;
+    const rawResponse = lastRawResponse;
+    const durationMs = totalDurationMs;
+    if (debugInfo && retryAttempts > 0) {
+      debugInfo.retryAttempts = retryAttempts;
+      debugInfo.totalAttempts = retryAttempts + 1;
     }
 
     if (!response.ok) {
-      console.error('[Vertex-NanoBananaMerge] API error:', response.status, response.statusText);
       let parsedError: any = null;
       if (debugInfo) {
         try {
@@ -1232,11 +1333,7 @@ export const callNanoBananaMerge = async (
       // Only generate expensive debug info when debug mode is enabled
       const debugEnabledFinal = env.ENABLE_DEBUG_RESPONSE === 'true';
       const sanitizedData = debugEnabledFinal ? sanitizeObject(data) : undefined;
-      const curlCommandFinal = debugEnabledFinal ? `curl -X POST \\
-  -H "Authorization: Bearer ${accessToken}" \\
-  -H "Content-Type: application/json" \\
-  ${geminiEndpoint} \\
-  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+      const curlCommandFinal = debugEnabledFinal ? `curl -X POST "${geminiEndpoint}" -H "Authorization: Bearer ${accessToken}" -H "Content-Type: application/json" -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
       if (debugInfo && debugEnabledFinal) {
         debugInfo.curl = curlCommandFinal;
@@ -1473,7 +1570,7 @@ export const checkImageSafetyWithFlashLite = async (
     debugInfo.model = model;
     debugInfo.location = location;
 
-    // Use fileUri instead of base64 - URL must be publicly accessible
+    // Use fileUri for Vertex AI - URL must be publicly accessible
     // Send image with simple prompt - let Vertex AI's built-in safety filters do the work
     // If the image violates safety policies, it will be blocked automatically
     const requestBody = {
@@ -1685,7 +1782,7 @@ export const generateVertexPrompt = async (
       promptPreview: prompt.substring(0, 100) + '...'
     });
 
-    // Use fileUri instead of base64 - URL must be publicly accessible
+    // Use fileUri for Vertex AI - URL must be publicly accessible
     const requestBody = {
       contents: [{
         role: "user",
@@ -1731,11 +1828,7 @@ export const generateVertexPrompt = async (
 
     // Only generate expensive debug info when debug mode is enabled
     const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
-    const curlCommand = debugEnabled ? `curl -X POST \\
-  -H "Authorization: Bearer ${accessToken}" \\
-  -H "Content-Type: application/json" \\
-  ${vertexEndpoint} \\
-  -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
+    const curlCommand = debugEnabled ? `curl -X POST "${vertexEndpoint}" -H "Authorization: Bearer ${accessToken}" -H "Content-Type: application/json" -d '${JSON.stringify(requestBody).replace(/'/g, "'\\''")}'` : undefined;
 
     debugInfo.requestSent = true;
     if (curlCommand) {

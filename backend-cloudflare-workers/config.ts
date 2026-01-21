@@ -51,6 +51,9 @@ export const IMAGE_PROCESSING_PROMPTS = {
 
   // Restoration/Filter prompt - works for any damaged or old photo
   FILTER: 'Restore and enhance this photo to hyper-realistic, ultra-detailed 16K DSLR quality. Fix scratches, tears, fading, noise, and blurriness. Enhance colors to vivid, vibrant tones while maintaining natural appearance. Perfectly sharpen all details and subjects. Add realistic lighting, shadows, and depth of field. Professional-level restoration with high dynamic range, ultra-HD quality, lifelike textures, cinematic finish, and crisp clean output. Fully restored and enhanced version of the original photo.',
+
+  // Restoration prompt - for old/damaged photos, black and white to color conversion
+  RESTORE: 'Restore this old or damaged photo. If the image is black and white or sepia, colorize it with realistic, natural colors appropriate for the era and subject matter. Fix all damage including scratches, tears, fading, stains, creases, and degradation. Remove noise, dust, and artifacts. Enhance clarity and sharpness while preserving the original composition. Restore faded areas and improve overall quality. Output a fully restored, colorized (if applicable), high-quality version of the original photo.',
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings

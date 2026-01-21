@@ -1378,6 +1378,56 @@
         setTimeout(function() { t.classList.remove('show'); }, 3000);
     }
 
+    // Delay between API calls (ms) to avoid rate limiting
+    var API_CALL_DELAY = 1000; // 1 second between calls
+
+    // Run tests sequentially with delay
+    function runSequential(reqs, api, cfg, idx, allResults, progress, fill) {
+        if (idx >= reqs.length) {
+            // All done
+            renderTable(api, allResults);
+            progress.classList.remove('show');
+            running = false;
+            updateSummary(api);
+            updateExportButtons();
+            saveResults();
+            toast('Hoàn thành ' + reqs.length + ' test cho /' + api, 'ok');
+            return;
+        }
+
+        var req = reqs[idx];
+        runSingleTest(api, req, idx + 1, cfg).then(function(r) {
+            results[api][idx] = r;
+            allResults.push(r);
+            fill.style.width = ((idx + 1) / reqs.length * 100) + '%';
+            renderTable(api, allResults);
+            saveResults();
+
+            // Delay before next request to avoid rate limiting
+            setTimeout(function() {
+                runSequential(reqs, api, cfg, idx + 1, allResults, progress, fill);
+            }, API_CALL_DELAY);
+        }).catch(function(err) {
+            var errorResult = {
+                index: idx + 1,
+                inputUrl: getInputUrl(api, req),
+                body: req,
+                status: 'error',
+                error: err.message
+            };
+            results[api][idx] = errorResult;
+            allResults.push(errorResult);
+            fill.style.width = ((idx + 1) / reqs.length * 100) + '%';
+            renderTable(api, allResults);
+            saveResults();
+
+            // Continue to next even on error
+            setTimeout(function() {
+                runSequential(reqs, api, cfg, idx + 1, allResults, progress, fill);
+            }, API_CALL_DELAY);
+        });
+    }
+
     // Run tests for single API
     window.runTests = function(api) {
         if (running) { toast('Đang chạy rồi', 'err'); return; }
@@ -1402,37 +1452,11 @@
 
         renderTable(api, []);
 
-        var promises = reqs.map(function(req, idx) {
-            return runSingleTest(api, req, idx + 1, cfg).then(function(r) {
-                results[api][idx] = r;
-                fill.style.width = ((idx + 1) / reqs.length * 100) + '%';
-                saveResults();
-                return r;
-            });
-        });
-
-        Promise.all(promises).then(function(allResults) {
-            renderTable(api, allResults);
-            progress.classList.remove('show');
-            running = false;
-            updateSummary(api);
-            updateExportButtons();
-            saveResults();
-            toast('Hoàn thành ' + reqs.length + ' test cho /' + api, 'ok');
-        }).catch(function(err) {
-            renderTable(api, results[api].filter(function(x) { return x; }));
-            progress.classList.remove('show');
-            running = false;
-            updateSummary(api);
-            updateExportButtons();
-            saveResults();
-            toast('Có lỗi xảy ra: ' + err.message, 'err');
-        });
+        // Run sequentially with delay to avoid rate limiting
+        runSequential(reqs, api, cfg, 0, [], progress, fill);
     };
 
-    function runSingleTest(api, body, idx, cfg, retryCount) {
-        retryCount = retryCount || 0;
-        var maxRetries = 3;
+    function runSingleTest(api, body, idx, cfg) {
         var start = Date.now();
         var result = {
             index: idx,
@@ -1462,18 +1486,10 @@
             result.time = ((Date.now() - start) / 1000).toFixed(1);
             result.debug = data.debug || null;
 
-            // Handle 429 rate limit with retry
+            // Handle 429 rate limit - no retry, just report error
             if (resp.status === 429 || result.code === 429) {
-                if (retryCount < maxRetries) {
-                    var delay = (retryCount + 1) * 2000; // 2s, 4s, 6s
-                    return new Promise(function(resolve) {
-                        setTimeout(function() {
-                            resolve(runSingleTest(api, body, idx, cfg, retryCount + 1));
-                        }, delay);
-                    });
-                }
                 result.status = 'error';
-                result.error = 'Rate limit (429) - max retries exceeded';
+                result.error = 'Rate limit (429)';
                 return result;
             }
 
@@ -1763,7 +1779,7 @@
         document.getElementById('summary-' + api).innerHTML = html;
     }
 
-    // Run all APIs
+    // Run all APIs sequentially
     window.runAllApis = function() {
         if (running) { toast('Đang chạy rồi', 'err'); return; }
 
@@ -1778,69 +1794,122 @@
 
         for (var i = 0; i < APIS.length; i++) {
             document.getElementById('card-status-' + APIS[i]).innerHTML = '<span class="spin"></span>';
-            document.getElementById('card-summary-' + APIS[i]).textContent = 'Đang chạy...';
+            document.getElementById('card-summary-' + APIS[i]).textContent = 'Chờ...';
         }
 
-        var completed = 0;
-        var apiPromises = [];
+        var completedApis = 0;
+        var totalTests = 0;
+        var completedTests = 0;
 
-        function markApiError(api, msg, skip) {
-            document.getElementById('card-status-' + api).innerHTML = '<span class="status status-err">' + (skip ? 'SKIP' : 'ERR') + '</span>';
-            document.getElementById('card-summary-' + api).textContent = msg;
-            completed++;
-            fill.style.width = (completed / APIS.length * 100) + '%';
+        // Calculate total tests
+        for (var k = 0; k < APIS.length; k++) {
+            var apiReqs = generateRequestsFromImages(APIS[k], cfg.images, cfg.profile);
+            if (apiReqs && apiReqs.length > 0) {
+                totalTests += apiReqs.length;
+            }
         }
 
-        for (var j = 0; j < APIS.length; j++) {
-            (function(api) {
-                var reqs = generateRequestsFromImages(api, cfg.images, cfg.profile);
+        function updateApiStatus(api) {
+            var data = results[api];
+            var stats = { passed: 0, failed: 0, blocked: 0 };
+            for (var m = 0; m < data.length; m++) {
+                var s = data[m] && data[m].status;
+                if (s === 'success') stats.passed++;
+                else if (s === 'blocked') stats.blocked++;
+                else stats.failed++;
+            }
 
-                if (!reqs || reqs.length === 0) {
-                    markApiError(api, 'Image URLs không hợp lệ hoặc chưa có ảnh', false);
+            var statusEl = document.getElementById('card-status-' + api);
+            var summaryEl = document.getElementById('card-summary-' + api);
+            statusEl.innerHTML = '<span class="status status-' + (stats.failed || stats.blocked ? 'err' : 'ok') + '">' + (stats.failed || stats.blocked ? 'FAIL' : 'OK') + '</span>';
+
+            var txt = stats.passed + '/' + data.length + ' passed';
+            if (stats.failed > 0) txt += ', ' + stats.failed + ' failed';
+            if (stats.blocked > 0) txt += ', ' + stats.blocked + ' blocked';
+            summaryEl.textContent = txt;
+
+            renderTable(api, data);
+            updateSummary(api);
+        }
+
+        // Run tests for one API sequentially, then move to next API
+        function runApiSequential(apiIndex) {
+            if (apiIndex >= APIS.length) {
+                // All APIs done
+                progress.classList.remove('show');
+                running = false;
+                updateExportButtons();
+                saveResults();
+                toast('Hoàn thành tất cả API tests', 'ok');
+                return;
+            }
+
+            var api = APIS[apiIndex];
+            var reqs = generateRequestsFromImages(api, cfg.images, cfg.profile);
+
+            if (!reqs || reqs.length === 0) {
+                document.getElementById('card-status-' + api).innerHTML = '<span class="status status-err">SKIP</span>';
+                document.getElementById('card-summary-' + api).textContent = 'Không có test';
+                completedApis++;
+                // Move to next API immediately
+                runApiSequential(apiIndex + 1);
+                return;
+            }
+
+            document.getElementById('card-summary-' + api).textContent = 'Đang chạy...';
+            results[api] = new Array(reqs.length);
+
+            // Run tests for this API sequentially
+            function runTestSequential(testIndex) {
+                if (testIndex >= reqs.length) {
+                    // This API done
+                    updateApiStatus(api);
+                    completedApis++;
+                    saveResults();
+                    // Move to next API after delay
+                    setTimeout(function() {
+                        runApiSequential(apiIndex + 1);
+                    }, API_CALL_DELAY);
                     return;
                 }
 
-                results[api] = new Array(reqs.length);
-                var testPromises = reqs.map(function(req, idx) {
-                    return runSingleTest(api, req, idx + 1, cfg).then(function(r) {
-                        results[api][idx] = r;
-                        return r;
-                    });
+                var req = reqs[testIndex];
+                runSingleTest(api, req, testIndex + 1, cfg).then(function(r) {
+                    results[api][testIndex] = r;
+                    completedTests++;
+                    fill.style.width = (completedTests / totalTests * 100) + '%';
+
+                    // Delay before next test
+                    setTimeout(function() {
+                        runTestSequential(testIndex + 1);
+                    }, API_CALL_DELAY);
+                }).catch(function(err) {
+                    results[api][testIndex] = {
+                        index: testIndex + 1,
+                        inputUrl: getInputUrl(api, req),
+                        body: req,
+                        status: 'error',
+                        error: err.message
+                    };
+                    completedTests++;
+                    fill.style.width = (completedTests / totalTests * 100) + '%';
+
+                    // Continue to next test
+                    setTimeout(function() {
+                        runTestSequential(testIndex + 1);
+                    }, API_CALL_DELAY);
                 });
+            }
 
-                var p = Promise.all(testPromises).then(function(allResults) {
-                    var data = results[api];
-                    var stats = { passed: 0, failed: 0, blocked: 0 };
-                    for (var m = 0; m < data.length; m++) {
-                        var s = data[m] && data[m].status;
-                        if (s === 'success') stats.passed++;
-                        else if (s === 'blocked') stats.blocked++;
-                        else stats.failed++;
-                    }
-
-                    var statusEl = document.getElementById('card-status-' + api);
-                    var summaryEl = document.getElementById('card-summary-' + api);
-                    statusEl.innerHTML = '<span class="status status-' + (stats.failed || stats.blocked ? 'err' : 'ok') + '">' + (stats.failed || stats.blocked ? 'FAIL' : 'OK') + '</span>';
-                    
-                    var txt = stats.passed + '/' + data.length + ' passed';
-                    if (stats.failed > 0) txt += ', ' + stats.failed + ' failed';
-                    if (stats.blocked > 0) txt += ', ' + stats.blocked + ' blocked';
-                    summaryEl.textContent = txt;
-
-                    renderTable(api, data);
-                    updateSummary(api);
-                    completed++;
-                    fill.style.width = (completed / APIS.length * 100) + '%';
-                });
-
-                apiPromises.push(p);
-            })(APIS[j]);
+            runTestSequential(0);
         }
 
-        Promise.all(apiPromises).then(function() {
-            progress.classList.remove('show');
-            running = false;
-            updateExportButtons();
+        runApiSequential(0);
+    };
+
+    // Legacy compatibility - keep old function signature
+    window._oldRunAllApis = function() {
+        // Old parallel implementation removed
             toast('Hoàn thành tất cả test API', 'ok');
         });
     };

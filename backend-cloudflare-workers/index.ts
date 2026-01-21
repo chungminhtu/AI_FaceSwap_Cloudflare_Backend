@@ -135,8 +135,19 @@ const generateVertexPromptWithRetry = async (
 const checkRateLimit = async (env: Env, request: Request, path: string): Promise<boolean> => {
   if (!env.RATE_LIMITER) return true;
   
-  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0].trim() || 'unknown';
-  const result = await env.RATE_LIMITER.limit({ key: `${ip}:${path}` });
+  const cfIp = request.headers.get('CF-Connecting-IP');
+  const forwardedFor = request.headers.get('X-Forwarded-For');
+  const ip = cfIp || forwardedFor?.split(',')[0].trim();
+  
+  if (!ip) {
+    const cfRay = request.headers.get('CF-Ray') || 'no-ray';
+    const rateLimitKey = `ray-${cfRay}:${path}`;
+    const result = await env.RATE_LIMITER.limit({ key: rateLimitKey });
+    return result.success;
+  }
+  
+  const rateLimitKey = `${ip}:${path}`;
+  const result = await env.RATE_LIMITER.limit({ key: rateLimitKey });
   return result.success;
 };
 
@@ -568,6 +579,8 @@ const buildFlatDebug = (result: FaceSwapResponse, promptPayload?: any): Record<s
     VertexResponse?: any;
     Prompt?: any;
     CurlCommand?: string;
+    HttpStatus?: number;
+    HttpStatusText?: string;
   };
 
   // Get curl from Debug object (preferred) or CurlCommand field
@@ -578,7 +591,19 @@ const buildFlatDebug = (result: FaceSwapResponse, promptPayload?: any): Record<s
 
   // Build flat debug object with no duplicates
   const flatDebug = compact({
+    // Always show source when there's an error - helps distinguish Vertex errors from backend errors
+    ...(result.StatusCode >= 400 || result.Error ? {
+      source: 'vertex',  // This error came from Vertex AI, not backend rate limiter
+      vertexHttpStatus: extended.HttpStatus,
+      vertexHttpStatusText: extended.HttpStatusText,
+      ...(debug?.retryAttempts !== undefined ? {
+        retryAttempts: debug.retryAttempts,
+        totalAttempts: debug.totalAttempts || (debug.retryAttempts + 1),
+        failedAfterRetries: debug.retryAttempts > 0 ? `Failed after ${debug.retryAttempts} retry attempt(s)` : 'Failed on initial attempt'
+      } : {}),
+    } : {}),
     curl,
+    endpoint: debug?.endpoint,
     model: debug?.model,
     prompt: prompt ? (typeof prompt === 'string' ? prompt.substring(0, 500) : prompt) : undefined,
     aspectRatio: debug?.aspectRatio,
@@ -723,7 +748,7 @@ export default {
         status: 'error',
         message: 'Rate limit exceeded',
         code: 429,
-        ...(debugEnabled ? { debug: { path, method: request.method } } : {})
+        ...(debugEnabled ? { debug: { source: 'backend_rate_limiter', errorSource: 'backend', path, method: request.method } } : {})
       }, 429, request, env);
     }
 
@@ -4421,56 +4446,12 @@ export default {
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', faceSwapResult.Message || 'Unknown error');
 
-            let sanitizedVertexFailure: any = null;
-            const fullResponse = (faceSwapResult as any).FullResponse;
-            if (fullResponse) {
-              try {
-                const parsedResponse = typeof fullResponse === 'string' ? JSON.parse(fullResponse) : fullResponse;
-                // Efficient sanitization - only sanitize 'data' field if it's a long string
-                if (typeof parsedResponse === 'object' && parsedResponse !== null) {
-                  sanitizedVertexFailure = { ...parsedResponse };
-                  if (sanitizedVertexFailure.data && typeof sanitizedVertexFailure.data === 'string' && sanitizedVertexFailure.data.length > 100) {
-                    sanitizedVertexFailure.data = '...';
-                  }
-                } else {
-                  sanitizedVertexFailure = parsedResponse;
-                }
-              } catch (parseErr) {
-                if (typeof fullResponse === 'string') {
-                  sanitizedVertexFailure = fullResponse.substring(0, 500) + (fullResponse.length > 500 ? '...' : '');
-                } else {
-                  sanitizedVertexFailure = fullResponse;
-                }
-              }
-            }
-
-            // Extract detailed error information from Vertex AI response
-            let errorDetails: any = null;
-            const fullResponse2 = (faceSwapResult as any).FullResponse || (faceSwapResult as any).Error;
-            if (fullResponse2) {
-              try {
-                const parsedError = typeof fullResponse2 === 'string' ? JSON.parse(fullResponse2) : fullResponse2;
-                errorDetails = parsedError;
-              } catch {
-                errorDetails = typeof fullResponse2 === 'string' ? fullResponse2 : JSON.stringify(fullResponse2);
-              }
-            }
-
-            // Keep message simple - detailed error is in debug section
-            const enhancedMessage = faceSwapResult.Message || 'Nano Banana provider failed to generate image';
-
-            const flatDebug = buildFlatDebug(faceSwapResult, vertexPromptPayload);
-            const debugPayload = debugEnabled ? compact({
-              request: requestDebug,
-              ...flatDebug,
-              fullError: errorDetails,
-              parsedError: (faceSwapResult as any).ParsedError,
-              fullResponse: (faceSwapResult as any).FullResponse,
-            }) : undefined;
-
             const failureCode = faceSwapResult.StatusCode || 500;
-            // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
             const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+            const flatDebug = debugEnabled ? buildFlatDebug(faceSwapResult, vertexPromptPayload) : undefined;
+            const debugPayload = debugEnabled ? compact({
+              ...flatDebug,
+            }) : undefined;
 
             return jsonResponse({
               data: null,
@@ -4488,13 +4469,12 @@ export default {
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           const failureCode = faceSwapResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const flatDebug = debugEnabled ? buildFlatDebug(faceSwapResult, vertexPromptPayload) : undefined;
           const debugPayload = debugEnabled ? compact({
-            request: requestDebug,
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
@@ -4756,9 +4736,9 @@ export default {
             const debugEnabled = isDebugEnabled(env);
             const flatDebug = debugEnabled ? buildFlatDebug(backgroundGenResult) : undefined;
             const debugPayload = debugEnabled ? compact({
-              customPrompt: body.custom_prompt,
               ...flatDebug,
             }) : undefined;
+
             return jsonResponse({
               data: null,
               status: 'error',
@@ -4839,14 +4819,13 @@ export default {
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
           const failureCode = mergeResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(mergeResult) : undefined;
           const debugPayload = debugEnabled ? compact({
-            request: requestDebug,
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
@@ -5045,21 +5024,19 @@ export default {
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
           const failureCode = upscalerResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(upscalerResult) : undefined;
           const debugPayload = debugEnabled ? compact({
             ...flatDebug,
-            rawError: upscalerResult.Error,
-            fullResponse: (upscalerResult as any).FullResponse,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
             message: '',
             code: failureCode,
-            ...(debugEnabled && debugPayload ? { debug: debugPayload } : {}),
+            ...(debugPayload ? { debug: debugPayload } : {}),
           }, httpStatus, request, env);
         }
 
@@ -5177,13 +5154,13 @@ export default {
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
           const failureCode = enhancedResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(enhancedResult) : undefined;
           const debugPayload = debugEnabled ? compact({
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
@@ -5314,13 +5291,13 @@ export default {
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
           const failureCode = beautyResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(beautyResult) : undefined;
           const debugPayload = debugEnabled ? compact({
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
@@ -5622,6 +5599,7 @@ export default {
           const debugPayload = debugEnabled ? compact({
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
@@ -5708,23 +5686,24 @@ export default {
         const modelParam = body.model;
 
         const restoredResult = await callNanoBanana(
-          IMAGE_PROCESSING_PROMPTS.FILTER,
+          IMAGE_PROCESSING_PROMPTS.RESTORE,
           body.image_url,
           body.image_url,
           env,
           validAspectRatio,
-          modelParam
+          modelParam,
+          { skipFacialPreservation: true }
         );
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
           const failureCode = restoredResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(restoredResult) : undefined;
           const debugPayload = debugEnabled ? compact({
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
@@ -5818,13 +5797,13 @@ export default {
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
           const failureCode = agingResult.StatusCode || 500;
-          // HTTP status must be 200-599, so use 422 for Vision/Vertex errors (1000+), 500 for others
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
           const debugPayload = debugEnabled ? compact({
             ...flatDebug,
           }) : undefined;
+
           return jsonResponse({
             data: null,
             status: 'error',
