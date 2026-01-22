@@ -467,6 +467,16 @@ const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string 
   throw new Error('Unable to determine R2 public URL. Configure R2_DOMAIN environment variable.');
 };
 
+const ensureFullUrl = (url: string | undefined | null, env: Env, fallbackOrigin: string): string | undefined => {
+  if (!url) return undefined;
+  // Already a full URL
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  // Convert R2 key to full URL
+  return getR2PublicUrl(env, url, fallbackOrigin);
+};
+
 const extractR2KeyFromUrl = (url: string): string | null => {
   if (!url) return null;
   try {
@@ -3055,7 +3065,7 @@ export default {
           user_id: userId || undefined,
           name: body.name || undefined,
           email: body.email || undefined,
-          avatar_url: body.avatar_url || undefined,
+          avatar_url: ensureFullUrl(body.avatar_url, env, requestUrl.origin),
           preferences: body.preferences || undefined,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -3128,7 +3138,7 @@ export default {
           user_id: (result as any).user_id || undefined,
           name: (result as any).name || undefined,
           email: (result as any).email || undefined,
-          avatar_url: (result as any).avatar_url || undefined,
+          avatar_url: ensureFullUrl((result as any).avatar_url, env, requestUrl.origin),
           preferences: (result as any).preferences || undefined,
           created_at: new Date((result as any).created_at * 1000).toISOString(),
           updated_at: new Date((result as any).updated_at * 1000).toISOString()
@@ -3199,7 +3209,7 @@ export default {
           user_id: (updatedResult as any).user_id || undefined,
           name: (updatedResult as any).name || undefined,
           email: (updatedResult as any).email || undefined,
-          avatar_url: (updatedResult as any).avatar_url || undefined,
+          avatar_url: ensureFullUrl((updatedResult as any).avatar_url, env, requestUrl.origin),
           preferences: (updatedResult as any).preferences || undefined,
           created_at: new Date((updatedResult as any).created_at * 1000).toISOString(),
           updated_at: new Date((updatedResult as any).updated_at * 1000).toISOString()
@@ -3233,7 +3243,7 @@ export default {
           user_id: row.user_id || undefined,
           name: row.name || undefined,
           email: row.email || undefined,
-          avatar_url: row.avatar_url || undefined,
+          avatar_url: ensureFullUrl(row.avatar_url, env, requestUrl.origin),
           preferences: row.preferences || undefined,
           created_at: new Date(row.created_at * 1000).toISOString(),
           updated_at: new Date(row.updated_at * 1000).toISOString()
