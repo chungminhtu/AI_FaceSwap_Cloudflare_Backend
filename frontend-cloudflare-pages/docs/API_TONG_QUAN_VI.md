@@ -9,7 +9,7 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ## Mục lục
 
 - [Xác thực API](#xác-thực-api-api-authentication)
-- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-14-apis)
+- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-15-apis)
 - [Error Codes Reference](#error-codes-reference)
 - [API Endpoints (Chi tiết)](#api-endpoints-chi-tiết)
   - [1. Upload & Quản lý File](#1-upload--quản-lý-file)
@@ -109,11 +109,11 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (14 APIs)
+## APIs cần tích hợp với mobile (15 APIs)
 
 **Tổng số API endpoints: 26**
 
-### APIs cần tích hợp với mobile (14 APIs)
+### APIs cần tích hợp với mobile (15 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
@@ -126,13 +126,13 @@ Khi API key không hợp lệ hoặc thiếu:
 9. POST `/upscaler4k` - AI upscale ảnh lên 4K
 10. POST `/profiles` - Tạo profile
 11. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
-12. GET `/selfies` - Liệt kê selfies
-13. GET `/results` - Liệt kê results (generated images)
-14. DELETE `/results/{id}` - Xóa result
+12. PUT `/profiles/{id}` - Cập nhật profile
+13. GET `/selfies` - Liệt kê selfies
+14. GET `/results` - Liệt kê results (generated images)
+15. DELETE `/results/{id}` - Xóa result
 
-### APIs không cần tích hợp với mobile (12 APIs)
+### APIs không cần tích hợp với mobile (11 APIs)
 
-15. PUT `/profiles/{id}` - Cập nhật profile
 16. GET `/profiles` - Liệt kê profiles
 17. POST `/upload-url` (type=preset) - Upload preset (backend only)
 18. GET `/presets` - Liệt kê presets
@@ -2073,7 +2073,7 @@ Endpoint `/upload-proxy/*` có hỗ trợ thêm method PUT trong CORS headers.
 
 **Tổng số API endpoints: 26**
 
-Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-14-apis) ở đầu tài liệu.
+Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-15-apis) ở đầu tài liệu.
 
 ---
 
