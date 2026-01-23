@@ -3108,13 +3108,10 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}, args = [], 
       logger.addStep('[Cloudflare] KV Namespace', 'Checking/creating KV namespace');
     }
   }
-  // Database migrations run separately via npm run db:migrate
-  // Don't add migration step to deployment logger
-  /*
-  if (DEPLOY_DB) {
+  // Add migration step when in migrate-only mode
+  if (migrateOnly && DEPLOY_DB) {
     logger.addStep('Running database migrations', 'Executing pending migrations');
   }
-  */
   if (DEPLOY_SECRETS) {
     logger.addStep('Deploying secrets', 'Configuring environment secrets');
   }
@@ -3261,19 +3258,9 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}, args = [], 
     results = await Promise.all(deployments);
   }
 
-  // After all environments complete, rename migration files (for migrate-only mode)
-  if (migrateOnly) {
-    const allSuccessful = results.every(r => r.success);
-    if (allSuccessful) {
-      console.log(`\n${colors.cyan}Renaming executed migration files...${colors.reset}`);
-      const renameResult = await renameMigrationFiles(cwd);
-      if (renameResult.renamed > 0) {
-        console.log(`${colors.green}✓ Renamed ${renameResult.renamed} migration file(s)${colors.reset}`);
-      }
-    } else {
-      console.log(`\n${colors.yellow}⚠ Skipping migration file rename due to failures${colors.reset}`);
-    }
-  }
+  // Migration files are now renamed by the child process after successful execution
+  // (when DEFER_RENAME is true and migrations run successfully)
+  // No need to rename files here - the child handles it with skipRename: false
 
   const deploymentTime = new Date();
   const vietnameseTime = formatVietnameseDateTime(deploymentTime);
@@ -3547,9 +3534,29 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         promptCacheResult = await utils.ensureKVNamespace(cwd, config.promptCacheKV.namespaceName);
       }
 
-      // Database migrations are now handled separately via: npm run db:migrate
-      // This allows better control and avoids running migrations on every deployment
-      if (dbResult && !dbResult.skipped) {
+      // Database migrations: run when DEFER_RENAME is true (migrate-only mode) or skip otherwise
+      if (DEFER_RENAME && DEPLOY_DB && dbResult && !dbResult.skipped) {
+        // In migrate-only mode, actually run migrations and rename files after successful execution
+        // Note: Environments run sequentially in migrate-only mode, so no race condition for file rename
+        report('Running database migrations', 'running', 'Executing pending migrations');
+        const migrationResult = await runMigrations(config, cwd, cfAccountId, cfToken, { skipRename: false });
+        if (migrationResult.success) {
+          if (migrationResult.count === 0) {
+            report('Running database migrations', 'completed', 'No pending migrations');
+          } else {
+            const details = migrationResult.executed > 0 && migrationResult.skipped > 0
+              ? `${migrationResult.executed} executed, ${migrationResult.skipped} skipped`
+              : migrationResult.executed > 0
+              ? `${migrationResult.executed} executed`
+              : `${migrationResult.skipped} skipped`;
+            report('Running database migrations', 'completed', details);
+          }
+        } else {
+          report('Running database migrations', 'failed', migrationResult.error || 'Migration failed');
+          throw new Error(`Migration failed: ${migrationResult.error}`);
+        }
+      } else if (dbResult && !dbResult.skipped) {
+        // Normal deployment: skip migrations (use npm run db:migrate)
         report('Running database migrations', 'completed', 'Skipped (use npm run db:migrate)');
       } else if (dbResult && dbResult.skipped) {
         report('Running database migrations', 'warning', 'Skipped (database setup skipped)');

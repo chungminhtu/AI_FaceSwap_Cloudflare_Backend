@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS selfies (
   profile_id TEXT NOT NULL, -- Profile that owns this selfie
   action TEXT, -- Action type (e.g., "faceswap", "default", etc.) - determines retention policy
   filename TEXT, -- Original filename for override detection (same profile_id + filename = override)
+  dimensions TEXT, -- Image dimensions in "widthxheight" format (e.g., "128x340") for WaveSpeed API
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );

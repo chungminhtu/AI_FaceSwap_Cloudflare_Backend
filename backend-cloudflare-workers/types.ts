@@ -18,6 +18,7 @@ export interface FaceSwapRequest {
   model?: string | number; // Optional: Model parameter ("2.5" for gemini-2.5-flash-image, "3" for gemini-3-pro-image-preview). Default: "2.5"
   action?: string; // Optional: Action type to validate selfies match (e.g., "faceswap", "wedding", "4k")
   format?: string; // Optional: Preferred format for preset thumbnails ('webp', 'lottie', 'avif'). Default: 'webp'
+  provider?: 'vertex' | 'wavespeed'; // Optional: Override IMAGE_PROVIDER config (null = use config, 'vertex', or 'wavespeed')
 }
 
 export interface BackgroundRequest {

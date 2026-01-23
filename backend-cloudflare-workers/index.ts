@@ -728,27 +728,8 @@ const augmentVertexPrompt = (
 };
 
 const transformPromptForFilter = (promptPayload: any): any => {
-  if (!promptPayload || typeof promptPayload !== 'object') {
-    return promptPayload;
-  }
-
-  const clone = { ...promptPayload };
-  
-  if (typeof clone.prompt === 'string') {
-    let promptText = clone.prompt;
-    
-    if (promptText.includes('Replace the original face')) {
-      promptText = promptText.replace(/Replace the original face with the face from the image I will upload later\.[^.]*/g, VERTEX_AI_PROMPTS.FILTER_STYLE_APPLICATION_INSTRUCTION);
-    } else if (!promptText.includes('Apply this creative style')) {
-      promptText = `${promptText} ${VERTEX_AI_PROMPTS.FILTER_STYLE_APPLICATION_INSTRUCTION}`;
-    }
-    
-    clone.prompt = promptText;
-  } else {
-    clone.prompt = VERTEX_AI_PROMPTS.FILTER_DEFAULT_PROMPT;
-  }
-  
-  return clone;
+  // Simply return the prompt as-is without any transformation
+  return promptPayload;
 };
 
 export default {
@@ -839,6 +820,7 @@ export default {
         let isFilterMode: boolean = false;
         let customPromptText: string | null = null;
         let action: string | null = null;
+        let dimensionsArray: (string | null)[] = []; // Array of dimensions in same order as files
 
         // Support both multipart/form-data (file upload) and application/json (URL upload)
         if (contentType.toLowerCase().includes('multipart/form-data')) {
@@ -891,6 +873,23 @@ export default {
           // Ensure action is always a string (formData.get can return File if name collision)
           const actionEntry = formData.get('action');
           action = (actionEntry && typeof actionEntry === 'string') ? actionEntry : null;
+          // Parse dimensions as JSON array (format: ["widthxheight", "widthxheight", ...])
+          // Also supports single string for backward compatibility
+          const dimensionsEntry = formData.get('dimensions');
+          if (dimensionsEntry && typeof dimensionsEntry === 'string') {
+            try {
+              const parsed = JSON.parse(dimensionsEntry);
+              if (Array.isArray(parsed)) {
+                dimensionsArray = parsed;
+              } else {
+                // Single string (backward compatibility)
+                dimensionsArray = [dimensionsEntry];
+              }
+            } catch {
+              // Not JSON, treat as single dimension string (backward compatibility)
+              dimensionsArray = [dimensionsEntry];
+            }
+          }
         } else if (contentType.toLowerCase().includes('application/json')) {
           const body = await request.json() as {
             image_urls?: string[];
@@ -902,6 +901,7 @@ export default {
             is_filter_mode?: boolean;
             custom_prompt_text?: string;
             action?: string;
+            dimensions?: string | (string | null)[];
           };
           imageUrls = body.image_urls || (body.image_url ? [body.image_url] : []);
           type = body.type || '';
@@ -911,6 +911,14 @@ export default {
           isFilterMode = body.is_filter_mode === true;
           customPromptText = body.custom_prompt_text || null;
           action = body.action || null;
+          // Handle dimensions as array or single string
+          if (body.dimensions) {
+            if (Array.isArray(body.dimensions)) {
+              dimensionsArray = body.dimensions;
+            } else {
+              dimensionsArray = [body.dimensions];
+            }
+          }
         } else {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { contentType, path } : undefined, request, env);
@@ -1439,16 +1447,19 @@ export default {
 
             try {
               let dbResult;
+              // Get dimensions for this specific file (by index)
+              const fileDimensions = dimensionsArray[index] || null;
+
               if (isOverride) {
                 // UPDATE existing selfie (same profile_id + filename)
                 dbResult = await DB.prepare(
-                  'UPDATE selfies SET ext = ?, action = ?, created_at = ? WHERE id = ? AND profile_id = ?'
-                ).bind(validExt, validAction, Math.floor(validCreatedAt), validId, validProfileId).run();
+                  'UPDATE selfies SET ext = ?, action = ?, dimensions = ?, created_at = ? WHERE id = ? AND profile_id = ?'
+                ).bind(validExt, validAction, fileDimensions, Math.floor(validCreatedAt), validId, validProfileId).run();
               } else {
                 // INSERT new selfie with filename
                 dbResult = await DB.prepare(
-                  'INSERT INTO selfies (id, ext, profile_id, action, filename, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-                ).bind(validId, validExt, validProfileId, validAction, validFilename, Math.floor(validCreatedAt)).run();
+                  'INSERT INTO selfies (id, ext, profile_id, action, filename, dimensions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                ).bind(validId, validExt, validProfileId, validAction, validFilename, fileDimensions, Math.floor(validCreatedAt)).run();
               }
 
               if (!dbResult.success) {
@@ -4215,11 +4226,11 @@ export default {
         }
 
         if (hasSelfieIds && body.selfie_ids) {
-          // Use JOIN to validate selfies belong to profile and include action for validation
+          // Use JOIN to validate selfies belong to profile and include action/dimensions for validation
           for (const selfieId of body.selfie_ids) {
             queries.push(
               DB.prepare(`
-                SELECT s.id, s.ext, s.action, p.id as profile_exists
+                SELECT s.id, s.ext, s.action, s.dimensions, p.id as profile_exists
                 FROM selfies s
                 INNER JOIN profiles p ON s.profile_id = p.id
                 WHERE s.id = ? AND p.id = ?
@@ -4328,6 +4339,7 @@ export default {
         const selfieUrls: string[] = [];
         const selfieIds: string[] = [];
         const selfieActions: string[] = [];
+        const selfieDimensions: (string | null)[] = [];
         const selfieStartIndex = hasPresetId ? 2 : 1;
         
         // Get requested action for validation (if provided)
@@ -4373,12 +4385,16 @@ export default {
             selfieUrls.push(fullUrl);
             selfieIds.push(body.selfie_ids[i]);
             selfieActions.push(selfieActionRaw || 'faceswap'); // Use raw value from DB, default to faceswap if null
+            // Extract dimensions from database (format: "widthxheight", e.g., "128x340")
+            const selfieDimensionsRaw = (selfieResult as any).dimensions ? String((selfieResult as any).dimensions) : null;
+            selfieDimensions.push(selfieDimensionsRaw);
           }
         } else if (hasSelfieUrls) {
           selfieUrls.push(...body.selfie_image_urls!);
-          // For URL-based selfies, action is unknown, use requested action or default
+          // For URL-based selfies, action and dimensions are unknown
           for (let i = 0; i < body.selfie_image_urls!.length; i++) {
             selfieActions.push(requestedAction || 'faceswap');
+            selfieDimensions.push(null); // No dimensions available for URL-based selfies
           }
         }
 
@@ -4396,6 +4412,8 @@ export default {
           presetImageUrl: hasPresetUrl ? body.preset_image_url : undefined,
           presetName: presetName,
           selfieIds: selfieIds,
+          selfieDimensions: selfieDimensions,
+          requestedAspectRatio: body.aspect_ratio,
           additionalPrompt: body.additional_prompt,
         });
 
@@ -4481,20 +4499,77 @@ export default {
             }, request, env);
           }
         }
-        const augmentedPromptPayload = augmentVertexPrompt(
-          storedPromptPayload,
-          body.additional_prompt
-        );
-        const vertexPromptPayload = augmentedPromptPayload;
-
         // Resolve aspect ratio (faceswap doesn't support "original")
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, null, env, { allowOriginal: false });
-        // NOTE: There is a known issue with Gemini 2.5 Flash Image where aspectRatio parameter
-        // may not work correctly and may always return 1:1 images regardless of the specified ratio.
-        // This is a limitation of the current API version.
-        // For now, use the first selfie. In a full implementation, you might want to combine multiple selfies
         const modelParam = body.model;
-        const faceSwapResult = await callNanoBanana(augmentedPromptPayload, targetUrl, sourceUrl, env, validAspectRatio, modelParam);
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+
+        // Determine if user explicitly specified aspect_ratio
+        // If aspect_ratio is explicitly set, use it (don't pass selfie dimensions as size)
+        // If not specified or "original", use selfie dimensions to preserve original size
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        const firstSelfieDimensions = selfieDimensions.length > 0 ? selfieDimensions[0] : null;
+        // Only pass size when user didn't explicitly set aspect_ratio
+        const sizeForWaveSpeed = userExplicitlySetAspectRatio ? undefined : (firstSelfieDimensions || undefined);
+
+        let faceSwapResult;
+        let vertexPromptPayload: any;
+
+        if (effectiveProvider === 'wavespeed') {
+          // WaveSpeed mode: Use specific faceswap prompt, don't use preset's prompt_json
+          // Determine single vs couple mode based on number of selfies
+          const selfieCount = selfieUrls.length;
+          const isCoupleMode = selfieCount >= 2;
+
+          let wavespeedFaceswapPrompt: string;
+          let wavespeedImages: string[];
+
+          if (isCoupleMode) {
+            // Couple mode: 2 selfies + 1 preset
+            // image1 = selfie1, image2 = selfie2, image3 = preset
+            wavespeedFaceswapPrompt = `Put both persons in image1 and image2 into image3, keep all the makeup same as preset.`;
+            wavespeedImages = [selfieUrls[0], selfieUrls[1], targetUrl];
+          } else {
+            // Single mode: 1 selfie + 1 preset
+            // image1 = selfie, image2 = preset
+            wavespeedFaceswapPrompt = `Put the person in image1 into image2, keep all the makeup same as preset.`;
+            wavespeedImages = [selfieUrls[0], targetUrl];
+          }
+
+          // Add additional_prompt if provided
+          const finalPrompt = body.additional_prompt
+            ? `${wavespeedFaceswapPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
+            : wavespeedFaceswapPrompt;
+
+          vertexPromptPayload = finalPrompt;
+
+          faceSwapResult = await callNanoBanana(
+            finalPrompt,
+            targetUrl,
+            wavespeedImages,  // Use constructed image array
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: 'wavespeed', size: sizeForWaveSpeed }
+          );
+        } else {
+          // Vertex mode: Use prompt_json from preset metadata
+          const augmentedPromptPayload = augmentVertexPrompt(
+            storedPromptPayload,
+            body.additional_prompt
+          );
+          vertexPromptPayload = augmentedPromptPayload;
+
+          faceSwapResult = await callNanoBanana(
+            augmentedPromptPayload,
+            targetUrl,
+            sourceUrl,
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: body.provider, size: sizeForWaveSpeed }
+          );
+        }
 
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
             console.error('[Vertex] Nano Banana provider failed:', faceSwapResult.Message || 'Unknown error');
@@ -5101,9 +5176,9 @@ export default {
 
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
-      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -5170,7 +5245,8 @@ export default {
           body.image_url,
           env,
           validAspectRatio,
-          modelParam
+          modelParam,
+          { provider: body.provider }
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
@@ -5247,9 +5323,9 @@ export default {
 
     // Handle beauty endpoint
     if (path === '/beauty' && request.method === 'POST') {
-      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -5307,7 +5383,8 @@ export default {
           body.image_url,
           env,
           validAspectRatio,
-          modelParam
+          modelParam,
+          { provider: body.provider }
         );
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
@@ -5385,6 +5462,7 @@ export default {
         aspect_ratio?: string; 
         model?: string | number;
         additional_prompt?: string;
+        provider?: 'vertex' | 'wavespeed';
       } | undefined;
       try {
         body = await request.json() as { 
@@ -5591,27 +5669,56 @@ export default {
           }
         }
 
-        if (!storedPromptPayload) {
-          return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { error: 'Preset must have prompt_json metadata for filter mode', path } : undefined, request, env);
-        }
-
-        const transformedPrompt = transformPromptForFilter(storedPromptPayload);
-        const augmentedPrompt = augmentVertexPrompt(
-          transformedPrompt,
-          body.additional_prompt
-        );
-
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieImageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
-        const filterResult = await callNanoBanana(
-          augmentedPrompt,
-          selfieImageUrl,
-          selfieImageUrl,
-          env,
-          validAspectRatio,
-          modelParam
-        );
+        let filterResult;
+
+        if (effectiveProvider === 'wavespeed') {
+          // WaveSpeed mode: Use specific filter prompt, send [selfie, preset] images
+          // Don't use prompt_json - WaveSpeed analyzes the preset image directly
+          const wavespeedFilterPrompt = `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.
+
+Apply the style from image 2 to image 1.`;
+
+          // Add additional_prompt if provided
+          const finalPrompt = body.additional_prompt
+            ? `${wavespeedFilterPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
+            : wavespeedFilterPrompt;
+
+          // For WaveSpeed filter: image1=selfie, image2=preset (style source)
+          filterResult = await callNanoBanana(
+            finalPrompt,
+            selfieImageUrl,  // target (will be image1)
+            [selfieImageUrl, presetImageUrl],  // sources: [selfie, preset] for WaveSpeed
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: 'wavespeed' }
+          );
+        } else {
+          // Vertex mode: Use prompt_json from preset metadata
+          if (!storedPromptPayload) {
+            return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { error: 'Preset must have prompt_json metadata for filter mode (required for Vertex provider)', path } : undefined, request, env);
+          }
+
+          const transformedPrompt = transformPromptForFilter(storedPromptPayload);
+          const augmentedPrompt = augmentVertexPrompt(
+            transformedPrompt,
+            body.additional_prompt
+          );
+
+          filterResult = await callNanoBanana(
+            augmentedPrompt,
+            selfieImageUrl,
+            selfieImageUrl,
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: body.provider }
+          );
+        }
 
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
           const failureCode = filterResult.StatusCode || 500;
@@ -5675,9 +5782,9 @@ export default {
 
     // Handle restore endpoint
     if (path === '/restore' && request.method === 'POST') {
-      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
+      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -5713,7 +5820,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { skipFacialPreservation: true }
+          { skipFacialPreservation: true, provider: body.provider }
         );
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
@@ -5773,9 +5880,9 @@ export default {
 
     // Handle aging endpoint
     if (path === '/aging' && request.method === 'POST') {
-      let body: { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number } | undefined;
+      let body: { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number };
+        body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
@@ -5813,7 +5920,8 @@ export default {
           body.image_url, // Use same image as target and source for aging
           env,
           validAspectRatio,
-          modelParam
+          modelParam,
+          { provider: body.provider }
         );
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {

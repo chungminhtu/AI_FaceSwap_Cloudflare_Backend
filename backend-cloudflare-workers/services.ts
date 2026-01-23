@@ -143,20 +143,18 @@ export const callNanoBanana = async (
   env: Env,
   aspectRatio?: string,
   modelParam?: string | number,
-  options?: { skipFacialPreservation?: boolean }
+  options?: { skipFacialPreservation?: boolean; provider?: 'vertex' | 'wavespeed'; size?: string }
 ): Promise<FaceSwapResponse> => {
-  // Check IMAGE_PROVIDER to route to WaveSpeed or Vertex AI
-  if (env.IMAGE_PROVIDER === 'wavespeed') {
-    const sourceUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
-    const firstSourceUrl = sourceUrls[0];
-
-    // Detect operation type: faceswap (target != source) vs edit (target == source)
-    const isFaceSwapMode = targetUrl !== firstSourceUrl;
-
-    // WaveSpeed Edit API for both faceswap and other operations
-    // For faceswap: send [selfie, target] images with prompt text
-    // For edit: send source images with prompt
-    const imageUrls = isFaceSwapMode ? [firstSourceUrl, targetUrl] : sourceUrls;
+  // Check provider parameter first, then fall back to env.IMAGE_PROVIDER
+  const effectiveProvider = options?.provider || env.IMAGE_PROVIDER;
+  
+  if (effectiveProvider === 'wavespeed') {
+    // WaveSpeed Edit API: use sourceUrl directly as the images array
+    // The caller is responsible for constructing the correct image order:
+    // - Filter: [selfie, preset] - apply style from image2 to image1
+    // - Faceswap single: [selfie, preset] - put person from image1 into image2
+    // - Faceswap couple: [selfie1, selfie2, preset] - put persons from image1,2 into image3
+    const imageUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
 
     // Extract prompt text: if object with .prompt field, use that; otherwise use string directly
     let promptText: string;
@@ -168,7 +166,7 @@ export const callNanoBanana = async (
       promptText = JSON.stringify(prompt);
     }
 
-    return callWaveSpeedEdit(imageUrls, promptText, env, aspectRatio);
+    return callWaveSpeedEdit(imageUrls, promptText, env, aspectRatio, options?.size);
   }
 
   // Default: Use Vertex AI Gemini API with image generation support
@@ -2192,6 +2190,7 @@ export const callUpscaler4k = async (
     }
 
     const startTime = Date.now();
+    // Use 120s timeout for sync mode (same as face swap API)
     const response = await fetchWithTimeout(apiEndpoint, {
       method: 'POST',
       headers: {
@@ -2199,7 +2198,7 @@ export const callUpscaler4k = async (
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify(requestBody),
-    }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
+    }, 120000);
 
     const rawResponse = await response.text();
     const durationMs = Date.now() - startTime;
@@ -2236,95 +2235,42 @@ export const callUpscaler4k = async (
       }
 
       let resultImageUrl: string | null = null;
-      let requestId: string | null = null;
 
-      requestId = data.id || data.requestId || data.request_id || data.data?.id || data.data?.requestId || data.data?.request_id;
-
-      if (!requestId) {
-        return {
-          Success: false,
-          Message: 'WaveSpeed API did not return a request ID',
-          StatusCode: 500,
-          Error: 'No requestId in response',
-          Debug: debugInfo,
-        };
-      }
-
-      const resultEndpoint = API_ENDPOINTS.WAVESPEED_RESULT(requestId);
-
-      for (let attempt = 0; attempt < TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS; attempt++) {
-        let delay = 0;
-        if (attempt === 0) {
-          delay = TIMEOUT_CONFIG.POLLING.FIRST_DELAY;
-        } else if (attempt <= 2) {
-          delay = TIMEOUT_CONFIG.POLLING.SECOND_THIRD_DELAY;
-        } else {
-          delay = TIMEOUT_CONFIG.POLLING.SUBSEQUENT_DELAY;
+      // Helper to extract URL from various response formats
+      const extractResultUrl = (respData: any): string | null => {
+        if (respData.output && typeof respData.output === 'string') return respData.output;
+        if (respData.output?.url) return respData.output.url;
+        if (respData.data?.output && typeof respData.data.output === 'string') return respData.data.output;
+        if (respData.data?.output?.url) return respData.data.output.url;
+        if (respData.url) return respData.url;
+        if (respData.data?.url) return respData.data.url;
+        if (respData.image_url) return respData.image_url;
+        if (respData.data?.image_url) return respData.data.image_url;
+        if (respData.output_url) return respData.output_url;
+        if (respData.data?.output_url) return respData.data.output_url;
+        if (respData.data?.outputs && Array.isArray(respData.data.outputs) && respData.data.outputs.length > 0) {
+          const output = respData.data.outputs[0];
+          if (typeof output === 'string') return output;
+          if (output?.url) return output.url;
         }
-
-        if (attempt > 0) {
-          await new Promise(resolve => setTimeout(resolve, delay));
+        if (respData.outputs && Array.isArray(respData.outputs) && respData.outputs.length > 0) {
+          const output = respData.outputs[0];
+          if (typeof output === 'string') return output;
+          if (output?.url) return output.url;
         }
+        return null;
+      };
 
-        const resultResponse = await fetchWithTimeout(resultEndpoint, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`
-          }
-        }, TIMEOUT_CONFIG.DEFAULT_REQUEST);
-
-        if (!resultResponse.ok) {
-          if (attempt === TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS - 1) {
-            throw new Error(`Failed to get result: ${resultResponse.status} ${resultResponse.statusText}`);
-          }
-          continue;
-        }
-
-        const resultData: any = await resultResponse.json();
-
-        const pollStatus = resultData.status || resultData.data?.status;
-
-        // Helper to extract URL from various response formats - avoids duplicate code
-        const extractResultUrl = (data: any): string | null => {
-          if (data.output && typeof data.output === 'string') return data.output;
-          if (data.output?.url) return data.output.url;
-          if (data.data?.output && typeof data.data.output === 'string') return data.data.output;
-          if (data.data?.output?.url) return data.data.output.url;
-          if (data.url) return data.url;
-          if (data.data?.url) return data.data.url;
-          if (data.image_url) return data.image_url;
-          if (data.data?.image_url) return data.data.image_url;
-          if (data.output_url) return data.output_url;
-          if (data.data?.output_url) return data.data.output_url;
-          if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
-            const output = data.data.outputs[0];
-            if (typeof output === 'string') return output;
-            if (output?.url) return output.url;
-          }
-          if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
-            const output = data.outputs[0];
-            if (typeof output === 'string') return output;
-            if (output?.url) return output.url;
-          }
-          return null;
-        };
-
-        // Check status and extract URL
-        if (pollStatus === 'completed' || pollStatus === 'succeeded' || pollStatus === 'success') {
-          const url = extractResultUrl(resultData);
-          if (url) { resultImageUrl = url; break; }
-        } else if (pollStatus === 'failed' || pollStatus === 'error') {
-          throw new Error(`Upscaling failed: ${resultData.error || resultData.message || resultData.data?.error || 'Unknown error'}`);
-        } else if (pollStatus === 'processing' || pollStatus === 'pending' || pollStatus === 'starting') {
-          continue;
-        } else {
-          // Unknown status - try to extract URL anyway
-          const url = extractResultUrl(resultData);
-          if (url) { resultImageUrl = url; break; }
-        }
-      }
+      // Sync mode: extract result directly from response
+      resultImageUrl = extractResultUrl(data);
 
       if (!resultImageUrl) {
-        throw new Error(`Upscaling timed out - no result after ${TIMEOUT_CONFIG.POLLING.MAX_ATTEMPTS} polling attempts`);
+        // Check if there's an error in the response
+        const status = data.status || data.data?.status;
+        if (status === 'failed' || status === 'error') {
+          throw new Error(`Upscaling failed: ${data.error || data.message || data.data?.error || 'Unknown error'}`);
+        }
+        throw new Error('WaveSpeed API did not return result image URL');
       }
 
       const ext = DEFAULT_VALUES.UPSCALER_EXT;
@@ -2510,7 +2456,8 @@ export const callWaveSpeedEdit = async (
   imageUrls: string[],
   prompt: string,
   env: Env,
-  aspectRatio?: string
+  aspectRatio?: string,
+  size?: string
 ): Promise<FaceSwapResponse> => {
   if (!env.WAVESPEED_API_KEY) {
     return {
@@ -2520,14 +2467,46 @@ export const callWaveSpeedEdit = async (
     };
   }
 
-  // Get actual image dimensions from the first image
-  const { getImageDimensions } = await import('./utils');
-  let size: string | undefined;
-  if (imageUrls.length > 0) {
-    const dimensions = await getImageDimensions(imageUrls[0], env);
-    if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
-      size = `${dimensions.width}x${dimensions.height}`;
+  // Convert aspect ratio to size dimensions
+  // WaveSpeed needs actual dimensions, not aspect ratio string
+  // WaveSpeed API supports 256-1536 pixels per dimension
+  const aspectRatioToSize = (ratio: string): string | null => {
+    // Base dimension (longest side) - using 1536 (max supported by WaveSpeed)
+    const baseDimension = 1536;
+
+    const ratioMap: Record<string, [number, number]> = {
+      '1:1': [1, 1],
+      '3:2': [3, 2],
+      '2:3': [2, 3],
+      '3:4': [3, 4],
+      '4:3': [4, 3],
+      '4:5': [4, 5],
+      '5:4': [5, 4],
+      '9:16': [9, 16],
+      '16:9': [16, 9],
+      '21:9': [21, 9],
+    };
+
+    const parts = ratioMap[ratio];
+    if (!parts) return null;
+
+    const [w, h] = parts;
+    // Calculate dimensions keeping the larger side at baseDimension
+    if (w >= h) {
+      const width = baseDimension;
+      const height = Math.round((baseDimension * h) / w);
+      return `${width}x${height}`;
+    } else {
+      const height = baseDimension;
+      const width = Math.round((baseDimension * w) / h);
+      return `${width}x${height}`;
     }
+  };
+
+  // Calculate size from aspect_ratio if size not provided
+  let effectiveSize = size;
+  if (!effectiveSize && aspectRatio) {
+    effectiveSize = aspectRatioToSize(aspectRatio) || undefined;
   }
 
   const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
@@ -2535,7 +2514,9 @@ export const callWaveSpeedEdit = async (
     provider: 'wavespeed_edit',
     images: imageUrls,
     prompt: prompt.substring(0, 200),
-    size: size,
+    size: effectiveSize,
+    aspectRatio: aspectRatio,
+    calculatedFromAspectRatio: !size && !!aspectRatio,
   } : undefined;
 
   try {
@@ -2548,9 +2529,9 @@ export const callWaveSpeedEdit = async (
       seed: -1,
     };
 
-    // Send actual image dimensions as size
-    if (size) {
-      requestBody.size = size;
+    // Pass size parameter (either provided directly or calculated from aspect_ratio)
+    if (effectiveSize) {
+      requestBody.size = effectiveSize;
     }
 
     if (debugInfo) {

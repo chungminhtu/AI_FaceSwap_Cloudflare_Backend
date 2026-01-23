@@ -29,12 +29,14 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { 
-            width: 100%; 
+        html, body {
+            width: 100%;
+            height: 100vh;
             max-width: 100vw;
-            margin: 0; 
-            padding: 0; 
-            overflow-x: hidden;
+            max-height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
             position: relative;
             touch-action: pan-y pan-x;
             -ms-touch-action: pan-y pan-x;
@@ -43,11 +45,8 @@
         html {
             transform: scale(1);
             transform-origin: top left;
-        }
-        html {
             -webkit-text-size-adjust: 100%;
             -ms-text-size-adjust: 100%;
-            touch-action: pan-y pan-x;
         }
 
         body {
@@ -57,12 +56,8 @@
             line-height: 1.5;
             font-size: 14px;
             -webkit-font-smoothing: antialiased;
-            overflow-x: hidden;
-            width: 100%;
-            max-width: 100vw;
-            position: relative;
-            touch-action: pan-y pan-x;
-            -ms-touch-action: pan-y pan-x;
+            display: flex;
+            flex-direction: column;
         }
 
         body.locked { overflow: hidden; }
@@ -107,14 +102,17 @@
 
         /* Main Layout */
         .main-container {
-            width: 100%; 
+            width: 100%;
             max-width: 100vw;
-            padding: 8px 20px 40px;
+            flex: 1;
+            padding: 8px 20px 20px;
             background: var(--bg-primary);
             box-shadow: var(--shadow-soft);
             border: 1px solid var(--border);
-            overflow-x: hidden;
+            overflow: hidden;
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
 
         .app-header {
@@ -132,11 +130,12 @@
             display: grid;
             grid-template-columns: 50% 1fr 600px;
             gap: 20px;
-            min-height: calc(100vh - 120px);
+            flex: 1;
+            min-height: 0;
             transition: all 0.3s;
             width: 100%;
             max-width: 100vw;
-            overflow-x: hidden;
+            overflow: hidden;
             position: relative;
         }
         .app-layout.log-hidden { grid-template-columns: 50% 1fr 0; gap: 20px 0; }
@@ -145,7 +144,8 @@
         /* Left Sidebar - Galleries */
         .sidebar-column {
             display: flex; flex-direction: column; gap: 12px;
-            max-height: calc(100vh - 120px); /* Removed overflow-y: auto to prevent scrolling in preset/selfie galleries */
+            height: 100%;
+            overflow-y: auto;
         }
         .sidebar-column::-webkit-scrollbar { width: 4px; }
         .sidebar-column::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
@@ -171,7 +171,11 @@
         .gallery-drop-zone.dragover { border-color: var(--accent); border-style: solid; background: var(--bg-tertiary); }
 
         /* Main Content Area */
-        .main-content-area { display: flex; flex-direction: column; gap: 16px; }
+        .main-content-area { 
+            display: flex; flex-direction: column; gap: 16px;
+            height: 100%;
+            overflow-y: auto;
+        }
 
         .preview-panel {
             display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px;
@@ -294,7 +298,7 @@
         .log-panel {
             background: var(--bg-secondary); border: 1px solid var(--border);
             padding: 16px; display: flex; flex-direction: column;
-            position: sticky; top: 20px; max-height: calc(100vh - 120px);
+            height: 100%;
             overflow: hidden; transition: opacity 0.3s, transform 0.3s;
         }
         .log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
@@ -1017,6 +1021,14 @@
                                 <option value="21:9">21:9 (Ultrawide)</option>
                             </select>
                         </div>
+                        <div class="action-ratio">
+                            <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px;">Provider:</label>
+                            <select id="image-provider" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer;">
+                                <option value="" selected>Default (Config)</option>
+                                <option value="vertex">Vertex AI</option>
+                                <option value="wavespeed">WaveSpeed</option>
+                            </select>
+                        </div>
                         <div class="action-model" style="display: flex; gap: 6px; align-items: center;">
                             <label style="font-size: 13px; color: var(--text-secondary); margin-right: 6px; white-space: nowrap; font-weight: 600;">Model (Nano Banana):</label>
                             <select id="gemini-model" style="height: 36px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; border-radius: 12px; cursor: pointer; min-width: 150px; font-weight: 500;">
@@ -1405,6 +1417,24 @@
                 headers['X-API-Key'] = MOBILE_API_KEY;
             }
             return headers;
+        }
+
+        // Helper function to get image dimensions from a File object
+        // Returns a Promise that resolves to "widthxheight" string (e.g., "128x340")
+        function getImageDimensions(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const objectUrl = URL.createObjectURL(file);
+                img.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(`${img.naturalWidth}x${img.naturalHeight}`);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    reject(new Error('Failed to load image for dimensions'));
+                };
+                img.src = objectUrl;
+            });
         }
         
         // Vertex AI Configuration
@@ -2849,6 +2879,22 @@
                     const actionSelect = document.getElementById('selfie-action-select');
                     const action = actionSelect?.value || 'faceswap';
                     formData.append('action', action);
+
+                    // Get dimensions for all files (array in same order as files)
+                    if (validFiles.length > 0) {
+                        const dimensionsArray = await Promise.all(
+                            validFiles.map(async (file) => {
+                                try {
+                                    return await getImageDimensions(file);
+                                } catch (dimError) {
+                                    console.warn('Failed to get image dimensions for', file.name, dimError);
+                                    return null; // null indicates dimensions could not be determined
+                                }
+                            })
+                        );
+                        // Send as JSON array to preserve order with files
+                        formData.append('dimensions', JSON.stringify(dimensionsArray));
+                    }
                 }
 
                 const uploadUrl = `${WORKER_URL}/upload-url`;
@@ -2929,6 +2975,8 @@
                 if (!aspectRatioSelect) {
                 }
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
+                const providerSelect = document.getElementById('image-provider');
+                const selectedProvider = providerSelect?.value || localStorage.getItem('faceswap:provider') || '';
                 // Always prefer preset_id (filename) over URL for API calls
                 const presetId = presetSelected.preset_id || presetSelected.id;
                 const usePresetUrl = !presetId || presetId.startsWith('result-preset-');
@@ -2958,7 +3006,8 @@
                     additional_prompt: additionalPromptInput?.value.trim() || '',
                     aspect_ratio: selectedAspectRatio,
                     model: selectedModel,
-                    format: selectedFormat
+                    format: selectedFormat,
+                    ...(selectedProvider && { provider: selectedProvider })
                 };
                 
                 if (selfieUrls.length > 0) {
@@ -3100,7 +3149,8 @@
                                     additional_prompt: additionalPrompt,
                                     aspect_ratio: selectedAspectRatio,
                                     model: selectedModel,
-                                    format: selectedFormat
+                                    format: selectedFormat,
+                                    ...(selectedProvider && { provider: selectedProvider })
                                 };
 
                                 const faceswapUrl = `${WORKER_URL}/faceswap`;
@@ -3416,7 +3466,8 @@
                                 additional_prompt: additionalPrompt,
                                 aspect_ratio: selectedAspectRatio,
                                 model: selectedModel,
-                                format: selectedFormat
+                                format: selectedFormat,
+                                ...(selectedProvider && { provider: selectedProvider })
                             };
 
                             const response = await fetch(`${WORKER_URL}/faceswap`, {
@@ -3615,6 +3666,8 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                const providerSelect = document.getElementById('image-provider');
+                const selectedProvider = providerSelect?.value || localStorage.getItem('faceswap:provider') || '';
                 const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
                 
                 const requestBody = {
@@ -3636,7 +3689,8 @@
                     profile_id: window.profileManager.currentProfile.id,
                     ...(presetSelected && customPrompt ? { additional_prompt: customPrompt } : {}),
                     aspect_ratio: selectedAspectRatio,
-                    model: selectedModel
+                    model: selectedModel,
+                    ...(selectedProvider && { provider: selectedProvider })
                 };
 
                 const backgroundUrl = `${WORKER_URL}/background`;
@@ -3683,11 +3737,14 @@
                 console.log(`[${label}] Selected aspect ratio:`, selectedAspectRatio);
                 console.log(`[${label}] Selected model:`, selectedModel);
 
+                const providerSelect = document.getElementById('image-provider');
+                const selectedProvider = providerSelect?.value || localStorage.getItem('faceswap:provider') || '';
                 const payload = {
                     image_url: selectedSelfie.image_url,
                     profile_id: window.profileManager.currentProfile.id,
                     aspect_ratio: selectedAspectRatio === 'original' ? 'original' : selectedAspectRatio,
                     model: selectedModel,
+                    ...(selectedProvider && { provider: selectedProvider }),
                     ...extra
                 };
                 console.log(`[${label}] Full request body:`, JSON.stringify(payload, null, 2));
@@ -3752,6 +3809,8 @@
                 const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || '3:4';
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                const providerSelect = document.getElementById('image-provider');
+                const selectedProvider = providerSelect?.value || localStorage.getItem('faceswap:provider') || '';
                 const presetId = presetSelected.preset_id || presetSelected.id;
                 const usePresetUrl = !presetId || presetId.startsWith('result-preset-');
                 const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
@@ -3768,7 +3827,8 @@
                     profile_id: window.profileManager.currentProfile.id,
                     additional_prompt: additionalPromptInput?.value.trim() || '',
                     aspect_ratio: selectedAspectRatio,
-                    model: selectedModel
+                    model: selectedModel,
+                    ...(selectedProvider && { provider: selectedProvider })
                 };
 
                 const filterUrl = `${WORKER_URL}/filter`;
@@ -3849,6 +3909,9 @@
         updateComparisonButton();
 
         function openLightbox(index) {
+            // Scroll to top to ensure lightbox is visible
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
             lightboxMode = 'gallery';
             lightboxItems = galleries.results.state.items;
             if (index >= 0 && index < lightboxItems.length) {
@@ -3859,6 +3922,9 @@
         }
 
         function openPresetLightbox(presetId) {
+            // Scroll to top to ensure lightbox is visible
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
             const allPresets = galleries.preset.state.items;
             if (!allPresets || allPresets.length === 0) return;
 
@@ -3895,6 +3961,9 @@
         }
 
         function openSelfieLightbox(selfieId) {
+            // Scroll to top to ensure lightbox is visible
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
             const allSelfies = galleries.selfie.state.items;
             if (!allSelfies || allSelfies.length === 0) return;
 
@@ -3923,6 +3992,9 @@
         }
 
         function openPreviewLightbox(startType, selfieIndex) {
+            // Scroll to top to ensure lightbox is visible
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
             lightboxMode = 'preview';
             lightboxItems = [];
             
@@ -5766,6 +5838,21 @@
                 });
             } else {
                 console.error('[Init] Aspect ratio select element not found during initialization!');
+            }
+
+            // Load saved provider from localStorage
+            const savedProvider = localStorage.getItem('faceswap:provider') || '';
+            const providerSelect = document.getElementById('image-provider');
+            if (providerSelect) {
+                providerSelect.value = savedProvider;
+                console.log('[Init] Set provider select to:', providerSelect.value);
+                providerSelect.addEventListener('change', (e) => {
+                    const newValue = e.target.value;
+                    localStorage.setItem('faceswap:provider', newValue);
+                    console.log('[Init] Provider changed to:', newValue);
+                });
+            } else {
+                console.error('[Init] Provider select element not found during initialization!');
             }
 
             // Load saved model from localStorage

@@ -343,36 +343,40 @@ Ngoài các error codes trên, API cũng trả về các HTTP status codes chu�
 
 **Request:**
 
-**Upload selfie với action:**
+**Upload single selfie với action:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
   -H "X-API-Key: your_api_key_here" \
   -F "files=@/path/to/selfie.jpg" \
   -F "type=selfie" \
   -F "profile_id=profile_1234567890" \
-  -F "action=faceswap"
+  -F "action=faceswap" \
+  -F "dimensions=1024x768"
 ```
 
-**Multipart/form-data (với action):**
+**Upload multiple selfies với dimensions array:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
   -H "X-API-Key: your_api_key_here" \
-  -F "files=@/path/to/selfie.jpg" \
+  -F "files=@/path/to/selfie1.jpg" \
+  -F "files=@/path/to/selfie2.jpg" \
   -F "type=selfie" \
   -F "profile_id=profile_1234567890" \
-  -F "action=faceswap"
+  -F "action=faceswap" \
+  -F 'dimensions=["1024x768", "800x600"]'
 ```
 
-**JSON với image_url:**
+**JSON với image_urls và dimensions array:**
 ```bash
 curl -X POST https://api.d.shotpix.app/upload-url \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "image_url": "https://example.com/selfie.jpg",
+    "image_urls": ["https://example.com/selfie1.jpg", "https://example.com/selfie2.jpg"],
     "type": "selfie",
     "profile_id": "profile_1234567890",
-    "action": "faceswap"
+    "action": "faceswap",
+    "dimensions": ["1024x768", "800x600"]
   }'
 ```
 
@@ -381,11 +385,14 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 - `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh selfie trực tiếp.
 - `type` (string, required): Phải là `"selfie"` cho mobile app.
 - `profile_id` (string, required): ID profile người dùng.
-- `action` (string, required, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Phải được chỉ định rõ ràng. Các giá trị hỗ trợ: 
+- `action` (string, required, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Phải được chỉ định rõ ràng. Các giá trị hỗ trợ:
   - `"faceswap"`: Tối đa 8 ảnh (có thể cấu hình), tự động xóa ảnh cũ khi upload ảnh mới (giữ lại số ảnh mới nhất theo giới hạn). **Không kiểm tra Vision API.**
   - `"wedding"`: Tối đa 2 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 1 ảnh mới nhất). **Không kiểm tra Vision API.**
   - `"4k"` hoặc `"4K"`: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Ảnh sẽ được kiểm tra bằng Vision API trước khi lưu vào database.**
   - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Không kiểm tra Vision API.**
+- `dimensions` (string | string[], optional): Kích thước ảnh selfie theo định dạng `"widthxheight"` (ví dụ: `"1024x768"`). Được sử dụng để truyền kích thước ảnh gốc cho WaveSpeed API khi thực hiện face swap, giúp giữ nguyên tỷ lệ và kích thước ảnh đầu ra. Nếu không cung cấp, WaveSpeed API sẽ tự động xác định kích thước từ ảnh đầu vào.
+  - **Cho single file**: Có thể truyền string đơn: `"1024x768"`
+  - **Cho multiple files**: Truyền JSON array cùng thứ tự với files: `["1024x768", "800x600", null]` (null cho file không xác định được kích thước)
 
 **Response (Success 200):**
 ```json
@@ -687,11 +694,17 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 
 #### 2.1. POST `/faceswap` - Face Swap
 
-**Mục đích:** Thực hiện face swap giữa ảnh preset và ảnh selfie sử dụng Vertex AI (luôn dùng chế độ Vertex). Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
+**Mục đích:** Thực hiện face swap giữa ảnh preset và ảnh selfie. Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
 
-**Lưu ý:** 
+**Lưu ý:**
 - Khác với `/background`: FaceSwap thay đổi khuôn mặt trong preset, còn AI Background merge selfie vào preset scene.
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Hành vi theo Provider:**
+- **Vertex AI (mặc định):** Sử dụng `prompt_json` từ metadata của preset để thực hiện faceswap.
+- **WaveSpeed (`provider: "wavespeed"`):** Không sử dụng `prompt_json`. Sử dụng prompt cố định:
+  - **Single mode (1 selfie):** Gửi `[selfie, preset]` với prompt: "Put the person in image1 into image2, keep all the makeup same as preset."
+  - **Couple mode (2 selfies):** Gửi `[selfie1, selfie2, preset]` với prompt: "Put both persons in image1 and image2 into image3, keep all the makeup same as preset."
 
 **Request:**
 
@@ -729,6 +742,7 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 - `selfie_image_urls` (array of strings, optional): Mảng các URL ảnh selfie trực tiếp (thay thế cho `selfie_ids`). Hỗ trợ multiple selfies. Phải cung cấp `selfie_ids` HOẶC `selfie_image_urls` (không phải cả hai).
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình (mặc định: "3:4"). Hỗ trợ: "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9".
+  - **Lưu ý về kích thước đầu ra (WaveSpeed provider):** Nếu `aspect_ratio` được chỉ định rõ ràng, hệ thống sẽ sử dụng aspect ratio đó. Nếu không chỉ định hoặc là "original", hệ thống sẽ sử dụng kích thước gốc của selfie (từ trường `dimensions` được lưu khi upload) để giữ nguyên kích thước ảnh đầu ra.
 - `additional_prompt` (string, optional): câu mô tả bổ sung, được nối vào cuối trường `prompt` bằng ký tự `+`.
 
 **Response:**
@@ -1045,9 +1059,13 @@ curl -X POST https://api.d.shotpix.app/beauty \
 
 #### 2.5. POST `/filter` - AI Filter (Styles)
 
-**Mục đích:** AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt. Sử dụng prompt_json từ preset để áp dụng style.
+**Mục đích:** AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Hành vi theo Provider:**
+- **Vertex AI (mặc định):** Sử dụng `prompt_json` từ metadata của preset để áp dụng style. Preset phải có `prompt_json`.
+- **WaveSpeed (`provider: "wavespeed"`):** Không sử dụng `prompt_json`. Thay vào đó, WaveSpeed tự phân tích style của preset image (figurine, pop mart, clay, disney, etc.) và áp dụng style đó lên selfie. Gửi images theo thứ tự `[selfie, preset]` - image 1 là selfie (ảnh cần áp dụng style), image 2 là preset (nguồn style).
 
 **Request:**
 ```bash
@@ -1076,12 +1094,13 @@ curl -X POST https://api.d.shotpix.app/filter \
 ```
 
 **Request Parameters:**
-- `preset_image_id` (string, required): ID preset đã lưu trong database (format: `preset_...`). Preset phải có prompt_json.
+- `preset_image_id` (string, required): ID preset đã lưu trong database (format: `preset_...`). Preset phải có `prompt_json` (chỉ yêu cầu cho Vertex provider).
 - `selfie_id` (string, optional): ID selfie đã lưu trong database. Bắt buộc nếu không có `selfie_image_url`.
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp. Bắt buộc nếu không có `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
+- `provider` (string, optional): Provider AI. Giá trị: `"vertex"` (mặc định) hoặc `"wavespeed"`. WaveSpeed không yêu cầu `prompt_json` trong preset.
 
 **Response:**
 ```json

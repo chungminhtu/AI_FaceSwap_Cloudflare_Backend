@@ -32,13 +32,7 @@ ALWAYS ALLOW (legal/appropriate):
   PROMPT_GENERATION_DEFAULT: `Analyze the provided image and return a detailed description of its contents, pose, clothing, environment, HDR lighting, style, and composition in a strict JSON format. Generate a JSON object with the following keys: "prompt", "style", "lighting", "composition", "camera", and "background". For the "prompt" key, write a detailed HDR scene description based on the target image, including the character's pose, outfit, environment, atmosphere, and visual mood. In the "prompt" field, also include this exact face-swap rule: "Replace the original face with the face from the image I will upload later. Keep the person exactly as shown in the reference image with 100% identical facial features, bone structure, skin tone, and appearance. Remove all pimples, blemishes, and skin imperfections. Enhance skin texture with flawless, smooth, and natural appearance. The final face must look exactly like the face in my uploaded image with 8K ultra-high detail, ultra-sharp facial features, and professional skin retouching. Do not alter the facial structure, identity, age, or ethnicity, and preserve all distinctive facial features. Makeup, lighting, and color grading may be adjusted only to match the HDR visual look of the target scene." The generated prompt must be fully compliant with content policies. The JSON should fully describe the image and follow the specified structure, without any extra commentary or text outside the JSON.`,
 
   // Filter mode prompt for art style analysis (when checkbox is checked)
-  PROMPT_GENERATION_FILTER: `Analyze the image's art and thematic styles and return a detailed description of its specific art styles and contents. For example: figurine, pop mart style, clay, disney, anime, watercolor, oil painting, sketch, etc. Describe the style in a way that can be applied to reimagine any image. Ensure the description is generic and can apply to any subject type.`,
-
-  // Style application instruction - preserves original image characteristics
-  FILTER_STYLE_APPLICATION_INSTRUCTION: 'Maintain the exact composition, subject positioning, and key visual elements of the original image. For images with people: preserve facial features, body proportions, posture, clothing, and hair. For other images: preserve shapes, colors, and distinctive characteristics.',
-
-  // Default filter prompt (when prompt is not a string)
-  FILTER_DEFAULT_PROMPT: 'Maintain the exact composition, subject positioning, and key visual elements of the original image. Preserve all distinctive characteristics while applying the requested transformation.',
+  PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.`,
 };
 
 // Image Processing Prompts Configuration
@@ -48,9 +42,6 @@ export const IMAGE_PROCESSING_PROMPTS = {
 
   // Beauty prompt - specifically for face/portrait beautification (requires human face)
   BEAUTY: 'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure. Output in 8K ultra-high detail with professional skin retouching.',
-
-  // Restoration/Filter prompt - works for any damaged or old photo
-  FILTER: 'Restore and enhance this photo to hyper-realistic, ultra-detailed 16K DSLR quality. Fix scratches, tears, fading, noise, and blurriness. Enhance colors to vivid, vibrant tones while maintaining natural appearance. Perfectly sharpen all details and subjects. Add realistic lighting, shadows, and depth of field. Professional-level restoration with high dynamic range, ultra-HD quality, lifelike textures, cinematic finish, and crisp clean output. Fully restored and enhanced version of the original photo.',
 
   // Restoration prompt - for old/damaged photos, black and white to color conversion
   RESTORE: 'Restore this old or damaged photo. If the image is black and white or sepia, colorize it with realistic, natural colors appropriate for the era and subject matter. Fix all damage including scratches, tears, fading, stains, creases, and degradation. Remove noise, dust, and artifacts. Enhance clarity and sharpness while preserving the original composition. Restore faded areas and improve overall quality. Output a fully restored, colorized (if applicable), high-quality version of the original photo.',
