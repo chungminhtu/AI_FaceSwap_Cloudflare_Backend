@@ -1114,7 +1114,7 @@
 
     function getTestCount(api) {
         var cfg = getConfig();
-        return cfg.images && cfg.images.length > 0 ? cfg.images.length * 3 : 0;
+        return cfg.images && cfg.images.length > 0 ? cfg.images.length : 0;
     }
 
 
@@ -1150,8 +1150,8 @@
     }
 
     function generateRequestsFromImages(api, imageUrls, profileId) {
-        var images = Array.isArray(imageUrls) ? imageUrls : 
-            (typeof imageUrls === 'string' && imageUrls.trim() ? 
+        var images = Array.isArray(imageUrls) ? imageUrls :
+            (typeof imageUrls === 'string' && imageUrls.trim() ?
                 (function() { try { var p = JSON.parse(imageUrls); return Array.isArray(p) ? p : [p]; } catch(e) { return null; } })() : null);
         if (!images || images.length === 0) return null;
 
@@ -1170,52 +1170,27 @@
 
         var requests = [];
         for (var i = 0; i < images.length; i++) {
-            // Create 3 variations per image per API
-            for (var variation = 0; variation < 3; variation++) {
-                var req = { profile_id: profileId, variation: variation + 1 };
+            // Create 1 test per image
+            var req = { profile_id: profileId };
 
-                if (cfg.useId) {
-                    var imgId = extractImageId(images[i]);
-                    var presetEl = document.getElementById('preset-' + api);
-                    var presetValue = presetEl ? presetEl.value.trim() : cfg.preset_image_id;
-                    // If preset is a full URL, extract the ID; otherwise use as-is (for backward compatibility)
-                    var presetId = presetValue.startsWith('http') ? extractImageId(presetValue) : presetValue;
-                    req.preset_image_id = presetId || cfg.preset_image_id;
-                    if (api === 'faceswap') req.selfie_ids = imgId ? [imgId] : null;
-                    else req.selfie_id = imgId;
-                } else {
-                    req.image_url = images[i];
-                }
-
-                // Apply base config
-                if (cfg.aspect_ratio) req.aspect_ratio = cfg.aspect_ratio;
-                if (cfg.model) req.model = cfg.model;
-                if (cfg.additional_prompt !== undefined) req.additional_prompt = cfg.additional_prompt;
-                if (cfg.age_years) req.age_years = cfg.age_years;
-
-                // Create variations
-                if (variation === 1) {
-                    // Variation 1: Different model if available
-                    if (api === 'enhance' || api === 'restore') {
-                        req.model = '1.0'; // Try different model
-                        req.test_type = 'model_v1';
-                    } else if (api === 'filter') {
-                        req.additional_prompt = 'High contrast, dramatic shadows';
-                        req.test_type = 'prompt_var1';
-                    } else {
-                        req.test_type = 'default';
-                    }
-                } else if (variation === 2) {
-                    // Variation 2: Keep original aspect ratio
-                    req.aspect_ratio = 'original';
-                    req.test_type = 'aspect_original';
-                } else {
-                    // Variation 0: Default
-                    req.test_type = 'default';
-                }
-
-                requests.push(req);
+            if (cfg.useId) {
+                var imgId = extractImageId(images[i]);
+                var presetEl = document.getElementById('preset-' + api);
+                var presetValue = presetEl ? presetEl.value.trim() : cfg.preset_image_id;
+                var presetId = presetValue.startsWith('http') ? extractImageId(presetValue) : presetValue;
+                req.preset_image_id = presetId || cfg.preset_image_id;
+                if (api === 'faceswap') req.selfie_ids = imgId ? [imgId] : null;
+                else req.selfie_id = imgId;
+            } else {
+                req.image_url = images[i];
             }
+
+            if (cfg.aspect_ratio) req.aspect_ratio = cfg.aspect_ratio;
+            if (cfg.model) req.model = cfg.model;
+            if (cfg.additional_prompt !== undefined) req.additional_prompt = cfg.additional_prompt;
+            if (cfg.age_years) req.age_years = cfg.age_years;
+
+            requests.push(req);
         }
         return requests;
     }
@@ -1378,13 +1353,52 @@
         setTimeout(function() { t.classList.remove('show'); }, 3000);
     }
 
-    // Delay between API calls (ms) to avoid rate limiting
-    var API_CALL_DELAY = 1000; // 1 second between calls
+    // Random delay range (ms) to stagger API calls
+    var MIN_DELAY = 100;
+    var MAX_DELAY = 2000;
 
-    // Run tests sequentially with delay
-    function runSequential(reqs, api, cfg, idx, allResults, progress, fill) {
-        if (idx >= reqs.length) {
-            // All done
+    function randomDelay() {
+        return Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY)) + MIN_DELAY;
+    }
+
+    // Run tests in parallel with random delays
+    function runParallel(reqs, api, cfg, progress, fill) {
+        var completed = 0;
+        var allResults = new Array(reqs.length);
+
+        var promises = reqs.map(function(req, idx) {
+            return new Promise(function(resolve) {
+                // Random delay before starting each request
+                setTimeout(function() {
+                    runSingleTest(api, req, idx + 1, cfg).then(function(r) {
+                        allResults[idx] = r;
+                        results[api][idx] = r;
+                        completed++;
+                        fill.style.width = (completed / reqs.length * 100) + '%';
+                        renderTable(api, allResults.filter(Boolean));
+                        saveResults();
+                        resolve(r);
+                    }).catch(function(err) {
+                        var errorResult = {
+                            index: idx + 1,
+                            inputUrl: getInputUrl(api, req),
+                            body: req,
+                            status: 'error',
+                            error: err.message
+                        };
+                        allResults[idx] = errorResult;
+                        results[api][idx] = errorResult;
+                        completed++;
+                        fill.style.width = (completed / reqs.length * 100) + '%';
+                        renderTable(api, allResults.filter(Boolean));
+                        saveResults();
+                        resolve(errorResult);
+                    });
+                }, randomDelay() * idx); // Stagger starts with random base delay
+            });
+        });
+
+        Promise.all(promises).then(function() {
             renderTable(api, allResults);
             progress.classList.remove('show');
             running = false;
@@ -1392,39 +1406,6 @@
             updateExportButtons();
             saveResults();
             toast('Hoàn thành ' + reqs.length + ' test cho /' + api, 'ok');
-            return;
-        }
-
-        var req = reqs[idx];
-        runSingleTest(api, req, idx + 1, cfg).then(function(r) {
-            results[api][idx] = r;
-            allResults.push(r);
-            fill.style.width = ((idx + 1) / reqs.length * 100) + '%';
-            renderTable(api, allResults);
-            saveResults();
-
-            // Delay before next request to avoid rate limiting
-            setTimeout(function() {
-                runSequential(reqs, api, cfg, idx + 1, allResults, progress, fill);
-            }, API_CALL_DELAY);
-        }).catch(function(err) {
-            var errorResult = {
-                index: idx + 1,
-                inputUrl: getInputUrl(api, req),
-                body: req,
-                status: 'error',
-                error: err.message
-            };
-            results[api][idx] = errorResult;
-            allResults.push(errorResult);
-            fill.style.width = ((idx + 1) / reqs.length * 100) + '%';
-            renderTable(api, allResults);
-            saveResults();
-
-            // Continue to next even on error
-            setTimeout(function() {
-                runSequential(reqs, api, cfg, idx + 1, allResults, progress, fill);
-            }, API_CALL_DELAY);
         });
     }
 
@@ -1452,8 +1433,8 @@
 
         renderTable(api, []);
 
-        // Run sequentially with delay to avoid rate limiting
-        runSequential(reqs, api, cfg, 0, [], progress, fill);
+        // Run in parallel with random delays
+        runParallel(reqs, api, cfg, progress, fill);
     };
 
     function runSingleTest(api, body, idx, cfg) {
@@ -1797,7 +1778,6 @@
             document.getElementById('card-summary-' + APIS[i]).textContent = 'Chờ...';
         }
 
-        var completedApis = 0;
         var totalTests = 0;
         var completedTests = 0;
 
@@ -1832,79 +1812,66 @@
             updateSummary(api);
         }
 
-        // Run tests for one API sequentially, then move to next API
-        function runApiSequential(apiIndex) {
-            if (apiIndex >= APIS.length) {
-                // All APIs done
-                progress.classList.remove('show');
-                running = false;
-                updateExportButtons();
-                saveResults();
-                toast('Hoàn thành tất cả API tests', 'ok');
-                return;
-            }
+        // Run all tests in parallel with random delays
+        var allPromises = [];
+        var globalTestIndex = 0;
 
-            var api = APIS[apiIndex];
+        APIS.forEach(function(api) {
             var reqs = generateRequestsFromImages(api, cfg.images, cfg.profile);
 
             if (!reqs || reqs.length === 0) {
                 document.getElementById('card-status-' + api).innerHTML = '<span class="status status-err">SKIP</span>';
                 document.getElementById('card-summary-' + api).textContent = 'Không có test';
-                completedApis++;
-                // Move to next API immediately
-                runApiSequential(apiIndex + 1);
                 return;
             }
 
             document.getElementById('card-summary-' + api).textContent = 'Đang chạy...';
             results[api] = new Array(reqs.length);
 
-            // Run tests for this API sequentially
-            function runTestSequential(testIndex) {
-                if (testIndex >= reqs.length) {
-                    // This API done
-                    updateApiStatus(api);
-                    completedApis++;
-                    saveResults();
-                    // Move to next API after delay
-                    setTimeout(function() {
-                        runApiSequential(apiIndex + 1);
-                    }, API_CALL_DELAY);
-                    return;
-                }
+            reqs.forEach(function(req, testIndex) {
+                var delay = randomDelay() * globalTestIndex;
+                globalTestIndex++;
 
-                var req = reqs[testIndex];
-                runSingleTest(api, req, testIndex + 1, cfg).then(function(r) {
-                    results[api][testIndex] = r;
-                    completedTests++;
-                    fill.style.width = (completedTests / totalTests * 100) + '%';
-
-                    // Delay before next test
+                var promise = new Promise(function(resolve) {
                     setTimeout(function() {
-                        runTestSequential(testIndex + 1);
-                    }, API_CALL_DELAY);
-                }).catch(function(err) {
-                    results[api][testIndex] = {
-                        index: testIndex + 1,
-                        inputUrl: getInputUrl(api, req),
-                        body: req,
-                        status: 'error',
-                        error: err.message
-                    };
-                    completedTests++;
-                    fill.style.width = (completedTests / totalTests * 100) + '%';
-
-                    // Continue to next test
-                    setTimeout(function() {
-                        runTestSequential(testIndex + 1);
-                    }, API_CALL_DELAY);
+                        runSingleTest(api, req, testIndex + 1, cfg).then(function(r) {
+                            results[api][testIndex] = r;
+                            completedTests++;
+                            fill.style.width = (completedTests / totalTests * 100) + '%';
+                            resolve({ api: api, result: r });
+                        }).catch(function(err) {
+                            var errorResult = {
+                                index: testIndex + 1,
+                                inputUrl: getInputUrl(api, req),
+                                body: req,
+                                status: 'error',
+                                error: err.message
+                            };
+                            results[api][testIndex] = errorResult;
+                            completedTests++;
+                            fill.style.width = (completedTests / totalTests * 100) + '%';
+                            resolve({ api: api, result: errorResult });
+                        });
+                    }, delay);
                 });
-            }
 
-            runTestSequential(0);
-        }
+                allPromises.push(promise);
+            });
+        });
 
-        runApiSequential(0);
+        Promise.all(allPromises).then(function() {
+            // Update all API statuses
+            APIS.forEach(function(api) {
+                if (results[api] && results[api].length > 0) {
+                    updateApiStatus(api);
+                }
+            });
+            progress.classList.remove('show');
+            running = false;
+            updateExportButtons();
+            saveResults();
+            toast('Hoàn thành tất cả API tests', 'ok');
+        });
     };
 
     // Legacy compatibility - keep old function signature

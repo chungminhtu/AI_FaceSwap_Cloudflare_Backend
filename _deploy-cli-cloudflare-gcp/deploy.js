@@ -952,6 +952,7 @@ function parseConfig(config) {
   }
   
   if (config.WAVESPEED_API_KEY) secrets.WAVESPEED_API_KEY = config.WAVESPEED_API_KEY;
+  if (config.IMAGE_PROVIDER) secrets.IMAGE_PROVIDER = config.IMAGE_PROVIDER;
   if (config.ALLOWED_ORIGINS) secrets.ALLOWED_ORIGINS = config.ALLOWED_ORIGINS;
   if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
   if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
@@ -3007,6 +3008,7 @@ async function deployMultipleEnvironments(envNames, cwd, flags = {}, args = []) 
       if (flags.DEPLOY_WORKER === false) childArgs.push('--no-worker');
       if (flags.DEPLOY_PAGES === false) childArgs.push('--no-pages');
       if (flags.DEPLOY_R2 === false) childArgs.push('--no-r2');
+      if (flags.SKIP_CHECKS === true) childArgs.push('--skip-checks');
       if (args.includes('--workers-only')) childArgs.push('--workers-only');
       
       const child = spawn('node', childArgs, {
@@ -3227,22 +3229,23 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
   const DEPLOY_DB = flags.DEPLOY_DB !== false;
   const DEPLOY_WORKER = flags.DEPLOY_WORKER !== false;
   // Respect config.deployPages if set, otherwise use flag
-  const DEPLOY_PAGES = config.deployPages !== undefined 
+  const DEPLOY_PAGES = config.deployPages !== undefined
     ? (config.deployPages !== false && flags.DEPLOY_PAGES !== false)
     : flags.DEPLOY_PAGES !== false;
   const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
+  const SKIP_CHECKS = flags.SKIP_CHECKS === true;
 
   const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;
   const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
 
-  if (needsCloudflare || needsGCP) {
+  if (!SKIP_CHECKS && (needsCloudflare || needsGCP)) {
     report('Checking prerequisites', 'running', 'Validating tools');
     if (needsCloudflare && !utils.checkWrangler()) throw new Error('Wrangler CLI not found');
     if (needsGCP && !utils.checkGcloud()) throw new Error('gcloud CLI not found');
     report('Checking prerequisites', 'completed', 'Tools validated');
   }
 
-  if (needsGCP) {
+  if (needsGCP && !SKIP_CHECKS) {
     report('Authenticating with GCP', 'running', 'Connecting to Google Cloud');
     if (!await utils.authenticateGCP(config.gcp)) {
       throw new Error('GCP authentication failed');
@@ -3262,39 +3265,41 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
   }
 
   if (needsCloudflare) {
-    report('Setting up Cloudflare credentials', 'running', 'Configuring Cloudflare access');
     let cfToken = config.cloudflare.apiToken;
     let cfAccountId = config.cloudflare.accountId;
 
-    if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
-      const creds = await setupCloudflare(config._environment, cfAccountId);
-      cfToken = creds.apiToken;
-      cfAccountId = creds.accountId;
-      config.cloudflare.apiToken = cfToken;
-      config.cloudflare.accountId = cfAccountId;
-    }
-    
-    if (cfAccountId) {
-      const hasBackendDomain = config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '';
+    if (!SKIP_CHECKS) {
+      report('Setting up Cloudflare credentials', 'running', 'Configuring Cloudflare access');
+      if (!cfToken || !cfAccountId || !await validateCloudflareToken(cfToken)) {
+        const creds = await setupCloudflare(config._environment, cfAccountId);
+        cfToken = creds.apiToken;
+        cfAccountId = creds.accountId;
+        config.cloudflare.apiToken = cfToken;
+        config.cloudflare.accountId = cfAccountId;
+      }
 
-      if (!hasBackendDomain && !config.secrets.BACKEND_DOMAIN) {
-        try {
-          const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
-          const match = whoami.match(/([^\s]+)@/);
-          if (match) {
-            const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
-            config.secrets.BACKEND_DOMAIN = workerDevUrl;
-            config._workerDevUrl = workerDevUrl;
-            if (!process.env.__CHILD_DEPLOY__) {
-              console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+      if (cfAccountId) {
+        const hasBackendDomain = config.BACKEND_DOMAIN && config.BACKEND_DOMAIN.trim() !== '';
+
+        if (!hasBackendDomain && !config.secrets.BACKEND_DOMAIN) {
+          try {
+            const whoami = execSync('wrangler whoami', { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
+            const match = whoami.match(/([^\s]+)@/);
+            if (match) {
+              const workerDevUrl = `https://${config.workerName}.${match[1]}.workers.dev`;
+              config.secrets.BACKEND_DOMAIN = workerDevUrl;
+              config._workerDevUrl = workerDevUrl;
+              if (!process.env.__CHILD_DEPLOY__) {
+                console.log(`${colors.cyan}ℹ${colors.reset} Using Worker dev domain: ${workerDevUrl}`);
+              }
             }
+          } catch {
           }
-        } catch {
         }
       }
+
+      report('Setting up Cloudflare credentials', 'completed', 'Cloudflare ready');
     }
-    
-    report('Setting up Cloudflare credentials', 'completed', 'Cloudflare ready');
 
     const origToken = process.env.CLOUDFLARE_API_TOKEN;
     const origAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -3303,82 +3308,91 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
 
     try {
       let r2Result = null;
-      if (DEPLOY_R2) {
-        report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'running', 'Checking bucket existence');
-        r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
-        if (r2Result.created) {
-          report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket created successfully');
-        } else {
-          report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket already exists');
-        }
-        
-        // Ensure bucket is public (no CORS restrictions)
-        if (cfAccountId && cfToken) {
-          await utils.ensureR2BucketPublic(cwd, config.bucketName, cfAccountId, cfToken);
-          // Configure CORS policy on R2 bucket
-          await utils.configureR2BucketCORS(config.bucketName, cfAccountId, cfToken);
-        }
-        
-        const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
-        const r2Domain = hasR2Domain ? config.R2_DOMAIN.trim() : (config.secrets.R2_DOMAIN || r2Result.publicDevDomain);
-        
-        if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
-          config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
-        }
-        
-        // Configure CORS headers for R2 custom domain via Transform Rules
-        if (r2Domain && cfAccountId && cfToken && r2Domain.includes('resources.d.shotpix.app')) {
-          await utils.configureR2DomainCORS(r2Domain, cfAccountId, cfToken);
-        }
-      } else {
-        r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
-        // Ensure bucket is public (no CORS restrictions)
-        if (cfAccountId && cfToken) {
-          await utils.ensureR2BucketPublic(cwd, config.bucketName, cfAccountId, cfToken);
-        }
-        const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
-        if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
-          config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
-        }
-      }
-      
       let dbResult = null;
-      if (DEPLOY_DB) {
-        report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Checking database existence');
-        dbResult = await utils.ensureD1Database(cwd, config.databaseName);
-        if (dbResult.skipped) {
-          report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'warning', 'Skipped (API token lacks D1 permissions)');
-        } else if (dbResult.created) {
-          report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Database created, applying schema');
-          if (dbResult.schemaApplied) {
-            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created & schema applied');
+      let promptCacheResult = null;
+
+      // Infrastructure checks - skip verbose reporting when SKIP_CHECKS is true
+      if (!SKIP_CHECKS) {
+        if (DEPLOY_R2) {
+          report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'running', 'Checking bucket existence');
+          r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
+          if (r2Result.created) {
+            report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket created successfully');
           } else {
-            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created');
+            report(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'completed', 'Bucket already exists');
+          }
+
+          // Ensure bucket is public (no CORS restrictions)
+          if (cfAccountId && cfToken) {
+            await utils.ensureR2BucketPublic(cwd, config.bucketName, cfAccountId, cfToken);
+            // Configure CORS policy on R2 bucket
+            await utils.configureR2BucketCORS(config.bucketName, cfAccountId, cfToken);
+          }
+
+          const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+          const r2Domain = hasR2Domain ? config.R2_DOMAIN.trim() : (config.secrets.R2_DOMAIN || r2Result.publicDevDomain);
+
+          if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+            config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
+          }
+
+          // Configure CORS headers for R2 custom domain via Transform Rules
+          if (r2Domain && cfAccountId && cfToken && r2Domain.includes('resources.d.shotpix.app')) {
+            await utils.configureR2DomainCORS(r2Domain, cfAccountId, cfToken);
           }
         } else {
-          if (dbResult.schemaApplied) {
-            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database exists, schema verified');
-          } else {
-            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database already exists');
+          r2Result = await utils.ensureR2Bucket(cwd, config.bucketName);
+          // Ensure bucket is public (no CORS restrictions)
+          if (cfAccountId && cfToken) {
+            await utils.ensureR2BucketPublic(cwd, config.bucketName, cfAccountId, cfToken);
+          }
+          const hasR2Domain = config.R2_DOMAIN && config.R2_DOMAIN.trim() !== '';
+          if (!hasR2Domain && !config.secrets.R2_DOMAIN && r2Result.publicDevDomain && r2Result.publicDevDomain.includes('pub-') && r2Result.publicDevDomain.includes('.r2.dev')) {
+            config.secrets.R2_DOMAIN = r2Result.publicDevDomain;
           }
         }
+
+        if (DEPLOY_DB) {
+          report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Checking database existence');
+          dbResult = await utils.ensureD1Database(cwd, config.databaseName);
+          if (dbResult.skipped) {
+            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'warning', 'Skipped (API token lacks D1 permissions)');
+          } else if (dbResult.created) {
+            report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'running', 'Database created, applying schema');
+            if (dbResult.schemaApplied) {
+              report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created & schema applied');
+            } else {
+              report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database created');
+            }
+          } else {
+            if (dbResult.schemaApplied) {
+              report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database exists, schema verified');
+            } else {
+              report(`[Cloudflare] D1 Database: ${config.databaseName}`, 'completed', 'Database already exists');
+            }
+          }
+        } else {
+          dbResult = await utils.ensureD1Database(cwd, config.databaseName);
+        }
+
+        // Ensure KV namespace for prompt caching
+        const promptCacheKVName = config.promptCacheKV.namespaceName;
+        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'running', 'Checking namespace existence');
+        promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
+        if (promptCacheResult.skipped) {
+          report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'warning', 'Skipped (API token lacks KV permissions)');
+        } else if (promptCacheResult.created) {
+          report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'completed', 'Namespace created successfully');
+        } else {
+          report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'completed', 'Namespace already exists');
+        }
       } else {
+        // SKIP_CHECKS: silently get IDs without verbose reporting
         dbResult = await utils.ensureD1Database(cwd, config.databaseName);
+        promptCacheResult = await utils.ensureKVNamespace(cwd, config.promptCacheKV.namespaceName);
       }
 
-      // Ensure KV namespace for prompt caching
-      const promptCacheKVName = config.promptCacheKV.namespaceName;
-      report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'running', 'Checking namespace existence');
-      const promptCacheResult = await utils.ensureKVNamespace(cwd, promptCacheKVName);
-      if (promptCacheResult.skipped) {
-        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'warning', 'Skipped (API token lacks KV permissions)');
-      } else if (promptCacheResult.created) {
-        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'completed', 'Namespace created successfully');
-      } else {
-        report(`[Cloudflare] KV Namespace: ${promptCacheKVName}`, 'completed', 'Namespace already exists');
-      }
-
-      // Run database migrations after database is set up
+      // Run database migrations (always run, even with SKIP_CHECKS)
       if (dbResult && !dbResult.skipped) {
         report('Running database migrations', 'running', 'Executing pending migrations');
         try {
@@ -3393,7 +3407,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
                 ? `${migrationResult.executed} executed`
                 : `${migrationResult.skipped} skipped (TS requires manual execution)`;
               report('Running database migrations', 'completed', details);
-              
+
               if (migrationResult.skippedFiles && migrationResult.skippedFiles.length > 0) {
                 console.log(`\n${colors.yellow}⚠ TypeScript migrations skipped:${colors.reset}`);
                 migrationResult.skippedFiles.forEach(file => {
@@ -3416,11 +3430,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       let workerUrl = '';
       if (DEPLOY_WORKER) {
         report('Deploying worker', 'running', 'Deploying Cloudflare Worker');
-        if (!dbResult) {
-          dbResult = await utils.ensureD1Database(cwd, config.databaseName);
-        }
-        const skipD1 = dbResult.skipped || false;
-        const databaseId = dbResult.databaseId || null;
+        const skipD1 = dbResult?.skipped || false;
+        const databaseId = dbResult?.databaseId || null;
         const promptCacheNamespaceId = promptCacheResult?.namespaceId || null;
         const envName = config._environment || null;
         workerUrl = await utils.deployWorker(cwd, config.workerName, config, skipD1, databaseId, promptCacheNamespaceId, envName, config.workerName, config.cloudflare?.accountId);
@@ -3556,7 +3567,95 @@ async function main() {
   const childDeployIndex = args.findIndex(arg => arg === '--child-deploy');
   const envsIndex = args.findIndex(arg => arg === '--envs' || arg === '--environments');
   const allEnvs = args.includes('--all-envs');
-  
+  const skipChecks = args.includes('--skip-checks');
+  const checkOnly = args.includes('--check-only');
+
+  // Check-only mode: run prerequisite checks and exit
+  if (checkOnly) {
+    console.log(`\n${colors.cyan}${colors.bright}Running prerequisite checks...${colors.reset}\n`);
+
+    let hasErrors = false;
+
+    // Check wrangler CLI
+    process.stdout.write(`  Checking wrangler CLI... `);
+    if (utils.checkWrangler()) {
+      console.log(`${colors.green}✓${colors.reset}`);
+    } else {
+      console.log(`${colors.red}✗ Not found${colors.reset}`);
+      hasErrors = true;
+    }
+
+    // Check gcloud CLI
+    process.stdout.write(`  Checking gcloud CLI... `);
+    if (utils.checkGcloud()) {
+      console.log(`${colors.green}✓${colors.reset}`);
+    } else {
+      console.log(`${colors.red}✗ Not found${colors.reset}`);
+      hasErrors = true;
+    }
+
+    // Check deployments-secrets.json exists
+    const secretsPath = path.join(process.cwd(), '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+    process.stdout.write(`  Checking deployments-secrets.json... `);
+    if (fs.existsSync(secretsPath)) {
+      console.log(`${colors.green}✓${colors.reset}`);
+
+      // Validate config structure
+      try {
+        const allConfigs = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
+        process.stdout.write(`  Validating config structure... `);
+        if (allConfigs.environments && Object.keys(allConfigs.environments).length > 0) {
+          console.log(`${colors.green}✓ ${Object.keys(allConfigs.environments).length} environment(s) found${colors.reset}`);
+
+          // Validate each environment config
+          const envsToDeploy = envsIndex >= 0 && args[envsIndex + 1]
+            ? args[envsIndex + 1].split(',').map(e => e.trim())
+            : Object.keys(allConfigs.environments);
+
+          for (const envName of envsToDeploy) {
+            process.stdout.write(`  Validating ${envName} config... `);
+            try {
+              const originalEnv = process.env.DEPLOY_ENV;
+              process.env.DEPLOY_ENV = envName;
+              const envConfig = allConfigs.environments[envName];
+              if (!envConfig) {
+                console.log(`${colors.red}✗ Not found${colors.reset}`);
+                hasErrors = true;
+              } else {
+                const configForValidation = { environments: { [envName]: envConfig } };
+                parseConfig(configForValidation);
+                console.log(`${colors.green}✓${colors.reset}`);
+              }
+              process.env.DEPLOY_ENV = originalEnv;
+            } catch (error) {
+              console.log(`${colors.red}✗ ${error.message}${colors.reset}`);
+              hasErrors = true;
+            }
+          }
+        } else {
+          console.log(`${colors.red}✗ No environments found${colors.reset}`);
+          hasErrors = true;
+        }
+      } catch (parseError) {
+        console.log(`${colors.red}✗ Invalid JSON: ${parseError.message}${colors.reset}`);
+        hasErrors = true;
+      }
+    } else {
+      console.log(`${colors.red}✗ Not found${colors.reset}`);
+      hasErrors = true;
+    }
+
+    console.log('');
+    if (hasErrors) {
+      console.log(`${colors.red}${colors.bright}✗ Some checks failed${colors.reset}\n`);
+      process.exit(1);
+    } else {
+      console.log(`${colors.green}${colors.bright}✓ All prerequisite checks passed${colors.reset}\n`);
+      process.exit(0);
+    }
+    return;
+  }
+
   if (childDeployIndex >= 0 && args[childDeployIndex + 1]) {
     const envName = args[childDeployIndex + 1];
     const workersOnly = args.includes('--workers-only');
@@ -3565,7 +3664,8 @@ async function main() {
       DEPLOY_DB: workersOnly ? false : !args.includes('--no-db'),
       DEPLOY_WORKER: !args.includes('--no-worker'),
       DEPLOY_PAGES: workersOnly ? false : !args.includes('--no-pages'),
-      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2')
+      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2'),
+      SKIP_CHECKS: skipChecks
     };
     
     try {
@@ -3605,19 +3705,28 @@ async function main() {
     }
     
     const workersOnly = args.includes('--workers-only');
-    const flags = {
+    const migrateOnlyMulti = args.includes('--migrate-only') || args.includes('--db-migrate');
+    const flags = migrateOnlyMulti ? {
+      DEPLOY_SECRETS: false,
+      DEPLOY_DB: true,
+      DEPLOY_WORKER: false,
+      DEPLOY_PAGES: false,
+      DEPLOY_R2: false,
+      SKIP_CHECKS: skipChecks
+    } : {
       DEPLOY_SECRETS: workersOnly ? false : !args.includes('--no-secrets'),
       DEPLOY_DB: workersOnly ? false : !args.includes('--no-db'),
       DEPLOY_WORKER: !args.includes('--no-worker'),
       DEPLOY_PAGES: workersOnly ? false : !args.includes('--no-pages'),
-      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2')
+      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2'),
+      SKIP_CHECKS: skipChecks
     };
-    
+
     try {
       const result = await deployMultipleEnvironments(envsToDeploy, process.cwd(), flags, args);
       
-      // Run tests after successful deployment (skip if --skip-tests flag is set or if already in test mode)
-      if (result.success && !args.includes('--skip-tests') && !process.env.SKIP_POST_DEPLOY_TESTS) {
+      // Run tests after successful deployment (skip if --skip-tests flag is set, migrate-only mode, or if already in test mode)
+      if (result.success && !args.includes('--skip-tests') && !migrateOnlyMulti && !process.env.SKIP_POST_DEPLOY_TESTS) {
         console.log(`\n${colors.cyan}${colors.bright}Running post-deployment tests...${colors.reset}\n`);
         try {
           // Set flag to prevent recursion

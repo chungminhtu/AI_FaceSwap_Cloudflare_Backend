@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS selfies (
   ext TEXT NOT NULL, -- File extension (e.g., 'jpg', 'png', etc.)
   profile_id TEXT NOT NULL, -- Profile that owns this selfie
   action TEXT, -- Action type (e.g., "faceswap", "default", etc.) - determines retention policy
+  filename TEXT, -- Original filename for override detection (same profile_id + filename = override)
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
@@ -46,6 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_selfies_created_at ON selfies(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_selfies_profile_id ON selfies(profile_id);
 CREATE INDEX IF NOT EXISTS idx_selfies_action ON selfies(action);
 CREATE INDEX IF NOT EXISTS idx_selfies_action_profile_id ON selfies(action, profile_id);
+CREATE INDEX IF NOT EXISTS idx_selfies_profile_filename ON selfies(profile_id, filename);
 
 -- Results table: Store face swap results
 CREATE TABLE IF NOT EXISTS results (

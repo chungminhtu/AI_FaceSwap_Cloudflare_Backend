@@ -850,10 +850,6 @@
                     <button id="switch-profile-btn" onclick="switchProfile()" style="padding: 4px 12px; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px;">Chuyển Profile</button>
                     <button id="edit-profile-btn" onclick="openProfileEditModal()" style="padding: 4px 12px; background: rgba(59, 130, 246, 0.9); color: #fff; border: none; cursor: pointer; font-size: 12px; height: 26px; font-weight: 600; border-radius: 12px; display: none;" title="Chỉnh Sửa Hồ Sơ">✏️ Sửa</button>
                 </div>
-                <select class="action-select" id="api-provider" style="height: 26px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 12px;">
-                    <option value="google-nano-banana" selected>Google</option>
-                    <option value="rapidapi">RapidAPI</option>
-                </select>
                 <button class="log-toggle-btn" onclick="window.open('docs/index.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--accent); color: #fff; transition: all 0.2s;">📖 API Docs</button>
                 <button class="log-toggle-btn" onclick="window.open('api-test.html', '_blank')" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: var(--success); color: #fff; transition: all 0.2s;" title="API Auto-Test">🧪 API Test</button>
                 <button class="log-toggle-btn" onclick="showComparisonView()" id="comparison-view-btn" style="padding: 5px 12px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; border-radius: 12px; background: rgba(59, 130, 246, 0.9); color: #fff; transition: all 0.2s;" title="Xem So Sánh">🔍 So Sánh (<span id="comparison-count">0</span>)</button>
@@ -2299,7 +2295,7 @@
                                     const anim = lottie.loadAnimation({
                                         container: container,
                                         renderer: 'svg',
-                                        loop: true,
+                                        loop: false,
                                         autoplay: true,
                                         path: thumbnailUrl
                                     });
@@ -2601,7 +2597,7 @@
                             const anim = lottie.loadAnimation({
                                 container: container,
                                 renderer: 'svg',
-                                loop: true,
+                                loop: false,
                                 autoplay: true,
                                 path: thumbnailUrl
                             });
@@ -4066,7 +4062,14 @@
                     }
                 }
 
+                // Show counter and actual result URL for gallery mode (no prompt JSON)
                 if (counter) counter.textContent = `Kết Quả (Result) (${lightboxCurrentIndex + 1} / ${lightboxItems.length})`;
+                if (info) {
+                    info.innerHTML = `
+                        <span id="lightbox-counter">${counter ? counter.textContent : ''}</span>
+                        <div style="color: #999; font-size: 11px; word-break: break-all; font-family: monospace; margin-top: 8px; max-width: 600px;">${imageUrl}</div>
+                    `;
+                }
 
                 const actions = $('lightbox-actions');
                 if (actions) {
@@ -4244,13 +4247,13 @@
                                 const anim = lottie.loadAnimation({
                                     container: container,
                                     renderer: 'svg',
-                                    loop: true,
+                                    loop: false,
                                     autoplay: true,
                                     path: thumbnailUrl
                                 });
-                                
+
                                 container.lottieInstance = anim;
-                                
+
                                 // Handle errors
                                 anim.addEventListener('data_failed', () => {
                                     console.error('Lottie data failed to load');
@@ -4329,8 +4332,7 @@
                         fetchPresetPromptJson(presetId).then(promptData => {
                             const promptContainer = document.getElementById('lightbox-prompt-json');
                             if (promptContainer && promptData) {
-                                const promptText = typeof promptData === 'string' ? promptData :
-                                    (promptData.prompt || JSON.stringify(promptData, null, 2));
+                                const promptText = typeof promptData === 'string' ? promptData : JSON.stringify(promptData, null, 2);
                                 promptContainer.innerHTML = `
                                     <div style="background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; max-height: 200px; overflow-y: auto;">
                                         <div style="font-size: 11px; color: var(--accent); margin-bottom: 6px; font-weight: 600;">📝 Prompt JSON:</div>
@@ -4409,6 +4411,10 @@
             document.querySelector('.lightbox-prev').disabled = lightboxItems.length <= 1;
             document.querySelector('.lightbox-next').disabled = lightboxItems.length <= 1;
             lightbox.style.display = 'flex';
+
+            // Scroll lightbox content to top
+            if (single) single.scrollTop = 0;
+            lightbox.scrollTop = 0;
         }
         
         function addToComparison() {

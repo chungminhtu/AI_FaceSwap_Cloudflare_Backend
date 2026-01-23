@@ -365,59 +365,74 @@ const saveResultToDatabase = async (
   R2_BUCKET: R2Bucket
 ): Promise<string | null> => {
   try {
-    let resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
-    
-    // Ensure result key has results/ prefix if it's a result file
-    if (resultKey && !resultKey.startsWith('results/')) {
-      // Check if it looks like a result file (starts with result_, vertex_, merge_, upscaler4k_)
-      if (resultKey.startsWith('result_') || resultKey.startsWith('vertex_') || resultKey.startsWith('merge_') || resultKey.startsWith('upscaler4k_')) {
-        resultKey = `results/${resultKey}`;
+    // Check if this is an external URL (WaveSpeed cloudfront, etc.)
+    const isExternalUrl = resultUrl.startsWith('http://') || resultUrl.startsWith('https://');
+    const r2Domain = env.R2_DOMAIN || '';
+    const isR2Url = isExternalUrl && r2Domain && resultUrl.includes(r2Domain);
+
+    let id: string;
+    let ext: string;
+
+    if (isExternalUrl && !isR2Url) {
+      // External URL (e.g., WaveSpeed cloudfront) - store full URL as id
+      id = resultUrl;
+      // Extract extension from URL or default to jpg
+      const urlPath = new URL(resultUrl).pathname;
+      const urlExt = urlPath.split('.').pop()?.toLowerCase();
+      ext = (urlExt && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(urlExt)) ? urlExt : 'jpg';
+    } else {
+      // R2 URL or r2:// key - extract id and ext from key
+      let resultKey = extractR2KeyFromUrl(resultUrl) || resultUrl;
+
+      // Ensure result key has results/ prefix if it's a result file
+      if (resultKey && !resultKey.startsWith('results/')) {
+        if (resultKey.startsWith('result_') || resultKey.startsWith('vertex_') || resultKey.startsWith('merge_') || resultKey.startsWith('upscaler4k_')) {
+          resultKey = `results/${resultKey}`;
+        }
       }
+
+      // Extract id and ext from resultKey (format: results/{id}.{ext})
+      const keyParts = resultKey.replace('results/', '').split('.');
+      if (keyParts.length < 2) {
+        return null;
+      }
+      ext = keyParts[keyParts.length - 1];
+      id = keyParts.slice(0, -1).join('.');
     }
-    
-    // Extract id and ext from resultKey (format: results/{id}.{ext})
-    const keyParts = resultKey.replace('results/', '').split('.');
-    if (keyParts.length < 2) {
-      return null;
-    }
-    const ext = keyParts[keyParts.length - 1];
-    const id = keyParts.slice(0, -1).join('.');
-    
+
     // Check if result already exists
     const existingResult = await DB.prepare(
       'SELECT id FROM results WHERE id = ? AND profile_id = ? LIMIT 1'
     ).bind(id, profileId).first<{ id: string }>();
-    
+
     // If result already exists, return its ID
     if (existingResult) {
       return existingResult.id;
     }
-    
+
     // Get max history limit (default 10)
     let maxHistory = parseInt(env.RESULT_MAX_HISTORY || '10', 10);
     if (isNaN(maxHistory) || maxHistory < 1) {
-      maxHistory = 10; // Default to 10 if invalid
+      maxHistory = 10;
     }
-    maxHistory = Math.floor(Math.max(1, maxHistory)); // Ensure it's a positive integer
-    
+    maxHistory = Math.floor(Math.max(1, maxHistory));
+
     // Check current count of results for this profile
     const countResult = await DB.prepare(
       'SELECT COUNT(*) as count FROM results WHERE profile_id = ?'
     ).bind(profileId).first<{ count: number }>();
-    
+
     const currentCount = countResult?.count || 0;
-    
+
     // If we're at or over the limit, delete oldest results
     if (currentCount >= maxHistory) {
-      const excessCount = Math.floor(Math.max(1, currentCount - maxHistory + 1)); // +1 because we're about to add one, ensure positive integer
-      
-      // Get oldest results to delete
+      const excessCount = Math.floor(Math.max(1, currentCount - maxHistory + 1));
+
       const oldResults = await DB.prepare(
         'SELECT id, ext FROM results WHERE profile_id = ? ORDER BY created_at ASC LIMIT ?'
       ).bind(profileId, excessCount).all<{ id: string; ext: string }>();
-      
+
       if (oldResults.results && oldResults.results.length > 0) {
-        // Batch delete from database
         let idsToDelete = oldResults.results.map(r => r.id);
         if (idsToDelete.length > 0) {
           if (idsToDelete.length > 100) {
@@ -425,29 +440,31 @@ const saveResultToDatabase = async (
           }
           const placeholders = idsToDelete.map(() => '?').join(',');
           await DB.prepare(`DELETE FROM results WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
-          
-          // Delete from R2 (non-fatal if it fails)
+
+          // Delete from R2 only for non-external URLs (id doesn't start with http)
           for (const oldResult of oldResults.results) {
-            const r2Key = reconstructR2Key(oldResult.id, oldResult.ext, 'results');
-            try {
-              await R2_BUCKET.delete(r2Key);
-            } catch (r2Error) {
-              // Ignore R2 deletion errors
+            if (!oldResult.id.startsWith('http')) {
+              const r2Key = reconstructR2Key(oldResult.id, oldResult.ext, 'results');
+              try {
+                await R2_BUCKET.delete(r2Key);
+              } catch (r2Error) {
+                // Ignore R2 deletion errors
+              }
             }
           }
         }
       }
     }
-    
+
     // Insert new result
     const insertResult = await DB.prepare(
       'INSERT INTO results (id, ext, profile_id, created_at) VALUES (?, ?, ?, ?)'
     ).bind(id, ext, profileId, Math.floor(Date.now() / 1000)).run();
-    
+
     if (insertResult.success) {
       return id;
     }
-    
+
     return null;
   } catch (dbError) {
     return null;
@@ -600,10 +617,13 @@ const buildFlatDebug = (result: FaceSwapResponse, promptPayload?: any): Record<s
   const prompt = promptPayload || extended.Prompt || debug?.prompt;
 
   // Build flat debug object with no duplicates
+  // Determine source from debug.provider or default to 'vertex'
+  const source = debug?.provider?.includes('wavespeed') ? 'wavespeed' : 'vertex';
+
   const flatDebug = compact({
-    // Always show source when there's an error - helps distinguish Vertex errors from backend errors
+    // Always show source when there's an error - helps distinguish provider errors from backend errors
     ...(result.StatusCode >= 400 || result.Error ? {
-      source: 'vertex',  // This error came from Vertex AI, not backend rate limiter
+      source,
       vertexHttpStatus: extended.HttpStatus,
       vertexHttpStatusText: extended.HttpStatusText,
       ...(debug?.retryAttempts !== undefined ? {
@@ -618,6 +638,7 @@ const buildFlatDebug = (result: FaceSwapResponse, promptPayload?: any): Record<s
     prompt: prompt ? (typeof prompt === 'string' ? prompt.substring(0, 500) : prompt) : undefined,
     aspectRatio: debug?.aspectRatio,
     durationMs: debug?.durationMs || debug?.responseTimeMs,
+    rawResponse: debug?.rawResponse,
     // Only include on error
     ...(result.StatusCode >= 400 || result.Error ? {
       error: result.Error || debug?.error,
@@ -1007,7 +1028,24 @@ export default {
 
         // Process all files in parallel
         const processFile = async (fileData: FileData, index: number): Promise<any> => {
-          const id = nanoid(16);
+          // Check if same filename exists for this profile_id (selfie override detection)
+          let existingId: string | null = null;
+          let existingExt: string | null = null;
+          let isOverride = false;
+
+          if (type === 'selfie' && fileData.filename && profileId) {
+            const existingResult = await DB.prepare(
+              'SELECT id, ext FROM selfies WHERE profile_id = ? AND filename = ? LIMIT 1'
+            ).bind(profileId, fileData.filename).first();
+
+            if (existingResult) {
+              existingId = (existingResult as any).id;
+              existingExt = (existingResult as any).ext;
+              isOverride = true;
+            }
+          }
+
+          const id = isOverride ? existingId! : nanoid(16);
           // Extract extension from content type, with proper fallback
           let ext = 'jpg'; // Default fallback
           if (fileData.contentType && typeof fileData.contentType === 'string') {
@@ -1027,8 +1065,12 @@ export default {
           }
           const key = `${type}/${id}.${ext}`;
 
-          // Upload to R2
+          // Upload to R2 (if override with different ext, delete old file first)
           try {
+            if (isOverride && existingExt && existingExt !== ext) {
+              const oldKey = `${type}/${id}.${existingExt}`;
+              await R2_BUCKET.delete(oldKey).catch(() => {});
+            }
             await R2_BUCKET.put(key, fileData.fileData, {
               httpMetadata: {
                 contentType: fileData.contentType,
@@ -1287,63 +1329,66 @@ export default {
               actionValue = 'faceswap';
             }
 
-            // Optimized: Use LIMIT to fetch only what we need (faster than COUNT on large tables)
-            // Get (maxCount) oldest selfies - if we have exactly maxCount, we need to delete 1 before inserting
-            let maxCount: number;
-            let queryCondition: string;
-            let queryBindings: any[];
+            // Skip limit check if override (same filename for same profile_id)
+            if (!isOverride) {
+              // Optimized: Use LIMIT to fetch only what we need (faster than COUNT on large tables)
+              // Get (maxCount) oldest selfies - if we have exactly maxCount, we need to delete 1 before inserting
+              let maxCount: number;
+              let queryCondition: string;
+              let queryBindings: any[];
 
-            if (actionLower === 'faceswap') {
-              maxCount = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
-              queryCondition = 'profile_id = ? AND action = ?';
-              queryBindings = [profileId, actionValue];
-            } else if (actionLower === 'wedding') {
-              maxCount = parseInt(env.SELFIE_MAX_WEDDING || '2', 10);
-              queryCondition = 'profile_id = ? AND action = ?';
-              queryBindings = [profileId, actionValue];
-            } else if (actionLower === '4k') {
-              maxCount = parseInt(env.SELFIE_MAX_4K || '1', 10);
-              queryCondition = 'profile_id = ? AND (action = ? OR action = ?)';
-              queryBindings = [profileId, '4k', '4K'];
-            } else {
-              maxCount = parseInt(env.SELFIE_MAX_OTHER || '1', 10);
-              queryCondition = 'profile_id = ? AND action = ?';
-              queryBindings = [profileId, actionValue];
-            }
+              if (actionLower === 'faceswap') {
+                maxCount = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
+                queryCondition = 'profile_id = ? AND action = ?';
+                queryBindings = [profileId, actionValue];
+              } else if (actionLower === 'wedding') {
+                maxCount = parseInt(env.SELFIE_MAX_WEDDING || '2', 10);
+                queryCondition = 'profile_id = ? AND action = ?';
+                queryBindings = [profileId, actionValue];
+              } else if (actionLower === '4k') {
+                maxCount = parseInt(env.SELFIE_MAX_4K || '1', 10);
+                queryCondition = 'profile_id = ? AND (action = ? OR action = ?)';
+                queryBindings = [profileId, '4k', '4K'];
+              } else {
+                maxCount = parseInt(env.SELFIE_MAX_OTHER || '1', 10);
+                queryCondition = 'profile_id = ? AND action = ?';
+                queryBindings = [profileId, actionValue];
+              }
 
-            // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
-            if (isNaN(maxCount) || maxCount < 1) {
-              maxCount = 1; // Default to 1 if invalid
-            }
-            maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
+              // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
+              if (isNaN(maxCount) || maxCount < 1) {
+                maxCount = 1; // Default to 1 if invalid
+              }
+              maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
 
-            // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
-            const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
-            const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
-            const currentCount = existingResult.results?.length || 0;
+              // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
+              const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
+              const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
+              const currentCount = existingResult.results?.length || 0;
 
-            // Delete oldest if at limit
-            if (currentCount >= maxCount) {
-              const toDeleteCount = currentCount - maxCount + 1;
-              const toDelete = existingResult.results!.slice(0, toDeleteCount);
-              const idsToDelete = toDelete.map((s: any) => s.id);
-              
-              // Delete from DB in batch
-              const placeholders = idsToDelete.map(() => '?').join(',');
-              await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
-              
-              // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
-              const r2Deletions = toDelete.map(async (oldSelfie: any) => {
-                const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
-                try {
-                  await R2_BUCKET.delete(oldKey);
-                } catch (r2Error) {
-                  console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
-                }
-              });
-              
-              // Wait for all R2 deletions to complete (parallel within batch)
-              await Promise.all(r2Deletions);
+              // Delete oldest if at limit
+              if (currentCount >= maxCount) {
+                const toDeleteCount = currentCount - maxCount + 1;
+                const toDelete = existingResult.results!.slice(0, toDeleteCount);
+                const idsToDelete = toDelete.map((s: any) => s.id);
+
+                // Delete from DB in batch
+                const placeholders = idsToDelete.map(() => '?').join(',');
+                await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+
+                // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
+                const r2Deletions = toDelete.map(async (oldSelfie: any) => {
+                  const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
+                  try {
+                    await R2_BUCKET.delete(oldKey);
+                  } catch (r2Error) {
+                    console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
+                  }
+                });
+
+                // Wait for all R2 deletions to complete (parallel within batch)
+                await Promise.all(r2Deletions);
+              }
             }
 
             // Insert new selfie - ensure all values are correct types
@@ -1388,61 +1433,44 @@ export default {
               validCreatedAt = Math.floor(Date.now() / 1000);
             }
             
-            // Explicitly bind with correct types - ensure all are primitive types
-            // SQLite INTEGER must be a whole number, not a float
-            const bindValues: [string, string, string, string, number] = [
-              validId,                    // id: TEXT (already string)
-              validExt,                   // ext: TEXT NOT NULL (already string)
-              validProfileId,             // profile_id: TEXT NOT NULL (already string)
-              validAction,                // action: TEXT (already string)
-              Math.floor(validCreatedAt)  // created_at: INTEGER NOT NULL (must be integer, not float)
-            ];
-            
-            // Validate all bind values are correct types
-            if (typeof bindValues[0] !== 'string' || bindValues[0] === '') {
-              throw new Error(`Invalid id type: ${typeof bindValues[0]}, value: ${bindValues[0]}`);
-            }
-            if (typeof bindValues[1] !== 'string' || bindValues[1] === '') {
-              throw new Error(`Invalid ext type: ${typeof bindValues[1]}, value: ${bindValues[1]}`);
-            }
-            if (typeof bindValues[2] !== 'string' || bindValues[2] === '') {
-              throw new Error(`Invalid profile_id type: ${typeof bindValues[2]}, value: ${bindValues[2]}`);
-            }
-            if (typeof bindValues[3] !== 'string') {
-              throw new Error(`Invalid action type: ${typeof bindValues[3]}, value: ${bindValues[3]}`);
-            }
-            if (typeof bindValues[4] !== 'number' || isNaN(bindValues[4]) || !Number.isInteger(bindValues[4])) {
-              throw new Error(`Invalid created_at type: ${typeof bindValues[4]}, value: ${bindValues[4]}, isInteger: ${Number.isInteger(bindValues[4])}`);
-            }
-            
+            // Filename for DB storage
+            const validFilename = fileData.filename || null;
+
             try {
-              const dbResult = await DB.prepare(
-                'INSERT INTO selfies (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
-              ).bind(...bindValues).run();
+              let dbResult;
+              if (isOverride) {
+                // UPDATE existing selfie (same profile_id + filename)
+                dbResult = await DB.prepare(
+                  'UPDATE selfies SET ext = ?, action = ?, created_at = ? WHERE id = ? AND profile_id = ?'
+                ).bind(validExt, validAction, Math.floor(validCreatedAt), validId, validProfileId).run();
+              } else {
+                // INSERT new selfie with filename
+                dbResult = await DB.prepare(
+                  'INSERT INTO selfies (id, ext, profile_id, action, filename, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+                ).bind(validId, validExt, validProfileId, validAction, validFilename, Math.floor(validCreatedAt)).run();
+              }
 
               if (!dbResult.success) {
                 return {
                   success: false,
-                  error: 'Database insert failed',
+                  error: isOverride ? 'Database update failed' : 'Database insert failed',
                   filename: fileData.filename
                 };
               }
             } catch (dbError) {
-              console.error('[Selfie Upload] Database insert error:', {
+              console.error('[Selfie Upload] Database error:', {
                 error: dbError instanceof Error ? dbError.message : String(dbError),
-                bindValues: {
-                  id: bindValues[0],
-                  ext: bindValues[1],
-                  profile_id: bindValues[2],
-                  action: bindValues[3],
-                  created_at: bindValues[4],
-                  types: bindValues.map(v => typeof v)
-                },
-                filename: fileData.filename
+                isOverride,
+                id: validId,
+                ext: validExt,
+                profile_id: validProfileId,
+                action: validAction,
+                filename: validFilename,
+                created_at: Math.floor(validCreatedAt)
               });
               return {
                 success: false,
-                error: `Database insert error: ${dbError instanceof Error ? dbError.message : String(dbError)}`,
+                error: `Database error: ${dbError instanceof Error ? dbError.message : String(dbError)}`,
                 filename: fileData.filename
               };
             }
@@ -3955,8 +3983,11 @@ export default {
         }
 
         const results = result.results.map((row: any) => {
-          const storedKey = reconstructR2Key(row.id, row.ext, 'results');
-          const fullUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
+          // Check if id is already a full URL (WaveSpeed external URL)
+          const isExternalUrl = row.id && row.id.startsWith('http');
+          const fullUrl = isExternalUrl
+            ? row.id
+            : getR2PublicUrl(env, reconstructR2Key(row.id, row.ext, 'results'), requestUrl.origin);
           return {
             id: String(row.id || ''),
             result_url: fullUrl,
@@ -4000,28 +4031,38 @@ export default {
         }
 
         // First, check if result exists and get the R2 key
-        const checkResult = await DB.prepare(
+        let checkResult = await DB.prepare(
           'SELECT id, ext FROM results WHERE id = ?'
         ).bind(resultId).first();
+
+        // If not found and resultId looks like a path, try to find by URL suffix (for WaveSpeed URLs)
+        if (!checkResult && resultId.includes('/')) {
+          checkResult = await DB.prepare(
+            'SELECT id, ext FROM results WHERE id LIKE ?'
+          ).bind(`%${resultId}%`).first();
+        }
 
         if (!checkResult) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Result not found', 404, debugEnabled ? { resultId, path } : undefined, request, env);
         }
 
-        const r2Key = reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'results');
+        // Check if id is already a full URL (WaveSpeed external URL)
+        const isExternalUrl = (checkResult as any).id && (checkResult as any).id.startsWith('http');
+        const r2Key = isExternalUrl ? null : reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'results');
 
-        // Delete from database
+        // Delete from database (use actual id from checkResult, not the partial path)
+        const actualId = (checkResult as any).id;
         const deleteResult = await DB.prepare(
           'DELETE FROM results WHERE id = ?'
-        ).bind(resultId).run();
+        ).bind(actualId).run();
 
         if (!deleteResult.success || deleteResult.meta?.changes === 0) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Result not found or already deleted', 404, debugEnabled ? { resultId, path } : undefined, request, env);
         }
 
-        // Try to delete from R2 (non-fatal if it fails)
+        // Try to delete from R2 (non-fatal if it fails, skip for external URLs)
         let r2Deleted = false;
         let r2Error = null;
         if (r2Key) {
@@ -4526,30 +4567,11 @@ export default {
           storageDebug.savedToR2 = true;
           storageDebug.r2Key = r2Key;
           storageDebug.publicUrl = resultUrl;
-        } else {
-          try {
-            storageDebug.attemptedDownload = true;
-            const resultImageResponse = await fetchWithTimeout(resultUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
-            storageDebug.downloadStatus = resultImageResponse.status;
-            if (resultImageResponse.ok && resultImageResponse.body) {
-              const id = nanoid(16);
-              const resultKey = `results/${id}.jpg`;
-              await R2_BUCKET.put(resultKey, resultImageResponse.body, {
-                httpMetadata: {
-                  contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
-                  cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-                },
-              });
-              storageDebug.savedToR2 = true;
-              storageDebug.r2Key = resultKey;
-              resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
-              storageDebug.publicUrl = resultUrl;
-            } else {
-              storageDebug.error = `Download failed with status ${resultImageResponse.status}`;
-            }
-          } catch (r2Error) {
-            storageDebug.error = r2Error instanceof Error ? r2Error.message : String(r2Error);
-          }
+        } else if (resultUrl?.startsWith('http')) {
+          // External URL (WaveSpeed cloudfront, etc.) - use directly without R2 upload
+          storageDebug.attemptedDownload = false;
+          storageDebug.savedToR2 = false;
+          storageDebug.publicUrl = resultUrl;
         }
 
         const databaseDebug: {
@@ -4874,28 +4896,15 @@ export default {
         };
 
         let resultUrl = mergeResult.ResultImageUrl;
-        try {
-          storageDebug.attemptedDownload = true;
-          const resultImageResponse = await fetchWithTimeout(mergeResult.ResultImageUrl, {}, TIMEOUT_CONFIG.IMAGE_FETCH);
-          storageDebug.downloadStatus = resultImageResponse.status;
-          if (resultImageResponse.ok && resultImageResponse.body) {
-            const id = nanoid(16);
-            const resultKey = `results/${id}.jpg`;
-            await R2_BUCKET.put(resultKey, resultImageResponse.body, {
-              httpMetadata: {
-                contentType: resultImageResponse.headers.get('content-type') || 'image/jpeg',
-                cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
-              },
-            });
-            storageDebug.savedToR2 = true;
-            storageDebug.r2Key = resultKey;
-            resultUrl = getR2PublicUrl(env, resultKey, requestUrl.origin);
-            storageDebug.publicUrl = resultUrl;
-          } else {
-            storageDebug.error = `Download failed with status ${resultImageResponse.status}`;
-          }
-        } catch (r2Error) {
-          storageDebug.error = r2Error instanceof Error ? r2Error.message : String(r2Error);
+        if (resultUrl?.startsWith('r2://')) {
+          const r2Key = resultUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          storageDebug.savedToR2 = true;
+          storageDebug.r2Key = r2Key;
+          storageDebug.publicUrl = resultUrl;
+        } else if (resultUrl?.startsWith('http')) {
+          // External URL - use directly
+          storageDebug.publicUrl = resultUrl;
         }
 
         const databaseDebug: {

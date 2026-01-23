@@ -145,7 +145,33 @@ export const callNanoBanana = async (
   modelParam?: string | number,
   options?: { skipFacialPreservation?: boolean }
 ): Promise<FaceSwapResponse> => {
-  // Use Vertex AI Gemini API with image generation support
+  // Check IMAGE_PROVIDER to route to WaveSpeed or Vertex AI
+  if (env.IMAGE_PROVIDER === 'wavespeed') {
+    const sourceUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
+    const firstSourceUrl = sourceUrls[0];
+
+    // Detect operation type: faceswap (target != source) vs edit (target == source)
+    const isFaceSwapMode = targetUrl !== firstSourceUrl;
+
+    // WaveSpeed Edit API for both faceswap and other operations
+    // For faceswap: send [selfie, target] images with prompt text
+    // For edit: send source images with prompt
+    const imageUrls = isFaceSwapMode ? [firstSourceUrl, targetUrl] : sourceUrls;
+
+    // Extract prompt text: if object with .prompt field, use that; otherwise use string directly
+    let promptText: string;
+    if (typeof prompt === 'string') {
+      promptText = prompt;
+    } else if (prompt && typeof prompt === 'object' && (prompt as any).prompt) {
+      promptText = (prompt as any).prompt;
+    } else {
+      promptText = JSON.stringify(prompt);
+    }
+
+    return callWaveSpeedEdit(imageUrls, promptText, env, aspectRatio);
+  }
+
+  // Default: Use Vertex AI Gemini API with image generation support
   // Based on official documentation: responseModalities: ["TEXT", "IMAGE"] is supported
   if (!env.GOOGLE_VERTEX_PROJECT_ID) {
     return {
@@ -2144,7 +2170,7 @@ export const callUpscaler4k = async (
 
     const requestBody = {
       enable_base64_output: false,
-      enable_sync_mode: false,
+      enable_sync_mode: true,
       image: imageUrl,
       output_format: DEFAULT_VALUES.UPSCALER_OUTPUT_FORMAT,
       target_resolution: DEFAULT_VALUES.UPSCALER_TARGET_RESOLUTION
@@ -2367,6 +2393,232 @@ export const callUpscaler4k = async (
       StatusCode: 500,
       Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
       Debug: debugPayload,
+    };
+  }
+};
+
+// WaveSpeed Face Swap API
+// Endpoint: https://api.wavespeed.ai/api/v3/wavespeed-ai/image-face-swap
+// Docs: Takes face_image (selfie) and image (target/preset) to swap face
+export const callWaveSpeedFaceSwap = async (
+  faceImageUrl: string,
+  targetImageUrl: string,
+  env: Env,
+  targetIndex: number = 0
+): Promise<FaceSwapResponse> => {
+  if (!env.WAVESPEED_API_KEY) {
+    return {
+      Success: false,
+      Message: 'WAVESPEED_API_KEY is required',
+      StatusCode: 500,
+    };
+  }
+
+  const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+  let debugInfo: Record<string, any> | undefined = debugEnabled ? {
+    provider: 'wavespeed_faceswap',
+    faceImage: faceImageUrl,
+    targetImage: targetImageUrl,
+    targetIndex,
+  } : undefined;
+
+  try {
+    const endpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/image-face-swap';
+    const requestBody = {
+      enable_base64_output: false,
+      enable_sync_mode: true,
+      face_image: faceImageUrl,
+      image: targetImageUrl,
+      output_format: 'jpeg',
+      target_index: targetIndex,
+    };
+
+    if (debugInfo) {
+      debugInfo.curl = `curl -X POST "${endpoint}" -H "Content-Type: application/json" -H "Authorization: Bearer ${env.WAVESPEED_API_KEY}" -d '${JSON.stringify(requestBody)}'`;
+    }
+
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.WAVESPEED_API_KEY}`,
+      },
+      body: JSON.stringify(requestBody),
+    }, 120000);
+
+    const rawResponse = await response.text();
+    if (debugInfo) {
+      debugInfo.httpStatus = response.status;
+      debugInfo.rawResponse = rawResponse.substring(0, 1000);
+    }
+
+    if (!response.ok) {
+      return {
+        Success: false,
+        Message: `WaveSpeed Face Swap API error: ${response.status}`,
+        StatusCode: response.status,
+        Error: rawResponse.substring(0, 500),
+        Debug: debugInfo,
+      };
+    }
+
+    const data = JSON.parse(rawResponse);
+
+    // Sync mode: response contains outputs directly
+    if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
+      return {
+        Success: true,
+        ResultImageUrl: data.data.outputs[0],
+        Message: 'WaveSpeed Face Swap completed',
+        StatusCode: 200,
+        Debug: debugInfo,
+      };
+    }
+
+    // Fallback check for different response structure
+    if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
+      return {
+        Success: true,
+        ResultImageUrl: data.outputs[0],
+        Message: 'WaveSpeed Face Swap completed',
+        StatusCode: 200,
+        Debug: debugInfo,
+      };
+    }
+
+    return {
+      Success: false,
+      Message: 'WaveSpeed Face Swap: No output image in response',
+      StatusCode: 500,
+      Debug: debugInfo,
+    };
+  } catch (error) {
+    return {
+      Success: false,
+      Message: `WaveSpeed Face Swap error: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugInfo,
+    };
+  }
+};
+
+// WaveSpeed Flux Edit API
+// Endpoint: https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit
+// Docs: Takes images array + prompt for AI-based image editing
+export const callWaveSpeedEdit = async (
+  imageUrls: string[],
+  prompt: string,
+  env: Env,
+  aspectRatio?: string
+): Promise<FaceSwapResponse> => {
+  if (!env.WAVESPEED_API_KEY) {
+    return {
+      Success: false,
+      Message: 'WAVESPEED_API_KEY is required',
+      StatusCode: 500,
+    };
+  }
+
+  // Get actual image dimensions from the first image
+  const { getImageDimensions } = await import('./utils');
+  let size: string | undefined;
+  if (imageUrls.length > 0) {
+    const dimensions = await getImageDimensions(imageUrls[0], env);
+    if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+      size = `${dimensions.width}x${dimensions.height}`;
+    }
+  }
+
+  const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+  let debugInfo: Record<string, any> | undefined = debugEnabled ? {
+    provider: 'wavespeed_edit',
+    images: imageUrls,
+    prompt: prompt.substring(0, 200),
+    size: size,
+  } : undefined;
+
+  try {
+    const endpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit';
+    const requestBody: Record<string, any> = {
+      enable_base64_output: false,
+      enable_sync_mode: true,
+      images: imageUrls,
+      prompt: prompt,
+      seed: -1,
+    };
+
+    // Send actual image dimensions as size
+    if (size) {
+      requestBody.size = size;
+    }
+
+    if (debugInfo) {
+      debugInfo.curl = `curl -X POST "${endpoint}" -H "Content-Type: application/json" -H "Authorization: Bearer ${env.WAVESPEED_API_KEY}" -d '${JSON.stringify(requestBody)}'`;
+    }
+
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.WAVESPEED_API_KEY}`,
+      },
+      body: JSON.stringify(requestBody),
+    }, 120000);
+
+    const rawResponse = await response.text();
+    if (debugInfo) {
+      debugInfo.httpStatus = response.status;
+      debugInfo.rawResponse = rawResponse.substring(0, 1000);
+    }
+
+    if (!response.ok) {
+      return {
+        Success: false,
+        Message: `WaveSpeed Edit API error: ${response.status}`,
+        StatusCode: response.status,
+        Error: rawResponse.substring(0, 500),
+        Debug: debugInfo,
+      };
+    }
+
+    const data = JSON.parse(rawResponse);
+
+    // Sync mode: response contains outputs directly
+    if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
+      return {
+        Success: true,
+        ResultImageUrl: data.data.outputs[0],
+        Message: 'WaveSpeed Edit completed',
+        StatusCode: 200,
+        Debug: debugInfo,
+      };
+    }
+
+    // Fallback check for different response structure
+    if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
+      return {
+        Success: true,
+        ResultImageUrl: data.outputs[0],
+        Message: 'WaveSpeed Edit completed',
+        StatusCode: 200,
+        Debug: debugInfo,
+      };
+    }
+
+    return {
+      Success: false,
+      Message: 'WaveSpeed Edit: No output image in response',
+      StatusCode: 500,
+      Debug: debugInfo,
+    };
+  } catch (error) {
+    return {
+      Success: false,
+      Message: `WaveSpeed Edit error: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugInfo,
     };
   }
 };
