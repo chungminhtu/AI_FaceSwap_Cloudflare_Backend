@@ -1721,6 +1721,7 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
         "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
         "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
         "profile_id": "profile_1234567890",
+        "action": "faceswap",
         "created_at": "2024-01-01T00:00:00.000Z"
       }
     ]
@@ -1729,6 +1730,14 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
   "message": "Results retrieved successfully",
   "code": 200
 }
+```
+
+**Response Fields:**
+- `id`: ID duy nhất của result
+- `result_url` / `image_url`: URL public của ảnh kết quả
+- `profile_id`: ID profile sở hữu result này
+- `action`: Loại action đã tạo ra result (`faceswap`, `background`, `upscaler4k`, `enhance`, `beauty`, `filter`, `restore`, `aging`). Có thể null cho results cũ.
+- `created_at`: Thời gian tạo (ISO 8601)
 ```
 
 ---

@@ -11,7 +11,7 @@
     "deploy:ai-office-dev:workers": "DEPLOY_ENV=ai-office-dev node _deploy-cli-cloudflare-gcp/deploy.js --workers-only",
     "deploy:ai-office-prod": "DEPLOY_ENV=ai-office-prod node _deploy-cli-cloudflare-gcp/deploy.js",
     "deploy:ai-office-prod:workers": "DEPLOY_ENV=ai-office-prod node _deploy-cli-cloudflare-gcp/deploy.js --workers-only",
-    "db:migrate": "node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office-dev,ai-office-prod,ai-office --migrate-only",
+    "db:migrate": "node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office-dev,ai-office-prod,ai-office --migrate-only --skip-checks",
     "docs:build": "node frontend-cloudflare-pages/docs/build-static.js",
     "deploy:check": "node _deploy-cli-cloudflare-gcp/deploy.js --check-only --envs ai-office,ai-office-dev,ai-office-prod",
     "deploy:parallel:test": "npm run docs:build && node _deploy-cli-cloudflare-gcp/deploy.js --envs ai-office,ai-office-dev,ai-office-prod --skip-tests --skip-checks",

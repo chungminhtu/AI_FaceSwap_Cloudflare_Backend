@@ -362,7 +362,8 @@ const saveResultToDatabase = async (
   resultUrl: string,
   profileId: string,
   env: Env,
-  R2_BUCKET: R2Bucket
+  R2_BUCKET: R2Bucket,
+  action?: string
 ): Promise<string | null> => {
   try {
     // Check if this is an external URL (WaveSpeed cloudfront, etc.)
@@ -458,8 +459,8 @@ const saveResultToDatabase = async (
 
     // Insert new result
     const insertResult = await DB.prepare(
-      'INSERT INTO results (id, ext, profile_id, created_at) VALUES (?, ?, ?, ?)'
-    ).bind(id, ext, profileId, Math.floor(Date.now() / 1000)).run();
+      'INSERT INTO results (id, ext, profile_id, action, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).bind(id, ext, profileId, action || null, Math.floor(Date.now() / 1000)).run();
 
     if (insertResult.success) {
       return id;
@@ -3944,7 +3945,7 @@ export default {
         const profileId = url.searchParams.get('profile_id');
 
 
-        let query = 'SELECT id, ext, profile_id, created_at FROM results';
+        let query = 'SELECT id, ext, profile_id, action, created_at FROM results';
         const params: any[] = [];
         
         const limitParam = url.searchParams.get('limit');
@@ -3993,6 +3994,7 @@ export default {
             result_url: fullUrl,
             image_url: fullUrl,
             profile_id: row.profile_id || '',
+            action: row.action || null,
             created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
           };
         });
@@ -4592,8 +4594,8 @@ export default {
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
-            
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'faceswap');
+
             if (savedResultId !== null) {
               databaseDebug.success = true;
               databaseDebug.resultId = String(savedResultId);
@@ -4925,8 +4927,8 @@ export default {
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
-            
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'background');
+
             if (savedResultId !== null) {
               databaseDebug.success = true;
               databaseDebug.resultId = String(savedResultId);
@@ -5066,7 +5068,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'upscaler4k');
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(upscalerResult) : undefined;
@@ -5196,7 +5198,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'enhance');
 
         const debugEnabled = isDebugEnabled(env);
         const aspectRatioDebug = debugEnabled ? {
@@ -5333,7 +5335,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'beauty');
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(beautyResult) : undefined;
@@ -5635,7 +5637,7 @@ export default {
         }
 
         // Save result to database for history
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter');
 
         const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
         return jsonResponse({
@@ -5739,7 +5741,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'restore');
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(restoredResult) : undefined;
@@ -5839,7 +5841,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'aging');
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;

@@ -54,9 +54,12 @@ CREATE TABLE IF NOT EXISTS results (
   id TEXT PRIMARY KEY,
   ext TEXT NOT NULL, -- File extension (e.g., 'jpg', 'png', etc.)
   profile_id TEXT NOT NULL, -- Profile that owns this result
+  action TEXT, -- Action type (e.g., "faceswap", "background", "upscaler4k", "enhance", "beauty", "filter", "restore", "aging")
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_results_created_at ON results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_results_profile_id ON results(profile_id);
+CREATE INDEX IF NOT EXISTS idx_results_action ON results(action);
+CREATE INDEX IF NOT EXISTS idx_results_action_profile_id ON results(action, profile_id);
