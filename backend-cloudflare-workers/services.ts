@@ -2467,45 +2467,63 @@ export const callWaveSpeedEdit = async (
     };
   }
 
-  // Convert aspect ratio to size dimensions
-  // WaveSpeed needs actual dimensions, not aspect ratio string
-  // WaveSpeed API supports 256-1536 pixels per dimension
+  // WaveSpeed API limits: 256-1536 pixels per dimension
+  const WAVESPEED_MIN_DIM = 256;
+  const WAVESPEED_MAX_DIM = 1536;
+
+  // Scale dimensions proportionally to fit within WaveSpeed limits while preserving original aspect ratio
+  const normalizeSize = (sizeStr: string): string | null => {
+    const match = sizeStr.match(/^(\d+)x(\d+)$/);
+    if (!match) return null;
+
+    let width = parseInt(match[1], 10);
+    let height = parseInt(match[2], 10);
+
+    // Scale down proportionally if any dimension exceeds max
+    if (width > WAVESPEED_MAX_DIM || height > WAVESPEED_MAX_DIM) {
+      const scale = Math.min(WAVESPEED_MAX_DIM / width, WAVESPEED_MAX_DIM / height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+
+    // Scale up proportionally if both dimensions below min (rare case)
+    if (width < WAVESPEED_MIN_DIM && height < WAVESPEED_MIN_DIM) {
+      const scale = Math.max(WAVESPEED_MIN_DIM / width, WAVESPEED_MIN_DIM / height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+
+    // Clamp to bounds
+    width = Math.max(WAVESPEED_MIN_DIM, Math.min(WAVESPEED_MAX_DIM, width));
+    height = Math.max(WAVESPEED_MIN_DIM, Math.min(WAVESPEED_MAX_DIM, height));
+
+    return `${width}x${height}`;
+  };
+
+  // Convert aspect ratio to dimensions with max dimension at WAVESPEED_MAX_DIM
   const aspectRatioToSize = (ratio: string): string | null => {
-    // Base dimension (longest side) - using 1536 (max supported by WaveSpeed)
-    const baseDimension = 1536;
-
     const ratioMap: Record<string, [number, number]> = {
-      '1:1': [1, 1],
-      '3:2': [3, 2],
-      '2:3': [2, 3],
-      '3:4': [3, 4],
-      '4:3': [4, 3],
-      '4:5': [4, 5],
-      '5:4': [5, 4],
-      '9:16': [9, 16],
-      '16:9': [16, 9],
-      '21:9': [21, 9],
+      '1:1': [1, 1], '3:2': [3, 2], '2:3': [2, 3], '3:4': [3, 4], '4:3': [4, 3],
+      '4:5': [4, 5], '5:4': [5, 4], '9:16': [9, 16], '16:9': [16, 9], '21:9': [21, 9],
     };
-
     const parts = ratioMap[ratio];
     if (!parts) return null;
 
     const [w, h] = parts;
-    // Calculate dimensions keeping the larger side at baseDimension
     if (w >= h) {
-      const width = baseDimension;
-      const height = Math.round((baseDimension * h) / w);
-      return `${width}x${height}`;
+      return `${WAVESPEED_MAX_DIM}x${Math.round((WAVESPEED_MAX_DIM * h) / w)}`;
     } else {
-      const height = baseDimension;
-      const width = Math.round((baseDimension * w) / h);
-      return `${width}x${height}`;
+      return `${Math.round((WAVESPEED_MAX_DIM * w) / h)}x${WAVESPEED_MAX_DIM}`;
     }
   };
 
-  // Calculate size from aspect_ratio if size not provided
-  let effectiveSize = size;
-  if (!effectiveSize && aspectRatio) {
+  // Calculate effective size:
+  // 1. If size provided, scale proportionally to fit within WaveSpeed limits (preserves original ratio)
+  // 2. If only aspect_ratio provided, calculate dimensions for that ratio
+  let effectiveSize: string | undefined;
+  if (size) {
+    effectiveSize = normalizeSize(size) || undefined;
+  } else if (aspectRatio) {
     effectiveSize = aspectRatioToSize(aspectRatio) || undefined;
   }
 

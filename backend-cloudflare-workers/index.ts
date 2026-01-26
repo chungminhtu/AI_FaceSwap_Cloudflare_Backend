@@ -3614,7 +3614,7 @@ export default {
         }
 
         return jsonResponse({
-          data: null,
+          data: {},
           status: 'success',
           message: 'Preset deleted successfully',
           code: 200
@@ -3816,7 +3816,7 @@ export default {
 
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
-          data: null,
+          data: {},
           status: 'success',
           message: 'Selfie deleted successfully',
           code: 200,
@@ -4089,7 +4089,7 @@ export default {
 
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
-          data: null,
+          data: {},
           status: 'success',
           message: 'Result deleted successfully',
           code: 200,
@@ -5229,6 +5229,7 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
         // Get extended image dimensions for debug (includes EXIF orientation)
         let imageDimensionsExtended: import('./utils').ImageDimensionsExtended | null = null;
@@ -5237,8 +5238,17 @@ export default {
           imageDimensionsExtended = await getImageDimensionsExtended(body.image_url, env);
         }
 
+        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        // WaveSpeed supports custom dimensions (256-1536), normalizeSize will scale proportionally
+        // Only use original dimensions when user didn't explicitly set a different aspect_ratio
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        let sizeForWaveSpeed: string | undefined;
+        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio && imageDimensionsExtended) {
+          sizeForWaveSpeed = `${imageDimensionsExtended.width}x${imageDimensionsExtended.height}`;
+        }
+
         const enhancePrompt = `Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance. CRITICAL: Preserve the ENTIRE image content - do not crop, cut off, or remove any parts of the image. Maintain the original composition, framing, and all visible elements. Keep the full subject visible including all edges and corners. Maintain the correct horizontal orientation and do not rotate or flip the image. The output must show the complete original image with enhanced quality, not a cropped or modified composition.`;
-        
+
         const enhancedResult = await callNanoBanana(
           enhancePrompt,
           body.image_url,
@@ -5246,7 +5256,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { provider: body.provider }
+          { provider: body.provider, size: sizeForWaveSpeed }
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
@@ -5376,6 +5386,18 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+
+        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        let sizeForWaveSpeed: string | undefined;
+        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended } = await import('./utils');
+          const dims = await getImageDimensionsExtended(body.image_url, env);
+          if (dims) {
+            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+          }
+        }
 
         const beautyResult = await callNanoBanana(
           IMAGE_PROCESSING_PROMPTS.BEAUTY,
@@ -5384,7 +5406,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { provider: body.provider }
+          { provider: body.provider, size: sizeForWaveSpeed }
         );
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
@@ -5673,6 +5695,17 @@ export default {
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
+        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        let sizeForWaveSpeed: string | undefined;
+        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended } = await import('./utils');
+          const dims = await getImageDimensionsExtended(selfieImageUrl, env);
+          if (dims) {
+            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+          }
+        }
+
         let filterResult;
 
         if (effectiveProvider === 'wavespeed') {
@@ -5695,7 +5728,7 @@ Apply the style from image 2 to image 1.`;
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed' }
+            { provider: 'wavespeed', size: sizeForWaveSpeed }
           );
         } else {
           // Vertex mode: Use prompt_json from preset metadata
@@ -5812,6 +5845,18 @@ Apply the style from image 2 to image 1.`;
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+
+        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        let sizeForWaveSpeed: string | undefined;
+        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended } = await import('./utils');
+          const dims = await getImageDimensionsExtended(body.image_url, env);
+          if (dims) {
+            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+          }
+        }
 
         const restoredResult = await callNanoBanana(
           IMAGE_PROCESSING_PROMPTS.RESTORE,
@@ -5820,7 +5865,7 @@ Apply the style from image 2 to image 1.`;
           env,
           validAspectRatio,
           modelParam,
-          { skipFacialPreservation: true, provider: body.provider }
+          { skipFacialPreservation: true, provider: body.provider, size: sizeForWaveSpeed }
         );
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
@@ -5911,6 +5956,18 @@ Apply the style from image 2 to image 1.`;
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
         const modelParam = body.model;
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+
+        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        let sizeForWaveSpeed: string | undefined;
+        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended } = await import('./utils');
+          const dims = await getImageDimensionsExtended(body.image_url, env);
+          if (dims) {
+            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+          }
+        }
 
         // For now, implement aging using existing Nano Banana API
         // This is a placeholder - in production, you'd want a dedicated aging model
@@ -5921,7 +5978,7 @@ Apply the style from image 2 to image 1.`;
           env,
           validAspectRatio,
           modelParam,
-          { provider: body.provider }
+          { provider: body.provider, size: sizeForWaveSpeed }
         );
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
