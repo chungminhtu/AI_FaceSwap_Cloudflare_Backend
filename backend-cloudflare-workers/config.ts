@@ -35,6 +35,53 @@ ALWAYS ALLOW (legal/appropriate):
   PROMPT_GENERATION_FILTER: `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.`,
 };
 
+// WaveSpeed Face Swap Prompts Configuration
+export const WAVESPEED_PROMPTS = {
+  // Single mode: 1 selfie + 1 preset
+  // image1 = selfie, image2 = preset
+  FACESWAP_SINGLE: `Put the person in image1 into image2, keep all the makeup same as preset.`,
+
+  // Couple mode: 2 selfies + 1 preset
+  // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
+  FACESWAP_COUPLE: `Image 3 contains placeholder people that must be replaced.
+
+Image 3 contains placeholder people wearing preset clothes that already match the scene.
+
+Replace ONLY the faces of the placeholder people in Image 3.
+
+Keep everything else from Image 3 unchanged:
+- bodies
+- clothing
+- posture
+- accessories
+- background
+- lighting
+- shadows
+- color grading
+- filters
+
+Use Subject_1_Identity (image1) and Subject_2_Identity (image2) only as facial identity references.
+
+Do NOT replace bodies.
+Do NOT replace clothing.
+Do NOT add or remove people.
+
+After the operation, the final image must contain exactly the same number of people as Image 3, with the same clothes and bodies, but with faces replaced by Subject_1 and Subject_2.
+
+Match skin tone, lighting direction, shadow softness, and grain so the swapped faces blend naturally.
+
+No additional people.
+No face averaging.
+No body modification.
+No clothing change.
+No global visual changes.
+
+Preserve the original body proportions, shoulder width, and torso scale from Image 3.
+Do not rescale, widen, narrow, or reshape the body in any way.
+
+Blend the swapped faces naturally with the surrounding skin, hairline, and lighting so they look like part of the original image.`,
+};
+
 // Image Processing Prompts Configuration
 export const IMAGE_PROCESSING_PROMPTS = {
   // Enhancement prompt - works for any image (people, objects, landscapes, products, etc.)

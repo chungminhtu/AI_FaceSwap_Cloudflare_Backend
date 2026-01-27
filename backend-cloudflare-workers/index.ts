@@ -7,7 +7,7 @@ import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
-import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG } from './config';
+import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS } from './config';
 
 // Retry helper for Vertex AI prompt generation - MUST succeed before uploading to R2
 const generateVertexPromptWithRetry = async (
@@ -4526,13 +4526,13 @@ export default {
 
           if (isCoupleMode) {
             // Couple mode: 2 selfies + 1 preset
-            // image1 = selfie1, image2 = selfie2, image3 = preset
-            wavespeedFaceswapPrompt = `Put both persons in image1 and image2 into image3, keep all the makeup same as preset.`;
+            // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
+            wavespeedFaceswapPrompt = WAVESPEED_PROMPTS.FACESWAP_COUPLE;
             wavespeedImages = [selfieUrls[0], selfieUrls[1], targetUrl];
           } else {
             // Single mode: 1 selfie + 1 preset
             // image1 = selfie, image2 = preset
-            wavespeedFaceswapPrompt = `Put the person in image1 into image2, keep all the makeup same as preset.`;
+            wavespeedFaceswapPrompt = WAVESPEED_PROMPTS.FACESWAP_SINGLE;
             wavespeedImages = [selfieUrls[0], targetUrl];
           }
 
