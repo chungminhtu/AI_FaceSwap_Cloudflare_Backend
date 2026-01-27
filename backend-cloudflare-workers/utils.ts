@@ -1346,3 +1346,91 @@ export const getAccessToken = async (
     throw error;
   }
 };
+
+/**
+ * Purge CDN cache for specific URLs using Cloudflare API
+ * Requires CLOUDFLARE_ZONE_ID and CLOUDFLARE_API_TOKEN environment variables
+ * @param urls - Array of full URLs to purge from cache
+ * @param env - Environment variables
+ * @returns Promise<{ success: boolean; purged?: number; error?: string }>
+ */
+export const purgeCdnCache = async (
+  urls: string[],
+  env: Env
+): Promise<{ success: boolean; purged?: number; error?: string; skipped?: boolean }> => {
+  // Check if CDN purge is enabled
+  const zoneId = env.CLOUDFLARE_ZONE_ID;
+  const apiToken = env.CLOUDFLARE_API_TOKEN;
+
+  if (!zoneId || !apiToken) {
+    // CDN purge not configured - skip silently
+    return { success: true, skipped: true };
+  }
+
+  if (!urls || urls.length === 0) {
+    return { success: true, purged: 0, skipped: true };
+  }
+
+  try {
+    // Cloudflare API: POST /zones/{zone_id}/purge_cache
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`,
+        },
+        body: JSON.stringify({
+          files: urls,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('[CDN Purge] Failed:', {
+        status: response.status,
+        error: errorText.substring(0, 200),
+        urls: urls.length,
+      });
+      return {
+        success: false,
+        error: `CDN purge failed: ${response.status} ${errorText.substring(0, 100)}`,
+      };
+    }
+
+    const result = await response.json() as any;
+
+    if (result.success === false) {
+      console.error('[CDN Purge] API returned success=false:', {
+        errors: result.errors,
+        urls: urls.length,
+      });
+      return {
+        success: false,
+        error: result.errors?.[0]?.message || 'CDN purge API returned success=false',
+      };
+    }
+
+    console.log('[CDN Purge] Success:', {
+      purged: urls.length,
+      urls: urls,
+    });
+
+    return {
+      success: true,
+      purged: urls.length,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[CDN Purge] Exception:', {
+      error: errorMsg.substring(0, 200),
+      urls: urls.length,
+    });
+    return {
+      success: false,
+      error: `CDN purge exception: ${errorMsg.substring(0, 100)}`,
+    };
+  }
+};

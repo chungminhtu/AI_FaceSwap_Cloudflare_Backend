@@ -39,47 +39,31 @@ ALWAYS ALLOW (legal/appropriate):
 export const WAVESPEED_PROMPTS = {
   // Single mode: 1 selfie + 1 preset
   // image1 = selfie, image2 = preset
-  FACESWAP_SINGLE: `Put the person in image1 into image2, keep all the makeup same as preset.`,
+  FACESWAP_SINGLE: `Image 2 is a finished photo of a person.
+
+Analyze the facial proportions and hair of the person in Image 2 to resemble Image 1, while keeping the same skin, lighting, and overall appearance.
+
+Do not change the body, head size, or pose. 
+
+Ensure the skin overall of the body (hands, legs, neck, shoulder,..) should match with the skin face to make it realistic.`,
 
   // Couple mode: 2 selfies + 1 preset
   // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
-  FACESWAP_COUPLE: `Image 3 contains placeholder people that must be replaced.
+  FACESWAP_COUPLE: `Image 3 is a finished image containing two people.
 
-Image 3 contains placeholder people wearing preset clothes that already match the scene.
+Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity.
 
-Replace ONLY the faces of the placeholder people in Image 3.
+Preserve the original facial expression and emotional tone of each person in Image 3.
 
-Keep everything else from Image 3 unchanged:
-- bodies
-- clothing
-- posture
-- accessories
-- background
-- lighting
-- shadows
-- color grading
-- filters
+Image 3 is a finished image containing two people.
 
-Use Subject_1_Identity (image1) and Subject_2_Identity (image2) only as facial identity references.
+Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity.
 
-Do NOT replace bodies.
-Do NOT replace clothing.
-Do NOT add or remove people.
+Preserve the original facial expression and emotional tone of each person in Image 3.
 
-After the operation, the final image must contain exactly the same number of people as Image 3, with the same clothes and bodies, but with faces replaced by Subject_1 and Subject_2.
+Keep the original skin texture, lighting, hair, clothing, body proportions, and overall appearance from Image 3 unchanged.
 
-Match skin tone, lighting direction, shadow softness, and grain so the swapped faces blend naturally.
-
-No additional people.
-No face averaging.
-No body modification.
-No clothing change.
-No global visual changes.
-
-Preserve the original body proportions, shoulder width, and torso scale from Image 3.
-Do not rescale, widen, narrow, or reshape the body in any way.
-
-Blend the swapped faces naturally with the surrounding skin, hairline, and lighting so they look like part of the original image.`,
+Do not add or remove people.`,
 };
 
 // Image Processing Prompts Configuration

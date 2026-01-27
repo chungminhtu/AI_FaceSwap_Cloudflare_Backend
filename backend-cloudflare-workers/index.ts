@@ -4,7 +4,7 @@ import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId } from './utils';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS } from './config';
@@ -443,15 +443,27 @@ const saveResultToDatabase = async (
           await DB.prepare(`DELETE FROM results WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
 
           // Delete from R2 only for non-external URLs (id doesn't start with http)
+          const urlsToPurge: string[] = [];
           for (const oldResult of oldResults.results) {
             if (!oldResult.id.startsWith('http')) {
               const r2Key = reconstructR2Key(oldResult.id, oldResult.ext, 'results');
               try {
                 await R2_BUCKET.delete(r2Key);
+                // Collect URL for CDN purge
+                const requestUrlObj = new URL(requestUrl);
+                const publicUrl = getR2PublicUrl(env, r2Key, requestUrlObj.origin);
+                urlsToPurge.push(publicUrl);
               } catch (r2Error) {
                 // Ignore R2 deletion errors
               }
             }
+          }
+
+          // Purge CDN cache for deleted results (non-blocking, best effort)
+          if (urlsToPurge.length > 0) {
+            purgeCdnCache(urlsToPurge, env).catch((error) => {
+              console.error('[Delete Old Results] CDN purge failed (non-fatal):', error);
+            });
           }
         }
       }
@@ -1076,16 +1088,32 @@ export default {
 
           // Upload to R2 (if override with different ext, delete old file first)
           try {
+            const urlsToPurge: string[] = [];
+
             if (isOverride && existingExt && existingExt !== ext) {
               const oldKey = `${type}/${id}.${existingExt}`;
+              const oldUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
+              urlsToPurge.push(oldUrl);
               await R2_BUCKET.delete(oldKey).catch(() => {});
             }
+
             await R2_BUCKET.put(key, fileData.fileData, {
               httpMetadata: {
                 contentType: fileData.contentType,
                 cacheControl: CACHE_CONFIG.R2_CACHE_CONTROL,
               },
             });
+
+            // Always purge cache for the current URL (both override and new uploads)
+            const newUrl = getR2PublicUrl(env, key, requestUrl.origin);
+            urlsToPurge.push(newUrl);
+
+            // Purge CDN cache (non-blocking, best effort)
+            if (urlsToPurge.length > 0) {
+              purgeCdnCache(urlsToPurge, env).catch((error) => {
+                console.error('[Upload] CDN purge failed (non-fatal):', error);
+              });
+            }
           } catch (r2Error) {
             return {
               success: false,
@@ -1386,10 +1414,14 @@ export default {
                 await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
 
                 // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
+                const urlsToPurge: string[] = [];
                 const r2Deletions = toDelete.map(async (oldSelfie: any) => {
                   const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
                   try {
                     await R2_BUCKET.delete(oldKey);
+                    // Collect URL for CDN purge
+                    const publicUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
+                    urlsToPurge.push(publicUrl);
                   } catch (r2Error) {
                     console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
                   }
@@ -1397,6 +1429,13 @@ export default {
 
                 // Wait for all R2 deletions to complete (parallel within batch)
                 await Promise.all(r2Deletions);
+
+                // Purge CDN cache for deleted selfies (non-blocking, best effort)
+                if (urlsToPurge.length > 0) {
+                  purgeCdnCache(urlsToPurge, env).catch((error) => {
+                    console.error('[Delete Old Selfies] CDN purge failed (non-fatal):', error);
+                  });
+                }
               }
             }
 
@@ -3607,6 +3646,12 @@ export default {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
+
+            // Purge CDN cache (non-blocking, best effort)
+            const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            purgeCdnCache([publicUrl], env).catch((error) => {
+              console.error('[Delete Preset] CDN purge failed (non-fatal):', error);
+            });
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
             // Continue - database deletion succeeded, R2 deletion is optional
@@ -3808,6 +3853,12 @@ export default {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
+
+            // Purge CDN cache (non-blocking, best effort)
+            const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            purgeCdnCache([publicUrl], env).catch((error) => {
+              console.error('[Delete Selfie] CDN purge failed (non-fatal):', error);
+            });
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
             // Continue - database deletion succeeded, R2 deletion is optional
@@ -4082,6 +4133,12 @@ export default {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
+
+            // Purge CDN cache (non-blocking, best effort)
+            const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            purgeCdnCache([publicUrl], env).catch((error) => {
+              console.error('[Delete Result] CDN purge failed (non-fatal):', error);
+            });
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
           }
