@@ -55,13 +55,9 @@ Make very slight adjustments to the facial structure of each person in Image 3, 
 
 Preserve the original facial expression and emotional tone of each person in Image 3.
 
-Image 3 is a finished image containing two people.
+Analyze the race and facial proportions (such as eyes, mouth, hair, hairstyles, color) of Subject_1_Identity and Subject_2_Identity, and use this analysis to resemble final image.
 
-Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity.
-
-Preserve the original facial expression and emotional tone of each person in Image 3.
-
-Keep the original skin texture, lighting, hair, clothing, body proportions, and overall appearance from Image 3 unchanged.
+Ensure the skin overall of the body (hands, fingers legs, neck, shoulder,..) should match with the face to make it most realistic in finished photo.
 
 Do not add or remove people.`,
 };

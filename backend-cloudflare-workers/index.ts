@@ -1093,10 +1093,11 @@ export default {
           }
           const key = `${type}/${id}.${ext}`;
 
+          // Track URLs for CDN purge
+          const urlsToPurge: string[] = [];
+
           // Upload to R2 (if override with different ext, delete old file first)
           try {
-            const urlsToPurge: string[] = [];
-
             if (isOverride && existingExt && existingExt !== ext) {
               const oldKey = `${type}/${id}.${existingExt}`;
               const oldUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
