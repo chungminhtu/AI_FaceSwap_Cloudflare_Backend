@@ -459,11 +459,18 @@ const saveResultToDatabase = async (
             }
           }
 
-          // Purge CDN cache for deleted results (non-blocking, best effort)
+          // Purge CDN cache for deleted results (wait for result)
           if (urlsToPurge.length > 0) {
-            purgeCdnCache(urlsToPurge, env).catch((error) => {
-              console.error('[Delete Old Results] CDN purge failed (non-fatal):', error);
-            });
+            try {
+              const purgeResult = await purgeCdnCache(urlsToPurge, env);
+              console.log('[Delete Old Results] CDN purge result:', {
+                success: purgeResult.success,
+                purged: purgeResult.purged,
+                skipped: purgeResult.skipped
+              });
+            } catch (error) {
+              console.error('[Delete Old Results] CDN purge failed:', error);
+            }
           }
         }
       }
@@ -1107,19 +1114,34 @@ export default {
             // Always purge cache for the current URL (both override and new uploads)
             const newUrl = getR2PublicUrl(env, key, requestUrl.origin);
             urlsToPurge.push(newUrl);
-
-            // Purge CDN cache (non-blocking, best effort)
-            if (urlsToPurge.length > 0) {
-              purgeCdnCache(urlsToPurge, env).catch((error) => {
-                console.error('[Upload] CDN purge failed (non-fatal):', error);
-              });
-            }
           } catch (r2Error) {
             return {
               success: false,
               error: `R2 upload failed: ${r2Error instanceof Error ? r2Error.message.substring(0, 200) : String(r2Error).substring(0, 200)}`,
               filename: fileData.filename
             };
+          }
+
+          // Purge CDN cache (wait for result)
+          let cdnPurgeResult = null;
+          if (urlsToPurge.length > 0) {
+            try {
+              const purgeResult = await purgeCdnCache(urlsToPurge, env);
+              cdnPurgeResult = {
+                success: purgeResult.success,
+                purged: purgeResult.purged,
+                skipped: purgeResult.skipped,
+                urls: urlsToPurge,
+                error: purgeResult.error || null
+              };
+            } catch (purgeError) {
+              cdnPurgeResult = {
+                success: false,
+                urls: urlsToPurge,
+                error: purgeError instanceof Error ? purgeError.message : String(purgeError)
+              };
+              console.error('[Upload] CDN purge failed:', purgeError);
+            }
           }
 
           const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
@@ -1343,13 +1365,18 @@ export default {
               filter_mode_used: isFilterMode,
               prompt_type: isFilterMode ? 'filter' : (customPromptText ? 'custom' : 'default')
             };
-            
-            // Include vision check result in response only if debug is enabled (if preset also needs vision check in future)
+
+            // Include debug info if debug is enabled
             const debugEnabled = isDebugEnabled(env);
-            if (debugEnabled && visionCheckResult) {
-              response.visionCheck = visionCheckResult;
+            if (debugEnabled) {
+              if (visionCheckResult) {
+                response.visionCheck = visionCheckResult;
+              }
+              if (cdnPurgeResult) {
+                response.cdnPurge = cdnPurgeResult;
+              }
             }
-            
+
             return response;
           } else if (type === 'selfie') {
             // Ensure actionValue is always a valid non-empty string
@@ -1430,11 +1457,18 @@ export default {
                 // Wait for all R2 deletions to complete (parallel within batch)
                 await Promise.all(r2Deletions);
 
-                // Purge CDN cache for deleted selfies (non-blocking, best effort)
+                // Purge CDN cache for deleted selfies (wait for result)
                 if (urlsToPurge.length > 0) {
-                  purgeCdnCache(urlsToPurge, env).catch((error) => {
-                    console.error('[Delete Old Selfies] CDN purge failed (non-fatal):', error);
-                  });
+                  try {
+                    const purgeResult = await purgeCdnCache(urlsToPurge, env);
+                    console.log('[Delete Old Selfies] CDN purge result:', {
+                      success: purgeResult.success,
+                      purged: purgeResult.purged,
+                      skipped: purgeResult.skipped
+                    });
+                  } catch (error) {
+                    console.error('[Delete Old Selfies] CDN purge failed:', error);
+                  }
                 }
               }
             }
@@ -1533,13 +1567,18 @@ export default {
               filename: `${id}.${ext}`,
               action: actionValue
             };
-            
-            // Include vision check result in response only if debug is enabled
+
+            // Include debug info if debug is enabled
             const debugEnabled = isDebugEnabled(env);
-            if (debugEnabled && visionCheckResult) {
-              response.visionCheck = visionCheckResult;
+            if (debugEnabled) {
+              if (visionCheckResult) {
+                response.visionCheck = visionCheckResult;
+              }
+              if (cdnPurgeResult) {
+                response.cdnPurge = cdnPurgeResult;
+              }
             }
-            
+
             return response;
           }
 
@@ -3642,25 +3681,40 @@ export default {
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
         let r2Error = null;
+        let cdnPurgeResult = null;
         if (r2Key) {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
 
-            // Purge CDN cache (non-blocking, best effort)
+            // Purge CDN cache (wait for result)
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            purgeCdnCache([publicUrl], env).catch((error) => {
-              console.error('[Delete Preset] CDN purge failed (non-fatal):', error);
-            });
+            try {
+              const purgeResult = await purgeCdnCache([publicUrl], env);
+              cdnPurgeResult = {
+                success: purgeResult.success,
+                purged: purgeResult.purged,
+                skipped: purgeResult.skipped,
+                error: purgeResult.error || null
+              };
+            } catch (purgeError) {
+              cdnPurgeResult = {
+                success: false,
+                error: purgeError instanceof Error ? purgeError.message : String(purgeError)
+              };
+              console.error('[Delete Preset] CDN purge failed:', purgeError);
+            }
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
             // Continue - database deletion succeeded, R2 deletion is optional
           }
         }
 
+        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: {},
           status: 'success',
+          ...(debugEnabled ? { debug: { presetId, r2Deleted, r2Error, cdnPurge: cdnPurgeResult } } : {}),
           message: 'Preset deleted successfully',
           code: 200
         });
@@ -3849,16 +3903,29 @@ export default {
         // Try to delete from R2 (non-fatal if it fails)
         let r2Deleted = false;
         let r2Error = null;
+        let cdnPurgeResult = null;
         if (r2Key) {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
 
-            // Purge CDN cache (non-blocking, best effort)
+            // Purge CDN cache (wait for result)
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            purgeCdnCache([publicUrl], env).catch((error) => {
-              console.error('[Delete Selfie] CDN purge failed (non-fatal):', error);
-            });
+            try {
+              const purgeResult = await purgeCdnCache([publicUrl], env);
+              cdnPurgeResult = {
+                success: purgeResult.success,
+                purged: purgeResult.purged,
+                skipped: purgeResult.skipped,
+                error: purgeResult.error || null
+              };
+            } catch (purgeError) {
+              cdnPurgeResult = {
+                success: false,
+                error: purgeError instanceof Error ? purgeError.message : String(purgeError)
+              };
+              console.error('[Delete Selfie] CDN purge failed:', purgeError);
+            }
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
             // Continue - database deletion succeeded, R2 deletion is optional
@@ -3871,7 +3938,7 @@ export default {
           status: 'success',
           message: 'Selfie deleted successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { selfieId, r2Deleted, r2Error } } : {})
+          ...(debugEnabled ? { debug: { selfieId, r2Deleted, r2Error, cdnPurge: cdnPurgeResult } } : {})
         }, 200, request, env);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
@@ -4129,16 +4196,29 @@ export default {
         // Try to delete from R2 (non-fatal if it fails, skip for external URLs)
         let r2Deleted = false;
         let r2Error = null;
+        let cdnPurgeResult = null;
         if (r2Key) {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
 
-            // Purge CDN cache (non-blocking, best effort)
+            // Purge CDN cache (wait for result)
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-            purgeCdnCache([publicUrl], env).catch((error) => {
-              console.error('[Delete Result] CDN purge failed (non-fatal):', error);
-            });
+            try {
+              const purgeResult = await purgeCdnCache([publicUrl], env);
+              cdnPurgeResult = {
+                success: purgeResult.success,
+                purged: purgeResult.purged,
+                skipped: purgeResult.skipped,
+                error: purgeResult.error || null
+              };
+            } catch (purgeError) {
+              cdnPurgeResult = {
+                success: false,
+                error: purgeError instanceof Error ? purgeError.message : String(purgeError)
+              };
+              console.error('[Delete Result] CDN purge failed:', purgeError);
+            }
           } catch (r2DeleteError) {
             r2Error = r2DeleteError instanceof Error ? r2DeleteError.message : String(r2DeleteError);
           }
@@ -4155,7 +4235,8 @@ export default {
             databaseDeleted: deleteResult.meta?.changes || 0,
             r2Deleted,
             r2Key,
-            r2Error: r2Error || null
+            r2Error: r2Error || null,
+            cdnPurge: cdnPurgeResult
           } } : {})
         }, 200, request, env);
       } catch (error) {
