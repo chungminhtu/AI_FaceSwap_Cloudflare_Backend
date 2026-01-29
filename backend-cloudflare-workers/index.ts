@@ -4646,11 +4646,20 @@ export default {
 
         // Determine if user explicitly specified aspect_ratio
         // If aspect_ratio is explicitly set, use it (don't pass selfie dimensions as size)
-        // If not specified or "original", use selfie dimensions to preserve original size
+        // If not specified or "original", scale to max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        const firstSelfieDimensions = selfieDimensions.length > 0 ? selfieDimensions[0] : null;
-        // Only pass size when user didn't explicitly set aspect_ratio
-        const sizeForWaveSpeed = userExplicitlySetAspectRatio ? undefined : (firstSelfieDimensions || undefined);
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio && selfieDimensions.length > 0) {
+          const firstDims = selfieDimensions[0];
+          if (firstDims) {
+            const match = firstDims.match(/^(\d+)x(\d+)$/);
+            if (match) {
+              const { calculateOptimalSize } = await import('./utils');
+              const optimal = calculateOptimalSize(parseInt(match[1]), parseInt(match[2]), 1536, 256);
+              sizeForProvider = optimal.sizeString;
+            }
+          }
+        }
 
         let faceSwapResult;
         let vertexPromptPayload: any;
@@ -4690,7 +4699,7 @@ export default {
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForWaveSpeed }
+            { provider: 'wavespeed', size: sizeForProvider }
           );
         } else {
           // Vertex mode: Use prompt_json from preset metadata
@@ -4707,7 +4716,7 @@ export default {
             env,
             validAspectRatio,
             modelParam,
-            { provider: body.provider, size: sizeForWaveSpeed }
+            { provider: body.provider, size: sizeForProvider }
           );
         }
 
@@ -5123,15 +5132,16 @@ export default {
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
         const modelParam = body.model;
 
-        // Get extended image dimensions for WaveSpeed size parameter
-        let sizeForWaveSpeed: string | undefined;
+        // Calculate optimal output size at max 1536px for best quality
+        let sizeForProvider: string | undefined;
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
+        if (!userExplicitlySetAspectRatio) {
           try {
-            const { getImageDimensionsExtended } = await import('./utils');
+            const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
             const imageDimensionsExtended = await getImageDimensionsExtended(selfieUrl, env);
             if (imageDimensionsExtended) {
-              sizeForWaveSpeed = `${imageDimensionsExtended.width}x${imageDimensionsExtended.height}`;
+              const optimal = calculateOptimalSize(imageDimensionsExtended.width, imageDimensionsExtended.height, 1536, 256);
+              sizeForProvider = optimal.sizeString;
             }
           } catch (e) {
             // Ignore dimension errors, will use default aspect ratio
@@ -5151,7 +5161,7 @@ export default {
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForWaveSpeed }
+            { provider: 'wavespeed', size: sizeForProvider }
           );
         } else {
           // Vertex AI: use dedicated merge function
@@ -5927,14 +5937,15 @@ export default {
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
-        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        let sizeForWaveSpeed: string | undefined;
-        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
-          const { getImageDimensionsExtended } = await import('./utils');
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
           const dims = await getImageDimensionsExtended(selfieImageUrl, env);
           if (dims) {
-            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+            const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
+            sizeForProvider = optimal.sizeString;
           }
         }
 
@@ -5957,7 +5968,7 @@ export default {
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForWaveSpeed }
+            { provider: 'wavespeed', size: sizeForProvider }
           );
         } else {
           // Vertex mode: Use prompt_json from preset metadata
@@ -6076,14 +6087,15 @@ export default {
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
-        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        let sizeForWaveSpeed: string | undefined;
-        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
-          const { getImageDimensionsExtended } = await import('./utils');
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
           const dims = await getImageDimensionsExtended(body.image_url, env);
           if (dims) {
-            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+            const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
+            sizeForProvider = optimal.sizeString;
           }
         }
 
@@ -6094,7 +6106,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { skipFacialPreservation: true, provider: body.provider, size: sizeForWaveSpeed }
+          { skipFacialPreservation: true, provider: body.provider, size: sizeForProvider }
         );
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
@@ -6326,14 +6338,15 @@ export default {
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
-        // For WaveSpeed: pass original dimensions as size
+        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        let sizeForWaveSpeed: string | undefined;
-        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
-          const { getImageDimensionsExtended } = await import('./utils');
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
           const dims = await getImageDimensionsExtended(selfieImageUrl, env);
           if (dims) {
-            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+            const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
+            sizeForProvider = optimal.sizeString;
           }
         }
 
@@ -6361,7 +6374,7 @@ export default {
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForWaveSpeed }
+            { provider: 'wavespeed', size: sizeForProvider }
           );
         } else {
           // Vertex mode: Use prompt_json from preset metadata
