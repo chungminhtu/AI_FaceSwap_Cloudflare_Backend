@@ -6151,95 +6151,258 @@ Apply the style from image 2 to image 1.`;
       }
     }
 
-    // Handle aging endpoint
+    // Handle aging endpoint - uses preset with prompt_json (like /filter)
     if (path === '/aging' && request.method === 'POST') {
-      let body: { image_url: string; age_years: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      const debugEnabled = isDebugEnabled(env);
+      let body: {
+        preset_image_id?: string;
+        preset_image_url?: string;
+        selfie_id?: string;
+        selfie_image_url?: string;
+        profile_id: string;
+        aspect_ratio?: string;
+        model?: string | number;
+        additional_prompt?: string;
+        provider?: 'vertex' | 'wavespeed';
+      } | undefined;
+
       try {
-        body = await request.json() as { image_url: string; age_years: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as typeof body;
 
-        if (!body.image_url) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        // Normalize preset_image_id to remove file extensions
+        if (body?.preset_image_id) {
+          const normalized = normalizePresetId(body.preset_image_id);
+          if (normalized) body.preset_image_id = normalized;
         }
 
-        if (typeof body.age_years !== 'number' || Number.isNaN(body.age_years) || body.age_years < 1 || body.age_years > 120) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Missing or invalid required field: age_years (number, 1-120)', 400, debugEnabled ? { path } : undefined, request, env);
+        const envError = validateEnv(env, 'vertex');
+        if (envError) {
+          return errorResponse('Missing environment configuration', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        if (!body.profile_id) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        // Validate profile_id is required
+        if (!body?.profile_id) {
+          return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        const profileCheck = await DB.prepare(
-          'SELECT id FROM profiles WHERE id = ?'
-        ).bind(body.profile_id).first();
+        // Validate profile exists
+        const profileCheck = await DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first();
         if (!profileCheck) {
-          const debugEnabled = isDebugEnabled(env);
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        const ageYears = body.age_years;
-        const envError = validateEnv(env, 'vertex');
-        if (envError) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        // Validate preset inputs (ID or URL required)
+        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
+        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
+
+        if (!hasPresetId && !hasPresetUrl) {
+          return errorResponse('Missing required field: preset_image_id or preset_image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
+        if (hasPresetId && hasPresetUrl) {
+          return errorResponse('Cannot provide both preset_image_id and preset_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Validate selfie inputs (ID or URL required)
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Resolve preset image URL
+        let presetImageUrl: string = '';
+        let presetResult: any = null;
+        let r2Key: string | null = null;
+
+        if (hasPresetId) {
+          presetResult = await DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first();
+          if (!presetResult) {
+            return errorResponse('Preset image not found', 404, debugEnabled ? { presetImageId: body.preset_image_id, path } : undefined, request, env);
+          }
+          r2Key = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+          presetImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        } else if (hasPresetUrl) {
+          presetImageUrl = body.preset_image_url!;
+          if (!validateImageUrl(presetImageUrl, env)) {
+            return errorResponse('Invalid preset image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+          try {
+            const presetUrl = new URL(presetImageUrl);
+            const pathParts = presetUrl.pathname.split('/').filter(p => p);
+            if (pathParts.length >= 2 && ['preset', 'selfie', 'results'].includes(pathParts[0])) {
+              r2Key = `${pathParts[0]}/${pathParts[1]}`;
+            }
+          } catch {
+            // Not an R2 URL, continue without r2Key
+          }
+        }
+
+        // Resolve selfie image URL
+        let selfieImageUrl: string = '';
+
+        if (hasSelfieId) {
+          const selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieImageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else if (hasSelfieUrl) {
+          selfieImageUrl = body.selfie_image_url!;
+          if (!validateImageUrl(selfieImageUrl, env)) {
+            return errorResponse('Invalid selfie image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        // Safety pre-check
+        const safetyCheck = await checkImageSafetyWithFlashLite(selfieImageUrl, env);
+        if (!safetyCheck.safe) {
+          return errorResponse(
+            safetyCheck.reason || 'Image failed safety check',
+            400,
+            debugEnabled ? { path, safetyCheck: { safe: false, reason: safetyCheck.reason, category: safetyCheck.category, error: safetyCheck.error } } : undefined,
+            request,
+            env
+          );
+        }
+
+        // Simple in-memory cache for R2 head requests within this request
+        const r2HeadCache = new Map<string, any>();
+        const getCachedAsync = async <T>(key: string, compute: () => Promise<T>): Promise<T> => {
+          if (r2HeadCache.has(key)) return r2HeadCache.get(key) as T;
+          const result = await compute();
+          r2HeadCache.set(key, result);
+          return result;
+        };
+
+        // Read prompt_json from R2 metadata or cache
+        let storedPromptPayload: any = null;
+        const promptCacheKV = getPromptCacheKV(env);
+        const presetImageId = hasPresetId ? body.preset_image_id : (presetResult ? (presetResult as any).id : null);
+
+        if (presetImageId && r2Key) {
+          const cacheKey = `prompt:${presetImageId}`;
+
+          if (promptCacheKV) {
+            try {
+              const cached = await promptCacheKV.get(cacheKey, 'json');
+              if (cached) storedPromptPayload = cached;
+            } catch (error) {
+              // KV cache read failed, fallback to R2
+            }
+          }
+
+          if (!storedPromptPayload) {
+            try {
+              const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () => await R2_BUCKET.head(r2Key));
+              const promptJson = r2Object?.customMetadata?.prompt_json;
+              if (promptJson?.trim()) {
+                storedPromptPayload = JSON.parse(promptJson);
+                if (promptCacheKV) {
+                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+                }
+              }
+            } catch (error) {
+              // R2 metadata read failed
+            }
+          }
+        }
+
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieImageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
-        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        // For WaveSpeed: pass original dimensions as size
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForWaveSpeed: string | undefined;
         if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
           const { getImageDimensionsExtended } = await import('./utils');
-          const dims = await getImageDimensionsExtended(body.image_url, env);
+          const dims = await getImageDimensionsExtended(selfieImageUrl, env);
           if (dims) {
             sizeForWaveSpeed = `${dims.width}x${dims.height}`;
           }
         }
 
-        const agingResult = await callNanoBanana(
-          IMAGE_PROCESSING_PROMPTS.AGING(ageYears),
-          body.image_url,
-          body.image_url, // Use same image as target and source for aging
-          env,
-          validAspectRatio,
-          modelParam,
-          { provider: body.provider, size: sizeForWaveSpeed }
-        );
+        let agingResult;
+
+        if (effectiveProvider === 'wavespeed') {
+          // WaveSpeed mode: Use prompt_json directly, send [selfie, preset] images
+          let wavespeedPrompt: string;
+          if (storedPromptPayload && typeof storedPromptPayload === 'object' && storedPromptPayload.prompt) {
+            wavespeedPrompt = storedPromptPayload.prompt;
+          } else if (storedPromptPayload && typeof storedPromptPayload === 'string') {
+            wavespeedPrompt = storedPromptPayload;
+          } else {
+            wavespeedPrompt = 'Transform the person in image 1 to match the age/style shown in image 2. Preserve their race, ethnicity, skin tone, and identity.';
+          }
+
+          const finalPrompt = body.additional_prompt
+            ? `${wavespeedPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
+            : wavespeedPrompt;
+
+          agingResult = await callNanoBanana(
+            finalPrompt,
+            selfieImageUrl,
+            [selfieImageUrl, presetImageUrl],
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: 'wavespeed', size: sizeForWaveSpeed }
+          );
+        } else {
+          // Vertex mode: Use prompt_json from preset metadata
+          if (!storedPromptPayload) {
+            return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { error: 'Preset must have prompt_json metadata for aging mode (required for Vertex provider)', path } : undefined, request, env);
+          }
+
+          const augmentedPrompt = augmentVertexPrompt(storedPromptPayload, body.additional_prompt);
+
+          agingResult = await callNanoBanana(
+            augmentedPrompt,
+            selfieImageUrl,
+            selfieImageUrl,
+            env,
+            validAspectRatio,
+            modelParam,
+            { skipFacialPreservation: false }
+          );
+        }
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
           const failureCode = agingResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
-          const debugEnabled = isDebugEnabled(env);
           const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
-          const debugPayload = debugEnabled ? compact({
-            ...flatDebug,
-          }) : undefined;
 
           return jsonResponse({
             data: null,
             status: 'error',
             message: '',
             code: failureCode,
-            ...(debugPayload ? { debug: debugPayload } : {}),
+            ...(debugEnabled && flatDebug ? { debug: compact({ ...flatDebug }) } : {}),
           }, httpStatus);
         }
 
         let resultUrl = agingResult.ResultImageUrl;
         if (agingResult.ResultImageUrl?.startsWith('r2://')) {
-          const r2Key = agingResult.ResultImageUrl.replace('r2://', '');
-          const requestUrl = new URL(request.url);
-          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+          const r2ResultKey = agingResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2ResultKey, requestUrl.origin);
         }
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'aging', request);
 
-        const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
         return jsonResponse({
           data: {
@@ -6249,20 +6412,17 @@ Apply the style from image 2 to image 1.`;
           status: 'success',
           message: agingResult.Message || 'Aging transformation completed',
           code: 200,
-          ...(debugEnabled && flatDebug ? { debug: compact({
-            ...flatDebug,
-          }) } : {}),
+          ...(debugEnabled && flatDebug ? { debug: compact({ ...flatDebug }) } : {}),
         });
       } catch (error) {
         logCriticalError('/aging', error, request, env, {
           body: {
-            image_url: body?.image_url,
+            preset_image_id: body?.preset_image_id,
+            selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,
-            age_years: body?.age_years,
             aspect_ratio: body?.aspect_ratio
           }
         });
-        const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message : String(error);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }

@@ -1197,9 +1197,13 @@ curl -X POST https://api.d.shotpix.app/restore \
 
 #### 2.7. POST `/aging` - AI Aging
 
-**Mục đích:** AI lão hóa khuôn mặt - tạo phiên bản già hơn của khuôn mặt trong ảnh.
+**Mục đích:** AI biến đổi tuổi khuôn mặt - áp dụng style tuổi từ preset lên selfie. Mỗi preset chứa prompt_json định nghĩa style tuổi cụ thể (em bé, người già, v.v.).
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Hành vi theo Provider:**
+- **Vertex AI (mặc định):** Sử dụng `prompt_json` từ metadata của preset để áp dụng biến đổi tuổi. Preset phải có `prompt_json`.
+- **WaveSpeed (`provider: "wavespeed"`):** Sử dụng `prompt_json` nếu có, hoặc phân tích style của preset image trực tiếp. Gửi images theo thứ tự `[selfie, preset]`.
 
 **Request:**
 ```bash
@@ -1207,17 +1211,34 @@ curl -X POST https://api.d.shotpix.app/aging \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-    "age_years": 20,
+    "preset_image_id": "aging_baby_preset_001",
+    "selfie_id": "selfie_1234567890_xyz789",
     "profile_id": "profile_1234567890"
   }'
 ```
 
+**Hoặc sử dụng selfie_image_url:**
+```bash
+curl -X POST https://api.d.shotpix.app/aging \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "preset_image_id": "aging_elderly_preset_001",
+    "selfie_image_url": "https://example.com/selfie.jpg",
+    "profile_id": "profile_1234567890",
+    "additional_prompt": "Make the aging look natural"
+  }'
+```
+
 **Request Parameters:**
-- `image_url` (string, required): URL ảnh chứa khuôn mặt cần lão hóa.
-- `age_years` (number, required): Tuổi mục tiêu muốn biến đổi (1-120). Ví dụ: `1` = biến thành em bé 1 tuổi, `80` = biến thành người 80 tuổi.
+- `preset_image_id` (string, required*): ID preset aging đã lưu trong database. Preset chứa `prompt_json` định nghĩa style tuổi. *Bắt buộc nếu không có `preset_image_url`.
+- `preset_image_url` (string, required*): URL ảnh preset trực tiếp. *Bắt buộc nếu không có `preset_image_id`.
+- `selfie_id` (string, required*): ID selfie đã lưu trong database. *Bắt buộc nếu không có `selfie_image_url`.
+- `selfie_image_url` (string, required*): URL ảnh selfie trực tiếp. *Bắt buộc nếu không có `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Mặc định: `"original"`.
+- `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh.
+- `provider` (string, optional): Provider AI. Giá trị: `"vertex"` (mặc định) hoặc `"wavespeed"`.
 
 **Response:**
 ```json
@@ -1238,6 +1259,12 @@ curl -X POST https://api.d.shotpix.app/aging \
   }
 }
 ```
+
+**Tính năng AI Aging:**
+- Sử dụng prompt_json từ preset (chứa hướng dẫn biến đổi tuổi cụ thể)
+- Mỗi preset có style tuổi riêng (em bé, thiếu niên, trung niên, người già, v.v.)
+- Giữ nguyên race, ethnicity, skin tone, gender
+- Hỗ trợ additional_prompt để tùy chỉnh thêm
 
 **Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
