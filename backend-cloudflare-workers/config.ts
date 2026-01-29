@@ -77,7 +77,24 @@ export const IMAGE_PROCESSING_PROMPTS = {
   // Restoration prompt - for old/damaged photos, black and white to color conversion
   RESTORE: 'Restore this old or damaged photo. If the image is black and white or sepia, colorize it with realistic, natural colors appropriate for the era and subject matter. Fix all damage including scratches, tears, fading, stains, creases, and degradation. Remove noise, dust, and artifacts. Enhance clarity and sharpness while preserving the original composition. Restore faded areas and improve overall quality. Output a fully restored, colorized (if applicable), high-quality version of the original photo.',
 
-  AGING: (ageYears: number) => `Transform this person to look exactly ${ageYears} years old. Reimagine their appearance at age ${ageYears} with age-appropriate facial features, body proportions, skin texture, and hair. Preserve their identity and recognizable traits (eyes, facial structure, distinctive features) but adjust everything else to match a ${ageYears}-year-old version of this person. Make it realistic and natural.`,
+  AGING: (ageYears: number) => `Transform this person into a ${ageYears}-year-old version of THEMSELVES.
+
+MUST PRESERVE (non-negotiable):
+- Race and ethnicity: Keep exact same racial features
+- Skin tone/color: Must match original skin color exactly
+- Gender: Keep same gender
+- Eye color and shape
+- Natural hair texture and color (adjust for age - gray for elderly, baby hair for infants)
+- Distinctive facial features that define their identity
+- Cultural and ethnic characteristics
+
+AGE-APPROPRIATE CHANGES for ${ageYears} years old:
+- Facial proportions appropriate for age ${ageYears}
+- Body size and proportions for age ${ageYears}
+- Skin texture (baby smooth for infants, wrinkles for elderly)
+- Hair amount and style typical for age ${ageYears}
+
+The result must look like what THIS EXACT PERSON would realistically look like at age ${ageYears}. Do NOT change their race, ethnicity, or skin color under any circumstances.`,
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings
