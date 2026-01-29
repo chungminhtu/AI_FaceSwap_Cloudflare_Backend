@@ -5475,10 +5475,8 @@ export default {
           sizeForWaveSpeed = `${imageDimensionsExtended.width}x${imageDimensionsExtended.height}`;
         }
 
-        const enhancePrompt = `Enhance this image with better lighting, contrast, and sharpness. Improve overall image quality while maintaining natural appearance. CRITICAL: Preserve the ENTIRE image content - do not crop, cut off, or remove any parts of the image. Maintain the original composition, framing, and all visible elements. Keep the full subject visible including all edges and corners. Maintain the correct horizontal orientation and do not rotate or flip the image. The output must show the complete original image with enhanced quality, not a cropped or modified composition.`;
-
         const enhancedResult = await callNanoBanana(
-          enhancePrompt,
+          IMAGE_PROCESSING_PROMPTS.ENHANCE,
           body.image_url,
           body.image_url,
           env,
@@ -5937,11 +5935,8 @@ export default {
         let filterResult;
 
         if (effectiveProvider === 'wavespeed') {
-          // WaveSpeed mode: Use specific filter prompt, send [selfie, preset] images
-          // Don't use prompt_json - WaveSpeed analyzes the preset image directly
-          const wavespeedFilterPrompt = `Analyze the image the art and thematic styles and return a detailed description of its specific art styles contents. For example if its figurine, pop mart unique style, clay, disney.. to reimagine the image. Ensure the details does not specify gender to apply to any gender.
-
-Apply the style from image 2 to image 1.`;
+          // WaveSpeed mode: Use config prompt + apply instruction, send [selfie, preset] images
+          const wavespeedFilterPrompt = `${VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER}\n\nApply the style from image 2 to image 1.`;
 
           // Add additional_prompt if provided
           const finalPrompt = body.additional_prompt
