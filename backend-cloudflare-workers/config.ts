@@ -77,7 +77,7 @@ export const IMAGE_PROCESSING_PROMPTS = {
   // Restoration prompt - for old/damaged photos, black and white to color conversion
   RESTORE: 'Restore this old or damaged photo. If the image is black and white or sepia, colorize it with realistic, natural colors appropriate for the era and subject matter. Fix all damage including scratches, tears, fading, stains, creases, and degradation. Remove noise, dust, and artifacts. Enhance clarity and sharpness while preserving the original composition. Restore faded areas and improve overall quality. Output a fully restored, colorized (if applicable), high-quality version of the original photo.',
 
-  AGING: (ageYears: number) => `Make this person look ${ageYears} years OLDER than their current age. Simulate realistic aging progression: add age-appropriate wrinkles, fine lines, slightly graying or thinning hair, subtle skin texture changes, and natural signs of maturity. The person should still be clearly recognizable - preserve their identity, facial structure, and distinctive features. Do NOT change them into a different age (e.g., do not turn an adult into a baby). Only add ${ageYears} years of natural aging to their current appearance.`,
+  AGING: (ageYears: number) => `Transform this person to look exactly ${ageYears} years old. Reimagine their appearance at age ${ageYears} with age-appropriate facial features, body proportions, skin texture, and hair. Preserve their identity and recognizable traits (eyes, facial structure, distinctive features) but adjust everything else to match a ${ageYears}-year-old version of this person. Make it realistic and natural.`,
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings

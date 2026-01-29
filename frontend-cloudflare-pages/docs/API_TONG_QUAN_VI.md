@@ -1215,7 +1215,7 @@ curl -X POST https://api.d.shotpix.app/aging \
 
 **Request Parameters:**
 - `image_url` (string, required): URL ảnh chứa khuôn mặt cần lão hóa.
-- `age_years` (number, required): Số năm muốn lão hóa (1-120).
+- `age_years` (number, required): Tuổi mục tiêu muốn biến đổi (1-120). Ví dụ: `1` = biến thành em bé 1 tuổi, `80` = biến thành người 80 tuổi.
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 
