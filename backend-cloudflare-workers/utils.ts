@@ -1434,3 +1434,27 @@ export const purgeCdnCache = async (
     };
   }
 };
+
+// Calculate optimal output size scaled to max dimension (default 1536px for best quality)
+// Scales proportionally so the larger dimension equals maxDim
+export const calculateOptimalSize = (
+  width: number,
+  height: number,
+  maxDim: number = 1536,
+  minDim: number = 256
+): { width: number; height: number; sizeString: string } => {
+  // Scale proportionally so the larger dimension = maxDim
+  const scale = maxDim / Math.max(width, height);
+  let newWidth = Math.round(width * scale);
+  let newHeight = Math.round(height * scale);
+
+  // Clamp to bounds
+  newWidth = Math.max(minDim, Math.min(maxDim, newWidth));
+  newHeight = Math.max(minDim, Math.min(maxDim, newHeight));
+
+  return {
+    width: newWidth,
+    height: newHeight,
+    sizeString: `${newWidth}x${newHeight}`,
+  };
+};

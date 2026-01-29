@@ -5470,13 +5470,14 @@ export default {
           imageDimensionsExtended = await getImageDimensionsExtended(body.image_url, env);
         }
 
-        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
-        // WaveSpeed supports custom dimensions (256-1536), normalizeSize will scale proportionally
-        // Only use original dimensions when user didn't explicitly set a different aspect_ratio
+        // Calculate optimal output size at max 1536px for best quality
+        // Scale proportionally so the larger dimension = 1536px
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        let sizeForWaveSpeed: string | undefined;
-        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio && imageDimensionsExtended) {
-          sizeForWaveSpeed = `${imageDimensionsExtended.width}x${imageDimensionsExtended.height}`;
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio && imageDimensionsExtended) {
+          const { calculateOptimalSize } = await import('./utils');
+          const optimal = calculateOptimalSize(imageDimensionsExtended.width, imageDimensionsExtended.height, 1536, 256);
+          sizeForProvider = optimal.sizeString;
         }
 
         const enhancedResult = await callNanoBanana(
@@ -5486,7 +5487,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { provider: body.provider, size: sizeForWaveSpeed }
+          { provider: body.provider, size: sizeForProvider }
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
@@ -5618,14 +5619,15 @@ export default {
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
-        // For WaveSpeed: pass original dimensions as size to preserve exact ratio
+        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
-        let sizeForWaveSpeed: string | undefined;
-        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
-          const { getImageDimensionsExtended } = await import('./utils');
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio) {
+          const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
           const dims = await getImageDimensionsExtended(body.image_url, env);
           if (dims) {
-            sizeForWaveSpeed = `${dims.width}x${dims.height}`;
+            const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
+            sizeForProvider = optimal.sizeString;
           }
         }
 
@@ -5636,7 +5638,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { provider: body.provider, size: sizeForWaveSpeed }
+          { provider: body.provider, size: sizeForProvider }
         );
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
