@@ -69,7 +69,7 @@ Do not add or remove people.`,
 // Image Processing Prompts Configuration
 export const IMAGE_PROCESSING_PROMPTS = {
   // Enhancement prompt - works for any image (people, objects, landscapes, products, etc.)
-  ENHANCE: 'Enhance and beautify this image to professional quality. Improve sharpness, clarity, and detail. Optimize colors, contrast, and lighting for a vibrant, natural look. Remove noise, artifacts, and imperfections. For images with people: smooth skin texture, remove blemishes, enhance natural features while maintaining realistic appearance. For other images: enhance textures, colors, and visual appeal. Output in 8K ultra-high detail with professional-grade quality.',
+  ENHANCE: 'Enhance and beautify this image to professional quality. Improve sharpness, clarity, and detail. Preserve original color saturation and color balance - do not oversaturate or shift colors. Optimize contrast and lighting while maintaining natural tones. Remove noise, artifacts, and imperfections. For images with people: smooth skin texture, remove blemishes, enhance natural features while maintaining realistic appearance. For other images: enhance textures and visual appeal. Output in 8K ultra-high detail with professional-grade quality.',
 
   // Beauty prompt - specifically for face/portrait beautification (requires human face)
   BEAUTY: 'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure. Output in 8K ultra-high detail with professional skin retouching.',
