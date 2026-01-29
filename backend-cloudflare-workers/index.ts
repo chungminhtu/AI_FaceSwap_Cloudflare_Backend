@@ -363,7 +363,8 @@ const saveResultToDatabase = async (
   profileId: string,
   env: Env,
   R2_BUCKET: R2Bucket,
-  action?: string
+  action?: string,
+  request?: Request
 ): Promise<string | null> => {
   try {
     // Check if this is an external URL (WaveSpeed cloudfront, etc.)
@@ -449,10 +450,10 @@ const saveResultToDatabase = async (
               const r2Key = reconstructR2Key(oldResult.id, oldResult.ext, 'results');
               try {
                 await R2_BUCKET.delete(r2Key);
-                // Collect URL for CDN purge
-                const requestUrlObj = new URL(requestUrl);
-                const publicUrl = getR2PublicUrl(env, r2Key, requestUrlObj.origin);
-                urlsToPurge.push(publicUrl);
+                if (request) {
+                  const origin = new URL(request.url).origin;
+                  urlsToPurge.push(getR2PublicUrl(env, r2Key, origin));
+                }
               } catch (r2Error) {
                 // Ignore R2 deletion errors
               }
@@ -4808,7 +4809,7 @@ export default {
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'faceswap');
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'faceswap', request);
 
             if (savedResultId !== null) {
               databaseDebug.success = true;
@@ -4954,6 +4955,17 @@ export default {
         let presetImageId: string | null = null;
 
         if (hasCustomPrompt) {
+          // Custom prompt (text-to-image) only works with Vertex AI
+          const effectiveProviderForCustom = env.IMAGE_PROVIDER;
+          if (effectiveProviderForCustom === 'wavespeed') {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('custom_prompt is only supported with Vertex AI (IMAGE_PROVIDER=vertex). WaveSpeed requires preset_image_id or preset_image_url.', 400, debugEnabled ? {
+              IMAGE_PROVIDER: env.IMAGE_PROVIDER,
+              custom_prompt: body.custom_prompt,
+              path
+            } : undefined, request, env);
+          }
+
           const envError = validateEnv(env, 'vertex');
           if (envError) {
             const debugEnabled = isDebugEnabled(env);
@@ -5006,15 +5018,58 @@ export default {
           presetImageId = null;
         } else if (hasPresetId) {
           const presetResult = results[1];
-          if (!presetResult) {
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('Preset image not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
-          }
 
-          const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
-          targetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
-          presetName = 'Preset';
-          presetImageId = body.preset_image_id || null;
+          // If preset not found in database, try looking in remove_bg/background folder
+          if (!presetResult) {
+            // Check if preset_image_id looks like a filename (contains extension)
+            const presetId = body.preset_image_id!;
+            let r2Key: string;
+
+            if (presetId.includes('.')) {
+              // Has extension: remove_bg/background/filename.ext
+              r2Key = `remove_bg/background/${presetId}`;
+            } else {
+              // No extension, try common extensions
+              const extensions = ['webp', 'jpg', 'png', 'jpeg'];
+              let foundExt: string | null = null;
+
+              // Try to find file with any common extension
+              for (const ext of extensions) {
+                const testKey = `remove_bg/background/${presetId}.${ext}`;
+                try {
+                  const testObj = await R2_BUCKET.head(testKey);
+                  if (testObj) {
+                    foundExt = ext;
+                    break;
+                  }
+                } catch (e) {
+                  // File doesn't exist, try next extension
+                }
+              }
+
+              if (!foundExt) {
+                const debugEnabled = isDebugEnabled(env);
+                return errorResponse('Preset image not found in database or remove_bg/background folder', 404, debugEnabled ? {
+                  presetId: body.preset_image_id,
+                  searchedFolder: 'remove_bg/background',
+                  triedExtensions: extensions,
+                  path
+                } : undefined, request, env);
+              }
+
+              r2Key = `remove_bg/background/${presetId}.${foundExt}`;
+            }
+
+            targetUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+            presetName = 'Background Preset';
+            presetImageId = body.preset_image_id || null;
+          } else {
+            // Found in database, use normal preset lookup
+            const storedKey = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+            targetUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
+            presetName = 'Preset';
+            presetImageId = body.preset_image_id || null;
+          }
         } else {
           targetUrl = body.preset_image_url!;
           presetName = 'Result Preset';
@@ -5035,6 +5090,9 @@ export default {
           selfieUrl = body.selfie_image_url!;
         }
 
+        // Check IMAGE_PROVIDER configuration
+        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+
         const requestDebug = compact({
           targetUrl: targetUrl,
           selfieUrl: selfieUrl,
@@ -5043,27 +5101,58 @@ export default {
           presetName: presetName,
           selfieId: body.selfie_id,
           customPrompt: hasCustomPrompt ? body.custom_prompt : undefined,
-          additionalPrompt: body.additional_prompt,
+          provider: effectiveProvider,
         });
 
-        const envError = validateEnv(env, 'vertex');
+        const envError = validateEnv(env, effectiveProvider === 'wavespeed' ? 'wavespeed' : 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const defaultMergePrompt = VERTEX_AI_PROMPTS.MERGE_PROMPT_DEFAULT;
-
-        let mergePrompt = defaultMergePrompt;
-        if (body.additional_prompt) {
-          mergePrompt = `${defaultMergePrompt} Additional instructions: ${body.additional_prompt}`;
-        }
+        // Use backend config prompt only - client cannot override
+        const mergePrompt = effectiveProvider === 'wavespeed'
+          ? WAVESPEED_PROMPTS.MERGE_PROMPT_DEFAULT
+          : VERTEX_AI_PROMPTS.MERGE_PROMPT_DEFAULT;
 
         // Resolve aspect ratio from selfie image if "original" is specified
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
         const modelParam = body.model;
 
-        const mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
+        // Get extended image dimensions for WaveSpeed size parameter
+        let sizeForWaveSpeed: string | undefined;
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+        if (effectiveProvider === 'wavespeed' && !userExplicitlySetAspectRatio) {
+          try {
+            const { getImageDimensionsExtended } = await import('./utils');
+            const imageDimensionsExtended = await getImageDimensionsExtended(selfieUrl, env);
+            if (imageDimensionsExtended) {
+              sizeForWaveSpeed = `${imageDimensionsExtended.width}x${imageDimensionsExtended.height}`;
+            }
+          } catch (e) {
+            // Ignore dimension errors, will use default aspect ratio
+          }
+        }
+
+        // For merge operations:
+        // - Vertex AI: Use callNanoBananaMerge (2 separate images with merge prompt)
+        // - WaveSpeed: Use callNanoBanana with [selfie, background] array
+        let mergeResult: FaceSwapResponse;
+        if (effectiveProvider === 'wavespeed') {
+          // WaveSpeed: pass both images as array [selfie, background]
+          mergeResult = await callNanoBanana(
+            mergePrompt,
+            targetUrl,  // targetUrl (not used by WaveSpeed, but required by function signature)
+            [selfieUrl, targetUrl],  // sourceUrl: array of images
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: 'wavespeed', size: sizeForWaveSpeed }
+          );
+        } else {
+          // Vertex AI: use dedicated merge function
+          mergeResult = await callNanoBananaMerge(mergePrompt, selfieUrl, targetUrl, env, validAspectRatio, modelParam);
+        }
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
           const failureCode = mergeResult.StatusCode || 500;
@@ -5141,7 +5230,7 @@ export default {
         if (body.profile_id) {
           databaseDebug.attempted = true;
           try {
-            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'background');
+            savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'background', request);
 
             if (savedResultId !== null) {
               databaseDebug.success = true;
@@ -5282,7 +5371,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'upscaler4k');
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'upscaler4k', request);
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(upscalerResult) : undefined;
@@ -5423,7 +5512,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'enhance');
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'enhance', request);
 
         const debugEnabled = isDebugEnabled(env);
         const aspectRatioDebug = debugEnabled ? {
@@ -5573,7 +5662,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'beauty');
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'beauty', request);
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(beautyResult) : undefined;
@@ -5916,7 +6005,7 @@ Apply the style from image 2 to image 1.`;
         }
 
         // Save result to database for history
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter');
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter', request);
 
         const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
         return jsonResponse({
@@ -6032,7 +6121,7 @@ Apply the style from image 2 to image 1.`;
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'restore');
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'restore', request);
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(restoredResult) : undefined;
@@ -6064,13 +6153,18 @@ Apply the style from image 2 to image 1.`;
 
     // Handle aging endpoint
     if (path === '/aging' && request.method === 'POST') {
-      let body: { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_url: string; age_years: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; age_years?: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_url: string; age_years: number; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
         if (!body.image_url) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (typeof body.age_years !== 'number' || Number.isNaN(body.age_years) || body.age_years < 1 || body.age_years > 120) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing or invalid required field: age_years (number, 1-120)', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
@@ -6086,7 +6180,7 @@ Apply the style from image 2 to image 1.`;
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        const ageYears = body.age_years || 20;
+        const ageYears = body.age_years;
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
@@ -6108,10 +6202,8 @@ Apply the style from image 2 to image 1.`;
           }
         }
 
-        // For now, implement aging using existing Nano Banana API
-        // This is a placeholder - in production, you'd want a dedicated aging model
         const agingResult = await callNanoBanana(
-          `Age this person by ${ageYears} years. Add realistic aging effects including facial wrinkles, gray hair, maturity in appearance while maintaining the person's identity and natural features. Make the changes subtle and realistic.`,
+          IMAGE_PROCESSING_PROMPTS.AGING(ageYears),
           body.image_url,
           body.image_url, // Use same image as target and source for aging
           env,
@@ -6145,7 +6237,7 @@ Apply the style from image 2 to image 1.`;
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'aging');
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'aging', request);
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;

@@ -22,15 +22,15 @@ export interface FaceSwapRequest {
 }
 
 export interface BackgroundRequest {
-  preset_image_id?: string; // Optional: Preset image ID from database (landscape scene)
+  preset_image_id?: string; // Optional: Preset image ID from database (landscape scene) or filename in remove_bg/background folder
   preset_image_url?: string; // Optional: Preset image URL (alternative to preset_image_id)
   selfie_id?: string; // Optional: Selfie ID from database (person with transparent background)
   selfie_image_url?: string; // Optional: Selfie image URL (alternative to selfie_id)
   profile_id: string; // Required: Profile ID for the operation
-  additional_prompt?: string; // Optional: Additional instructions for merging
   custom_prompt?: string; // Optional: Custom prompt to generate background image from text (alternative to preset_image_id/preset_image_url)
   aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)
   model?: string | number; // Optional: Model parameter ("2.5" for gemini-2.5-flash-image, "3" for gemini-3-pro-image-preview). Default: "2.5"
+  provider?: 'vertex' | 'wavespeed'; // Optional: Override IMAGE_PROVIDER config
 }
 
 export interface FaceSwapResponse {

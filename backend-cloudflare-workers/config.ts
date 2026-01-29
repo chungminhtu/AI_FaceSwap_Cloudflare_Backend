@@ -60,6 +60,10 @@ Analyze the race and facial proportions (such as eyes, mouth, hair, hairstyles, 
 Ensure the skin overall of the body (hands, fingers legs, neck, shoulder,..) should match with the face to make it most realistic in finished photo.
 
 Do not add or remove people.`,
+
+  // Background merge mode: 1 selfie + 1 background/preset
+  // image1 = selfie (person with or without transparent background), image2 = background scene
+  MERGE_PROMPT_DEFAULT: `Seamlessly place the person from Image 1 into the scene from Image 2. Integrate the person naturally with proper scale, perspective, and positioning. Match lighting, shadows, color temperature, and contrast perfectly with the background environment. Ensure realistic compositing with proper edge blending, ambient occlusion, and environmental reflections. The person should look naturally grounded in the scene as if photographed together.`,
 };
 
 // Image Processing Prompts Configuration
@@ -72,6 +76,8 @@ export const IMAGE_PROCESSING_PROMPTS = {
 
   // Restoration prompt - for old/damaged photos, black and white to color conversion
   RESTORE: 'Restore this old or damaged photo. If the image is black and white or sepia, colorize it with realistic, natural colors appropriate for the era and subject matter. Fix all damage including scratches, tears, fading, stains, creases, and degradation. Remove noise, dust, and artifacts. Enhance clarity and sharpness while preserving the original composition. Restore faded areas and improve overall quality. Output a fully restored, colorized (if applicable), high-quality version of the original photo.',
+
+  AGING: (ageYears: number) => `Age this person by ${ageYears} years. Add realistic aging effects including facial wrinkles, gray hair, maturity in appearance while maintaining the person's identity and natural features. Make the changes subtle and realistic.`,
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings

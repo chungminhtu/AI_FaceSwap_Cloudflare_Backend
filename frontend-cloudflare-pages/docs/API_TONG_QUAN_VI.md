@@ -828,7 +828,6 @@ curl -X POST https://api.d.shotpix.app/background \
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_id": "selfie_1234567890_xyz789",
     "profile_id": "profile_1234567890",
-    "additional_prompt": "Make the person look happy and relaxed",
     "aspect_ratio": "16:9"
   }'
 ```
@@ -842,7 +841,6 @@ curl -X POST https://api.d.shotpix.app/background \
     "preset_image_id": "preset_1234567890_abc123",
     "selfie_image_url": "https://example.com/selfie.png",
     "profile_id": "profile_1234567890",
-    "additional_prompt": "Make the person look happy and relaxed",
     "aspect_ratio": "16:9"
   }'
 ```
@@ -856,7 +854,6 @@ curl -X POST https://api.d.shotpix.app/background \
     "custom_prompt": "A beautiful sunset beach scene with palm trees and golden sand",
     "selfie_id": "selfie_1234567890_xyz789",
     "profile_id": "profile_1234567890",
-    "additional_prompt": "Make the person look happy and relaxed",
     "aspect_ratio": "16:9"
   }'
 ```
@@ -880,10 +877,15 @@ curl -X POST https://api.d.shotpix.app/background \
   2. **Merge selfie**: Tự động merge selfie vào ảnh nền vừa tạo với lighting và color grading phù hợp
 - `custom_prompt` không thể kết hợp với `preset_image_id` hoặc `preset_image_url` (chỉ chọn một trong ba)
 - `aspect_ratio` và `model` sẽ được áp dụng cho cả việc tạo nền và merge
-- `additional_prompt` chỉ ảnh hưởng đến bước merge, không ảnh hưởng đến việc tạo nền
+
+**Lưu ý về preset_image_id:**
+- Hỗ trợ cả preset từ database (trong bảng `presets`) và file trực tiếp trong folder `/remove_bg/background/` trên R2
+- Có thể truyền `preset_image_id` kèm extension (ví dụ: `"background_001.webp"`) hoặc không có extension (ví dụ: `"background_001"`)
+- Nếu không có extension, hệ thống sẽ tự động thử các extension phổ biến: .webp, .jpg, .png, .jpeg
+- Hệ thống sẽ tìm file theo thứ tự: database trước, sau đó folder `/remove_bg/background/` nếu không tìm thấy trong database
 
 **Request Parameters:**
-- `preset_image_id` (string, optional): ID ảnh preset (landscape scene) đã lưu trong database (format: `preset_...`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
+- `preset_image_id` (string, optional): ID ảnh preset hoặc filename trong folder `/remove_bg/background/`. Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `preset_image_url` (string, optional): URL ảnh preset trực tiếp (thay thế cho `preset_image_id`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `custom_prompt` (string, optional): Prompt tùy chỉnh để tạo ảnh nền từ text sử dụng Vertex AI (thay thế cho preset image). Khi sử dụng `custom_prompt`, hệ thống sẽ:
   1. Tạo ảnh nền từ text prompt bằng Vertex AI Gemini
@@ -892,7 +894,6 @@ curl -X POST https://api.d.shotpix.app/background \
 - `selfie_id` (string, optional): ID ảnh selfie đã lưu trong database (người). Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`).
 - `profile_id` (string, required): ID profile người dùng.
-- `additional_prompt` (string, optional): Câu mô tả bổ sung cho việc merge (ví dụ: "Make the person look happy", "Adjust lighting to match sunset"). Chỉ áp dụng cho bước merge, không ảnh hưởng đến việc tạo nền từ `custom_prompt`.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"3:4"`. Khi sử dụng `custom_prompt`, tỷ lệ này sẽ được áp dụng cho cả việc tạo nền và merge.
 
 **Response:**
@@ -1214,7 +1215,7 @@ curl -X POST https://api.d.shotpix.app/aging \
 
 **Request Parameters:**
 - `image_url` (string, required): URL ảnh chứa khuôn mặt cần lão hóa.
-- `age_years` (number, optional): Số năm muốn lão hóa (mặc định: 20).
+- `age_years` (number, required): Số năm muốn lão hóa (1-120).
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 
