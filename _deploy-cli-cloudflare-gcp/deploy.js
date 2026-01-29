@@ -967,7 +967,7 @@ function parseConfig(config) {
   if (config.MOBILE_API_KEY) secrets.MOBILE_API_KEY = config.MOBILE_API_KEY;
   if (config.ENABLE_MOBILE_API_KEY_AUTH) secrets.ENABLE_MOBILE_API_KEY_AUTH = config.ENABLE_MOBILE_API_KEY_AUTH;
   if (config.CLOUDFLARE_ZONE_ID) secrets.CLOUDFLARE_ZONE_ID = config.CLOUDFLARE_ZONE_ID;
-  if (config.CLOUDFLARE_API_TOKEN) secrets.CLOUDFLARE_API_TOKEN = config.CLOUDFLARE_API_TOKEN;
+  if (config.CLOUDFLARE_CDN_PURGE_TOKEN) secrets.CLOUDFLARE_CDN_PURGE_TOKEN = config.CLOUDFLARE_CDN_PURGE_TOKEN;
   if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
     throw new Error('promptCacheKV.namespaceName is required in deployments-secrets.json');
   }

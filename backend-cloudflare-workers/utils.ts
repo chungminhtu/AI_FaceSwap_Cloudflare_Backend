@@ -1349,7 +1349,7 @@ export const getAccessToken = async (
 
 /**
  * Purge CDN cache for specific URLs using Cloudflare API
- * Requires CLOUDFLARE_ZONE_ID and CLOUDFLARE_API_TOKEN environment variables
+ * Requires CLOUDFLARE_ZONE_ID and CLOUDFLARE_CDN_PURGE_TOKEN environment variables
  * @param urls - Array of full URLs to purge from cache
  * @param env - Environment variables
  * @returns Promise<{ success: boolean; purged?: number; error?: string }>
@@ -1360,7 +1360,7 @@ export const purgeCdnCache = async (
 ): Promise<{ success: boolean; purged?: number; error?: string; skipped?: boolean }> => {
   // Check if CDN purge is enabled
   const zoneId = env.CLOUDFLARE_ZONE_ID;
-  const apiToken = env.CLOUDFLARE_API_TOKEN;
+  const apiToken = env.CLOUDFLARE_CDN_PURGE_TOKEN;
 
   if (!zoneId || !apiToken) {
     // CDN purge not configured - skip silently
