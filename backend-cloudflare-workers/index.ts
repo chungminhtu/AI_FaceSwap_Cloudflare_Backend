@@ -5,7 +5,7 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS } from './config';
 
@@ -4955,22 +4955,8 @@ export default {
         let presetImageId: string | null = null;
 
         if (hasCustomPrompt) {
-          // Custom prompt (text-to-image) only works with Vertex AI
-          const effectiveProviderForCustom = env.IMAGE_PROVIDER;
-          if (effectiveProviderForCustom === 'wavespeed') {
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('custom_prompt is only supported with Vertex AI (IMAGE_PROVIDER=vertex). WaveSpeed requires preset_image_id or preset_image_url.', 400, debugEnabled ? {
-              IMAGE_PROVIDER: env.IMAGE_PROVIDER,
-              custom_prompt: body.custom_prompt,
-              path
-            } : undefined, request, env);
-          }
-
-          const envError = validateEnv(env, 'vertex');
-          if (envError) {
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
-          }
+          // Custom prompt (text-to-image) works with both Vertex AI and WaveSpeed
+          const effectiveProvider = env.IMAGE_PROVIDER;
 
           // Get selfie URL for aspect ratio calculation
           let selfieUrlForRatio = '';
@@ -4988,7 +4974,25 @@ export default {
           const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrlForRatio, env, { allowOriginal: true });
           const modelParam = body.model;
 
-          const backgroundGenResult = await generateBackgroundFromPrompt(body.custom_prompt!, env, validAspectRatio, modelParam);
+          let backgroundGenResult;
+          
+          if (effectiveProvider === 'wavespeed') {
+            // WaveSpeed text-to-image
+            const envError = validateEnv(env, 'wavespeed');
+            if (envError) {
+              const debugEnabled = isDebugEnabled(env);
+              return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+            }
+            backgroundGenResult = await callWaveSpeedTextToImage(body.custom_prompt!, env, validAspectRatio);
+          } else {
+            // Vertex AI text-to-image (default)
+            const envError = validateEnv(env, 'vertex');
+            if (envError) {
+              const debugEnabled = isDebugEnabled(env);
+              return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+            }
+            backgroundGenResult = await generateBackgroundFromPrompt(body.custom_prompt!, env, validAspectRatio, modelParam);
+          }
 
           if (!backgroundGenResult.Success || !backgroundGenResult.ResultImageUrl) {
             const failureCode = backgroundGenResult.StatusCode || 500;

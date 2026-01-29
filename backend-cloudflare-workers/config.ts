@@ -329,6 +329,7 @@ export const ASPECT_RATIO_CONFIG = {
 
 export const API_ENDPOINTS = {
   WAVESPEED_UPSCALER: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/image-upscaler',
+  WAVESPEED_TEXT_TO_IMAGE: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-dev/text-to-image',
   WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`,
   OAUTH_TOKEN: 'https://oauth2.googleapis.com/token',
 };
