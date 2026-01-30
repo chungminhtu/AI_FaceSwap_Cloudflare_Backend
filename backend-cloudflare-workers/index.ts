@@ -4106,7 +4106,7 @@ export default {
         if (!result || !result.results) {
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
-            data: { results: [] },
+            data: [],
             status: 'success',
             message: 'Results retrieved successfully',
             code: 200,
@@ -4123,8 +4123,6 @@ export default {
           return {
             id: String(row.id || ''),
             result_url: fullUrl,
-            image_url: fullUrl,
-            profile_id: row.profile_id || '',
             action: row.action || null,
             created_at: row.created_at ? new Date(row.created_at * 1000).toISOString() : new Date().toISOString()
           };
@@ -4132,7 +4130,7 @@ export default {
 
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
-          data: { results },
+          data: results,
           status: 'success',
           message: 'Results retrieved successfully',
           code: 200,
@@ -4145,7 +4143,7 @@ export default {
         });
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
-          data: { results: [] },
+          data: [],
           status: 'success',
           message: 'Results retrieved successfully',
           code: 200,
