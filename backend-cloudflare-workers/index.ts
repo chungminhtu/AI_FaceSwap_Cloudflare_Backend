@@ -5529,39 +5529,27 @@ export default {
 
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
-      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
-        if (!body.image_url) {
+        // Support both legacy image_url and new selfie_id/selfie_image_url
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        
+        if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url (or image_url)', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url/image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        // Check if image_url is a selfie from our R2 - if so, verify it exists or return cached result
-        const selfieInfoForLookup = extractSelfieInfoFromUrl(body.image_url, env);
-        if (selfieInfoForLookup) {
-          const selfieExists = await DB.prepare('SELECT id FROM selfies WHERE id = ?').bind(selfieInfoForLookup.selfieId).first();
-          if (!selfieExists) {
-            // Selfie was auto-deleted - check for cached result
-            const cachedResult = await getCachedResultFromKV(env, selfieInfoForLookup.selfieId, null, 'enhance');
-            if (cachedResult) {
-              return jsonResponse({
-                data: { resultImageUrl: cachedResult, cached: true },
-                status: 'success',
-                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
-                code: 200,
-              });
-            }
-            // No cached result - return error
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('Selfie image not found (may have been auto-deleted after processing)', 404, debugEnabled ? { path } : undefined, request, env);
-          }
         }
 
         const profileCheck = await DB.prepare(
@@ -5573,6 +5561,43 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
+        // Resolve selfie image URL
+        let imageUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'enhance');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          imageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          imageUrl = body.selfie_image_url || body.image_url!;
+          if (!validateImageUrl(imageUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
@@ -5580,7 +5605,7 @@ export default {
         }
 
         // Safety pre-check with Gemini 2.5 Flash Lite before processing
-        const safetyCheck = await checkImageSafetyWithFlashLite(body.image_url, env);
+        const safetyCheck = await checkImageSafetyWithFlashLite(imageUrl, env);
         if (!safetyCheck.safe) {
           console.log('[Enhance] Safety check failed:', safetyCheck.reason || safetyCheck.error);
           const debugEnabled = isDebugEnabled(env);
@@ -5601,7 +5626,7 @@ export default {
           );
         }
 
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
@@ -5609,7 +5634,7 @@ export default {
         let imageDimensionsExtended: import('./utils').ImageDimensionsExtended | null = null;
         if (body.aspect_ratio === 'original' || !body.aspect_ratio) {
           const { getImageDimensionsExtended } = await import('./utils');
-          imageDimensionsExtended = await getImageDimensionsExtended(body.image_url, env);
+          imageDimensionsExtended = await getImageDimensionsExtended(imageUrl, env);
         }
 
         // Calculate optimal output size at max 1536px for best quality
@@ -5624,8 +5649,8 @@ export default {
 
         const enhancedResult = await callNanoBanana(
           IMAGE_PROCESSING_PROMPTS.ENHANCE,
-          body.image_url,
-          body.image_url,
+          imageUrl,
+          imageUrl,
           env,
           validAspectRatio,
           modelParam,
@@ -5659,18 +5684,23 @@ export default {
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'enhance', request);
 
-        // Auto-delete selfie after processing (non-FaceSwap API) if image_url is a selfie from our R2
-        const selfieInfo = extractSelfieInfoFromUrl(body.image_url, env);
-        if (selfieInfo) {
-          ctx.waitUntil(cacheResultInKV(env, selfieInfo.selfieId, null, 'enhance', resultUrl));
-          ctx.waitUntil(deleteSelfieAfterProcessing(selfieInfo.selfieId, selfieInfo.selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        // Cache result in KV for retry handling (before selfie deletion)
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'enhance', resultUrl));
+        }
+
+        // Auto-delete selfie after processing (non-FaceSwap API)
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
         }
 
         const debugEnabled = isDebugEnabled(env);
         const aspectRatioDebug = debugEnabled ? {
           requested: body.aspect_ratio || 'undefined',
           resolved: validAspectRatio,
-          imageUrl: body.image_url,
+          imageUrl: imageUrl,
           imageDimensions: imageDimensionsExtended ? {
             width: imageDimensionsExtended.width,
             height: imageDimensionsExtended.height,
@@ -5713,39 +5743,27 @@ export default {
 
     // Handle beauty endpoint
     if (path === '/beauty' && request.method === 'POST') {
-      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
-        if (!body.image_url) {
+        // Support both legacy image_url and new selfie_id/selfie_image_url
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        
+        if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url (or image_url)', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url/image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        // Check if image_url is a selfie from our R2 - if so, verify it exists or return cached result
-        const selfieInfoForLookup = extractSelfieInfoFromUrl(body.image_url, env);
-        if (selfieInfoForLookup) {
-          const selfieExists = await DB.prepare('SELECT id FROM selfies WHERE id = ?').bind(selfieInfoForLookup.selfieId).first();
-          if (!selfieExists) {
-            // Selfie was auto-deleted - check for cached result
-            const cachedResult = await getCachedResultFromKV(env, selfieInfoForLookup.selfieId, null, 'beauty');
-            if (cachedResult) {
-              return jsonResponse({
-                data: { resultImageUrl: cachedResult, cached: true },
-                status: 'success',
-                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
-                code: 200,
-              });
-            }
-            // No cached result - return error
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('Selfie image not found (may have been auto-deleted after processing)', 404, debugEnabled ? { path } : undefined, request, env);
-          }
         }
 
         const profileCheck = await DB.prepare(
@@ -5757,6 +5775,43 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
+        // Resolve selfie image URL
+        let imageUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'beauty');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          imageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          imageUrl = body.selfie_image_url || body.image_url!;
+          if (!validateImageUrl(imageUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
@@ -5764,7 +5819,7 @@ export default {
         }
 
         // Safety pre-check with Gemini 2.5 Flash Lite before processing
-        const safetyCheck = await checkImageSafetyWithFlashLite(body.image_url, env);
+        const safetyCheck = await checkImageSafetyWithFlashLite(imageUrl, env);
         if (!safetyCheck.safe) {
           console.log('[Beauty] Safety check failed:', safetyCheck.reason || safetyCheck.error);
           const debugEnabled = isDebugEnabled(env);
@@ -5785,7 +5840,7 @@ export default {
           );
         }
 
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
@@ -5794,7 +5849,7 @@ export default {
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
           const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
-          const dims = await getImageDimensionsExtended(body.image_url, env);
+          const dims = await getImageDimensionsExtended(imageUrl, env);
           if (dims) {
             const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
             sizeForProvider = optimal.sizeString;
@@ -5803,8 +5858,8 @@ export default {
 
         const beautyResult = await callNanoBanana(
           IMAGE_PROCESSING_PROMPTS.BEAUTY,
-          body.image_url,
-          body.image_url,
+          imageUrl,
+          imageUrl,
           env,
           validAspectRatio,
           modelParam,
@@ -5838,11 +5893,16 @@ export default {
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'beauty', request);
 
-        // Auto-delete selfie after processing (non-FaceSwap API) if image_url is a selfie from our R2
-        const selfieInfo = extractSelfieInfoFromUrl(body.image_url, env);
-        if (selfieInfo) {
-          ctx.waitUntil(cacheResultInKV(env, selfieInfo.selfieId, null, 'beauty', resultUrl));
-          ctx.waitUntil(deleteSelfieAfterProcessing(selfieInfo.selfieId, selfieInfo.selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        // Cache result in KV for retry handling (before selfie deletion)
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'beauty', resultUrl));
+        }
+
+        // Auto-delete selfie after processing (non-FaceSwap API)
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
         }
 
         const debugEnabled = isDebugEnabled(env);
@@ -5862,6 +5922,7 @@ export default {
       } catch (error) {
         logCriticalError('/beauty', error, request, env, {
           body: {
+            selfie_id: body?.selfie_id,
             image_url: body?.image_url,
             profile_id: body?.profile_id,
             aspect_ratio: body?.aspect_ratio
@@ -6245,39 +6306,27 @@ export default {
 
     // Handle restore endpoint
     if (path === '/restore' && request.method === 'POST') {
-      let body: { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       try {
-        body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
-        if (!body.image_url) {
+        // Support both legacy image_url and new selfie_id/selfie_image_url
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        
+        if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url (or image_url)', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url/image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        // Check if image_url is a selfie from our R2 - if so, verify it exists or return cached result
-        const selfieInfoForLookup = extractSelfieInfoFromUrl(body.image_url, env);
-        if (selfieInfoForLookup) {
-          const selfieExists = await DB.prepare('SELECT id FROM selfies WHERE id = ?').bind(selfieInfoForLookup.selfieId).first();
-          if (!selfieExists) {
-            // Selfie was auto-deleted - check for cached result
-            const cachedResult = await getCachedResultFromKV(env, selfieInfoForLookup.selfieId, null, 'restore');
-            if (cachedResult) {
-              return jsonResponse({
-                data: { resultImageUrl: cachedResult, cached: true },
-                status: 'success',
-                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
-                code: 200,
-              });
-            }
-            // No cached result - return error
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse('Selfie image not found (may have been auto-deleted after processing)', 404, debugEnabled ? { path } : undefined, request, env);
-          }
         }
 
         const profileCheck = await DB.prepare(
@@ -6288,13 +6337,50 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
+        // Resolve selfie image URL
+        let imageUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'restore');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          imageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          imageUrl = body.selfie_image_url || body.image_url!;
+          if (!validateImageUrl(imageUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, body.image_url, env, { allowOriginal: true });
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
         const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
 
@@ -6303,7 +6389,7 @@ export default {
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
           const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
-          const dims = await getImageDimensionsExtended(body.image_url, env);
+          const dims = await getImageDimensionsExtended(imageUrl, env);
           if (dims) {
             const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
             sizeForProvider = optimal.sizeString;
@@ -6312,8 +6398,8 @@ export default {
 
         const restoredResult = await callNanoBanana(
           IMAGE_PROCESSING_PROMPTS.RESTORE,
-          body.image_url,
-          body.image_url,
+          imageUrl,
+          imageUrl,
           env,
           validAspectRatio,
           modelParam,
@@ -6347,11 +6433,16 @@ export default {
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'restore', request);
 
-        // Auto-delete selfie after processing (non-FaceSwap API) if image_url is a selfie from our R2
-        const selfieInfo = extractSelfieInfoFromUrl(body.image_url, env);
-        if (selfieInfo) {
-          ctx.waitUntil(cacheResultInKV(env, selfieInfo.selfieId, null, 'restore', resultUrl));
-          ctx.waitUntil(deleteSelfieAfterProcessing(selfieInfo.selfieId, selfieInfo.selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        // Cache result in KV for retry handling (before selfie deletion)
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'restore', resultUrl));
+        }
+
+        // Auto-delete selfie after processing (non-FaceSwap API)
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
         }
 
         const debugEnabled = isDebugEnabled(env);
@@ -6371,6 +6462,7 @@ export default {
       } catch (error) {
         logCriticalError('/restore', error, request, env, {
           body: {
+            selfie_id: body?.selfie_id,
             image_url: body?.image_url,
             profile_id: body?.profile_id,
             aspect_ratio: body?.aspect_ratio
