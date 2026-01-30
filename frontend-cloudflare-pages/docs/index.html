@@ -2056,18 +2056,14 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 **Response:**
 \`\`\`json
 {
-  "data": {
-    "results": [
-      {
-        "id": "result_1234567890_abc123",
-        "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-        "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-        "profile_id": "profile_1234567890",
-        "action": "faceswap",
-        "created_at": "2024-01-01T00:00:00.000Z"
-      }
-    ]
-  },
+  "data": [
+    {
+      "id": "result_1234567890_abc123",
+      "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+      "action": "faceswap",
+      "created_at": "2024-01-01T00:00:00.000Z"
+    }
+  ],
   "status": "success",
   "message": "Results retrieved successfully",
   "code": 200

@@ -1936,7 +1936,8 @@
                 }
                 
                 const data = await response.json();
-                let items = data[config.responseKey] || data.data?.[config.responseKey] || [];
+                // Handle both formats: data.results, data.data.results, or data.data as array directly
+                let items = data[config.responseKey] || data.data?.[config.responseKey] || (Array.isArray(data.data) ? data.data : []);
                 
                 // Only log success if we actually got data or it's a valid empty response
                 const status = (response.ok && data !== null && typeof data === 'object') ? 'success' : 'error';
