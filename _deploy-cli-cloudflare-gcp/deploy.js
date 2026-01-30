@@ -854,12 +854,10 @@ function parseConfig(config) {
   if (missing.length) throw new Error(`Missing fields: ${missing.join(', ')}`);
 
   // Strict validation for numeric configuration values
+  // Note: SELFIE_MAX_WEDDING/4K/OTHER removed - non-FaceSwap actions are now unlimited
   const numericFields = {
     RESULT_MAX_HISTORY: { min: 1, max: 10000, default: 10 },
-    SELFIE_MAX_FACESWAP: { min: 1, max: 1000, default: 5 },
-    SELFIE_MAX_WEDDING: { min: 1, max: 1000, default: 2 },
-    SELFIE_MAX_4K: { min: 1, max: 1000, default: 1 },
-    SELFIE_MAX_OTHER: { min: 1, max: 1000, default: 1 }
+    SELFIE_MAX_FACESWAP: { min: 1, max: 1000, default: 5 }
   };
 
   const numericValidationErrors = [];
@@ -957,9 +955,7 @@ function parseConfig(config) {
   if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
   if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
   if (config.SELFIE_MAX_FACESWAP) secrets.SELFIE_MAX_FACESWAP = config.SELFIE_MAX_FACESWAP;
-  if (config.SELFIE_MAX_WEDDING) secrets.SELFIE_MAX_WEDDING = config.SELFIE_MAX_WEDDING;
-  if (config.SELFIE_MAX_4K) secrets.SELFIE_MAX_4K = config.SELFIE_MAX_4K;
-  if (config.SELFIE_MAX_OTHER) secrets.SELFIE_MAX_OTHER = config.SELFIE_MAX_OTHER;
+  // Note: SELFIE_MAX_WEDDING/4K/OTHER removed - non-FaceSwap actions are now unlimited
   if (config.DISABLE_SAFE_SEARCH !== undefined) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
   if (config.DISABLE_VERTEX_IMAGE_GEN !== undefined) secrets.DISABLE_VERTEX_IMAGE_GEN = config.DISABLE_VERTEX_IMAGE_GEN;
   if (config.DISABLE_VISION_API !== undefined) secrets.DISABLE_VISION_API = config.DISABLE_VISION_API;
@@ -1088,6 +1084,11 @@ function generateWranglerConfig(config, skipD1 = false, databaseId = null, promp
       id: promptCacheNamespaceId
     }];
   }
+
+  // Add scheduled trigger for 30-day result cleanup (runs daily at 3 AM UTC)
+  wranglerConfig.triggers = {
+    crons: ['0 3 * * *']
+  };
 
   // Note: Custom domains for Workers are configured separately in Cloudflare dashboard
   // Routes are not needed for custom domains - they're handled via Cloudflare's custom domain feature

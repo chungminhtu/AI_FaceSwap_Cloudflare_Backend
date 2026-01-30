@@ -2344,7 +2344,7 @@ export const callUpscaler4k = async (
 };
 
 // WaveSpeed Face Swap API
-// Endpoint: https://api.wavespeed.ai/api/v3/wavespeed-ai/image-face-swap
+// Endpoint: https://api.wavespeed.ai/api/v1/wavespeed-ai/image-face-swap
 // Docs: Takes face_image (selfie) and image (target/preset) to swap face
 export const callWaveSpeedFaceSwap = async (
   faceImageUrl: string,
@@ -2369,7 +2369,7 @@ export const callWaveSpeedFaceSwap = async (
   } : undefined;
 
   try {
-    const endpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/image-face-swap';
+    const endpoint = 'https://api.wavespeed.ai/api/v1/wavespeed-ai/image-face-swap';
     const requestBody = {
       enable_base64_output: false,
       enable_sync_mode: true,
@@ -2450,7 +2450,7 @@ export const callWaveSpeedFaceSwap = async (
 };
 
 // WaveSpeed Flux Edit API
-// Endpoint: https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit
+// Endpoint: https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit
 // Docs: Takes images array + prompt for AI-based image editing
 export const callWaveSpeedEdit = async (
   imageUrls: string[],
@@ -2538,7 +2538,7 @@ export const callWaveSpeedEdit = async (
   } : undefined;
 
   try {
-    const endpoint = 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit';
+    const endpoint = 'https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit';
     const requestBody: Record<string, any> = {
       enable_base64_output: false,
       enable_sync_mode: true,

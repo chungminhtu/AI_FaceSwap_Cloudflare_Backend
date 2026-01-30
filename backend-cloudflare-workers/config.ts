@@ -69,7 +69,7 @@ Do not add or remove people.`,
 // Image Processing Prompts Configuration
 export const IMAGE_PROCESSING_PROMPTS = {
   // Enhancement prompt - works for any image (people, objects, landscapes, products, etc.)
-  ENHANCE: 'Enhance and beautify this image to professional quality. Improve sharpness, clarity, and detail. Subtly enhance colors for a natural, balanced look - avoid oversaturation and harsh contrast. Keep color tones soft and realistic. Remove noise, artifacts, and imperfections. For portraits: smooth skin texture, remove blemishes while maintaining natural skin tones. Output in 8K ultra-high detail with professional retouching.',
+  ENHANCE: 'Enhance and beautify this image to professional quality. Improve sharpness, clarity, and detail. Preserve original color saturation and color balance - do not oversaturate or shift colors. Optimize contrast and lighting while maintaining natural tones. Remove noise, artifacts, and imperfections. For images with people: smooth skin texture, remove blemishes, enhance natural features while maintaining realistic appearance. For other images: enhance textures and visual appeal. Output in 8K ultra-high detail with professional-grade quality.',
 
   // Beauty prompt - specifically for face/portrait beautification (requires human face)
   BEAUTY: 'Beautify this portrait image by improving facial aesthetics: smooth skin texture, remove blemishes and acne, even out skin tone, subtly slim face and jawline, brighten eyes, enhance lips and eyebrows, slightly enlarge eyes if appropriate, soften or reshape nose subtly, and automatically adjust makeup. Maintain natural appearance and preserve facial structure. Output in 8K ultra-high detail with professional skin retouching.',
@@ -328,9 +328,9 @@ export const ASPECT_RATIO_CONFIG = {
 };
 
 export const API_ENDPOINTS = {
-  WAVESPEED_UPSCALER: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/image-upscaler',
-  WAVESPEED_TEXT_TO_IMAGE: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-dev/text-to-image',
-  WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`,
+  WAVESPEED_UPSCALER: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler',
+  WAVESPEED_TEXT_TO_IMAGE: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-dev/text-to-image',
+  WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v1/predictions/${requestId}/result`,
   OAUTH_TOKEN: 'https://oauth2.googleapis.com/token',
 };
 

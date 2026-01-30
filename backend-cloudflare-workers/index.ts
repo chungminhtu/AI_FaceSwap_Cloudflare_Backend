@@ -492,6 +492,105 @@ const saveResultToDatabase = async (
   }
 };
 
+// KV cache for retry handling - stores result_url temporarily (24h TTL)
+// When selfie is deleted after processing, client can still retrieve result via cache
+const RESULT_CACHE_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+
+const buildResultCacheKey = (selfieId: string, presetId: string | null, action: string): string => {
+  return `result_cache:${selfieId}:${presetId || 'none'}:${action}`;
+};
+
+const cacheResultInKV = async (
+  env: Env,
+  selfieId: string,
+  presetId: string | null,
+  action: string,
+  resultUrl: string
+): Promise<void> => {
+  try {
+    const PROMPT_CACHE_KV = env.PROMPT_CACHE_KV;
+    if (!PROMPT_CACHE_KV) return;
+    
+    const cacheKey = buildResultCacheKey(selfieId, presetId, action);
+    await PROMPT_CACHE_KV.put(cacheKey, resultUrl, { expirationTtl: RESULT_CACHE_TTL_SECONDS });
+    console.log(`[Result Cache] Cached ${action} result for selfie ${selfieId}`);
+  } catch (error) {
+    console.error('[Result Cache] Failed to cache result:', error instanceof Error ? error.message : String(error));
+  }
+};
+
+const getCachedResultFromKV = async (
+  env: Env,
+  selfieId: string,
+  presetId: string | null,
+  action: string
+): Promise<string | null> => {
+  try {
+    const PROMPT_CACHE_KV = env.PROMPT_CACHE_KV;
+    if (!PROMPT_CACHE_KV) return null;
+    
+    const cacheKey = buildResultCacheKey(selfieId, presetId, action);
+    const cachedResult = await PROMPT_CACHE_KV.get(cacheKey);
+    if (cachedResult) {
+      console.log(`[Result Cache] Found cached ${action} result for selfie ${selfieId}`);
+    }
+    return cachedResult;
+  } catch (error) {
+    console.error('[Result Cache] Failed to get cached result:', error instanceof Error ? error.message : String(error));
+    return null;
+  }
+};
+
+// Extract selfie ID and extension from URL if it's a selfie from our R2
+// Returns { selfieId, selfieExt } if found, null otherwise
+const extractSelfieInfoFromUrl = (imageUrl: string, env: Env): { selfieId: string; selfieExt: string } | null => {
+  if (!imageUrl) return null;
+  
+  const r2Key = extractR2KeyFromUrl(imageUrl);
+  if (!r2Key) return null;
+  
+  // Check if this is a selfie (key starts with 'selfie/')
+  if (!r2Key.startsWith('selfie/')) return null;
+  
+  // Extract id and ext from key (format: selfie/{id}.{ext})
+  const keyPart = r2Key.replace('selfie/', '');
+  const lastDotIndex = keyPart.lastIndexOf('.');
+  if (lastDotIndex === -1) return null;
+  
+  const selfieId = keyPart.substring(0, lastDotIndex);
+  const selfieExt = keyPart.substring(lastDotIndex + 1);
+  
+  return { selfieId, selfieExt };
+};
+
+// Delete selfie from R2, D1, and purge CDN after API processing (for non-FaceSwap APIs)
+const deleteSelfieAfterProcessing = async (
+  selfieId: string,
+  selfieExt: string,
+  env: Env,
+  DB: D1Database,
+  R2_BUCKET: R2Bucket,
+  requestOrigin: string
+): Promise<void> => {
+  try {
+    const r2Key = reconstructR2Key(selfieId, selfieExt, 'selfie');
+    const publicUrl = getR2PublicUrl(env, r2Key, requestOrigin);
+
+    // Delete from D1
+    await DB.prepare('DELETE FROM selfies WHERE id = ?').bind(selfieId).run();
+
+    // Delete from R2
+    await R2_BUCKET.delete(r2Key);
+
+    // Purge CDN
+    await purgeCdnCache([publicUrl], env);
+
+    console.log(`[Auto-Delete Selfie] Deleted selfie ${selfieId} after processing`);
+  } catch (error) {
+    console.error(`[Auto-Delete Selfie] Failed to delete selfie ${selfieId}:`, error instanceof Error ? error.message : String(error));
+  }
+};
+
 const resolveBucketName = (env: Env): string => env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
 
 const getR2PublicUrl = (env: Env, key: string, fallbackOrigin?: string): string => {
@@ -1403,76 +1502,66 @@ export default {
               let queryCondition: string;
               let queryBindings: any[];
 
+              // Only apply selfie limits for FaceSwap action - other actions are unlimited
               if (actionLower === 'faceswap') {
                 maxCount = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
                 queryCondition = 'profile_id = ? AND action = ?';
                 queryBindings = [profileId, actionValue];
-              } else if (actionLower === 'wedding') {
-                maxCount = parseInt(env.SELFIE_MAX_WEDDING || '2', 10);
-                queryCondition = 'profile_id = ? AND action = ?';
-                queryBindings = [profileId, actionValue];
-              } else if (actionLower === '4k') {
-                maxCount = parseInt(env.SELFIE_MAX_4K || '1', 10);
-                queryCondition = 'profile_id = ? AND (action = ? OR action = ?)';
-                queryBindings = [profileId, '4k', '4K'];
-              } else {
-                maxCount = parseInt(env.SELFIE_MAX_OTHER || '1', 10);
-                queryCondition = 'profile_id = ? AND action = ?';
-                queryBindings = [profileId, actionValue];
-              }
 
-              // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
-              if (isNaN(maxCount) || maxCount < 1) {
-                maxCount = 1; // Default to 1 if invalid
-              }
-              maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
+                // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
+                if (isNaN(maxCount) || maxCount < 1) {
+                  maxCount = 1; // Default to 1 if invalid
+                }
+                maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
 
-              // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
-              const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
-              const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
-              const currentCount = existingResult.results?.length || 0;
+                // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
+                const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
+                const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
+                const currentCount = existingResult.results?.length || 0;
 
-              // Delete oldest if at limit
-              if (currentCount >= maxCount) {
-                const toDeleteCount = currentCount - maxCount + 1;
-                const toDelete = existingResult.results!.slice(0, toDeleteCount);
-                const idsToDelete = toDelete.map((s: any) => s.id);
+                // Delete oldest if at limit
+                if (currentCount >= maxCount) {
+                  const toDeleteCount = currentCount - maxCount + 1;
+                  const toDelete = existingResult.results!.slice(0, toDeleteCount);
+                  const idsToDelete = toDelete.map((s: any) => s.id);
 
-                // Delete from DB in batch
-                const placeholders = idsToDelete.map(() => '?').join(',');
-                await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+                  // Delete from DB in batch
+                  const placeholders = idsToDelete.map(() => '?').join(',');
+                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
 
-                // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
-                const urlsToPurge: string[] = [];
-                const r2Deletions = toDelete.map(async (oldSelfie: any) => {
-                  const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
-                  try {
-                    await R2_BUCKET.delete(oldKey);
-                    // Collect URL for CDN purge
-                    const publicUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
-                    urlsToPurge.push(publicUrl);
-                  } catch (r2Error) {
-                    console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
-                  }
-                });
+                  // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
+                  const urlsToPurge: string[] = [];
+                  const r2Deletions = toDelete.map(async (oldSelfie: any) => {
+                    const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
+                    try {
+                      await R2_BUCKET.delete(oldKey);
+                      // Collect URL for CDN purge
+                      const publicUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
+                      urlsToPurge.push(publicUrl);
+                    } catch (r2Error) {
+                      console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
+                    }
+                  });
 
-                // Wait for all R2 deletions to complete (parallel within batch)
-                await Promise.all(r2Deletions);
+                  // Wait for all R2 deletions to complete (parallel within batch)
+                  await Promise.all(r2Deletions);
 
-                // Purge CDN cache for deleted selfies (wait for result)
-                if (urlsToPurge.length > 0) {
-                  try {
-                    const purgeResult = await purgeCdnCache(urlsToPurge, env);
-                    console.log('[Delete Old Selfies] CDN purge result:', {
-                      success: purgeResult.success,
-                      purged: purgeResult.purged,
-                      skipped: purgeResult.skipped
-                    });
-                  } catch (error) {
-                    console.error('[Delete Old Selfies] CDN purge failed:', error);
+                  // Purge CDN cache for deleted selfies (wait for result)
+                  if (urlsToPurge.length > 0) {
+                    try {
+                      const purgeResult = await purgeCdnCache(urlsToPurge, env);
+                      console.log('[Delete Old Selfies] CDN purge result:', {
+                        success: purgeResult.success,
+                        purged: purgeResult.purged,
+                        skipped: purgeResult.skipped
+                      });
+                    } catch (error) {
+                      console.error('[Delete Old Selfies] CDN purge failed:', error);
+                    }
                   }
                 }
               }
+              // Non-FaceSwap actions: no limit enforcement - selfies will be auto-deleted after API processing
             }
 
             // Insert new selfie - ensure all values are correct types
@@ -5088,12 +5177,24 @@ export default {
         }
 
         let selfieUrl: string;
+        let selfieResultForDelete: any = null;
         if (hasSelfieId) {
           const selfieResult = results[hasPresetId ? 2 : 1];
           if (!selfieResult) {
+            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'background');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
             const debugEnabled = isDebugEnabled(env);
             return errorResponse(`Selfie with ID ${body.selfie_id} not found or does not belong to profile`, 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
+          selfieResultForDelete = selfieResult;
 
           const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
           selfieUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
@@ -5254,6 +5355,18 @@ export default {
           } catch (dbError) {
             databaseDebug.error = dbError instanceof Error ? dbError.message : String(dbError);
           }
+        }
+
+        // Cache result in KV for retry handling (before selfie deletion)
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'background', resultUrl));
+        }
+
+        // Auto-delete selfie after processing (non-FaceSwap API)
+        if (hasSelfieId && selfieResultForDelete) {
+          const selfieId = (selfieResultForDelete as any).id;
+          const selfieExt = (selfieResultForDelete as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
         }
 
         const debugEnabled = isDebugEnabled(env);
@@ -5430,6 +5543,27 @@ export default {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
+        // Check if image_url is a selfie from our R2 - if so, verify it exists or return cached result
+        const selfieInfoForLookup = extractSelfieInfoFromUrl(body.image_url, env);
+        if (selfieInfoForLookup) {
+          const selfieExists = await DB.prepare('SELECT id FROM selfies WHERE id = ?').bind(selfieInfoForLookup.selfieId).first();
+          if (!selfieExists) {
+            // Selfie was auto-deleted - check for cached result
+            const cachedResult = await getCachedResultFromKV(env, selfieInfoForLookup.selfieId, null, 'enhance');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            // No cached result - return error
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie image not found (may have been auto-deleted after processing)', 404, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
         const profileCheck = await DB.prepare(
           'SELECT id FROM profiles WHERE id = ?'
         ).bind(body.profile_id).first();
@@ -5525,6 +5659,13 @@ export default {
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'enhance', request);
 
+        // Auto-delete selfie after processing (non-FaceSwap API) if image_url is a selfie from our R2
+        const selfieInfo = extractSelfieInfoFromUrl(body.image_url, env);
+        if (selfieInfo) {
+          ctx.waitUntil(cacheResultInKV(env, selfieInfo.selfieId, null, 'enhance', resultUrl));
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieInfo.selfieId, selfieInfo.selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
         const debugEnabled = isDebugEnabled(env);
         const aspectRatioDebug = debugEnabled ? {
           requested: body.aspect_ratio || 'undefined',
@@ -5584,6 +5725,27 @@ export default {
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Check if image_url is a selfie from our R2 - if so, verify it exists or return cached result
+        const selfieInfoForLookup = extractSelfieInfoFromUrl(body.image_url, env);
+        if (selfieInfoForLookup) {
+          const selfieExists = await DB.prepare('SELECT id FROM selfies WHERE id = ?').bind(selfieInfoForLookup.selfieId).first();
+          if (!selfieExists) {
+            // Selfie was auto-deleted - check for cached result
+            const cachedResult = await getCachedResultFromKV(env, selfieInfoForLookup.selfieId, null, 'beauty');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            // No cached result - return error
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie image not found (may have been auto-deleted after processing)', 404, debugEnabled ? { path } : undefined, request, env);
+          }
         }
 
         const profileCheck = await DB.prepare(
@@ -5675,6 +5837,13 @@ export default {
         }
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'beauty', request);
+
+        // Auto-delete selfie after processing (non-FaceSwap API) if image_url is a selfie from our R2
+        const selfieInfo = extractSelfieInfoFromUrl(body.image_url, env);
+        if (selfieInfo) {
+          ctx.waitUntil(cacheResultInKV(env, selfieInfo.selfieId, null, 'beauty', resultUrl));
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieInfo.selfieId, selfieInfo.selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(beautyResult) : undefined;
@@ -5820,11 +5989,12 @@ export default {
 
         // Resolve selfie image URL
         let selfieImageUrl: string = '';
+        let selfieResult: any = null;
 
         let selfieAction: string | null = null;
         if (hasSelfieId) {
           // Lookup selfie by ID and validate ownership, include action
-          const selfieResult = await DB.prepare(`
+          selfieResult = await DB.prepare(`
             SELECT s.id, s.ext, s.action, p.id as profile_exists
             FROM selfies s
             INNER JOIN profiles p ON s.profile_id = p.id
@@ -5832,6 +6002,16 @@ export default {
           `).bind(body.selfie_id, body.profile_id).first();
           
           if (!selfieResult) {
+            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'filter');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
             return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
           
@@ -6017,6 +6197,18 @@ export default {
         // Save result to database for history
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter', request);
 
+        // Cache result in KV for retry handling (before selfie deletion)
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'filter', resultUrl));
+        }
+
+        // Auto-delete selfie after processing (non-FaceSwap API)
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
         const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
         return jsonResponse({
           data: {
@@ -6065,6 +6257,27 @@ export default {
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Check if image_url is a selfie from our R2 - if so, verify it exists or return cached result
+        const selfieInfoForLookup = extractSelfieInfoFromUrl(body.image_url, env);
+        if (selfieInfoForLookup) {
+          const selfieExists = await DB.prepare('SELECT id FROM selfies WHERE id = ?').bind(selfieInfoForLookup.selfieId).first();
+          if (!selfieExists) {
+            // Selfie was auto-deleted - check for cached result
+            const cachedResult = await getCachedResultFromKV(env, selfieInfoForLookup.selfieId, null, 'restore');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            // No cached result - return error
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie image not found (may have been auto-deleted after processing)', 404, debugEnabled ? { path } : undefined, request, env);
+          }
         }
 
         const profileCheck = await DB.prepare(
@@ -6133,6 +6346,13 @@ export default {
         }
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'restore', request);
+
+        // Auto-delete selfie after processing (non-FaceSwap API) if image_url is a selfie from our R2
+        const selfieInfo = extractSelfieInfoFromUrl(body.image_url, env);
+        if (selfieInfo) {
+          ctx.waitUntil(cacheResultInKV(env, selfieInfo.selfieId, null, 'restore', resultUrl));
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieInfo.selfieId, selfieInfo.selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
 
         const debugEnabled = isDebugEnabled(env);
         const flatDebug = debugEnabled ? buildFlatDebug(restoredResult) : undefined;
@@ -6256,9 +6476,10 @@ export default {
 
         // Resolve selfie image URL
         let selfieImageUrl: string = '';
+        let selfieResult: any = null;
 
         if (hasSelfieId) {
-          const selfieResult = await DB.prepare(`
+          selfieResult = await DB.prepare(`
             SELECT s.id, s.ext, p.id as profile_exists
             FROM selfies s
             INNER JOIN profiles p ON s.profile_id = p.id
@@ -6266,6 +6487,16 @@ export default {
           `).bind(body.selfie_id, body.profile_id).first();
 
           if (!selfieResult) {
+            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'aging');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
             return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
 
@@ -6415,6 +6646,18 @@ export default {
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'aging', request);
 
+        // Cache result in KV for retry handling (before selfie deletion)
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'aging', resultUrl));
+        }
+
+        // Auto-delete selfie after processing (non-FaceSwap API)
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
         const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
         return jsonResponse({
           data: {
@@ -6509,5 +6752,69 @@ export default {
     // 404 for unmatched routes
     const debugEnabled = isDebugEnabled(env);
     return errorResponse('Not found', 404, debugEnabled ? { path, method: request.method } : undefined, request, env);
+  },
+
+  // Scheduled handler: Clean up results older than 30 days
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    console.log('[Scheduled] Starting 30-day result cleanup...');
+    const DB = getD1Database(env);
+    const R2_BUCKET = getR2Bucket(env);
+
+    try {
+      // Calculate 30 days ago timestamp
+      const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
+
+      // Get results older than 30 days (batch of 100 to avoid timeout)
+      const oldResults = await DB.prepare(
+        'SELECT id, ext FROM results WHERE created_at < ? LIMIT 100'
+      ).bind(thirtyDaysAgo).all();
+
+      if (!oldResults.results || oldResults.results.length === 0) {
+        console.log('[Scheduled] No results older than 30 days found');
+        return;
+      }
+
+      console.log(`[Scheduled] Found ${oldResults.results.length} results to clean up`);
+
+      const urlsToPurge: string[] = [];
+      const idsToDelete: string[] = [];
+
+      for (const result of oldResults.results) {
+        const r2Key = reconstructR2Key((result as any).id, (result as any).ext, 'results');
+        const publicUrl = getR2PublicUrl(env, r2Key, `https://${env.BACKEND_DOMAIN || 'api.shotpix.app'}`);
+
+        // Delete from R2
+        try {
+          await R2_BUCKET.delete(r2Key);
+          console.log(`[Scheduled] Deleted R2 object: ${r2Key}`);
+        } catch (r2Error) {
+          console.error(`[Scheduled] Failed to delete R2 object ${r2Key}:`, r2Error instanceof Error ? r2Error.message : String(r2Error));
+        }
+
+        urlsToPurge.push(publicUrl);
+        idsToDelete.push((result as any).id);
+      }
+
+      // Purge CDN cache in batch
+      if (urlsToPurge.length > 0) {
+        try {
+          await purgeCdnCache(urlsToPurge, env);
+          console.log(`[Scheduled] Purged CDN cache for ${urlsToPurge.length} URLs`);
+        } catch (cdnError) {
+          console.error('[Scheduled] Failed to purge CDN cache:', cdnError instanceof Error ? cdnError.message : String(cdnError));
+        }
+      }
+
+      // Delete from database in batch
+      if (idsToDelete.length > 0) {
+        const placeholders = idsToDelete.map(() => '?').join(',');
+        await DB.prepare(`DELETE FROM results WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+        console.log(`[Scheduled] Deleted ${idsToDelete.length} results from database`);
+      }
+
+      console.log('[Scheduled] 30-day result cleanup completed');
+    } catch (error) {
+      console.error('[Scheduled] Cleanup failed:', error instanceof Error ? error.message : String(error));
+    }
   },
 };
