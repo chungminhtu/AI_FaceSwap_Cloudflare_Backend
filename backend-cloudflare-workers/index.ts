@@ -1502,9 +1502,11 @@ export default {
               let queryCondition: string;
               let queryBindings: any[];
 
-              // Only apply selfie limits for FaceSwap action - other actions are unlimited
-              if (actionLower === 'faceswap') {
-                maxCount = parseInt(env.SELFIE_MAX_FACESWAP || '5', 10);
+              // Apply selfie limits for FaceSwap and Filter actions - other actions auto-delete after processing
+              if (actionLower === 'faceswap' || actionLower === 'filter') {
+                maxCount = actionLower === 'faceswap' 
+                  ? parseInt(env.SELFIE_MAX_FACESWAP || '5', 10)
+                  : parseInt(env.SELFIE_MAX_FILTER || '5', 10);
                 queryCondition = 'profile_id = ? AND action = ?';
                 queryBindings = [profileId, actionValue];
 
@@ -1561,7 +1563,7 @@ export default {
                   }
                 }
               }
-              // Non-FaceSwap actions: no limit enforcement - selfies will be auto-deleted after API processing
+              // Non-FaceSwap/Filter actions: no limit enforcement - selfies will be auto-deleted after API processing
             }
 
             // Insert new selfie - ensure all values are correct types
@@ -5955,6 +5957,7 @@ export default {
         model?: string | number;
         additional_prompt?: string;
         provider?: 'vertex' | 'wavespeed';
+        redraw?: boolean;
       } | undefined;
       try {
         body = await request.json() as { 
@@ -5966,6 +5969,7 @@ export default {
           aspect_ratio?: string; 
           model?: string | number;
           additional_prompt?: string;
+          redraw?: boolean;
         };
 
         // Normalize preset_image_id to remove file extensions (mobile apps may send IDs with extensions)
@@ -6063,13 +6067,18 @@ export default {
           `).bind(body.selfie_id, body.profile_id).first();
           
           if (!selfieResult) {
-            // Selfie not found - check for cached result (selfie may have been auto-deleted)
+            // Selfie not found - check for cached result (only if NOT redraw)
+            // redraw: true → user wants new generation, cannot proceed without selfie
+            if (body.redraw) {
+              return errorResponse('Cannot redraw: selfie not found (may have been deleted by queue limit)', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path, redraw: true } : undefined, request, env);
+            }
+            
             const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'filter');
             if (cachedResult) {
               return jsonResponse({
                 data: { resultImageUrl: cachedResult, cached: true },
                 status: 'success',
-                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                message: 'Cached result returned (selfie was deleted by queue limit)',
                 code: 200,
               });
             }
@@ -6258,16 +6267,10 @@ export default {
         // Save result to database for history
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter', request);
 
-        // Cache result in KV for retry handling (before selfie deletion)
+        // Cache result in KV for retry handling
+        // Note: Filter uses queue-based deletion (SELFIE_MAX_FILTER) instead of auto-delete
         if (hasSelfieId && body.selfie_id) {
           ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'filter', resultUrl));
-        }
-
-        // Auto-delete selfie after processing (non-FaceSwap API)
-        if (hasSelfieId && selfieResult) {
-          const selfieId = (selfieResult as any).id;
-          const selfieExt = (selfieResult as any).ext;
-          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
         }
 
         const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;

@@ -857,7 +857,8 @@ function parseConfig(config) {
   // Note: SELFIE_MAX_WEDDING/4K/OTHER removed - non-FaceSwap actions are now unlimited
   const numericFields = {
     RESULT_MAX_HISTORY: { min: 1, max: 10000, default: 10 },
-    SELFIE_MAX_FACESWAP: { min: 1, max: 1000, default: 5 }
+    SELFIE_MAX_FACESWAP: { min: 1, max: 1000, default: 5 },
+    SELFIE_MAX_FILTER: { min: 1, max: 1000, default: 5 }
   };
 
   const numericValidationErrors = [];
@@ -955,7 +956,7 @@ function parseConfig(config) {
   if (config.ENABLE_DEBUG_RESPONSE) secrets.ENABLE_DEBUG_RESPONSE = config.ENABLE_DEBUG_RESPONSE;
   if (config.RESULT_MAX_HISTORY) secrets.RESULT_MAX_HISTORY = config.RESULT_MAX_HISTORY;
   if (config.SELFIE_MAX_FACESWAP) secrets.SELFIE_MAX_FACESWAP = config.SELFIE_MAX_FACESWAP;
-  // Note: SELFIE_MAX_WEDDING/4K/OTHER removed - non-FaceSwap actions are now unlimited
+  if (config.SELFIE_MAX_FILTER) secrets.SELFIE_MAX_FILTER = config.SELFIE_MAX_FILTER;
   if (config.DISABLE_SAFE_SEARCH !== undefined) secrets.DISABLE_SAFE_SEARCH = config.DISABLE_SAFE_SEARCH;
   if (config.DISABLE_VERTEX_IMAGE_GEN !== undefined) secrets.DISABLE_VERTEX_IMAGE_GEN = config.DISABLE_VERTEX_IMAGE_GEN;
   if (config.DISABLE_VISION_API !== undefined) secrets.DISABLE_VISION_API = config.DISABLE_VISION_API;
