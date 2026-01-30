@@ -1135,6 +1135,82 @@ curl -X POST https://api.d.shotpix.app/filter \
 - Nếu preset chưa có prompt_json, API sẽ tự động generate từ preset image
 - Khác với `/faceswap`: Filter giữ nguyên khuôn mặt và chỉ áp dụng style, không thay đổi khuôn mặt
 
+**Parameter `redraw`:**
+- `redraw: true` → Bỏ qua cache, luôn generate ảnh mới (sử dụng cho nút "Redraw")
+- `redraw: false` hoặc không set → Check cache trước khi generate
+
+**Flow xử lý /filter:**
+
+```mermaid
+flowchart TD
+    START([Client Request]) --> PARSE[Parse Request Body]
+    PARSE --> VALIDATE{Valid Input?}
+    
+    VALIDATE -->|No| ERR400[400: Missing required field]
+    VALIDATE -->|Yes| CHECK_REDRAW{redraw: true?}
+    
+    CHECK_REDRAW -->|Yes| LOOKUP_SELFIE_REDRAW[Lookup Selfie in DB]
+    CHECK_REDRAW -->|No| LOOKUP_SELFIE[Lookup Selfie in DB]
+    
+    LOOKUP_SELFIE --> SELFIE_EXISTS{Selfie Exists?}
+    LOOKUP_SELFIE_REDRAW --> SELFIE_EXISTS_REDRAW{Selfie Exists?}
+    
+    SELFIE_EXISTS -->|Yes| CALL_AI[Call AI Provider]
+    SELFIE_EXISTS -->|No| CHECK_CACHE{Check KV Cache}
+    
+    SELFIE_EXISTS_REDRAW -->|Yes| CALL_AI_REDRAW[Call AI Provider]
+    SELFIE_EXISTS_REDRAW -->|No| ERR404_REDRAW[404: Selfie not found<br/>Cannot redraw without selfie]
+    
+    CHECK_CACHE -->|Found| RETURN_CACHED[200: Return Cached Result<br/>cached: true]
+    CHECK_CACHE -->|Not Found| ERR404[404: Selfie not found<br/>No cached result]
+    
+    CALL_AI --> AI_RESULT{AI Success?}
+    CALL_AI_REDRAW --> AI_RESULT_REDRAW{AI Success?}
+    
+    AI_RESULT -->|Error| ERR500[500: AI Processing Error<br/>Selfie NOT deleted<br/>NO cache stored]
+    AI_RESULT -->|Success| CACHE_RESULT[Cache Result in KV<br/>TTL: 24h]
+    
+    AI_RESULT_REDRAW -->|Error| ERR500
+    AI_RESULT_REDRAW -->|Success| CACHE_RESULT_REDRAW[Update Cache in KV<br/>TTL: 24h]
+    
+    CACHE_RESULT --> SUCCESS[200: Return Result<br/>resultImageUrl]
+    CACHE_RESULT_REDRAW --> SUCCESS_REDRAW[200: Return NEW Result<br/>resultImageUrl]
+    
+    ERR400 --> END([End])
+    ERR404 --> END
+    ERR404_REDRAW --> END
+    ERR500 --> RETRY_POSSIBLE([Client Can Retry<br/>Selfie still exists])
+    RETURN_CACHED --> END
+    SUCCESS --> END
+    SUCCESS_REDRAW --> END
+    
+    style START fill:#e1f5fe
+    style SUCCESS fill:#c8e6c9
+    style SUCCESS_REDRAW fill:#c8e6c9
+    style RETURN_CACHED fill:#fff9c4
+    style ERR400 fill:#ffcdd2
+    style ERR404 fill:#ffcdd2
+    style ERR404_REDRAW fill:#ffcdd2
+    style ERR500 fill:#ffcdd2
+    style RETRY_POSSIBLE fill:#ffe0b2
+```
+
+**Bảng tóm tắt các trường hợp:**
+
+| Scenario | `redraw` | Selfie Exists | Cache Exists | Result |
+|----------|----------|---------------|--------------|--------|
+| First request | `false` | ✅ | ❌ | Generate new |
+| Retry after success | `false` | ❌ (deleted by queue) | ✅ | Return cached |
+| Redraw button | `true` | ✅ | ✅ (ignored) | Generate new |
+| Retry after API error | `false` | ✅ (not deleted) | ❌ | Generate new |
+| Invalid selfie + no cache | `false` | ❌ | ❌ | 404 Error |
+
+**Key Rules:**
+1. **Chỉ cache khi SUCCESS** - Error không cache
+2. **Selfie được quản lý theo queue** - Tối đa `SELFIE_MAX_FILTER` selfies (mặc định: 5), tự động xóa cũ nhất khi vượt quá
+3. **`redraw: true` bỏ qua cache** - Luôn generate mới
+4. **Cache TTL = 24h** - Sau 24h cache tự expire
+
 **Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
 ---
