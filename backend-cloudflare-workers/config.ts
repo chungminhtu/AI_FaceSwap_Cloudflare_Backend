@@ -69,7 +69,7 @@ Do not add or remove people.`,
 // Image Processing Prompts Configuration
 export const IMAGE_PROCESSING_PROMPTS = {
   // Enhancement prompt - works for any image (people, objects, landscapes, products, etc.)
-  ENHANCE: 'Professional image enhancement. Improve overall sharpness and clarity with a natural, realistic look. Correct exposure, contrast, white balance, and lighting with controlled, natural colors. Remove noise, blur, artifacts, and imperfections. Preserve original composition and identity. If the image contains a person, do not add or enhance wrinkles, pores, or harsh skin texture; gently smooth skin and remove minor blemishes without makeup or artificial effects. For non-people images, enhance textures and detail naturally. Output clean, high-quality results with balanced detail and no oversaturation.',
+  ENHANCE: 'Professional image enhancement. Improve overall sharpness and clarity with a natural, realistic look. Correct exposure, contrast, white balance, and lighting with controlled, natural colors. Remove noise, blur, artifacts, and imperfections. Preserve original composition and identity. If the image contains a person, do not add or enhance wrinkles, pores, or harsh skin texture; gently smooth skin and remove minor blemishes without makeup or artificial effects. For non-people images, enhance textures and detail naturally. Output clean, high-quality results with balanced detail and no oversaturation. Treat visible body hair on hands, arms, and legs as unwanted visual artifacts caused by noise or image quality issues, and remove or suppress them completely during enhancement.',
 
   // Beauty prompt - specifically for face/portrait beautification (requires human face)
   BEAUTY: 'Analyze the provided image and preserve exactly same composition, pose, lighting, and background. Change only these: beautify the portrait with natural facial retouching, gently smooth skin and reduce acne, blemishes, and uneven texture while preserving realistic detail, brighten eyes slightly and improve eye clarity, enhance lips and eyebrows, subtly slim the face and jawline, soften or gently refine the nose, and optionally enlarge the eyes very slightly, ensuring all adjustments remain minimal and realistic. Apply makeup unless it blends naturally; otherwise skip makeup. Maintain original facial structure and identity. Reduce skin micro-contrast without changing skin color. Ensure the skin overall of the body (hands, fingers, legs, neck, shoulder) should match with the face to make it most realistic in finished photo. Output clean, natural, professional portrait retouching with no exaggerated effects.',
@@ -365,3 +365,27 @@ export const DEFAULT_VALUES = {
   UPSCALER_TARGET_RESOLUTION: '4k',
   UPSCALER_OUTPUT_FORMAT: 'jpeg',
 };
+
+// FCM HTTP v1 Configuration
+export const FCM_CONFIG = {
+  // OAuth token endpoint
+  TOKEN_URL: 'https://oauth2.googleapis.com/token',
+  
+  // FCM send endpoint (HTTP v1)
+  SEND_URL: (projectId: string) =>
+    `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+  
+  // Required scope for FCM
+  SCOPE: 'https://www.googleapis.com/auth/firebase.messaging',
+  
+  // Token cache TTL (55 minutes, tokens valid 1 hour)
+  TOKEN_CACHE_TTL: 3300,
+  
+  // FCM error codes that indicate token should be removed
+  INVALID_TOKEN_ERRORS: [
+    'NOT_REGISTERED',
+    'INVALID_ARGUMENT',
+    'UNREGISTERED',
+  ],
+};
+

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FCM Push Test - AI Face Swap</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #1a202c;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .section {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+        .section h2 {
+            font-size: 18px;
+            color: #2d3748;
+            margin-bottom: 15px;
+        }
+        .status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+        .status.success { background: #c6f6d5; color: #22543d; }
+        .status.error { background: #fed7d7; color: #742a2a; }
+        .status.warning { background: #feebc8; color: #744210; }
+        .status.info { background: #bee3f8; color: #2c5282; }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 15px;
+            font-family: inherit;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #4a5568;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+        button.secondary {
+            background: #48bb78;
+        }
+        button.secondary:hover {
+            background: #38a169;
+        }
+        button.danger {
+            background: #f56565;
+        }
+        button.danger:hover {
+            background: #e53e3e;
+        }
+        .code {
+            background: #2d3748;
+            color: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+        .log-item {
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 3px solid #667eea;
+            font-size: 13px;
+        }
+        .log-time {
+            color: #718096;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .log-data {
+            color: #2d3748;
+            word-break: break-all;
+        }
+        #logs {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        @media (max-width: 600px) {
+            .grid { grid-template-columns: 1fr; }
+            .container { padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔔 FCM Push Notification Test</h1>
+        <p class="subtitle">Test Firebase Cloud Messaging for Web + Mobile</p>
+
+        <!-- Status Section -->
+        <div class="section">
+            <h2>📊 Status</h2>
+            <div id="fcm-status" class="status warning">Initializing...</div>
+            <div class="code" id="token-display">Token: Not registered yet</div>
+            <button onclick="copyToken()">📋 Copy Token</button>
+        </div>
+
+        <!-- Registration Section -->
+        <div class="section">
+            <h2>1️⃣ Register Device</h2>
+            <label>Profile ID:</label>
+            <input type="text" id="profile-id" placeholder="test-profile-123" value="test-profile-123">
+            
+            <label>Platform:</label>
+            <select id="platform">
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+                <option value="web" selected>Web</option>
+            </select>
+            
+            <label>App Version:</label>
+            <input type="text" id="app-version" placeholder="1.0.0" value="1.0.0">
+            
+            <button onclick="registerDevice()">✅ Register Device</button>
+            <button onclick="requestPermission()" class="secondary">🔔 Request Permission</button>
+        </div>
+
+        <!-- Send Push Section -->
+        <div class="section">
+            <h2>2️⃣ Send Silent Push</h2>
+            <label>Target Profile ID:</label>
+            <input type="text" id="target-profile-id" placeholder="test-profile-123" value="test-profile-123">
+            
+            <label>MOBILE_API_KEY (from deployments-secrets.json):</label>
+            <input type="password" id="fcm-api-key" placeholder="your-mobile-api-key" value="MNfs5qUDz5jjmyZjjMC5zUgIVjpTBuZehq2_fDg9cYk">
+            
+            <label>Push Data (JSON):</label>
+            <textarea id="push-data" rows="4" placeholder='{"type":"balance_sync","amount":"100"}'>{
+  "type": "balance_sync",
+  "amount": "100",
+  "timestamp": "' + Date.now() + '"
+}</textarea>
+            
+            <div class="grid">
+                <button onclick="sendPush()">📤 Send Push</button>
+                <button onclick="sendPushExcludeSelf()" class="secondary">📤 Send (Exclude Self)</button>
+            </div>
+        </div>
+
+        <!-- Unregister Section -->
+        <div class="section">
+            <h2>3️⃣ Unregister Device</h2>
+            <button onclick="unregisterDevice()" class="danger">❌ Unregister Current Token</button>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="section">
+            <h2>📝 Activity Logs</h2>
+            <button onclick="clearLogs()" class="danger">🗑️ Clear Logs</button>
+            <div id="logs"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
+
+        const firebaseConfig = {{FIREBASE_WEB_CONFIG}};
+
+        const app = initializeApp(firebaseConfig);
+        const messaging = getMessaging(app);
+        
+        window.fcmMessaging = messaging;
+        window.fcmToken = null;
+        
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8787'
+            : 'https://api.d.shotpix.app';
+        
+        function log(message, data = null) {
+            const logsDiv = document.getElementById('logs');
+            const logItem = document.createElement('div');
+            logItem.className = 'log-item';
+            
+            const time = new Date().toLocaleTimeString('vi-VN');
+            logItem.innerHTML = `
+                <div class="log-time">${time}</div>
+                <div class="log-data">${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}</div>
+            `;
+            
+            logsDiv.insertBefore(logItem, logsDiv.firstChild);
+            console.log('[FCM Test]', message, data);
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('fcm-status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+        
+        onMessage(messaging, (payload) => {
+            log('📨 Foreground message received', payload);
+            const data = payload.data || {};
+            
+            if (data.type !== 'silent') {
+                new Notification(data.title || 'AI Face Swap', {
+                    body: data.body || JSON.stringify(data),
+                    icon: '/icon-192.png'
+                });
+            }
+        });
+        
+        window.requestPermission = async function() {
+            try {
+                const permission = await Notification.requestPermission();
+                log(`Permission: ${permission}`);
+                
+                if (permission === 'granted') {
+                    updateStatus('✅ Permission granted', 'success');
+                    await getDeviceToken();
+                } else {
+                    updateStatus('❌ Permission denied', 'error');
+                }
+            } catch (error) {
+                log('❌ Permission error', error.message);
+                updateStatus('❌ Permission error', 'error');
+            }
+        };
+        
+        async function getDeviceToken() {
+            try {
+                const token = await getToken(messaging, {
+                    vapidKey: '{{FCM_VAPID_KEY}}'
+                });
+                
+                window.fcmToken = token;
+                document.getElementById('token-display').textContent = `Token: ${token}`;
+                log('✅ FCM Token obtained', token);
+                updateStatus('✅ FCM Token ready', 'success');
+                
+                return token;
+            } catch (error) {
+                log('❌ Token error', error.message);
+                updateStatus('❌ Token error', 'error');
+                return null;
+            }
+        }
+        
+        window.copyToken = function() {
+            if (window.fcmToken) {
+                navigator.clipboard.writeText(window.fcmToken);
+                log('📋 Token copied to clipboard');
+            } else {
+                alert('No token available. Register first!');
+            }
+        };
+        
+        window.registerDevice = async function() {
+            const profileId = document.getElementById('profile-id').value;
+            const platform = document.getElementById('platform').value;
+            const appVersion = document.getElementById('app-version').value;
+            
+            if (!profileId) {
+                alert('Profile ID required');
+                return;
+            }
+            
+            let token = window.fcmToken;
+            if (!token) {
+                token = await getDeviceToken();
+                if (!token) {
+                    alert('Failed to get FCM token. Check console.');
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/device/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        profile_id: profileId,
+                        platform: platform,
+                        token: token,
+                        app_version: appVersion
+                    })
+                });
+                
+                const data = await response.json();
+                log(`✅ Device registered`, data);
+                
+                if (response.ok) {
+                    updateStatus('✅ Device registered', 'success');
+                } else {
+                    updateStatus('❌ Registration failed', 'error');
+                }
+            } catch (error) {
+                log('❌ Register error', error.message);
+                updateStatus('❌ Network error', 'error');
+            }
+        };
+        
+        window.sendPush = async function() {
+            const targetProfileId = document.getElementById('target-profile-id').value;
+            const apiKey = document.getElementById('fcm-api-key').value;
+            const pushDataText = document.getElementById('push-data').value;
+            
+            if (!targetProfileId || !apiKey) {
+                alert('Profile ID and FCM API Key required');
+                return;
+            }
+            
+            let pushData;
+            try {
+                pushData = JSON.parse(pushDataText);
+            } catch (e) {
+                alert('Invalid JSON in Push Data');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/push/silent`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey
+                    },
+                    body: JSON.stringify({
+                        profile_id: targetProfileId,
+                        data: pushData
+                    })
+                });
+                
+                const data = await response.json();
+                log(`📤 Push sent`, data);
+                
+                if (response.ok) {
+                    updateStatus(`✅ Push sent: ${data.data.sent} devices`, 'success');
+                } else {
+                    updateStatus('❌ Push failed', 'error');
+                }
+            } catch (error) {
+                log('❌ Send error', error.message);
+                updateStatus('❌ Network error', 'error');
+            }
+        };
+        
+        window.sendPushExcludeSelf = async function() {
+            if (!window.fcmToken) {
+                alert('No token available. Register first!');
+                return;
+            }
+            
+            const targetProfileId = document.getElementById('target-profile-id').value;
+            const apiKey = document.getElementById('fcm-api-key').value;
+            const pushDataText = document.getElementById('push-data').value;
+            
+            if (!targetProfileId || !apiKey) {
+                alert('Profile ID and FCM API Key required');
+                return;
+            }
+            
+            let pushData;
+            try {
+                pushData = JSON.parse(pushDataText);
+            } catch (e) {
+                alert('Invalid JSON in Push Data');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/push/silent`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey
+                    },
+                    body: JSON.stringify({
+                        profile_id: targetProfileId,
+                        data: pushData,
+                        exclude_token: window.fcmToken
+                    })
+                });
+                
+                const data = await response.json();
+                log(`📤 Push sent (excluding self)`, data);
+                
+                if (response.ok) {
+                    updateStatus(`✅ Push sent: ${data.data.sent} devices`, 'success');
+                } else {
+                    updateStatus('❌ Push failed', 'error');
+                }
+            } catch (error) {
+                log('❌ Send error', error.message);
+                updateStatus('❌ Network error', 'error');
+            }
+        };
+        
+        window.unregisterDevice = async function() {
+            if (!window.fcmToken) {
+                alert('No token to unregister');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/device/unregister`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: window.fcmToken })
+                });
+                
+                const data = await response.json();
+                log(`❌ Device unregistered`, data);
+                
+                if (response.ok) {
+                    updateStatus('✅ Device unregistered', 'success');
+                } else {
+                    updateStatus('❌ Unregister failed', 'error');
+                }
+            } catch (error) {
+                log('❌ Unregister error', error.message);
+                updateStatus('❌ Network error', 'error');
+            }
+        };
+        
+        window.clearLogs = function() {
+            document.getElementById('logs').innerHTML = '';
+            log('🗑️ Logs cleared');
+        };
+        
+        // Auto-init
+        (async () => {
+            try {
+                if ('Notification' in window) {
+                    if (Notification.permission === 'granted') {
+                        await getDeviceToken();
+                    } else if (Notification.permission === 'default') {
+                        updateStatus('⚠️ Permission not requested', 'warning');
+                    } else {
+                        updateStatus('❌ Permission denied', 'error');
+                    }
+                } else {
+                    updateStatus('❌ Notifications not supported', 'error');
+                }
+                
+                log('🚀 FCM Test UI initialized');
+            } catch (error) {
+                log('❌ Init error', error.message);
+                updateStatus('❌ Init error', 'error');
+            }
+        })();
+    </script>
+</body>
+</html>

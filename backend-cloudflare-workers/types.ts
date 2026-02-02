@@ -138,4 +138,37 @@ export interface Profile {
   updated_at: string;
 }
 
+// FCM Device Token for push notifications
+export interface DeviceToken {
+  token: string;
+  profile_id: string;
+  platform: 'android' | 'ios';
+  app_version?: string;
+  updated_at: number;
+}
+
+// Register device request
+export interface DeviceRegisterRequest {
+  profile_id: string;
+  platform: 'android' | 'ios';
+  token: string;
+  app_version?: string;
+}
+
+// Silent push request (internal/admin)
+export interface SilentPushRequest {
+  profile_id: string;
+  data: Record<string, string>;
+  exclude_token?: string;  // Optional: exclude current device
+}
+
+// FCM send result
+export interface FcmSendResult {
+  token: string;
+  platform: string;
+  success: boolean;
+  error?: string;
+  should_remove?: boolean;  // True if token is invalid (NOT_REGISTERED)
+}
+
 

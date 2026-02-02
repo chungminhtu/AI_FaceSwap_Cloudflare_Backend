@@ -1,11 +1,11 @@
 // backend-cloudflare-workers/services.ts
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
-import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse } from './types';
+import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse, FcmSendResult } from './types';
 
 // Generate unique mock ID for performance testing mode to avoid database conflicts
 const generateMockId = () => `mock-${nanoid(16)}`;
-import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, VERTEX_SAFETY_STATUS_CODES } from './utils';
+import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, VERTEX_SAFETY_STATUS_CODES, base64UrlEncode } from './utils';
 import { VERTEX_AI_CONFIG, VERTEX_AI_PROMPTS, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
@@ -2766,6 +2766,246 @@ export const callWaveSpeedTextToImage = async (
       Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
       Debug: debugInfo,
     };
+  }
+};
+
+// FCM Silent Push Notifications
+// Backend-side push notification system using FCM HTTP v1 API
+
+// Get KV namespace for token caching (reuses existing PROMPT_CACHE_KV)
+const getTokenCacheKV = (env: Env): KVNamespace | null => {
+  const kvBindingName = env.PROMPT_CACHE_KV_BINDING_NAME;
+  if (!kvBindingName) return null;
+  return (env as any)[kvBindingName] as KVNamespace || null;
+};
+
+function getFcmCredentials(env: Env): { projectId: string; saEmail: string; saPrivateKey: string } | null {
+  const fcmProject = env.FCM_PROJECT_ID;
+  const fcmEmail = env.FCM_CLIENT_EMAIL;
+  const fcmKey = env.FCM_PRIVATE_KEY;
+  if (fcmProject && fcmEmail && fcmKey) {
+    return { projectId: fcmProject, saEmail: fcmEmail, saPrivateKey: fcmKey };
+  }
+  const vertexProject = env.GOOGLE_VERTEX_PROJECT_ID;
+  const vertexEmail = env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const vertexKey = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (vertexProject && vertexEmail && vertexKey) {
+    return { projectId: vertexProject, saEmail: vertexEmail, saPrivateKey: vertexKey };
+  }
+  return null;
+}
+
+export const getFcmAccessToken = async (env: Env): Promise<string> => {
+  const creds = getFcmCredentials(env);
+  if (!creds) {
+    throw new Error('FCM credentials required: set FCM_PROJECT_ID, FCM_CLIENT_EMAIL, FCM_PRIVATE_KEY (or use GOOGLE_VERTEX_* for same project)');
+  }
+  const { projectId, saEmail, saPrivateKey } = creds;
+  
+  const cacheKey = `fcm_token:${projectId}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  // Check KV cache first (same pattern as Vertex AI token)
+  const tokenCacheKV = getTokenCacheKV(env);
+  if (tokenCacheKV) {
+    try {
+      const cached = await tokenCacheKV.get(cacheKey, 'json') as { token: string; expiresAt: number } | null;
+      if (cached && cached.expiresAt > now) return cached.token;
+    } catch {}
+  }
+
+  // Build JWT (same algorithm as getAccessToken in utils.ts)
+  const expiry = now + 3600;
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claimSet = {
+    iss: saEmail,
+    sub: saEmail,
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: expiry,
+    iat: now,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',  // FCM-specific scope
+  };
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedClaimSet = base64UrlEncode(JSON.stringify(claimSet));
+  const signatureInput = `${encodedHeader}.${encodedClaimSet}`;
+
+  // Parse PEM private key
+  const keyData = saPrivateKey
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\\n/g, '')  // Handle escaped newlines from env
+    .replace(/\s/g, '');
+
+  const keyBuffer = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8', keyBuffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign']
+  );
+
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5', cryptoKey,
+    new TextEncoder().encode(signatureInput)
+  );
+
+  const encodedSignature = base64UrlEncode(String.fromCharCode(...new Uint8Array(signature)));
+  const jwt = `${signatureInput}.${encodedSignature}`;
+
+  // Exchange JWT for access token
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    throw new Error(`FCM OAuth error: ${tokenResponse.status} ${errorText.substring(0, 200)}`);
+  }
+
+  const { access_token } = await tokenResponse.json() as { access_token: string };
+
+  // Cache in KV with 55 min TTL (tokens valid 60 min)
+  if (tokenCacheKV) {
+    try {
+      await tokenCacheKV.put(cacheKey, JSON.stringify({
+        token: access_token,
+        expiresAt: now + 3300  // 55 minutes
+      }), { expirationTtl: 3300 });
+    } catch {}
+  }
+
+  return access_token;
+};
+
+// Send silent push to single device
+// Returns result with should_remove flag if token is invalid
+export const sendFcmSilentPush = async (
+  env: Env,
+  token: string,
+  platform: 'android' | 'ios',
+  data: Record<string, string>
+): Promise<FcmSendResult> => {
+  try {
+    const accessToken = await getFcmAccessToken(env);
+
+    // Build message - NO notification field = silent
+    const message: any = {
+      token,
+      // FCM requires all data values to be strings
+      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
+    };
+
+    if (platform === 'android') {
+      // Data-only message: always triggers onMessageReceived()
+      // NORMAL priority = batched delivery, no wake
+      message.android = { priority: 'NORMAL' };
+    } else {
+      // iOS silent push requirements:
+      // - apns-push-type: background (not alert)
+      // - apns-priority: 5 (not 10, which is immediate)
+      // - content-available: 1 (triggers background fetch)
+      message.apns = {
+        headers: { 'apns-push-type': 'background', 'apns-priority': '5' },
+        payload: { aps: { 'content-available': 1 } },
+      };
+    }
+
+    const creds = getFcmCredentials(env);
+    if (!creds) return { token, platform, success: false, error: 'FCM credentials not configured' };
+    const response = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${creds.projectId}/messages:send`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ message }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      // Check if token should be removed (uninstalled app, rotated token)
+      const shouldRemove = ['NOT_REGISTERED', 'INVALID_ARGUMENT', 'UNREGISTERED'].some(e => errorBody.includes(e));
+      return { token, platform, success: false, error: `FCM: ${response.status}`, should_remove: shouldRemove };
+    }
+
+    return { token, platform, success: true };
+  } catch (error) {
+    return { token, platform, success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+// Auto-send result notification to all user devices after API operations
+// Called after successful faceswap/beauty/filter/upscale/etc operations
+export const sendResultNotification = async (
+  env: Env,
+  profileId: string,
+  operationType: string,
+  result: {
+    success: boolean;
+    resultId?: string;
+    error?: string;
+  },
+  excludeToken?: string
+): Promise<void> => {
+  const creds = getFcmCredentials(env);
+  if (!creds || !profileId) return;
+  
+  try {
+    const DB = (env as any).DB;
+    if (!DB) return;
+    
+    const { results: tokens } = await DB.prepare(
+      'SELECT token, platform FROM device_tokens WHERE profile_id = ?'
+    ).bind(profileId).all();
+    
+    if (!tokens || tokens.length === 0) return;
+    
+    const targetTokens = excludeToken 
+      ? tokens.filter((t: any) => t.token !== excludeToken)
+      : tokens;
+    
+    if (targetTokens.length === 0) return;
+    
+    const data: Record<string, string> = {
+      type: 'operation_complete',
+      operation: operationType,
+      status: result.success ? 'success' : 'error',
+      timestamp: Date.now().toString(),
+    };
+    
+    if (result.resultId) data.result_id = result.resultId;
+    if (result.error) data.error = result.error.substring(0, 200);
+    
+    const tokensToRemove: string[] = [];
+    
+    for (const tokenRow of targetTokens) {
+      const sendResult = await sendFcmSilentPush(
+        env,
+        (tokenRow as any).token,
+        (tokenRow as any).platform as 'android' | 'ios',
+        data
+      );
+      
+      if (sendResult.should_remove) {
+        tokensToRemove.push((tokenRow as any).token);
+      }
+    }
+    
+    if (tokensToRemove.length > 0) {
+      await DB.prepare(
+        `DELETE FROM device_tokens WHERE token IN (${tokensToRemove.map(() => '?').join(',')})`
+      ).bind(...tokensToRemove).run();
+    }
+  } catch (error) {
+    console.error('[FCM] Auto-notify error:', error);
   }
 };
 

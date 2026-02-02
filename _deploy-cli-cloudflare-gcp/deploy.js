@@ -963,6 +963,9 @@ function parseConfig(config) {
   if (config.DISABLE_4K_UPSCALER !== undefined) secrets.DISABLE_4K_UPSCALER = config.DISABLE_4K_UPSCALER;
   if (config.MOBILE_API_KEY) secrets.MOBILE_API_KEY = config.MOBILE_API_KEY;
   if (config.ENABLE_MOBILE_API_KEY_AUTH) secrets.ENABLE_MOBILE_API_KEY_AUTH = config.ENABLE_MOBILE_API_KEY_AUTH;
+  if (config.FCM_PROJECT_ID) secrets.FCM_PROJECT_ID = config.FCM_PROJECT_ID;
+  if (config.FCM_CLIENT_EMAIL) secrets.FCM_CLIENT_EMAIL = config.FCM_CLIENT_EMAIL;
+  if (config.FCM_PRIVATE_KEY) secrets.FCM_PRIVATE_KEY = config.FCM_PRIVATE_KEY;
   if (config.CLOUDFLARE_ZONE_ID) secrets.CLOUDFLARE_ZONE_ID = config.CLOUDFLARE_ZONE_ID;
   if (config.CLOUDFLARE_CDN_PURGE_TOKEN) secrets.CLOUDFLARE_CDN_PURGE_TOKEN = config.CLOUDFLARE_CDN_PURGE_TOKEN;
   if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
@@ -1511,6 +1514,83 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config, htmlPath = null) {
   
   fs.writeFileSync(finalHtmlPath, content);
   console.log(`[Deploy] ✓ Updated frontend HTML with backend URL: ${finalWorkerUrl}`);
+}
+
+function updateFcmVapidInHtml(cwd, config, htmlPath = null) {
+  const finalHtmlPath = htmlPath || path.join(cwd, 'frontend-cloudflare-pages', 'fcm-test.html');
+  if (!fs.existsSync(finalHtmlPath)) return;
+  const vapidKey = config?.FCM_VAPID_KEY || '';
+  if (!vapidKey.trim()) return;
+  let content = fs.readFileSync(finalHtmlPath, 'utf8');
+  const placeholder = /vapidKey:\s*['"]\{\{FCM_VAPID_KEY\}\}['"]/;
+  if (placeholder.test(content)) {
+    const escaped = vapidKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    content = content.replace(placeholder, `vapidKey: '${escaped}'`);
+    fs.writeFileSync(finalHtmlPath, content);
+    console.log(`[Deploy] ✓ Injected FCM_VAPID_KEY into fcm-test.html`);
+  }
+}
+
+function updateFirebaseConfigInFrontend(cwd, config, tempFrontendDir) {
+  const firebaseWebConfig = config?.firebaseWebConfig && typeof config.firebaseWebConfig === 'object' && Object.keys(config.firebaseWebConfig).length > 0
+    ? config.firebaseWebConfig
+    : null;
+  if (!firebaseWebConfig) return;
+  const configJson = JSON.stringify(firebaseWebConfig);
+
+  const baseDir = tempFrontendDir || path.join(cwd, 'frontend-cloudflare-pages');
+  const fcmTestFull = path.join(baseDir, 'fcm-test.html');
+  const swPath = path.join(baseDir, 'firebase-messaging-sw.js');
+
+  for (const filePath of [fcmTestFull, swPath]) {
+    if (!fs.existsSync(filePath)) continue;
+    let content = fs.readFileSync(filePath, 'utf8');
+    if (content.includes('{{FIREBASE_WEB_CONFIG}}')) {
+      content = content.replace(/\{\{FIREBASE_WEB_CONFIG\}\}/g, configJson);
+      fs.writeFileSync(filePath, content);
+      console.log(`[Deploy] ✓ Injected firebaseWebConfig into ${path.basename(filePath)}`);
+    }
+  }
+}
+
+function fetchAndMergeFirebaseWebConfig(cwd, config, envName) {
+  const projectId = config?.gcp?.projectId;
+  if (!projectId || !envName) return;
+  const secretsPath = path.join(cwd, '_deploy-cli-cloudflare-gcp', 'deployments-secrets.json');
+  if (!fs.existsSync(secretsPath)) return;
+  const hasFirebaseConfig = config?.firebaseWebConfig && typeof config.firebaseWebConfig === 'object' && Object.keys(config.firebaseWebConfig).length > 0;
+  const vapidFromEnv = process.env.FCM_VAPID_KEY && String(process.env.FCM_VAPID_KEY).trim();
+  let updated = false;
+  try {
+    const raw = fs.readFileSync(secretsPath, 'utf8');
+    const data = JSON.parse(raw);
+    const envs = data?.environments;
+    const envBlock = envs?.[envName];
+    if (!envBlock) return;
+    if (vapidFromEnv && (!envBlock.FCM_VAPID_KEY || !envBlock.FCM_VAPID_KEY.trim())) {
+      envBlock.FCM_VAPID_KEY = vapidFromEnv;
+      config.FCM_VAPID_KEY = vapidFromEnv;
+      updated = true;
+    }
+    if (!hasFirebaseConfig) {
+      try {
+        const out = execSync(`npx --yes firebase apps:sdkconfig web --project ${projectId}`, { encoding: 'utf8', cwd: cwd, stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 });
+        const jsonMatch = out.match(/\{[\s\S]*\}/);
+        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        if (parsed && (parsed.projectId || parsed.apiKey)) {
+          envBlock.firebaseWebConfig = parsed;
+          config.firebaseWebConfig = parsed;
+          updated = true;
+          console.log(`[Deploy] ✓ Fetched firebaseWebConfig from Firebase CLI for ${envName}`);
+        }
+      } catch (e) {
+        if (process.env.DEPLOY_VERBOSE) console.warn('[Deploy] Firebase CLI sdkconfig skipped:', e.message || e);
+      }
+    }
+    if (updated) fs.writeFileSync(secretsPath, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    if (process.env.DEPLOY_VERBOSE) console.warn('[Deploy] fetchAndMergeFirebaseWebConfig:', e.message || e);
+  }
 }
 
 // Migration functions (integrated from scripts/run-migrations.js)
@@ -2091,12 +2171,16 @@ const utils = {
   async ensureGCPApis(projectId) {
     const requiredApis = [
       'aiplatform.googleapis.com',
-      'vision.googleapis.com'
+      'vision.googleapis.com',
+      'firebaseinstallations.googleapis.com',
+      'fcm.googleapis.com'
     ];
 
     const apiNames = {
       'aiplatform.googleapis.com': 'Vertex AI API',
-      'vision.googleapis.com': 'Vision API'
+      'vision.googleapis.com': 'Vision API',
+      'firebaseinstallations.googleapis.com': 'Firebase Installations API',
+      'fcm.googleapis.com': 'Firebase Cloud Messaging API'
     };
 
     const results = {
@@ -3613,8 +3697,7 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       let shouldCleanupTemp = false;
       if (DEPLOY_PAGES) {
         report('Deploying frontend', 'running', 'Deploying Cloudflare Pages');
-        
-        // Create temp folder copy if not already created (to avoid editing source file directly)
+        fetchAndMergeFirebaseWebConfig(cwd, config, config._environment || 'default');
         if (!config._tempFrontendDir) {
           const envName = config._environment || 'default';
           tempFrontendDir = createTempFrontendCopy(cwd, envName);
@@ -3655,6 +3738,8 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
         const htmlPath = path.join(tempFrontendDir, 'index.html');
         const sourceDir = tempFrontendDir;
         updateWorkerUrlInHtml(cwd, backendUrl, config, htmlPath);
+        updateFcmVapidInHtml(cwd, config, path.join(tempFrontendDir, 'fcm-test.html'));
+        updateFirebaseConfigInFrontend(cwd, config, tempFrontendDir);
         
         // Verify docs folder exists before deploying
         const docsFolder = path.join(tempFrontendDir, 'docs');
@@ -4216,7 +4301,7 @@ async function main() {
       let tempFrontendDir = null;
       if (!workersOnly && config.deployPages) {
         logger.startStep('Deploying frontend');
-        // Create temp folder copy to avoid editing source file directly
+        fetchAndMergeFirebaseWebConfig(process.cwd(), config, config._environment || 'default');
         const envName = config._environment || 'default';
         tempFrontendDir = createTempFrontendCopy(process.cwd(), envName);
         config._tempFrontendDir = tempFrontendDir;
@@ -4252,6 +4337,8 @@ async function main() {
         const htmlPath = path.join(tempFrontendDir, 'index.html');
         const sourceDir = tempFrontendDir;
         updateWorkerUrlInHtml(process.cwd(), backendUrl, config, htmlPath);
+        updateFcmVapidInHtml(process.cwd(), config, path.join(tempFrontendDir, 'fcm-test.html'));
+        updateFirebaseConfigInFrontend(process.cwd(), config, tempFrontendDir);
         
         // Verify docs folder exists before deploying
         const docsFolder = path.join(tempFrontendDir, 'docs');

@@ -3,9 +3,9 @@
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
-import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest } from './types';
+import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, sendFcmSilentPush, sendResultNotification } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS } from './config';
 
@@ -3472,6 +3472,142 @@ export default {
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // FCM Silent Push Notifications
+    // POST /api/device/register - Register/update FCM token
+    if (path === '/api/device/register' && request.method === 'POST') {
+      try {
+        const body = await request.json() as any;
+        
+        // Validate required fields
+        if (!body.profile_id || !body.platform || !body.token) {
+          return errorResponse('Missing required fields: profile_id, platform, token', 400, 
+            { error: 'Missing fields' }, request, env);
+        }
+        
+        if (!['android', 'ios'].includes(body.platform)) {
+          return errorResponse('Invalid platform. Must be android or ios', 400,
+            { error: 'Invalid platform' }, request, env);
+        }
+        
+        // Verify profile exists
+        const profile = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+        
+        if (!profile) {
+          return errorResponse('Profile not found', 404,
+            { error: 'Profile not found' }, request, env);
+        }
+        
+        // Upsert token
+        await DB.prepare(`
+          INSERT INTO device_tokens (token, profile_id, platform, app_version, updated_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(token) DO UPDATE SET
+            profile_id = excluded.profile_id,
+            platform = excluded.platform,
+            app_version = excluded.app_version,
+            updated_at = excluded.updated_at
+        `).bind(
+          body.token,
+          body.profile_id,
+          body.platform,
+          body.app_version || null,
+          Date.now()
+        ).run();
+        
+        return successResponse({ registered: true }, 200, request, env);
+      } catch (error) {
+        return errorResponse('Failed to register device', 500,
+          { error: error instanceof Error ? error.message : String(error) }, request, env);
+      }
+    }
+
+    // POST /api/push/silent - Send silent push (admin endpoint)
+    if (path === '/api/push/silent' && request.method === 'POST') {
+      // Use existing MOBILE_API_KEY auth
+      if (!checkApiKey(env, request)) {
+        return errorResponse('Unauthorized', 401, { error: 'Invalid API key' }, request, env);
+      }
+      
+      try {
+        const body = await request.json() as any;
+        
+        if (!body.profile_id || !body.data) {
+          return errorResponse('Missing required fields: profile_id, data', 400,
+            { error: 'Missing fields' }, request, env);
+        }
+        
+        // Get all tokens for profile
+        const { results: tokens } = await DB.prepare(
+          'SELECT token, platform FROM device_tokens WHERE profile_id = ?'
+        ).bind(body.profile_id).all();
+        
+        if (!tokens || tokens.length === 0) {
+          return successResponse({ sent: 0, message: 'No devices registered' }, 200, request, env);
+        }
+        
+        // Filter out excluded token (current device)
+        const targetTokens = body.exclude_token
+          ? tokens.filter((t: any) => t.token !== body.exclude_token)
+          : tokens;
+        
+        // Send to all devices
+        const results: any[] = [];
+        const tokensToRemove: string[] = [];
+        
+        for (const tokenRow of targetTokens) {
+          const result = await sendFcmSilentPush(
+            env, 
+            (tokenRow as any).token, 
+            (tokenRow as any).platform as 'android' | 'ios', 
+            body.data
+          );
+          results.push(result);
+          
+          if (result.should_remove) {
+            tokensToRemove.push((tokenRow as any).token);
+          }
+        }
+        
+        // Cleanup invalid tokens
+        if (tokensToRemove.length > 0) {
+          await DB.prepare(
+            `DELETE FROM device_tokens WHERE token IN (${tokensToRemove.map(() => '?').join(',')})`
+          ).bind(...tokensToRemove).run();
+        }
+        
+        return successResponse({
+          sent: results.filter(r => r.success).length,
+          failed: results.filter(r => !r.success).length,
+          cleaned: tokensToRemove.length,
+          results,
+        }, 200, request, env);
+      } catch (error) {
+        return errorResponse('Failed to send push', 500,
+          { error: error instanceof Error ? error.message : String(error) }, request, env);
+      }
+    }
+
+    // DELETE /api/device/unregister - Remove FCM token
+    if (path === '/api/device/unregister' && request.method === 'DELETE') {
+      try {
+        const body = await request.json() as { token: string };
+        
+        if (!body.token) {
+          return errorResponse('Missing required field: token', 400, {}, request, env);
+        }
+        
+        await DB.prepare('DELETE FROM device_tokens WHERE token = ?')
+          .bind(body.token).run();
+        
+        return successResponse({ unregistered: true }, 200, request, env);
+      } catch (error) {
+        return errorResponse('Failed to unregister device', 500,
+          { error: error instanceof Error ? error.message : String(error) }, request, env);
       }
     }
 
