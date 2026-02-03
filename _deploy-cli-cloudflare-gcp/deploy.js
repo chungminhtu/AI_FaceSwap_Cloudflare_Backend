@@ -1519,16 +1519,26 @@ function updateWorkerUrlInHtml(cwd, workerUrl, config, htmlPath = null) {
 function updateFcmVapidInHtml(cwd, config, htmlPath = null) {
   const finalHtmlPath = htmlPath || path.join(cwd, 'frontend-cloudflare-pages', 'fcm-test.html');
   if (!fs.existsSync(finalHtmlPath)) return;
-  const vapidKey = config?.FCM_VAPID_KEY || '';
-  if (!vapidKey.trim()) return;
   let content = fs.readFileSync(finalHtmlPath, 'utf8');
-  const placeholder = /vapidKey:\s*['"]\{\{FCM_VAPID_KEY\}\}['"]/;
-  if (placeholder.test(content)) {
-    const escaped = vapidKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    content = content.replace(placeholder, `vapidKey: '${escaped}'`);
-    fs.writeFileSync(finalHtmlPath, content);
-    console.log(`[Deploy] ✓ Injected FCM_VAPID_KEY into fcm-test.html`);
+  let updated = false;
+  const vapidKey = config?.FCM_VAPID_KEY || '';
+  if (vapidKey.trim()) {
+    const placeholder = /vapidKey:\s*['"]\{\{FCM_VAPID_KEY\}\}['"]/;
+    if (placeholder.test(content)) {
+      const escaped = vapidKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      content = content.replace(placeholder, `vapidKey: '${escaped}'`);
+      updated = true;
+      console.log(`[Deploy] ✓ Injected FCM_VAPID_KEY into fcm-test.html`);
+    }
   }
+  const mobileApiKey = config?.MOBILE_API_KEY || '';
+  if (content.includes('{{MOBILE_API_KEY}}')) {
+    const escaped = String(mobileApiKey).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    content = content.replace(/\{\{MOBILE_API_KEY\}\}/g, escaped);
+    updated = true;
+    console.log(`[Deploy] ✓ Injected MOBILE_API_KEY into fcm-test.html`);
+  }
+  if (updated) fs.writeFileSync(finalHtmlPath, content);
 }
 
 function updateFirebaseConfigInFrontend(cwd, config, tempFrontendDir) {

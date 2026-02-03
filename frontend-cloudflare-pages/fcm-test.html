@@ -8,218 +8,240 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #f1f5f9;
             min-height: 100vh;
-            padding: 20px;
+            padding: 16px;
+            font-size: 15px;
+            color: #334155;
         }
-        .container {
-            max-width: 800px;
+        .wrap {
+            max-width: 100%;
+            width: 100%;
             margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+            gap: 16px;
         }
-        h1 {
-            color: #1a202c;
+        @media (max-width: 1000px) { .wrap { grid-template-columns: 1fr; } }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+            min-width: 0;
+        }
+        .card h2 {
+            font-size: 16px;
+            color: #1e293b;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
             margin-bottom: 10px;
-            font-size: 28px;
         }
-        .subtitle {
-            color: #718096;
-            margin-bottom: 30px;
+        .row:last-child { margin-bottom: 0; }
+        .row label { min-width: 90px; color: #64748b; font-size: 15px; }
+        input, select, textarea {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 15px;
+            font-family: inherit;
+            background: #fff;
+            color: #334155;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #6366f1;
+        }
+        input[type="text"], input[type="password"] { min-width: 200px; flex: 1; }
+        select { min-width: 120px; }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            resize: none;
+            overflow-y: auto;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .btn {
+            padding: 10px 16px;
+            border-radius: 6px;
             font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            background: #6366f1;
+            color: #fff;
         }
-        .section {
-            margin-bottom: 25px;
-            padding: 20px;
-            background: #f7fafc;
-            border-radius: 12px;
-            border-left: 4px solid #667eea;
-        }
-        .section h2 {
-            font-size: 18px;
-            color: #2d3748;
-            margin-bottom: 15px;
-        }
+        .btn:hover { background: #4f46e5; }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn.sec { background: #22c55e; }
+        .btn.sec:hover { background: #16a34a; }
+        .btn.danger { background: #ef4444; }
+        .btn.danger:hover { background: #dc2626; }
+        .btn.sm { padding: 8px 12px; font-size: 13px; }
         .status {
             display: inline-block;
             padding: 6px 12px;
             border-radius: 6px;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 500;
-            margin-bottom: 15px;
         }
-        .status.success { background: #c6f6d5; color: #22543d; }
-        .status.error { background: #fed7d7; color: #742a2a; }
-        .status.warning { background: #feebc8; color: #744210; }
-        .status.info { background: #bee3f8; color: #2c5282; }
-        
-        input, textarea, select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
+        .status.ok { background: #dcfce7; color: #166534; }
+        .status.err { background: #fee2e2; color: #991b1b; }
+        .status.warn { background: #fef3c7; color: #92400e; }
+        .status.info { background: #dbeafe; color: #1e40af; }
+        #token-display {
+            font-family: ui-monospace, monospace;
             font-size: 14px;
-            margin-bottom: 15px;
-            font-family: inherit;
-        }
-        input:focus, textarea:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #4a5568;
-            font-weight: 500;
-            font-size: 14px;
-        }
-        button {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-right: 10px;
-            margin-bottom: 10px;
-        }
-        button:hover {
-            background: #5a67d8;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-        button:disabled {
-            background: #cbd5e0;
-            cursor: not-allowed;
-            transform: none;
-        }
-        button.secondary {
-            background: #48bb78;
-        }
-        button.secondary:hover {
-            background: #38a169;
-        }
-        button.danger {
-            background: #f56565;
-        }
-        button.danger:hover {
-            background: #e53e3e;
-        }
-        .code {
-            background: #2d3748;
-            color: #f7fafc;
-            padding: 15px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            overflow-x: auto;
-            margin: 10px 0;
-            line-height: 1.6;
-        }
-        .log-item {
-            padding: 12px;
-            background: white;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            border-left: 3px solid #667eea;
-            font-size: 13px;
-        }
-        .log-time {
-            color: #718096;
-            font-size: 12px;
-            margin-bottom: 5px;
-        }
-        .log-data {
-            color: #2d3748;
+            color: #475569;
             word-break: break-all;
+            margin-top: 8px;
+            line-height: 1.5;
         }
         #logs {
-            max-height: 300px;
+            min-height: 200px;
+            max-height: 70vh;
             overflow-y: auto;
+            font-size: 14px;
         }
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
+        .log-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            border-left: 3px solid #6366f1;
+            margin-bottom: 6px;
+            background: #fafafa;
         }
-        @media (max-width: 600px) {
-            .grid { grid-template-columns: 1fr; }
-            .container { padding: 20px; }
+        .log-time { color: #64748b; margin-bottom: 4px; font-size: 13px; }
+        .log-data { color: #334155; word-break: break-all; line-height: 1.5; white-space: pre-wrap; }
+        .head { grid-column: 1 / -1; }
+        .head-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
         }
+        .head h1 { font-size: 20px; color: #1e293b; }
+        .head .status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .api-curl { margin-top: 12px; }
+        .api-curl pre {
+            margin: 0; padding: 12px; border-radius: 6px; overflow-x: auto; overflow-y: auto;
+            font-size: 13px; line-height: 1.5; border: 1px solid #e2e8f0;
+            white-space: pre;
+        }
+        .api-curl pre code { padding: 0; white-space: pre; }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
+    <style>
+        .api-curl pre.hljs, .api-curl pre code.hljs { padding: 12px; font-size: 13px; line-height: 1.5; white-space: pre; }
+        .api-curl .hljs-keyword, .api-curl .hljs-built_in { color: #d73a49; }
+        .api-curl .hljs-string { color: #032f62; }
+        .api-curl .hljs-number { color: #005cc5; }
+        .api-curl .hljs-attr { color: #22863a; }
+        .api-curl .hljs-variable { color: #005cc5; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔔 FCM Push Notification Test</h1>
-        <p class="subtitle">Test Firebase Cloud Messaging for Web + Mobile</p>
-
-        <!-- Status Section -->
-        <div class="section">
-            <h2>📊 Status</h2>
-            <div id="fcm-status" class="status warning">Initializing...</div>
-            <div class="code" id="token-display">Token: Not registered yet</div>
-            <button onclick="copyToken()">📋 Copy Token</button>
-        </div>
-
-        <!-- Registration Section -->
-        <div class="section">
-            <h2>1️⃣ Register Device</h2>
-            <label>Profile ID:</label>
-            <input type="text" id="profile-id" placeholder="test-profile-123" value="test-profile-123">
-            
-            <label>Platform:</label>
-            <select id="platform">
-                <option value="android">Android</option>
-                <option value="ios">iOS</option>
-                <option value="web" selected>Web</option>
-            </select>
-            
-            <label>App Version:</label>
-            <input type="text" id="app-version" placeholder="1.0.0" value="1.0.0">
-            
-            <button onclick="registerDevice()">✅ Register Device</button>
-            <button onclick="requestPermission()" class="secondary">🔔 Request Permission</button>
-        </div>
-
-        <!-- Send Push Section -->
-        <div class="section">
-            <h2>2️⃣ Send Silent Push</h2>
-            <label>Target Profile ID:</label>
-            <input type="text" id="target-profile-id" placeholder="test-profile-123" value="test-profile-123">
-            
-            <label>MOBILE_API_KEY (from deployments-secrets.json):</label>
-            <input type="password" id="fcm-api-key" placeholder="your-mobile-api-key" value="MNfs5qUDz5jjmyZjjMC5zUgIVjpTBuZehq2_fDg9cYk">
-            
-            <label>Push Data (JSON):</label>
-            <textarea id="push-data" rows="4" placeholder='{"type":"balance_sync","amount":"100"}'>{
-  "type": "balance_sync",
-  "amount": "100",
-  "timestamp": "' + Date.now() + '"
-}</textarea>
-            
-            <div class="grid">
-                <button onclick="sendPush()">📤 Send Push</button>
-                <button onclick="sendPushExcludeSelf()" class="secondary">📤 Send (Exclude Self)</button>
+    <div class="wrap">
+        <div class="card head">
+            <div class="head-inner">
+                <h1>🔔 FCM Push Test</h1>
+                <div class="status-row">
+                    <span id="fcm-status" class="status warn">Initializing...</span>
+                    <button class="btn sm" onclick="copyToken()">Copy token</button>
+                </div>
             </div>
+            <div id="token-display" title="">Token: Not registered yet</div>
         </div>
-
-        <!-- Unregister Section -->
-        <div class="section">
-            <h2>3️⃣ Unregister Device</h2>
-            <button onclick="unregisterDevice()" class="danger">❌ Unregister Current Token</button>
-        </div>
-
-        <!-- Logs Section -->
-        <div class="section">
-            <h2>📝 Activity Logs</h2>
-            <button onclick="clearLogs()" class="danger">🗑️ Clear Logs</button>
-            <div id="logs"></div>
-        </div>
+        <div class="card" style="grid-column: 1;">
+                <h2>1. Register Device</h2>
+                <div class="row">
+                    <label>Profile ID</label>
+                    <input type="text" id="profile-id" placeholder="3iaSwwSTcjJGdJ-B" value="3iaSwwSTcjJGdJ-B">
+                </div>
+                <div class="row">
+                    <label>Platform</label>
+                    <select id="platform">
+                        <option value="android">Android</option>
+                        <option value="ios">iOS</option>
+                        <option value="web" selected>Web</option>
+                    </select>
+                    <label>App Version</label>
+                    <input type="text" id="app-version" placeholder="1.0.0" value="1.0.0" style="min-width:80px">
+                </div>
+                <div class="row">
+                    <button class="btn" onclick="registerDevice()">Register Device</button>
+                    <button class="btn sec" onclick="requestPermission()">Request Permission</button>
+                </div>
+                <div class="api-curl">
+                    <pre><code id="curl-register" class="language-bash"></code></pre>
+                </div>
+                <h2 style="margin-top:16px">3. Unregister</h2>
+                <div class="row">
+                    <button class="btn danger" onclick="unregisterDevice()">Unregister current token</button>
+                </div>
+                <div class="api-curl">
+                    <pre><code id="curl-unregister" class="language-bash"></code></pre>
+                </div>
+            </div>
+            <div class="card" style="grid-column: 2;">
+                <h2>2. Send Silent Push</h2>
+                <div class="row">
+                    <label>Profile ID</label>
+                    <input type="text" id="target-profile-id" placeholder="3iaSwwSTcjJGdJ-B" value="3iaSwwSTcjJGdJ-B">
+                </div>
+                <div class="row">
+                    <label>API Key</label>
+                    <input type="text" id="fcm-api-key" placeholder="MOBILE_API_KEY" value="{{MOBILE_API_KEY}}" autocomplete="off">
+                </div>
+                <div class="row">
+                    <label>Preset</label>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('faceswap')">Faceswap</button>
+                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('beauty')">Beauty</button>
+                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('filter')">Filter</button>
+                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('upscaler4k')">Upscaler4k</button>
+                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('background')">Background</button>
+                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('balance_sync')">Balance sync</button>
+                    </div>
+                </div>
+                <div class="row">
+                    <label>Data (JSON)</label>
+                </div>
+                <textarea id="push-data" placeholder='{"type":"operation_complete","operation":"faceswap",...}'></textarea>
+                <div class="row" style="margin-top:8px">
+                    <button class="btn" onclick="sendPush()">Send Push</button>
+                    <button class="btn sec" onclick="sendPushExcludeSelf()">Send (exclude self)</button>
+                </div>
+                <div style="margin-top:12px">
+                    <div style="font-size:13px;color:#64748b;margin-bottom:6px">Response (success)</div>
+                    <pre id="push-response" style="margin:0;padding:12px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0;font-size:13px;line-height:1.5;white-space:pre;min-height:80px;max-height:200px;overflow:auto">{
+  "data": {
+    "sent": 1,
+    "failed": 0,
+    "cleaned": 0,
+    "results": [{ "success": true }]
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200
+}</pre>
+                </div>
+                <div class="api-curl">
+                    <pre><code id="curl-push-silent" class="language-bash"></code></pre>
+                </div>
+            </div>
+            <div class="card" style="grid-column: 3;">
+                <h2>📝 Logs</h2>
+                <div style="margin-bottom:10px"><button class="btn danger sm" onclick="clearLogs()">Clear</button></div>
+                <div id="logs"></div>
+            </div>
     </div>
 
     <script type="module">
@@ -230,286 +252,298 @@
 
         const app = initializeApp(firebaseConfig);
         const messaging = getMessaging(app);
-        
         window.fcmMessaging = messaging;
         window.fcmToken = null;
-        
-        const API_BASE = window.location.hostname === 'localhost' 
-            ? 'http://localhost:8787'
-            : 'https://api.d.shotpix.app';
-        
+
+        const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:8787' : 'https://api.d.shotpix.app';
+
+        function shellEscape(s) {
+            return s.replace(/'/g, "'\\''");
+        }
+        function updateCurlExamples() {
+            const profileId = (document.getElementById('profile-id') && document.getElementById('profile-id').value.trim()) || '3iaSwwSTcjJGdJ-B';
+            const platform = (document.getElementById('platform') && document.getElementById('platform').value) || 'web';
+            const appVersion = (document.getElementById('app-version') && document.getElementById('app-version').value.trim()) || '1.0.0';
+            const targetProfileId = (document.getElementById('target-profile-id') && document.getElementById('target-profile-id').value.trim()) || '3iaSwwSTcjJGdJ-B';
+            const apiKey = (document.getElementById('fcm-api-key') && document.getElementById('fcm-api-key').value.trim()) || 'YOUR_MOBILE_API_KEY';
+            const pushDataRaw = (document.getElementById('push-data') && document.getElementById('push-data').value.trim()) || '{}';
+            let dataObj = {};
+            try { dataObj = JSON.parse(pushDataRaw); } catch (e) { dataObj = {}; }
+            const token = window.fcmToken || 'FCM_TOKEN_HERE';
+
+            const registerBody = JSON.stringify({ profile_id: profileId, platform, token, app_version: appVersion || null }, null, 2);
+            const elReg = document.getElementById('curl-register');
+            if (elReg) elReg.textContent = `curl -X POST ${API_BASE}/api/device/register \\
+  -H "Content-Type: application/json" \\
+  -d '${shellEscape(registerBody)}'`;
+
+            const pushBody = { profile_id: targetProfileId, data: dataObj };
+            if (window.fcmToken) pushBody.exclude_token = window.fcmToken;
+            const pushBodyStr = JSON.stringify(pushBody, null, 2);
+            const elPush = document.getElementById('curl-push-silent');
+            if (elPush) elPush.textContent = `curl -X POST ${API_BASE}/api/push/silent \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: ${apiKey.replace(/'/g, "'\\''")}" \\
+  -d '${shellEscape(pushBodyStr)}'`;
+
+            const unregBody = JSON.stringify({ token: window.fcmToken || 'FCM_DEVICE_TOKEN' }, null, 2);
+            const elUnreg = document.getElementById('curl-unregister');
+            if (elUnreg) elUnreg.textContent = `curl -X DELETE ${API_BASE}/api/device/unregister \\
+  -H "Content-Type: application/json" \\
+  -d '${shellEscape(unregBody)}'`;
+
+            document.querySelectorAll('.api-curl pre code').forEach(function(el) {
+                el.classList.add('language-bash');
+                if (typeof hljs !== 'undefined') hljs.highlightElement(el);
+            });
+        }
+
         function log(message, data = null) {
             const logsDiv = document.getElementById('logs');
             const logItem = document.createElement('div');
             logItem.className = 'log-item';
-            
             const time = new Date().toLocaleTimeString('vi-VN');
-            logItem.innerHTML = `
-                <div class="log-time">${time}</div>
-                <div class="log-data">${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}</div>
-            `;
-            
+            logItem.innerHTML = '<div class="log-time">' + time + '</div><div class="log-data">' + message + (data ? '\n' + JSON.stringify(data, null, 2) : '') + '</div>';
             logsDiv.insertBefore(logItem, logsDiv.firstChild);
             console.log('[FCM Test]', message, data);
         }
-        
+
         function updateStatus(message, type = 'info') {
             const statusEl = document.getElementById('fcm-status');
             statusEl.textContent = message;
-            statusEl.className = `status ${type}`;
+            statusEl.className = 'status ' + type;
         }
-        
+
+        function setTokenDisplay(t) {
+            const el = document.getElementById('token-display');
+            if (!el) return;
+            el.textContent = t ? 'Token: ' + t : 'Token: Not registered yet';
+            el.title = t || '';
+            updateCurlExamples();
+        }
+
         onMessage(messaging, (payload) => {
-            log('📨 Foreground message received', payload);
+            log('Foreground message', payload);
             const data = payload.data || {};
-            
-            if (data.type !== 'silent') {
-                new Notification(data.title || 'AI Face Swap', {
-                    body: data.body || JSON.stringify(data),
-                    icon: '/icon-192.png'
-                });
+            if (data.type !== 'silent' && 'Notification' in window) {
+                new Notification(data.title || 'AI Face Swap', { body: data.body || JSON.stringify(data), icon: '/icon-192.png' });
             }
         });
-        
+
         window.requestPermission = async function() {
             try {
                 const permission = await Notification.requestPermission();
-                log(`Permission: ${permission}`);
-                
+                log('Permission: ' + permission);
                 if (permission === 'granted') {
-                    updateStatus('✅ Permission granted', 'success');
+                    updateStatus('Permission granted', 'ok');
                     await getDeviceToken();
                 } else {
-                    updateStatus('❌ Permission denied', 'error');
+                    updateStatus('Permission denied', 'err');
                 }
-            } catch (error) {
-                log('❌ Permission error', error.message);
-                updateStatus('❌ Permission error', 'error');
+            } catch (e) {
+                log('Permission error', e.message);
+                updateStatus('Permission error', 'err');
             }
         };
-        
+
         async function getDeviceToken() {
             try {
-                const token = await getToken(messaging, {
-                    vapidKey: '{{FCM_VAPID_KEY}}'
-                });
-                
+                const token = await getToken(messaging, { vapidKey: '{{FCM_VAPID_KEY}}' });
                 window.fcmToken = token;
-                document.getElementById('token-display').textContent = `Token: ${token}`;
-                log('✅ FCM Token obtained', token);
-                updateStatus('✅ FCM Token ready', 'success');
-                
+                setTokenDisplay(token);
+                log('FCM Token obtained', token);
+                updateStatus('Token ready', 'ok');
                 return token;
-            } catch (error) {
-                log('❌ Token error', error.message);
-                updateStatus('❌ Token error', 'error');
+            } catch (e) {
+                log('Token error', e.message);
+                updateStatus('Token error', 'err');
                 return null;
             }
         }
-        
+
         window.copyToken = function() {
             if (window.fcmToken) {
                 navigator.clipboard.writeText(window.fcmToken);
-                log('📋 Token copied to clipboard');
+                log('Token copied');
             } else {
-                alert('No token available. Register first!');
+                alert('No token. Register first.');
             }
         };
-        
+
         window.registerDevice = async function() {
-            const profileId = document.getElementById('profile-id').value;
+            const profileId = document.getElementById('profile-id').value.trim();
             const platform = document.getElementById('platform').value;
-            const appVersion = document.getElementById('app-version').value;
-            
-            if (!profileId) {
-                alert('Profile ID required');
-                return;
-            }
-            
+            const appVersion = document.getElementById('app-version').value.trim();
+            if (!profileId) { alert('Profile ID required'); return; }
             let token = window.fcmToken;
             if (!token) {
                 token = await getDeviceToken();
-                if (!token) {
-                    alert('Failed to get FCM token. Check console.');
-                    return;
-                }
+                if (!token) { alert('Failed to get FCM token.'); return; }
             }
-            
             try {
-                const response = await fetch(`${API_BASE}/api/device/register`, {
+                const response = await fetch(API_BASE + '/api/device/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        profile_id: profileId,
-                        platform: platform,
-                        token: token,
-                        app_version: appVersion
-                    })
+                    body: JSON.stringify({ profile_id: profileId, platform: platform, token: token, app_version: appVersion || null })
                 });
-                
                 const data = await response.json();
-                log(`✅ Device registered`, data);
-                
-                if (response.ok) {
-                    updateStatus('✅ Device registered', 'success');
-                } else {
-                    updateStatus('❌ Registration failed', 'error');
-                }
-            } catch (error) {
-                log('❌ Register error', error.message);
-                updateStatus('❌ Network error', 'error');
+                log('Device registered', data);
+                updateStatus(response.ok ? 'Device registered' : 'Registration failed', response.ok ? 'ok' : 'err');
+            } catch (e) {
+                log('Register error', e.message);
+                updateStatus('Network error', 'err');
             }
         };
-        
+
         window.sendPush = async function() {
-            const targetProfileId = document.getElementById('target-profile-id').value;
-            const apiKey = document.getElementById('fcm-api-key').value;
-            const pushDataText = document.getElementById('push-data').value;
-            
-            if (!targetProfileId || !apiKey) {
-                alert('Profile ID and FCM API Key required');
-                return;
-            }
-            
+            const targetProfileId = document.getElementById('target-profile-id').value.trim();
+            const apiKey = document.getElementById('fcm-api-key').value.trim();
+            const pushDataText = document.getElementById('push-data').value.trim() || '{}';
+            if (!targetProfileId || !apiKey) { alert('Profile ID and API Key required'); return; }
             let pushData;
+            try { pushData = JSON.parse(pushDataText); } catch (e) { alert('Invalid JSON'); return; }
             try {
-                pushData = JSON.parse(pushDataText);
-            } catch (e) {
-                alert('Invalid JSON in Push Data');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/push/silent`, {
+                const response = await fetch(API_BASE + '/api/push/silent', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': apiKey
-                    },
-                    body: JSON.stringify({
-                        profile_id: targetProfileId,
-                        data: pushData
-                    })
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                    body: JSON.stringify({ profile_id: targetProfileId, data: pushData })
                 });
-                
                 const data = await response.json();
-                log(`📤 Push sent`, data);
-                
-                if (response.ok) {
-                    updateStatus(`✅ Push sent: ${data.data.sent} devices`, 'success');
-                } else {
-                    updateStatus('❌ Push failed', 'error');
-                }
-            } catch (error) {
-                log('❌ Send error', error.message);
-                updateStatus('❌ Network error', 'error');
+                log('Push sent', data);
+                setPushResponse(data);
+                updateStatus(response.ok ? 'Sent: ' + (data.data && data.data.sent) + ' devices' : 'Push failed', response.ok ? 'ok' : 'err');
+            } catch (e) {
+                log('Send error', e.message);
+                setPushResponse({ error: e.message });
+                updateStatus('Network error', 'err');
             }
         };
-        
+
         window.sendPushExcludeSelf = async function() {
-            if (!window.fcmToken) {
-                alert('No token available. Register first!');
-                return;
-            }
-            
-            const targetProfileId = document.getElementById('target-profile-id').value;
-            const apiKey = document.getElementById('fcm-api-key').value;
-            const pushDataText = document.getElementById('push-data').value;
-            
-            if (!targetProfileId || !apiKey) {
-                alert('Profile ID and FCM API Key required');
-                return;
-            }
-            
+            if (!window.fcmToken) { alert('No token. Register first.'); return; }
+            const targetProfileId = document.getElementById('target-profile-id').value.trim();
+            const apiKey = document.getElementById('fcm-api-key').value.trim();
+            const pushDataText = document.getElementById('push-data').value.trim() || '{}';
+            if (!targetProfileId || !apiKey) { alert('Profile ID and API Key required'); return; }
             let pushData;
+            try { pushData = JSON.parse(pushDataText); } catch (e) { alert('Invalid JSON'); return; }
             try {
-                pushData = JSON.parse(pushDataText);
-            } catch (e) {
-                alert('Invalid JSON in Push Data');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/push/silent`, {
+                const response = await fetch(API_BASE + '/api/push/silent', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': apiKey
-                    },
-                    body: JSON.stringify({
-                        profile_id: targetProfileId,
-                        data: pushData,
-                        exclude_token: window.fcmToken
-                    })
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                    body: JSON.stringify({ profile_id: targetProfileId, data: pushData, exclude_token: window.fcmToken })
                 });
-                
                 const data = await response.json();
-                log(`📤 Push sent (excluding self)`, data);
-                
-                if (response.ok) {
-                    updateStatus(`✅ Push sent: ${data.data.sent} devices`, 'success');
-                } else {
-                    updateStatus('❌ Push failed', 'error');
-                }
-            } catch (error) {
-                log('❌ Send error', error.message);
-                updateStatus('❌ Network error', 'error');
+                log('Push sent (exclude self)', data);
+                setPushResponse(data);
+                updateStatus(response.ok ? 'Sent: ' + (data.data && data.data.sent) + ' devices' : 'Push failed', response.ok ? 'ok' : 'err');
+            } catch (e) {
+                log('Send error', e.message);
+                setPushResponse({ error: e.message });
+                updateStatus('Network error', 'err');
             }
         };
-        
+
+        function setPushResponse(obj) {
+            const el = document.getElementById('push-response');
+            if (el) el.textContent = typeof obj === 'object' ? JSON.stringify(obj, null, 2) : String(obj);
+        }
+
         window.unregisterDevice = async function() {
-            if (!window.fcmToken) {
-                alert('No token to unregister');
-                return;
-            }
-            
+            if (!window.fcmToken) { alert('No token to unregister'); return; }
             try {
-                const response = await fetch(`${API_BASE}/api/device/unregister`, {
+                const response = await fetch(API_BASE + '/api/device/unregister', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: window.fcmToken })
                 });
-                
                 const data = await response.json();
-                log(`❌ Device unregistered`, data);
-                
-                if (response.ok) {
-                    updateStatus('✅ Device unregistered', 'success');
-                } else {
-                    updateStatus('❌ Unregister failed', 'error');
-                }
-            } catch (error) {
-                log('❌ Unregister error', error.message);
-                updateStatus('❌ Network error', 'error');
+                log('Device unregistered', data);
+                updateStatus(response.ok ? 'Unregistered' : 'Unregister failed', response.ok ? 'ok' : 'err');
+                if (response.ok) { window.fcmToken = null; setTokenDisplay(null); }
+            } catch (e) {
+                log('Unregister error', e.message);
+                updateStatus('Network error', 'err');
             }
         };
-        
+
         window.clearLogs = function() {
             document.getElementById('logs').innerHTML = '';
-            log('🗑️ Logs cleared');
+            log('Logs cleared');
         };
-        
-        // Auto-init
+
+        const PUSH_PRESETS = {
+          faceswap: { type: 'operation_complete', operation: 'faceswap', status: 'success', timestamp: null, result_id: 'result_faceswap_abc123' },
+          beauty: { type: 'operation_complete', operation: 'beauty', status: 'success', timestamp: null, result_id: 'result_beauty_xyz456' },
+          filter: { type: 'operation_complete', operation: 'filter', status: 'success', timestamp: null, result_id: 'result_filter_def789' },
+          upscaler4k: { type: 'operation_complete', operation: 'upscaler4k', status: 'success', timestamp: null, result_id: 'result_upscale_ghi012' },
+          background: { type: 'operation_complete', operation: 'background', status: 'success', timestamp: null, result_id: 'result_bg_jkl345' },
+          balance_sync: { type: 'balance_sync', amount: '100', timestamp: null }
+        };
+        window.setPushPreset = function(key) {
+          const preset = PUSH_PRESETS[key];
+          if (!preset) return;
+          const payload = { ...preset };
+          if (payload.timestamp === null) payload.timestamp = String(Date.now());
+          const ta = document.getElementById('push-data');
+          if (ta) {
+            ta.value = JSON.stringify(payload, null, 2);
+            ta.style.height = 'auto';
+            ta.style.height = Math.max(100, ta.scrollHeight) + 'px';
+            updateCurlExamples();
+          }
+        };
+
+        (function textareaAutoHeight() {
+            const ta = document.getElementById('push-data');
+            if (!ta) return;
+            function resize() { ta.style.height = 'auto'; ta.style.height = Math.max(100, ta.scrollHeight) + 'px'; }
+            ta.addEventListener('input', resize);
+            ta.addEventListener('change', resize);
+        })();
+
         (async () => {
             try {
-                if ('Notification' in window) {
-                    if (Notification.permission === 'granted') {
-                        await getDeviceToken();
-                    } else if (Notification.permission === 'default') {
-                        updateStatus('⚠️ Permission not requested', 'warning');
-                    } else {
-                        updateStatus('❌ Permission denied', 'error');
-                    }
-                } else {
-                    updateStatus('❌ Notifications not supported', 'error');
+                document.getElementById('push-data').value = JSON.stringify({ type: 'operation_complete', operation: 'faceswap', status: 'success', timestamp: String(Date.now()), result_id: 'result_faceswap_test' }, null, 2);
+                const ta = document.getElementById('push-data');
+                if (ta) { ta.style.height = 'auto'; ta.style.height = Math.max(100, ta.scrollHeight) + 'px'; }
+                if (!('Notification' in window)) {
+                    updateStatus('Notifications not supported', 'err');
+                    return;
                 }
-                
-                log('🚀 FCM Test UI initialized');
-            } catch (error) {
-                log('❌ Init error', error.message);
-                updateStatus('❌ Init error', 'error');
+                if (Notification.permission === 'granted') await getDeviceToken();
+                else if (Notification.permission === 'default') updateStatus('Permission not requested', 'warn');
+                else updateStatus('Permission denied', 'err');
+                setTokenDisplay(window.fcmToken);
+                updateCurlExamples();
+                ['profile-id', 'platform', 'app-version', 'target-profile-id', 'fcm-api-key', 'push-data'].forEach(function(id) {
+                    const el = document.getElementById(id);
+                    if (el) { el.addEventListener('input', updateCurlExamples); el.addEventListener('change', updateCurlExamples); }
+                });
+                log('FCM Test UI initialized');
+            } catch (e) {
+                log('Init error', e.message);
+                updateStatus('Init error', 'err');
             }
         })();
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script>
+      (function() {
+        function highlightCurl() {
+          if (typeof hljs === 'undefined') return;
+          document.querySelectorAll('.api-curl pre code').forEach(function(el) {
+            el.classList.add('language-bash');
+            hljs.highlightElement(el);
+          });
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', highlightCurl);
+        } else {
+          highlightCurl();
+        }
+      })();
     </script>
 </body>
 </html>

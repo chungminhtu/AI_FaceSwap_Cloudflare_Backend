@@ -9,8 +9,8 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ## Mục lục
 
 - [Xác thực API](#xác-thực-api-api-authentication)
-- [Silent Push (FCM)](#silent-push-notifications-fcm) → chi tiết: [Push Notifications (FCM)](PUSH_NOTIFICATIONS_VI.md)
 - [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-15-apis)
+- [Provider Aspect Ratio (Vertex / WaveSpeed)](#provider-aspect-ratio-vertex--wavespeed)
 - [Error Codes Reference](#error-codes-reference)
 - [API Endpoints (Chi tiết)](#api-endpoints-chi-tiết)
   - [1. Upload & Quản lý File](#1-upload--quản-lý-file)
@@ -54,11 +54,6 @@ Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính n
 
 ---
 
-## Silent Push Notifications (FCM)
-
-Xem tài liệu riêng: **[Push Notifications (FCM)](PUSH_NOTIFICATIONS_VI.md)** — endpoints, auto-push, test UI, tích hợp Web/Android/iOS.
-
----
 **Tạo API Key:**
 
 Sử dụng script `generate-api-key.js` để tạo API key mới:
@@ -152,6 +147,38 @@ Khi API key không hợp lệ hoặc thiếu:
 24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
 25. GET `/config` - Lấy config
 26. OPTIONS `/*` - CORS preflight requests
+
+---
+
+## Provider Aspect Ratio (Vertex / WaveSpeed)
+
+Backend hỗ trợ hai provider: **Vertex AI** và **WaveSpeed**. Mỗi provider có cách xử lý aspect ratio và kích thước khác nhau.
+
+### Vertex AI (Google)
+- **Chỉ dùng tỷ lệ chuẩn.** Ảnh input được map sang tỷ lệ hỗ trợ gần nhất; tỷ lệ gốc có thể không giữ nguyên.
+- **Tỷ lệ hỗ trợ:** 1:1, 3:2, 2:3, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9.
+- **Dùng khi:** Cần tỷ lệ chuẩn (9:16 stories, 1:1 posts, v.v.).
+
+### WaveSpeed
+- **Giữ nguyên tỷ lệ gốc.** Hỗ trợ custom dimensions 256–1536 px mỗi cạnh; scale tỷ lệ trong giới hạn.
+- **Giới hạn:** Min 256px, max 1536px mỗi cạnh.
+- **Dùng khi:** Cần giữ đúng tỷ lệ ảnh gốc, không crop méo.
+
+### So sánh
+
+| Feature | Vertex AI | WaveSpeed |
+|---------|-----------|-----------|
+| Aspect Ratio | Chỉ tỷ lệ chuẩn | Custom dimensions |
+| Giữ tỷ lệ | Snap gần nhất | Giữ chính xác |
+| Kích thước | Theo ratio | 256–1536px linh hoạt |
+
+### Override theo request
+
+Mọi endpoint AI có thể gửi `"provider": "vertex"` hoặc `"provider": "wavespeed"`. Mặc định theo env `IMAGE_PROVIDER`.
+
+### Endpoints áp dụng
+
+`/enhance`, `/beauty`, `/restore`, `/aging`, `/filter`, `/faceswap` — đều hỗ trợ cả hai provider với hành vi trên.
 
 ---
 
