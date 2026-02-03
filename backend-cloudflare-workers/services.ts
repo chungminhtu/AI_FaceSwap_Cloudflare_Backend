@@ -2887,33 +2887,26 @@ export const getFcmAccessToken = async (env: Env): Promise<string> => {
 export const sendFcmSilentPush = async (
   env: Env,
   token: string,
-  platform: 'android' | 'ios',
+  platform: 'android' | 'ios' | 'web',
   data: Record<string, string>
 ): Promise<FcmSendResult> => {
   try {
     const accessToken = await getFcmAccessToken(env);
 
-    // Build message - NO notification field = silent
     const message: any = {
       token,
-      // FCM requires all data values to be strings
       data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
     };
 
     if (platform === 'android') {
-      // Data-only message: always triggers onMessageReceived()
-      // NORMAL priority = batched delivery, no wake
       message.android = { priority: 'NORMAL' };
-    } else {
-      // iOS silent push requirements:
-      // - apns-push-type: background (not alert)
-      // - apns-priority: 5 (not 10, which is immediate)
-      // - content-available: 1 (triggers background fetch)
+    } else if (platform === 'ios') {
       message.apns = {
         headers: { 'apns-push-type': 'background', 'apns-priority': '5' },
         payload: { aps: { 'content-available': 1 } },
       };
     }
+    // web: token + data only (FCM handles Web push)
 
     const creds = getFcmCredentials(env);
     if (!creds) return { token, platform, success: false, error: 'FCM credentials not configured' };
@@ -2990,7 +2983,7 @@ export const sendResultNotification = async (
       const sendResult = await sendFcmSilentPush(
         env,
         (tokenRow as any).token,
-        (tokenRow as any).platform as 'android' | 'ios',
+        (tokenRow as any).platform as 'android' | 'ios' | 'web',
         data
       );
       

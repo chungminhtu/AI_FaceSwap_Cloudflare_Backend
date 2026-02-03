@@ -3487,8 +3487,8 @@ export default {
             { error: 'Missing fields' }, request, env);
         }
         
-        if (!['android', 'ios'].includes(body.platform)) {
-          return errorResponse('Invalid platform. Must be android or ios', 400,
+        if (!['android', 'ios', 'web'].includes(body.platform)) {
+          return errorResponse('Invalid platform. Must be android, ios, or web', 400,
             { error: 'Invalid platform' }, request, env);
         }
         
@@ -3563,7 +3563,7 @@ export default {
           const result = await sendFcmSilentPush(
             env, 
             (tokenRow as any).token, 
-            (tokenRow as any).platform as 'android' | 'ios', 
+            (tokenRow as any).platform as 'android' | 'ios' | 'web', 
             body.data
           );
           results.push(result);
