@@ -153,7 +153,8 @@
             <div class="head-inner">
                 <h1>🔔 FCM Push Test</h1>
                 <div class="status-row">
-                    <span id="fcm-status" class="status warn">Initializing...</span>
+                    <span id="fcm-status" class="status warn">Permission not requested</span>
+                    <button class="btn" id="btn-get-token" onclick="getFcmToken()">Get FCM Token</button>
                     <button class="btn sm" onclick="copyToken()">Copy token</button>
                 </div>
             </div>
@@ -163,20 +164,20 @@
                 <h2>1. Register Device</h2>
                 <div class="row">
                     <label>Profile ID</label>
-                    <input type="text" id="profile-id" placeholder="3iaSwwSTcjJGdJ-B" value="3iaSwwSTcjJGdJ-B">
+                    <input type="text" id="profile-id" class="fcm-requires-token" placeholder="3iaSwwSTcjJGdJ-B" value="3iaSwwSTcjJGdJ-B" disabled>
                 </div>
                 <div class="row">
                     <label>Platform</label>
-                    <select id="platform">
+                    <select id="platform" class="fcm-requires-token" disabled>
                         <option value="android">Android</option>
                         <option value="ios">iOS</option>
                         <option value="web" selected>Web</option>
                     </select>
                     <label>App Version</label>
-                    <input type="text" id="app-version" placeholder="1.0.0" value="1.0.0" style="min-width:80px">
+                    <input type="text" id="app-version" class="fcm-requires-token" placeholder="1.0.0" value="1.0.0" style="min-width:80px" disabled>
                 </div>
                 <div class="row">
-                    <button class="btn" onclick="registerDevice()">Register Device</button>
+                    <button class="btn fcm-requires-token" id="btn-register" onclick="registerDevice()" disabled>Register Device</button>
                     <button class="btn sec" onclick="requestPermission()">Request Permission</button>
                 </div>
                 <div class="api-curl">
@@ -184,7 +185,7 @@
                 </div>
                 <h2 style="margin-top:16px">3. Unregister</h2>
                 <div class="row">
-                    <button class="btn danger" onclick="unregisterDevice()">Unregister current token</button>
+                    <button class="btn danger fcm-requires-token" onclick="unregisterDevice()" disabled>Unregister current token</button>
                 </div>
                 <div class="api-curl">
                     <pre><code id="curl-unregister" class="language-bash"></code></pre>
@@ -194,30 +195,30 @@
                 <h2>2. Send Silent Push</h2>
                 <div class="row">
                     <label>Profile ID</label>
-                    <input type="text" id="target-profile-id" placeholder="3iaSwwSTcjJGdJ-B" value="3iaSwwSTcjJGdJ-B">
+                    <input type="text" id="target-profile-id" class="fcm-requires-token" placeholder="3iaSwwSTcjJGdJ-B" value="3iaSwwSTcjJGdJ-B" disabled>
                 </div>
                 <div class="row">
                     <label>API Key</label>
-                    <input type="text" id="fcm-api-key" placeholder="MOBILE_API_KEY" value="{{MOBILE_API_KEY}}" autocomplete="off">
+                    <input type="text" id="fcm-api-key" class="fcm-requires-token" placeholder="MOBILE_API_KEY" value="{{MOBILE_API_KEY}}" autocomplete="off" disabled>
                 </div>
                 <div class="row">
                     <label>Preset</label>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('faceswap')">Faceswap</button>
-                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('beauty')">Beauty</button>
-                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('filter')">Filter</button>
-                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('upscaler4k')">Upscaler4k</button>
-                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('background')">Background</button>
-                        <button type="button" class="btn sm" style="background:#64748b" onclick="setPushPreset('balance_sync')">Balance sync</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('faceswap')" disabled>Faceswap</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('beauty')" disabled>Beauty</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('filter')" disabled>Filter</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('upscaler4k')" disabled>Upscaler4k</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('background')" disabled>Background</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('balance_sync')" disabled>Balance sync</button>
                     </div>
                 </div>
                 <div class="row">
                     <label>Data (JSON)</label>
                 </div>
-                <textarea id="push-data" placeholder='{"type":"operation_complete","operation":"faceswap",...}'></textarea>
+                <textarea id="push-data" class="fcm-requires-token" placeholder='{"type":"operation_complete","operation":"faceswap",...}' disabled></textarea>
                 <div class="row" style="margin-top:8px">
-                    <button class="btn" onclick="sendPush()">Send Push</button>
-                    <button class="btn sec" onclick="sendPushExcludeSelf()">Send (exclude self)</button>
+                    <button class="btn fcm-requires-token" onclick="sendPush()" disabled>Send Push</button>
+                    <button class="btn sec fcm-requires-token" onclick="sendPushExcludeSelf()" disabled>Send (exclude self)</button>
                 </div>
                 <div style="margin-top:12px">
                     <div style="font-size:13px;color:#64748b;margin-bottom:6px">Response (success)</div>
@@ -314,11 +315,18 @@
             statusEl.className = 'status ' + type;
         }
 
+        function setTokenDependentState(hasToken) {
+            document.querySelectorAll('.fcm-requires-token').forEach(function(el) {
+                if ('disabled' in el) el.disabled = !hasToken;
+            });
+        }
+
         function setTokenDisplay(t) {
             const el = document.getElementById('token-display');
             if (!el) return;
             el.textContent = t ? 'Token: ' + t : 'Token: Not registered yet';
             el.title = t || '';
+            setTokenDependentState(!!t);
             updateCurlExamples();
         }
 
@@ -343,6 +351,16 @@
             } catch (e) {
                 log('Permission error', e.message);
                 updateStatus('Permission error', 'err');
+            }
+        };
+
+        window.getFcmToken = async function() {
+            const btn = document.getElementById('btn-get-token');
+            if (btn) { btn.disabled = true; btn.textContent = 'Getting token...'; }
+            try {
+                await requestPermission();
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Get FCM Token'; }
             }
         };
 
@@ -504,6 +522,7 @@
 
         (async () => {
             try {
+                setTokenDependentState(false);
                 document.getElementById('push-data').value = JSON.stringify({ type: 'operation_complete', operation: 'faceswap', status: 'success', timestamp: String(Date.now()), result_id: 'result_faceswap_test' }, null, 2);
                 const ta = document.getElementById('push-data');
                 if (ta) { ta.style.height = 'auto'; ta.style.height = Math.max(100, ta.scrollHeight) + 'px'; }
