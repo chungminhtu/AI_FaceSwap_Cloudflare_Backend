@@ -143,13 +143,19 @@ export const callNanoBanana = async (
   env: Env,
   aspectRatio?: string,
   modelParam?: string | number,
-  options?: { skipFacialPreservation?: boolean; provider?: 'vertex' | 'wavespeed'; size?: string }
+  options?: { skipFacialPreservation?: boolean; provider?: 'vertex' | 'wavespeed' | 'wavespeed_gemini_2_5_flash_image'; size?: string }
 ): Promise<FaceSwapResponse> => {
-  // Check provider parameter first, then fall back to env.IMAGE_PROVIDER
-  const effectiveProvider = options?.provider || env.IMAGE_PROVIDER;
-  
+  const rawProvider = options?.provider ?? env.IMAGE_PROVIDER;
+  const effectiveProvider = (rawProvider != null && String(rawProvider).trim() !== '') ? String(rawProvider).trim() : (env.IMAGE_PROVIDER || 'vertex');
+
+  if (effectiveProvider === 'wavespeed_gemini_2_5_flash_image') {
+    const imageUrls = Array.isArray(sourceUrl) ? sourceUrl : [sourceUrl];
+    const promptText = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
+    return callWaveSpeedGeminiImageEdit(imageUrls, promptText, env, aspectRatio, options?.size);
+  }
+
   if (effectiveProvider === 'wavespeed') {
-    // WaveSpeed Edit API: use sourceUrl directly as the images array
+    // WaveSpeed Flux Edit API: use sourceUrl directly as the images array
     // The caller is responsible for constructing the correct image order:
     // - Filter: [selfie, preset] - apply style from image2 to image1
     // - Faceswap single: [selfie, preset] - put person from image1 into image2
@@ -2615,6 +2621,56 @@ export const callWaveSpeedEdit = async (
     return {
       Success: false,
       Message: `WaveSpeed Edit error: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugInfo,
+    };
+  }
+};
+
+export const callWaveSpeedGeminiImageEdit = async (
+  imageUrls: string[],
+  prompt: string,
+  env: Env,
+  _aspectRatio?: string,
+  _size?: string
+): Promise<FaceSwapResponse> => {
+  if (!env.WAVESPEED_API_KEY) {
+    return { Success: false, Message: 'WAVESPEED_API_KEY is required', StatusCode: 500 };
+  }
+  const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+  const apiKey = env.WAVESPEED_API_KEY;
+  const debugInfo = debugEnabled ? { provider: 'wavespeed_gemini_2_5_flash_image', images: imageUrls, prompt: prompt.substring(0, 200) } : undefined;
+  try {
+    const endpoint = API_ENDPOINTS.WAVESPEED_GEMINI_2_5_FLASH_IMAGE_EDIT;
+    const requestBody = {
+      enable_base64_output: false,
+      enable_sync_mode: true,
+      images: imageUrls,
+      output_format: 'jpeg',
+      prompt,
+    };
+    if (debugInfo) (debugInfo as any).curl = 'curl -X POST "' + endpoint + '" -H "Content-Type: application/json" -H "Authorization: Bearer ' + apiKey + '" -d \'' + JSON.stringify(requestBody) + '\'';
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify(requestBody),
+    }, 120000);
+    const rawResponse = await response.text();
+    if (debugInfo) { (debugInfo as any).httpStatus = response.status; (debugInfo as any).rawResponse = rawResponse.substring(0, 1000); }
+    if (!response.ok) {
+      return { Success: false, Message: `WaveSpeed Gemini Image Edit API error: ${response.status}`, StatusCode: response.status, Error: rawResponse.substring(0, 500), Debug: debugInfo };
+    }
+    const data = JSON.parse(rawResponse);
+    const outputUrl = data.data?.outputs?.[0] ?? data.outputs?.[0];
+    if (outputUrl) {
+      return { Success: true, ResultImageUrl: outputUrl, Message: 'WaveSpeed Gemini 2.5 Flash Image Edit completed', StatusCode: 200, Debug: debugInfo };
+    }
+    return { Success: false, Message: 'WaveSpeed Gemini Image Edit: No output image in response', StatusCode: 500, Debug: debugInfo };
+  } catch (error) {
+    return {
+      Success: false,
+      Message: `WaveSpeed Gemini Image Edit error: ${error instanceof Error ? error.message : String(error)}`,
       StatusCode: 500,
       Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
       Debug: debugInfo,

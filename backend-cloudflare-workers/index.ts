@@ -715,8 +715,17 @@ const compact = <T extends Record<string, any>>(input: T): Record<string, any> =
 };
 
 const isDebugEnabled = (env: Env): boolean => {
-  // ENABLE_DEBUG_RESPONSE: 'true' enables, 'false' or not set disables
   return env.ENABLE_DEBUG_RESPONSE === 'true';
+};
+
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE';
+const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
+  const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
+  if (fromBody) return fromBody;
+  const modeKey = 'IMAGE_PROVIDER_' + mode;
+  const fromMode = env[modeKey];
+  if (fromMode != null && String(fromMode).trim() !== '') return String(fromMode).trim();
+  return env.IMAGE_PROVIDER || 'vertex';
 };
 
 // Build a single flat debug object - no nested provider/vertex structure
@@ -4865,7 +4874,7 @@ export default {
         // Resolve aspect ratio (faceswap doesn't support "original")
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, null, env, { allowOriginal: false });
         const modelParam = body.model;
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'FACESWAP');
 
         // Determine if user explicitly specified aspect_ratio
         // If aspect_ratio is explicitly set, use it (don't pass selfie dimensions as size)
@@ -4887,51 +4896,52 @@ export default {
         let faceSwapResult;
         let vertexPromptPayload: any;
 
-        if (effectiveProvider === 'wavespeed') {
-          // WaveSpeed mode: Use specific faceswap prompt, don't use preset's prompt_json
-          // Determine single vs couple mode based on number of selfies
+        if (effectiveProvider === 'wavespeed_gemini_2_5_flash_image') {
+          if (!storedPromptPayload) {
+            return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { error: 'Preset must have prompt_json metadata for Gemini image edit (faceswap)', path } : undefined, request, env);
+          }
+          const augmentedPromptPayload = augmentVertexPrompt(storedPromptPayload, body.additional_prompt);
+          vertexPromptPayload = augmentedPromptPayload;
           const selfieCount = selfieUrls.length;
           const isCoupleMode = selfieCount >= 2;
-
+          const geminiImages = isCoupleMode ? [selfieUrls[0], selfieUrls[1], targetUrl] : [selfieUrls[0], targetUrl];
+          faceSwapResult = await callNanoBanana(
+            augmentedPromptPayload,
+            targetUrl,
+            geminiImages,
+            env,
+            validAspectRatio,
+            modelParam,
+            { provider: 'wavespeed_gemini_2_5_flash_image', size: sizeForProvider }
+          );
+        } else if (effectiveProvider === 'wavespeed') {
+          const selfieCount = selfieUrls.length;
+          const isCoupleMode = selfieCount >= 2;
           let wavespeedFaceswapPrompt: string;
           let wavespeedImages: string[];
-
           if (isCoupleMode) {
-            // Couple mode: 2 selfies + 1 preset
-            // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
             wavespeedFaceswapPrompt = WAVESPEED_PROMPTS.FACESWAP_COUPLE;
             wavespeedImages = [selfieUrls[0], selfieUrls[1], targetUrl];
           } else {
-            // Single mode: 1 selfie + 1 preset
-            // image1 = selfie, image2 = preset
             wavespeedFaceswapPrompt = WAVESPEED_PROMPTS.FACESWAP_SINGLE;
             wavespeedImages = [selfieUrls[0], targetUrl];
           }
-
-          // Add additional_prompt if provided
           const finalPrompt = body.additional_prompt
             ? `${wavespeedFaceswapPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
             : wavespeedFaceswapPrompt;
-
           vertexPromptPayload = finalPrompt;
-
           faceSwapResult = await callNanoBanana(
             finalPrompt,
             targetUrl,
-            wavespeedImages,  // Use constructed image array
+            wavespeedImages,
             env,
             validAspectRatio,
             modelParam,
             { provider: 'wavespeed', size: sizeForProvider }
           );
         } else {
-          // Vertex mode: Use prompt_json from preset metadata
-          const augmentedPromptPayload = augmentVertexPrompt(
-            storedPromptPayload,
-            body.additional_prompt
-          );
+          const augmentedPromptPayload = augmentVertexPrompt(storedPromptPayload, body.additional_prompt);
           vertexPromptPayload = augmentedPromptPayload;
-
           faceSwapResult = await callNanoBanana(
             augmentedPromptPayload,
             targetUrl,
@@ -5342,7 +5352,7 @@ export default {
         }
 
         // Check IMAGE_PROVIDER configuration
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'MERGE');
 
         const requestDebug = compact({
           targetUrl: targetUrl,
@@ -5355,14 +5365,14 @@ export default {
           provider: effectiveProvider,
         });
 
-        const envError = validateEnv(env, effectiveProvider === 'wavespeed' ? 'wavespeed' : 'vertex');
+        const envError = validateEnv(env, (effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image') ? 'wavespeed' : 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
-        // Use backend config prompt only - client cannot override
-        const mergePrompt = effectiveProvider === 'wavespeed'
+        const useWaveSpeedStyleMerge = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
+        const mergePrompt = useWaveSpeedStyleMerge
           ? WAVESPEED_PROMPTS.MERGE_PROMPT_DEFAULT
           : VERTEX_AI_PROMPTS.MERGE_PROMPT_DEFAULT;
 
@@ -5386,20 +5396,16 @@ export default {
           }
         }
 
-        // For merge operations:
-        // - Vertex AI: Use callNanoBananaMerge (2 separate images with merge prompt)
-        // - WaveSpeed: Use callNanoBanana with [selfie, background] array
         let mergeResult: FaceSwapResponse;
-        if (effectiveProvider === 'wavespeed') {
-          // WaveSpeed: pass both images as array [selfie, background]
+        if (useWaveSpeedStyleMerge) {
           mergeResult = await callNanoBanana(
             mergePrompt,
-            targetUrl,  // targetUrl (not used by WaveSpeed, but required by function signature)
-            [selfieUrl, targetUrl],  // sourceUrl: array of images
+            targetUrl,
+            [selfieUrl, targetUrl],
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForProvider }
+            { provider: effectiveProvider, size: sizeForProvider }
           );
         } else {
           // Vertex AI: use dedicated merge function
@@ -5773,7 +5779,7 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'ENHANCE');
 
         // Get extended image dimensions for debug (includes EXIF orientation)
         let imageDimensionsExtended: import('./utils').ImageDimensionsExtended | null = null;
@@ -5987,9 +5993,8 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'BEAUTY');
 
-        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
@@ -6329,9 +6334,8 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieImageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'FILTER');
 
-        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
@@ -6345,24 +6349,20 @@ export default {
 
         let filterResult;
 
-        if (effectiveProvider === 'wavespeed') {
-          // WaveSpeed mode: Use config prompt + apply instruction, send [selfie, preset] images
+        const useWaveSpeedStyleFilter = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
+        if (useWaveSpeedStyleFilter) {
           const wavespeedFilterPrompt = `${VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER}\n\nApply the style from image 2 to image 1.`;
-
-          // Add additional_prompt if provided
           const finalPrompt = body.additional_prompt
             ? `${wavespeedFilterPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
             : wavespeedFilterPrompt;
-
-          // For WaveSpeed filter: image1=selfie, image2=preset (style source)
           filterResult = await callNanoBanana(
             finalPrompt,
-            selfieImageUrl,  // target (will be image1)
-            [selfieImageUrl, presetImageUrl],  // sources: [selfie, preset] for WaveSpeed
+            selfieImageUrl,
+            [selfieImageUrl, presetImageUrl],
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForProvider }
+            { provider: effectiveProvider, size: sizeForProvider }
           );
         } else {
           // Vertex mode: Use prompt_json from preset metadata
@@ -6534,9 +6534,8 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'RESTORE');
 
-        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
@@ -6809,9 +6808,8 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieImageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
-        const effectiveProvider = body.provider || env.IMAGE_PROVIDER;
+        const effectiveProvider = getEffectiveProvider(body, env, 'AGING');
 
-        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
@@ -6825,8 +6823,8 @@ export default {
 
         let agingResult;
 
-        if (effectiveProvider === 'wavespeed') {
-          // WaveSpeed mode: Use prompt_json directly, send [selfie, preset] images
+        const useWaveSpeedStyleAging = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
+        if (useWaveSpeedStyleAging) {
           let wavespeedPrompt: string;
           if (storedPromptPayload && typeof storedPromptPayload === 'object' && storedPromptPayload.prompt) {
             wavespeedPrompt = storedPromptPayload.prompt;
@@ -6835,11 +6833,9 @@ export default {
           } else {
             wavespeedPrompt = 'Transform the person in image 1 to match the age/style shown in image 2. Preserve their race, ethnicity, skin tone, and identity.';
           }
-
           const finalPrompt = body.additional_prompt
             ? `${wavespeedPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
             : wavespeedPrompt;
-
           agingResult = await callNanoBanana(
             finalPrompt,
             selfieImageUrl,
@@ -6847,7 +6843,7 @@ export default {
             env,
             validAspectRatio,
             modelParam,
-            { provider: 'wavespeed', size: sizeForProvider }
+            { provider: effectiveProvider, size: sizeForProvider }
           );
         } else {
           // Vertex mode: Use prompt_json from preset metadata

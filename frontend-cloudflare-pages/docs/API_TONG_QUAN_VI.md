@@ -174,7 +174,7 @@ Backend hỗ trợ hai provider: **Vertex AI** và **WaveSpeed**. Mỗi provider
 
 ### Override theo request
 
-Mọi endpoint AI có thể gửi `"provider": "vertex"` hoặc `"provider": "wavespeed"`. Mặc định theo env `IMAGE_PROVIDER`.
+Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespeed"` (Flux), hoặc `"provider": "wavespeed_gemini_2_5_flash_image"` (Gemini 2.5 Flash Image qua WaveSpeed). Mặc định theo env `IMAGE_PROVIDER`.
 
 ### Endpoints áp dụng
 
@@ -1872,31 +1872,25 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 **Response:**
 ```json
 {
-  "data": {
-    "results": [
-      {
-        "id": "result_1234567890_abc123",
-        "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-        "image_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-        "profile_id": "profile_1234567890",
-        "action": "faceswap",
-        "created_at": "2024-01-01T00:00:00.000Z"
-      }
-    ]
-  },
+  "data": [
+    {
+      "id": "result_1234567890_abc123",
+      "result_url": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+      "action": "faceswap",
+      "created_at": "2024-01-01T00:00:00.000Z"
+    }
+  ],
   "status": "success",
   "message": "Results retrieved successfully",
   "code": 200
 }
 ```
 
-**Response Fields:**
+**Response:** `data` là mảng phẳng (flat array) các result. Mỗi item:
 - `id`: ID duy nhất của result
-- `result_url` / `image_url`: URL public của ảnh kết quả
-- `profile_id`: ID profile sở hữu result này
-- `action`: Loại action đã tạo ra result (`faceswap`, `background`, `upscaler4k`, `enhance`, `beauty`, `filter`, `restore`, `aging`). Có thể null cho results cũ.
+- `result_url`: URL public của ảnh kết quả
+- `action`: Loại action (`faceswap`, `background`, `upscaler4k`, `enhance`, `beauty`, `filter`, `restore`, `aging`). Có thể null.
 - `created_at`: Thời gian tạo (ISO 8601)
-```
 
 ---
 
