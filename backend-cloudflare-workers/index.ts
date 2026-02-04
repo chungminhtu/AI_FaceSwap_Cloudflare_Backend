@@ -719,13 +719,15 @@ const isDebugEnabled = (env: Env): boolean => {
 };
 
 type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
   const modeKey = 'IMAGE_PROVIDER_' + mode;
   const fromMode = env[modeKey];
   if (fromMode != null && String(fromMode).trim() !== '') return String(fromMode).trim();
-  return env.IMAGE_PROVIDER || 'vertex';
+  if (env.IMAGE_PROVIDER != null && String(env.IMAGE_PROVIDER).trim() !== '') return String(env.IMAGE_PROVIDER).trim();
+  return WAVESPEED_DEFAULT_MODES.includes(mode) ? 'wavespeed' : 'vertex';
 };
 
 // Build a single flat debug object - no nested provider/vertex structure
@@ -6087,339 +6089,217 @@ export default {
       }
     }
 
-    // Handle filter endpoint
+    // Handle filter endpoint: 1 image (user) + prompt from preset prompt_json metadata (full JSON object), Flux WaveSpeed only
     if (path === '/filter' && request.method === 'POST') {
       const debugEnabled = isDebugEnabled(env);
       const requestCache = new Map<string, Promise<any>>();
       const getCachedAsync = async <T>(key: string, compute: () => Promise<T>): Promise<T> => {
-        if (!requestCache.has(key)) {
-          requestCache.set(key, compute());
-        }
+        if (!requestCache.has(key)) requestCache.set(key, compute());
         return requestCache.get(key) as Promise<T>;
       };
-
       let body: {
         preset_image_id?: string;
-        preset_image_url?: string; 
+        preset_image_url?: string;
         selfie_id?: string;
         selfie_image_url?: string;
+        image_url?: string;
         profile_id: string;
-        aspect_ratio?: string; 
+        aspect_ratio?: string;
         model?: string | number;
         additional_prompt?: string;
-        provider?: 'vertex' | 'wavespeed';
-        redraw?: boolean;
       } | undefined;
       try {
-        body = await request.json() as { 
-          preset_image_id?: string;
-          preset_image_url?: string; 
-          selfie_id?: string;
-          selfie_image_url?: string;
-          profile_id: string;
-          aspect_ratio?: string; 
-          model?: string | number;
-          additional_prompt?: string;
-          redraw?: boolean;
-        };
-
-        // Normalize preset_image_id to remove file extensions (mobile apps may send IDs with extensions)
-        if (body.preset_image_id) {
-          const normalized = normalizePresetId(body.preset_image_id);
-          if (normalized) {
-            body.preset_image_id = normalized;
-          }
+        body = await request.json() as typeof body;
+        if (!body || typeof body !== 'object') {
+          return errorResponse('Invalid request body', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        const envError = validateEnv(env, 'vertex');
+        const envError = validateEnv(env, 'wavespeed');
         if (envError) {
           return errorResponse('Missing environment configuration', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
-
-        // Validate profile_id is required
         if (!body.profile_id) {
           return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
         }
-
-        // Validate profile exists
+        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
+        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
+        if (!hasPresetId && !hasPresetUrl) {
+          return errorResponse('Missing required field: preset_image_id or preset_image_url (for prompt_json metadata)', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+        if (hasPresetId && hasPresetUrl) {
+          return errorResponse('Cannot provide both preset_image_id and preset_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
         const profileCheck = await DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first();
         if (!profileCheck) {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Validate preset inputs (ID or URL required)
-        const hasPresetId = body.preset_image_id && body.preset_image_id.trim() !== '';
-        const hasPresetUrl = body.preset_image_url && body.preset_image_url.trim() !== '';
-        
-        if (!hasPresetId && !hasPresetUrl) {
-          return errorResponse('Missing required field: preset_image_id or preset_image_url', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-        
-        if (hasPresetId && hasPresetUrl) {
-          return errorResponse('Cannot provide both preset_image_id and preset_image_url', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        // Validate selfie inputs (ID or URL required)
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
-        
+        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
         if (!hasSelfieId && !hasSelfieUrl) {
-          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Missing required field: selfie_id, selfie_image_url, or image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
-        
         if (hasSelfieId && hasSelfieUrl) {
-          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url/image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
-
-        // Resolve preset image URL
-        let presetImageUrl: string = '';
-        let presetResult: any = null;
-        let r2Key: string | null = null;
 
         if (hasPresetId) {
-          // Lookup preset by ID from database
+          const normalized = normalizePresetId(body.preset_image_id!);
+          if (normalized) body.preset_image_id = normalized;
+        }
+
+        let r2Key: string | null = null;
+        let presetResult: any = null;
+        if (hasPresetId) {
           presetResult = await DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first();
           if (!presetResult) {
             return errorResponse('Preset image not found', 404, debugEnabled ? { presetImageId: body.preset_image_id, path } : undefined, request, env);
           }
           r2Key = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
-          presetImageUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         } else if (hasPresetUrl) {
-          // Use preset URL directly
-          presetImageUrl = body.preset_image_url!;
-          if (!validateImageUrl(presetImageUrl, env)) {
-            return errorResponse('Invalid preset image URL', 400, debugEnabled ? { path } : undefined, request, env);
-          }
-          
-          // Try to extract R2 key from URL for prompt lookup
           try {
-            const presetUrl = new URL(presetImageUrl);
+            const presetUrl = new URL(body.preset_image_url!);
             const pathParts = presetUrl.pathname.split('/').filter(p => p);
             if (pathParts.length >= 2 && ['preset', 'selfie', 'results'].includes(pathParts[0])) {
               r2Key = `${pathParts[0]}/${pathParts[1]}`;
             }
           } catch {
-            // Not an R2 URL or invalid URL, continue without r2Key
+            // ignore
           }
         }
 
-        // Resolve selfie image URL
-        let selfieImageUrl: string = '';
-        let selfieResult: any = null;
+        let storedPromptPayload: any = null;
+        const promptCacheKV = getPromptCacheKV(env);
+        const presetImageId = hasPresetId ? body.preset_image_id : (presetResult ? (presetResult as any).id : null);
+        if (presetImageId && r2Key) {
+          const cacheKey = `prompt:${presetImageId}`;
+          if (promptCacheKV) {
+            try {
+              const cached = await promptCacheKV.get(cacheKey, 'json');
+              if (cached) storedPromptPayload = cached;
+            } catch {
+              // fallback to R2
+            }
+          }
+          if (!storedPromptPayload) {
+            try {
+              const r2Object = await getCachedAsync(`r2head:${r2Key}`, () => R2_BUCKET.head(r2Key!));
+              const promptJson = r2Object?.customMetadata?.prompt_json;
+              if (promptJson?.trim()) {
+                storedPromptPayload = JSON.parse(promptJson);
+                if (promptCacheKV) {
+                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+                }
+              }
+            } catch {
+              // R2 read failed
+            }
+          }
+        } else if (r2Key) {
+          const cacheKey = `prompt:${r2Key}`;
+          if (promptCacheKV) {
+            try {
+              const cached = await promptCacheKV.get(cacheKey, 'json');
+              if (cached) storedPromptPayload = cached;
+            } catch {
+              // fallback to R2
+            }
+          }
+          if (!storedPromptPayload) {
+            try {
+              const r2Object = await getCachedAsync(`r2head:${r2Key}`, () => R2_BUCKET.head(r2Key!));
+              const promptJson = r2Object?.customMetadata?.prompt_json;
+              if (promptJson?.trim()) {
+                storedPromptPayload = JSON.parse(promptJson);
+                if (promptCacheKV) {
+                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
+                }
+              }
+            } catch {
+              // R2 read failed
+            }
+          }
+        }
+        if (!storedPromptPayload) {
+          return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { path } : undefined, request, env);
+        }
 
-        let selfieAction: string | null = null;
+        let imageUrl: string = '';
         if (hasSelfieId) {
-          // Lookup selfie by ID and validate ownership, include action
-          selfieResult = await DB.prepare(`
-            SELECT s.id, s.ext, s.action, p.id as profile_exists
-            FROM selfies s
+          const selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext FROM selfies s
             INNER JOIN profiles p ON s.profile_id = p.id
             WHERE s.id = ? AND p.id = ?
           `).bind(body.selfie_id, body.profile_id).first();
-          
           if (!selfieResult) {
-            // Selfie not found - check for cached result (only if NOT redraw)
-            // redraw: true → user wants new generation, cannot proceed without selfie
-            if (body.redraw) {
-              return errorResponse('Cannot redraw: selfie not found (may have been deleted by queue limit)', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path, redraw: true } : undefined, request, env);
-            }
-            
-            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'filter');
-            if (cachedResult) {
-              return jsonResponse({
-                data: { resultImageUrl: cachedResult, cached: true },
-                status: 'success',
-                message: 'Cached result returned (selfie was deleted by queue limit)',
-                code: 200,
-              });
-            }
             return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
           }
-          
-          selfieAction = (selfieResult as any).action || null;
           const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
-          selfieImageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
-        } else if (hasSelfieUrl) {
-          // Use selfie URL directly
-          selfieImageUrl = body.selfie_image_url!;
-          if (!validateImageUrl(selfieImageUrl, env)) {
-            return errorResponse('Invalid selfie image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          imageUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          imageUrl = body.selfie_image_url || body.image_url!;
+          if (!validateImageUrl(imageUrl, env)) {
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
           }
         }
 
-        // Safety pre-check with Gemini 2.5 Flash Lite before processing
-        const safetyCheck = await checkImageSafetyWithFlashLite(selfieImageUrl, env);
+        const safetyCheck = await checkImageSafetyWithFlashLite(imageUrl, env);
         if (!safetyCheck.safe) {
-          console.log('[Filter] Safety check failed:', safetyCheck.reason || safetyCheck.error);
           return errorResponse(
             safetyCheck.reason || 'Image failed safety check',
             400,
-            debugEnabled ? {
-              path,
-              safetyCheck: {
-                safe: false,
-                reason: safetyCheck.reason,
-                category: safetyCheck.category,
-                error: safetyCheck.error
-              }
-            } : undefined,
+            debugEnabled ? { path, safetyCheck: { safe: false, reason: safetyCheck.reason, category: safetyCheck.category, error: safetyCheck.error } } : undefined,
             request,
             env
           );
         }
 
-        // Read prompt_json from R2 metadata or cache
-        let storedPromptPayload: any = null;
-        const promptCacheKV = getPromptCacheKV(env);
-        const presetImageId = hasPresetId ? body.preset_image_id : (presetResult ? (presetResult as any).id : null);
-        
-        if (presetImageId && r2Key) {
-          const cacheKey = `prompt:${presetImageId}`;
-          
-          if (promptCacheKV) {
-            try {
-              const cached = await promptCacheKV.get(cacheKey, 'json');
-              if (cached) storedPromptPayload = cached;
-            } catch (error) {
-              // KV cache read failed, fallback to R2
-            }
-          }
-          
-          if (!storedPromptPayload) {
-            try {
-              const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
-                await R2_BUCKET.head(r2Key)
-              );
-              const promptJson = r2Object?.customMetadata?.prompt_json;
-              if (promptJson?.trim()) {
-                storedPromptPayload = JSON.parse(promptJson);
-                if (promptCacheKV) {
-                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
-                }
-              }
-            } catch (error) {
-              // R2 metadata read failed, continue without cache
-            }
-          }
-        } else if (r2Key) {
-          // Fallback for preset_image_url case (no preset ID available)
-          const cacheKey = `prompt:${r2Key}`;
-          
-          if (promptCacheKV) {
-            try {
-              const cached = await promptCacheKV.get(cacheKey, 'json');
-              if (cached) storedPromptPayload = cached;
-            } catch (error) {
-              // KV cache read failed, fallback to R2
-            }
-          }
-          
-          if (!storedPromptPayload) {
-            try {
-              const r2Object = await getCachedAsync(`r2head:${r2Key}`, async () =>
-                await R2_BUCKET.head(r2Key)
-              );
-              const promptJson = r2Object?.customMetadata?.prompt_json;
-              if (promptJson?.trim()) {
-                storedPromptPayload = JSON.parse(promptJson);
-                if (promptCacheKV) {
-                  promptCacheKV.put(cacheKey, promptJson, { expirationTtl: CACHE_CONFIG.PROMPT_CACHE_TTL }).catch(() => {});
-                }
-              }
-            } catch (error) {
-              // R2 metadata read failed, continue without cache
-            }
-          }
-        }
-
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieImageUrl, env, { allowOriginal: true });
-        const modelParam = body.model;
-        const effectiveProvider = getEffectiveProvider(body, env, 'FILTER');
-
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio) {
           const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
-          const dims = await getImageDimensionsExtended(selfieImageUrl, env);
+          const dims = await getImageDimensionsExtended(imageUrl, env);
           if (dims) {
             const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
             sizeForProvider = optimal.sizeString;
           }
         }
 
-        let filterResult;
+        const fullPromptJsonString = JSON.stringify(storedPromptPayload, null, 2);
+        const finalPrompt = body.additional_prompt
+          ? `${fullPromptJsonString}\n\nAdditional instructions: ${body.additional_prompt}`
+          : fullPromptJsonString;
 
-        const useWaveSpeedStyleFilter = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
-        if (useWaveSpeedStyleFilter) {
-          const wavespeedFilterPrompt = `${VERTEX_AI_PROMPTS.PROMPT_GENERATION_FILTER}\n\nApply the style from image 2 to image 1.`;
-          const finalPrompt = body.additional_prompt
-            ? `${wavespeedFilterPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
-            : wavespeedFilterPrompt;
-          filterResult = await callNanoBanana(
-            finalPrompt,
-            selfieImageUrl,
-            [selfieImageUrl, presetImageUrl],
-            env,
-            validAspectRatio,
-            modelParam,
-            { provider: effectiveProvider, size: sizeForProvider }
-          );
-        } else {
-          // Vertex mode: Use prompt_json from preset metadata
-          if (!storedPromptPayload) {
-            return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { error: 'Preset must have prompt_json metadata for filter mode (required for Vertex provider)', path } : undefined, request, env);
-          }
-
-          const transformedPrompt = transformPromptForFilter(storedPromptPayload);
-          const augmentedPrompt = augmentVertexPrompt(
-            transformedPrompt,
-            body.additional_prompt
-          );
-
-          filterResult = await callNanoBanana(
-            augmentedPrompt,
-            selfieImageUrl,
-            selfieImageUrl,
-            env,
-            validAspectRatio,
-            modelParam,
-            { provider: body.provider }
-          );
-        }
+        const filterResult = await callNanoBanana(
+          finalPrompt,
+          imageUrl,
+          [imageUrl],
+          env,
+          validAspectRatio,
+          body.model,
+          { provider: 'wavespeed', size: sizeForProvider }
+        );
 
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
           const failureCode = filterResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
-          const debugPayload = debugEnabled ? compact({
-            ...flatDebug,
-          }) : undefined;
-
           return jsonResponse({
             data: null,
             status: 'error',
             message: filterResult.Message || 'Style filter processing failed',
             code: failureCode,
-            ...(debugPayload ? { debug: debugPayload } : {}),
+            ...(flatDebug ? { debug: compact(flatDebug) } : {}),
           }, httpStatus);
         }
 
         let resultUrl = filterResult.ResultImageUrl;
         if (filterResult.ResultImageUrl?.startsWith('r2://')) {
-          const r2ResultKey = filterResult.ResultImageUrl.replace('r2://', '');
-          resultUrl = getR2PublicUrl(env, r2ResultKey, requestUrl.origin);
+          resultUrl = getR2PublicUrl(env, filterResult.ResultImageUrl.replace('r2://', ''), requestUrl.origin);
         }
 
-        // Save result to database for history
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter', request);
-
-        // Cache result in KV for retry handling
-        // Note: Filter uses queue-based deletion (SELFIE_MAX_FILTER) instead of auto-delete
-        if (hasSelfieId && body.selfie_id) {
-          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'filter', resultUrl));
-        }
-
-        const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
         if (body.profile_id) {
           ctx.waitUntil(sendResultNotification(env, body.profile_id, 'filter', { success: true, resultId: savedResultId !== null ? String(savedResultId) : undefined }));
         }
@@ -6427,32 +6307,16 @@ export default {
           data: {
             resultImageUrl: resultUrl,
             resultId: savedResultId,
-            selfie: hasSelfieId ? {
-              id: body.selfie_id,
-              action: selfieAction,
-            } : undefined,
           },
           status: 'success',
           message: filterResult.Message || 'Style filter applied successfully',
           code: 200,
-          ...(debugEnabled && flatDebug ? { debug: compact({
-            ...flatDebug,
-            database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false },
-          }) } : {}),
+          ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false } }) } : {}),
         });
       } catch (error) {
-        logCriticalError('/filter', error, request, env, {
-          body: {
-            preset_image_id: body?.preset_image_id,
-            preset_image_url: body?.preset_image_url ? '***present***' : 'missing',
-            selfie_id: body?.selfie_id,
-            selfie_image_url: body?.selfie_image_url ? '***present***' : 'missing',
-            profile_id: body?.profile_id
-          }
-        });
-        const debugEnabled = isDebugEnabled(env);
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        return errorResponse('Internal server error', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+        logCriticalError('/filter', error, request, env, { body: { profile_id: body?.profile_id, preset_image_id: body?.preset_image_id } });
+        const errMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('Internal server error', 500, debugEnabled ? { error: errMsg, path } : undefined, request, env);
       }
     }
 
@@ -6823,34 +6687,26 @@ export default {
 
         let agingResult;
 
+        if (!storedPromptPayload) {
+          return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
         const useWaveSpeedStyleAging = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
         if (useWaveSpeedStyleAging) {
-          let wavespeedPrompt: string;
-          if (storedPromptPayload && typeof storedPromptPayload === 'object' && storedPromptPayload.prompt) {
-            wavespeedPrompt = storedPromptPayload.prompt;
-          } else if (storedPromptPayload && typeof storedPromptPayload === 'string') {
-            wavespeedPrompt = storedPromptPayload;
-          } else {
-            wavespeedPrompt = 'Transform the person in image 1 to match the age/style shown in image 2. Preserve their race, ethnicity, skin tone, and identity.';
-          }
+          const fullPromptJsonString = JSON.stringify(storedPromptPayload, null, 2);
           const finalPrompt = body.additional_prompt
-            ? `${wavespeedPrompt}\n\nAdditional instructions: ${body.additional_prompt}`
-            : wavespeedPrompt;
+            ? `${fullPromptJsonString}\n\nAdditional instructions: ${body.additional_prompt}`
+            : fullPromptJsonString;
           agingResult = await callNanoBanana(
             finalPrompt,
             selfieImageUrl,
-            [selfieImageUrl, presetImageUrl],
+            [selfieImageUrl],
             env,
             validAspectRatio,
             modelParam,
-            { provider: effectiveProvider, size: sizeForProvider }
+            { provider: 'wavespeed_gemini_2_5_flash_image', size: sizeForProvider }
           );
         } else {
-          // Vertex mode: Use prompt_json from preset metadata
-          if (!storedPromptPayload) {
-            return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { error: 'Preset must have prompt_json metadata for aging mode (required for Vertex provider)', path } : undefined, request, env);
-          }
-
           const augmentedPrompt = augmentVertexPrompt(storedPromptPayload, body.additional_prompt);
 
           agingResult = await callNanoBanana(
