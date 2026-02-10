@@ -269,6 +269,18 @@ const extractPathId = (path: string, prefix: string): string | null => {
   return idPart && idPart.trim() ? idPart.trim() : null;
 };
 
+const extractResultIdFromPath = (path: string): string | null => {
+  const prefix = '/results/';
+  if (!path.startsWith(prefix)) return null;
+  const after = path.slice(prefix.length).split('?')[0];
+  if (!after || !after.trim()) return null;
+  try {
+    return decodeURIComponent(after.trim());
+  } catch {
+    return after.trim();
+  }
+};
+
 const getR2Bucket = (env: Env): R2Bucket => {
   const bindingName = env.R2_BUCKET_BINDING || env.R2_BUCKET_NAME || DEFAULT_R2_BUCKET_NAME;
   const bucket = (env as any)[bindingName] as R2Bucket;
@@ -4391,22 +4403,19 @@ export default {
     // Handle results deletion (reuse same pattern as presets/selfies)
     if (path.startsWith('/results/') && request.method === 'DELETE') {
       try {
-        const resultId = extractPathId(path, '/results/');
+        const resultIdFull = extractResultIdFromPath(path);
+        const resultIdShort = extractPathId(path, '/results/');
+        const resultId = resultIdFull || resultIdShort;
         if (!resultId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        // First, check if result exists and get the R2 key
-        let checkResult = await DB.prepare(
-          'SELECT id, ext FROM results WHERE id = ?'
-        ).bind(resultId).first();
-
-        // If not found and resultId looks like a path, try to find by URL suffix (for WaveSpeed URLs)
-        if (!checkResult && resultId.includes('/')) {
-          checkResult = await DB.prepare(
-            'SELECT id, ext FROM results WHERE id LIKE ?'
-          ).bind(`%${resultId}%`).first();
+        let checkResult = resultIdFull
+          ? await DB.prepare('SELECT id, ext FROM results WHERE id = ?').bind(resultIdFull).first()
+          : null;
+        if (!checkResult && resultIdShort && resultIdShort !== resultIdFull) {
+          checkResult = await DB.prepare('SELECT id, ext FROM results WHERE id = ?').bind(resultIdShort).first();
         }
 
         if (!checkResult) {
@@ -4414,12 +4423,10 @@ export default {
           return errorResponse('Result not found', 404, debugEnabled ? { resultId, path } : undefined, request, env);
         }
 
-        // Check if id is already a full URL (WaveSpeed external URL)
-        const isExternalUrl = (checkResult as any).id && (checkResult as any).id.startsWith('http');
+        const actualId = (checkResult as any).id;
+        const isExternalUrl = actualId && String(actualId).startsWith('http');
         const r2Key = isExternalUrl ? null : reconstructR2Key((checkResult as any).id, (checkResult as any).ext, 'results');
 
-        // Delete from database (use actual id from checkResult, not the partial path)
-        const actualId = (checkResult as any).id;
         const deleteResult = await DB.prepare(
           'DELETE FROM results WHERE id = ?'
         ).bind(actualId).run();
@@ -4429,7 +4436,6 @@ export default {
           return errorResponse('Result not found or already deleted', 404, debugEnabled ? { resultId, path } : undefined, request, env);
         }
 
-        // Try to delete from R2 (non-fatal if it fails, skip for external URLs)
         let r2Deleted = false;
         let r2Error = null;
         let cdnPurgeResult = null;
@@ -4437,8 +4443,6 @@ export default {
           try {
             await R2_BUCKET.delete(r2Key);
             r2Deleted = true;
-
-            // Purge CDN cache (wait for result)
             const publicUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
             try {
               const purgeResult = await purgeCdnCache([publicUrl], env);
@@ -4477,7 +4481,7 @@ export default {
         }, 200, request, env);
       } catch (error) {
         logCriticalError('/results/{id} (DELETE)', error, request, env, {
-          resultId: extractPathId(path, '/results/')
+          resultId: extractResultIdFromPath(path)
         });
         const errorMessage = error instanceof Error ? error.message : String(error);
         const debugEnabled = isDebugEnabled(env);
@@ -4487,7 +4491,7 @@ export default {
           message: '',
           code: 500,
           ...(debugEnabled ? { debug: {
-            resultId: extractPathId(path, '/results/'),
+            resultId: extractResultIdFromPath(path),
             error: errorMessage,
             path,
             ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {})
