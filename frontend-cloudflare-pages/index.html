@@ -1297,7 +1297,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
     <script>
         // Config - Backend URL injected during deployment from deployments-secrets.json
-        let WORKER_URL = 'https://api.d.shotpix.app'; // Injected during deployment - DO NOT MODIFY MANUALLY
+        let WORKER_URL = 'https://ai-faceswap-backend.Chungminhtu03.workers.dev'; // Injected during deployment - DO NOT MODIFY MANUALLY
         // Mobile API Key for authentication (set when ENABLE_MOBILE_API_KEY_AUTH is enabled in backend)
         let MOBILE_API_KEY = 'MNfs5qUDz5jjmyZjjMC5zUgIVjpTBuZehq2_fDg9cYk'; // Injected during deployment - DO NOT MODIFY MANUALLY
         const ITEMS_PER_PAGE = 40;
@@ -3792,7 +3792,64 @@
             runImageOperation('Nâng Cấp 4K (4K Upscale)', 'upscaler4k');
         }
         function runRestore() { runImageOperation('Khôi Phục (Restore)', 'restore'); }
-        function runAging() { runImageOperation('Lão Hóa (Aging)', 'aging', { age_years: parseInt($('aging-years')?.value || '20', 10) }); }
+        async function runAging() {
+            const presetSelected = galleries.preset.state.selected;
+            const selfieSelected = galleries.selfie.state.selected;
+            const selfieArray = Array.isArray(selfieSelected) ? selfieSelected : (selfieSelected ? [selfieSelected] : []);
+
+            if (!presetSelected) { showStatusMessage('Vui lòng chọn mẫu (preset) trước khi chạy Lão Hóa.', 'error'); return; }
+            if (selfieArray.length === 0) { showStatusMessage('Vui lòng chọn selfie trước khi chạy Lão Hóa.', 'error'); return; }
+            if (!window.profileManager?.currentProfile) { showStatusMessage('Vui lòng chọn hồ sơ trước khi chạy Lão Hóa.', 'error'); return; }
+
+            const selectedSelfie = selfieArray[0];
+            showLoading('Đang xử lý Lão Hóa...');
+
+            try {
+                const aspectRatioSelect = document.getElementById('aspect-ratio');
+                const selectedAspectRatio = aspectRatioSelect?.value || localStorage.getItem('faceswap:aspectRatio') || 'original';
+                const modelSelect = document.getElementById('gemini-model');
+                const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
+                const providerSelect = document.getElementById('image-provider');
+                const selectedProvider = providerSelect?.value || localStorage.getItem('faceswap:provider') || '';
+                const presetId = presetSelected.preset_id || presetSelected.id;
+                const usePresetUrl = !presetId || presetId.startsWith('result-preset-');
+                const useSelfieUrl = !selectedSelfie.id || selectedSelfie.id?.startsWith('result-selfie-');
+                const additionalPromptInput = document.getElementById('additional-prompt');
+                const requestBody = {
+                    ...(usePresetUrl
+                        ? { preset_image_url: presetSelected.image_url }
+                        : { preset_image_id: presetId }
+                    ),
+                    ...(useSelfieUrl
+                        ? { selfie_image_url: selectedSelfie.image_url }
+                        : { selfie_id: selectedSelfie.id }
+                    ),
+                    profile_id: window.profileManager.currentProfile.id,
+                    additional_prompt: additionalPromptInput?.value.trim() || '',
+                    aspect_ratio: selectedAspectRatio,
+                    model: selectedModel,
+                    ...(selectedProvider && { provider: selectedProvider })
+                };
+
+                const agingUrl = `${WORKER_URL}/aging`;
+                const startTime = Date.now();
+                const response = await fetch(agingUrl, { method: 'POST', headers: buildHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(requestBody) });
+                const data = await response.json();
+                const duration = Date.now() - startTime;
+
+                logApiCall({ label: 'Lão Hóa (Aging)', method: 'POST', url: '/aging', fullUrl: agingUrl, status: response.ok ? 'success' : 'error', payload: data, duration, headers: { 'Content-Type': 'application/json' }, body: requestBody });
+                if (!response.ok || !data.data?.resultImageUrl) throw new Error(data.message || 'Lão Hóa thất bại');
+
+                displayResultInPreview(data.data.resultImageUrl);
+                showStatusMessage('Lão Hóa thành công!', 'success');
+                await loadGallery('results');
+                updateResultsCount();
+            } catch (error) {
+                showStatusMessage(`Lão Hóa thất bại: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
         
         async function runFilter() {
             const presetSelected = galleries.preset.state.selected;

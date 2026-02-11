@@ -205,17 +205,20 @@
                     <label>Preset</label>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;">
                         <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('faceswap')" disabled>Faceswap</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('background')" disabled>Background</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('enhance')" disabled>Enhance</button>
                         <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('beauty')" disabled>Beauty</button>
                         <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('filter')" disabled>Filter</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('restore')" disabled>Restore</button>
+                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('aging')" disabled>Aging</button>
                         <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('upscaler4k')" disabled>Upscaler4k</button>
-                        <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('background')" disabled>Background</button>
                         <button type="button" class="btn sm fcm-requires-token" style="background:#64748b" onclick="setPushPreset('balance_sync')" disabled>Balance sync</button>
                     </div>
                 </div>
                 <div class="row">
                     <label>Data (JSON)</label>
                 </div>
-                <textarea id="push-data" class="fcm-requires-token" placeholder='{"type":"operation_complete","operation":"faceswap",...}' disabled></textarea>
+                <textarea id="push-data" class="fcm-requires-token" placeholder='{"type":"operation_complete","action":"faceswap","status":"success",...}' disabled></textarea>
                 <div class="row" style="margin-top:8px">
                     <button class="btn fcm-requires-token" onclick="sendPush()" disabled>Send Push</button>
                     <button class="btn sec fcm-requires-token" onclick="sendPushExcludeSelf()" disabled>Send (exclude self)</button>
@@ -491,11 +494,14 @@
         };
 
         const PUSH_PRESETS = {
-          faceswap: { type: 'operation_complete', operation: 'faceswap', status: 'success', timestamp: null, result_id: 'result_faceswap_abc123' },
-          beauty: { type: 'operation_complete', operation: 'beauty', status: 'success', timestamp: null, result_id: 'result_beauty_xyz456' },
-          filter: { type: 'operation_complete', operation: 'filter', status: 'success', timestamp: null, result_id: 'result_filter_def789' },
-          upscaler4k: { type: 'operation_complete', operation: 'upscaler4k', status: 'success', timestamp: null, result_id: 'result_upscale_ghi012' },
-          background: { type: 'operation_complete', operation: 'background', status: 'success', timestamp: null, result_id: 'result_bg_jkl345' },
+          faceswap: { type: 'operation_complete', action: 'faceswap', status: 'success', timestamp: null, result_id: 'result_faceswap_abc123' },
+          background: { type: 'operation_complete', action: 'background', status: 'success', timestamp: null, result_id: 'result_bg_jkl345' },
+          enhance: { type: 'operation_complete', action: 'enhance', status: 'success', timestamp: null, result_id: 'result_enhance_abc123' },
+          beauty: { type: 'operation_complete', action: 'beauty', status: 'success', timestamp: null, result_id: 'result_beauty_xyz456' },
+          filter: { type: 'operation_complete', action: 'filter', status: 'success', timestamp: null, result_id: 'result_filter_def789' },
+          restore: { type: 'operation_complete', action: 'restore', status: 'success', timestamp: null, result_id: 'result_restore_def789' },
+          aging: { type: 'operation_complete', action: 'aging', status: 'success', timestamp: null, result_id: 'result_aging_ghi012' },
+          upscaler4k: { type: 'operation_complete', action: 'upscaler4k', status: 'success', timestamp: null, result_id: 'result_upscale_ghi012' },
           balance_sync: { type: 'balance_sync', amount: '100', timestamp: null }
         };
         window.setPushPreset = function(key) {
@@ -523,7 +529,7 @@
         (async () => {
             try {
                 setTokenDependentState(false);
-                document.getElementById('push-data').value = JSON.stringify({ type: 'operation_complete', operation: 'faceswap', status: 'success', timestamp: String(Date.now()), result_id: 'result_faceswap_test' }, null, 2);
+                document.getElementById('push-data').value = JSON.stringify({ type: 'operation_complete', action: 'faceswap', status: 'success', timestamp: String(Date.now()), result_id: 'result_faceswap_test' }, null, 2);
                 const ta = document.getElementById('push-data');
                 if (ta) { ta.style.height = 'auto'; ta.style.height = Math.max(100, ta.scrollHeight) + 'px'; }
                 if (!('Notification' in window)) {

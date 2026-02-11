@@ -3025,7 +3025,7 @@ export const sendResultNotification = async (
     
     const data: Record<string, string> = {
       type: 'operation_complete',
-      operation: operationType,
+      action: operationType,
       status: result.success ? 'success' : 'error',
       timestamp: Date.now().toString(),
     };

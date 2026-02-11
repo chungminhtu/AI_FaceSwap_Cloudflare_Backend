@@ -1136,7 +1136,7 @@ curl -X POST https://api.d.shotpix.app/filter \
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Xem [Lưu ý về Aspect Ratio](#23-post-enhance---ai-enhance) cho chi tiết. Mặc định: `"original"`.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh style.
-- `provider` (string, optional): Provider AI. Giá trị: `"vertex"` (mặc định) hoặc `"wavespeed"`. WaveSpeed không yêu cầu `prompt_json` trong preset.
+- `provider` (string, optional): Provider AI. Giá trị: `"vertex"` (mặc định), `"wavespeed"` (Flux), hoặc `"wavespeed_gemini_2_5_flash_image"` (Gemini 2.5 Flash Image qua WaveSpeed). WaveSpeed không yêu cầu `prompt_json` trong preset.
 
 **Response:**
 ```json
@@ -1349,7 +1349,7 @@ curl -X POST https://api.d.shotpix.app/aging \
 - `profile_id` (string, required): ID profile người dùng.
 - `aspect_ratio` (string, optional): Tỷ lệ khung hình. Mặc định: `"original"`.
 - `additional_prompt` (string, optional): Prompt bổ sung để tùy chỉnh.
-- `provider` (string, optional): Provider AI. Giá trị: `"vertex"` (mặc định) hoặc `"wavespeed"`.
+- `provider` (string, optional): Provider AI. Giá trị: `"vertex"` (mặc định), `"wavespeed"` (Flux), hoặc `"wavespeed_gemini_2_5_flash_image"` (Gemini 2.5 Flash Image qua WaveSpeed).
 
 **Response:**
 ```json
