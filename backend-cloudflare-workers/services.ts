@@ -2632,7 +2632,7 @@ export const callWaveSpeedGeminiImageEdit = async (
   imageUrls: string[],
   prompt: string,
   env: Env,
-  _aspectRatio?: string,
+  aspectRatio?: string,
   _size?: string
 ): Promise<FaceSwapResponse> => {
   if (!env.WAVESPEED_API_KEY) {
@@ -2640,17 +2640,22 @@ export const callWaveSpeedGeminiImageEdit = async (
   }
   const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
   const apiKey = env.WAVESPEED_API_KEY;
-  const debugInfo = debugEnabled ? { provider: 'wavespeed_gemini_2_5_flash_image', images: imageUrls, prompt: prompt.substring(0, 200) } : undefined;
+  const debugInfo = debugEnabled ? { provider: 'wavespeed_gemini_2_5_flash_image', images: imageUrls, prompt: prompt.substring(0, 200), aspectRatio } : undefined;
+  const endpoint = API_ENDPOINTS.WAVESPEED_GEMINI_2_5_FLASH_IMAGE_EDIT;
+  const requestBody: Record<string, any> = {
+    enable_base64_output: false,
+    enable_sync_mode: true,
+    images: imageUrls.length === 1 ? [imageUrls[0], imageUrls[0]] : imageUrls,
+    output_format: 'jpeg',
+    prompt,
+  };
+  // Pass aspect_ratio to WaveSpeed Gemini API if provided (vertex-style ratio like "3:4", "9:16")
+  if (aspectRatio && aspectRatio !== 'original') {
+    requestBody.aspect_ratio = aspectRatio;
+  }
+  if (debugInfo) (debugInfo as any).curl = 'curl -X POST "' + endpoint + '" -H "Content-Type: application/json" -H "Authorization: Bearer ' + apiKey + '" -d \'' + JSON.stringify(requestBody) + '\'';
+
   try {
-    const endpoint = API_ENDPOINTS.WAVESPEED_GEMINI_2_5_FLASH_IMAGE_EDIT;
-    const requestBody = {
-      enable_base64_output: false,
-      enable_sync_mode: true,
-      images: imageUrls,
-      output_format: 'jpeg',
-      prompt,
-    };
-    if (debugInfo) (debugInfo as any).curl = 'curl -X POST "' + endpoint + '" -H "Content-Type: application/json" -H "Authorization: Bearer ' + apiKey + '" -d \'' + JSON.stringify(requestBody) + '\'';
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
@@ -2662,6 +2667,9 @@ export const callWaveSpeedGeminiImageEdit = async (
       return { Success: false, Message: `WaveSpeed Gemini Image Edit API error: ${response.status}`, StatusCode: response.status, Error: rawResponse.substring(0, 500), Debug: debugInfo };
     }
     const data = JSON.parse(rawResponse);
+    if (data.data?.status === 'failed') {
+      return { Success: false, Message: `WaveSpeed Gemini Image Edit failed: ${data.data?.error || 'Request failed'}`, StatusCode: data.data?.code || 500, Debug: debugInfo };
+    }
     const outputUrl = data.data?.outputs?.[0] ?? data.outputs?.[0];
     if (outputUrl) {
       return { Success: true, ResultImageUrl: outputUrl, Message: 'WaveSpeed Gemini 2.5 Flash Image Edit completed', StatusCode: 200, Debug: debugInfo };

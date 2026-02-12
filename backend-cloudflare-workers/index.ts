@@ -6697,10 +6697,26 @@ export default {
 
         const useWaveSpeedStyleAging = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
         if (useWaveSpeedStyleAging) {
-          const fullPromptJsonString = JSON.stringify(storedPromptPayload, null, 2);
-          const finalPrompt = body.additional_prompt
-            ? `${fullPromptJsonString}\n\nAdditional instructions: ${body.additional_prompt}`
-            : fullPromptJsonString;
+          const isGeminiProvider = effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
+          let finalPrompt: string;
+          if (isGeminiProvider) {
+            // Gemini API needs plain text, not JSON
+            const p = storedPromptPayload as any;
+            const parts: string[] = [];
+            if (p.prompt) parts.push(p.prompt);
+            if (p.style) parts.push(`Style: ${p.style}`);
+            if (p.lighting) parts.push(`Lighting: ${p.lighting}`);
+            if (p.composition) parts.push(`Composition: ${p.composition}`);
+            if (p.camera) parts.push(`Camera: ${p.camera}`);
+            if (p.background) parts.push(`Background: ${p.background}`);
+            finalPrompt = parts.join('. ');
+            if (body.additional_prompt) finalPrompt += ` ${body.additional_prompt}`;
+          } else {
+            const fullPromptJsonString = JSON.stringify(storedPromptPayload, null, 2);
+            finalPrompt = body.additional_prompt
+              ? `${fullPromptJsonString}\n\nAdditional instructions: ${body.additional_prompt}`
+              : fullPromptJsonString;
+          }
           agingResult = await callNanoBanana(
             finalPrompt,
             selfieImageUrl,
@@ -6751,12 +6767,7 @@ export default {
           ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'aging', resultUrl));
         }
 
-        // Auto-delete selfie after processing (non-FaceSwap API)
-        if (hasSelfieId && selfieResult) {
-          const selfieId = (selfieResult as any).id;
-          const selfieExt = (selfieResult as any).ext;
-          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
-        }
+        // Aging does NOT auto-delete selfie after processing (selfie is reused for multiple aging presets)
 
         const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
         return jsonResponse({

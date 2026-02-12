@@ -1310,7 +1310,15 @@ curl -X POST https://api.d.shotpix.app/restore \
 
 **Mục đích:** AI biến đổi tuổi khuôn mặt - áp dụng style tuổi từ preset lên selfie. Mỗi preset chứa prompt_json định nghĩa style tuổi cụ thể (em bé, người già, v.v.).
 
-**Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+**Lưu ý:**
+- Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+- Hỗ trợ `aspect_ratio` tương tự `/enhance`. Khi `aspect_ratio` là `"original"` hoặc không được cung cấp, hệ thống sẽ tự động:
+  1. Lấy kích thước (width/height) từ ảnh selfie input
+  2. Tính toán tỷ lệ khung hình thực tế
+  3. Chọn tỷ lệ gần nhất trong danh sách hỗ trợ của Vertex AI
+  4. Sử dụng tỷ lệ đó để generate ảnh
+- Điều này đảm bảo ảnh kết quả giữ được tỷ lệ gần với ảnh gốc thay vì mặc định về 1:1.
+- **Các giá trị hỗ trợ:** `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"original"`.
 
 **Hành vi theo Provider:**
 - **Vertex AI (mặc định):** Sử dụng `prompt_json` từ metadata của preset để áp dụng biến đổi tuổi. Preset phải có `prompt_json`.
@@ -1337,6 +1345,7 @@ curl -X POST https://api.d.shotpix.app/aging \
     "preset_image_id": "aging_elderly_preset_001",
     "selfie_image_url": "https://example.com/selfie.jpg",
     "profile_id": "profile_1234567890",
+    "aspect_ratio": "original",
     "additional_prompt": "Make the aging look natural"
   }'
 ```
