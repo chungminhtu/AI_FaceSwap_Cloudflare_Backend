@@ -43,17 +43,7 @@ export const WAVESPEED_PROMPTS = {
 
   // Couple mode: 2 selfies + 1 preset
   // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
-  FACESWAP_COUPLE: `Image 3 is a finished image containing two people.
-
-Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity.
-
-Preserve the original facial expression and emotional tone of each person in Image 3.
-
-Analyze the race and facial proportions (such as eyes, mouth, hair, hairstyles, color) of Subject_1_Identity and Subject_2_Identity, and use this analysis to resemble final image.
-
-Ensure the skin overall of the body (hands, fingers legs, neck, shoulder,..) should match with the face to make it most realistic in finished photo.
-
-Do not add or remove people.`,
+  FACESWAP_COUPLE: `Put both persons from Image 1 and Image 2 into Image 3, keeping all makeup exactly the same as the preset in Image 3. Image 3 is the final composition and contains two people. Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity. Preserve the original facial expressions and emotional tone of each person in Image 3. Replace the entire hair for each subject by blending identity features from Image 1 and Image 2 while matching the lighting and environment of Image 3. Maintain the original body proportions, head-to-body ratio, pose, and camera perspective from Image 3. Blend the skin naturally for seamless integration. Scale and align the replaced subjects to fit naturally into Image 3, and scale the heads slightly smaller while keeping proportions realistic. Do not add or remove any people.`,
 
   // Background merge mode: 1 selfie + 1 background/preset
   // image1 = selfie (person with or without transparent background), image2 = background scene
