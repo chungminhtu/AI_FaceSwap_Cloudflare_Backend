@@ -39,13 +39,7 @@ ALWAYS ALLOW (legal/appropriate):
 export const WAVESPEED_PROMPTS = {
   // Single mode: 1 selfie + 1 preset
   // image1 = selfie, image2 = preset
-  FACESWAP_SINGLE: `Image 2 is a finished photo of a person.
-
-Analyze the facial proportions and hair of the person in Image 2 to resemble Image 1, while keeping the same skin, lighting, and overall appearance.
-
-Do not change the body, head size, or pose. 
-
-Ensure the skin overall of the body (hands, legs, neck, shoulder,..) should match with the skin face to make it realistic.`,
+  FACESWAP_SINGLE: `Image 2 is the base image and provides lighting, background, and overall composition. Replace the subject in Image 2 with the subject from Image 1, using Image 1 as the sole source of identity, facial structure, hair, and defining features. Maintain the original body proportions, head-to-body ratio, pose, and camera perspective from Image 2. Replace and fully reconstruct the hair using Image 1 as the identity reference while blending it naturally with the lighting and environment of Image 2. Scale and align the replaced subject to fit naturally into Image 2 without scaling the head. Ensure consistent skin tone across all visible skin areas. Apply the preset style of Image 2 only after identity replacement, without altering the natural skin color from Image 1. Blend the skin naturally for a seamless, realistic integration.`,
 
   // Couple mode: 2 selfies + 1 preset
   // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
