@@ -5,7 +5,7 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, sendFcmSilentPush, sendResultNotification } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, sendFcmSilentPush, sendResultNotification } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS } from './config';
 
@@ -5404,14 +5404,13 @@ export default {
 
         let mergeResult: FaceSwapResponse;
         if (useWaveSpeedStyleMerge) {
-          mergeResult = await callNanoBanana(
-            mergePrompt,
-            targetUrl,
+          // Use Seedream v4 for background merge (better quality, 4K support)
+          mergeResult = await callWaveSpeedSeedreamEdit(
             [selfieUrl, targetUrl],
+            mergePrompt,
             env,
             validAspectRatio,
-            modelParam,
-            { provider: effectiveProvider, size: sizeForProvider }
+            sizeForProvider
           );
         } else {
           // Vertex AI: use dedicated merge function

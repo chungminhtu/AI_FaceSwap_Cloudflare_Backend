@@ -43,7 +43,7 @@ export const WAVESPEED_PROMPTS = {
 
   // Couple mode: 2 selfies + 1 preset
   // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
-  FACESWAP_COUPLE: `Put both persons from Image 1 and Image 2 into Image 3, keeping all makeup exactly the same as the preset in Image 3. Image 3 is the final composition and contains two people. Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity. Preserve the original facial expressions and emotional tone of each person in Image 3. Replace the entire hair for each subject by blending identity features from Image 1 and Image 2 while matching the lighting and environment of Image 3. Maintain the original body proportions, head-to-body ratio, pose, and camera perspective from Image 3. Blend the skin naturally for seamless integration. Scale and align the replaced subjects to fit naturally into Image 3, and scale the heads slightly smaller while keeping proportions realistic. Do not add or remove any people.`,
+  FACESWAP_COUPLE: `Put both persons in image1 and image 2 into image 3, keep all the makeup same as preset. Image 3 is a finished image containing two people. Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity. Preserve the original facial expression and emotional tone of each person in Image 3. Replace the entire hair with blending features from Image 3 using image 1 and image 2. Blend the hair naturally. Maintain the original body proportions, head-to-body ratio, pose, and camera perspective from Image 3. Blend the skin naturally. Scale and align the replaced subject to fit naturally into Image 3. Scale the head smaller. Do not add or remove people.`,
 
   // Background merge mode: 1 selfie + 1 background/preset
   // image1 = selfie (person with or without transparent background), image2 = background scene
@@ -315,6 +315,7 @@ export const API_ENDPOINTS = {
   WAVESPEED_UPSCALER: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler',
   WAVESPEED_TEXT_TO_IMAGE: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-dev/text-to-image',
   WAVESPEED_GEMINI_2_5_FLASH_IMAGE_EDIT: 'https://api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit',
+  WAVESPEED_SEEDREAM_EDIT: 'https://api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential',
   WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v1/predictions/${requestId}/result`,
   OAUTH_TOKEN: 'https://oauth2.googleapis.com/token',
 };

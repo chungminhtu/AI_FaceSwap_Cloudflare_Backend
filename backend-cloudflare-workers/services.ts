@@ -2686,6 +2686,62 @@ export const callWaveSpeedGeminiImageEdit = async (
   }
 };
 
+// WaveSpeed Seedream v4 Edit-Sequential API (ByteDance)
+// Endpoint: https://api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential
+// 4K image editing with character/object consistency
+export const callWaveSpeedSeedreamEdit = async (
+  imageUrls: string[],
+  prompt: string,
+  env: Env,
+  _aspectRatio?: string,
+  _size?: string
+): Promise<FaceSwapResponse> => {
+  if (!env.WAVESPEED_API_KEY) {
+    return { Success: false, Message: 'WAVESPEED_API_KEY is required', StatusCode: 500 };
+  }
+  const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+  const apiKey = env.WAVESPEED_API_KEY;
+  const debugInfo = debugEnabled ? { provider: 'wavespeed_seedream', images: imageUrls, prompt: prompt.substring(0, 200) } : undefined;
+  const endpoint = API_ENDPOINTS.WAVESPEED_SEEDREAM_EDIT;
+  const requestBody: Record<string, any> = {
+    enable_base64_output: false,
+    enable_sync_mode: true,
+    images: imageUrls,
+    prompt,
+  };
+  if (debugInfo) (debugInfo as any).curl = 'curl -X POST "' + endpoint + '" -H "Content-Type: application/json" -H "Authorization: Bearer ' + apiKey + '" -d \'' + JSON.stringify(requestBody) + '\'';
+
+  try {
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify(requestBody),
+    }, 120000);
+    const rawResponse = await response.text();
+    if (debugInfo) { (debugInfo as any).httpStatus = response.status; (debugInfo as any).rawResponse = rawResponse.substring(0, 1000); }
+    if (!response.ok) {
+      return { Success: false, Message: `WaveSpeed Seedream Edit API error: ${response.status}`, StatusCode: response.status, Error: rawResponse.substring(0, 500), Debug: debugInfo };
+    }
+    const data = JSON.parse(rawResponse);
+    if (data.data?.status === 'failed') {
+      return { Success: false, Message: `WaveSpeed Seedream Edit failed: ${data.data?.error || 'Request failed'}`, StatusCode: data.data?.code || 500, Debug: debugInfo };
+    }
+    const outputUrl = data.data?.outputs?.[0] ?? data.outputs?.[0];
+    if (outputUrl) {
+      return { Success: true, ResultImageUrl: outputUrl, Message: 'WaveSpeed Seedream v4 Edit completed', StatusCode: 200, Debug: debugInfo };
+    }
+    return { Success: false, Message: 'WaveSpeed Seedream Edit: No output image in response', StatusCode: 500, Debug: debugInfo };
+  } catch (error) {
+    return {
+      Success: false,
+      Message: `WaveSpeed Seedream Edit error: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugInfo,
+    };
+  }
+};
+
 // WaveSpeed Text-to-Image API (Flux 2 Dev)
 // Generates images from text prompts using WaveSpeed's FLUX model
 export const callWaveSpeedTextToImage = async (
