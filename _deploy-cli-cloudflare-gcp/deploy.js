@@ -3420,36 +3420,32 @@ async function deploy(config, progressCallback, cwd, flags = {}) {
       ? (config.deployPages !== false && flags.DEPLOY_PAGES !== false)
       : flags.DEPLOY_PAGES !== false;
     const DEPLOY_R2 = flags.DEPLOY_R2 !== false;
+    const SKIP_CHECKS_UI = flags.SKIP_CHECKS === true;
     const needsCloudflare = DEPLOY_SECRETS || DEPLOY_WORKER || DEPLOY_PAGES || DEPLOY_R2 || DEPLOY_DB;
     const needsGCP = DEPLOY_SECRETS || DEPLOY_WORKER;
 
-    if (needsCloudflare || needsGCP) {
-      logger.addStep('Checking prerequisites', 'Validating required tools');
-    }
-    if (needsGCP) {
-      logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
-      logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
-    }
-    if (needsCloudflare) {
-      logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
-      if (DEPLOY_R2) {
-        logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
+    if (!SKIP_CHECKS_UI) {
+      if (needsCloudflare || needsGCP) {
+        logger.addStep('Checking prerequisites', 'Validating required tools');
       }
-      if (DEPLOY_DB) {
-        logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
-        // Migrations run separately via npm run db:migrate
+      if (needsGCP) {
+        logger.addStep('Authenticating with GCP', 'Connecting to Google Cloud');
+        logger.addStep('Checking GCP APIs', 'Verifying Vertex AI and Vision APIs');
       }
-      logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV.namespaceName}`, 'Checking/creating KV namespace');
-      if (DEPLOY_SECRETS) {
-        logger.addStep('Deploying secrets', 'Configuring environment secrets');
-      }
-      if (DEPLOY_WORKER) {
-        logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
-      }
-      if (DEPLOY_PAGES) {
-        logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
+      if (needsCloudflare) {
+        logger.addStep('Setting up Cloudflare credentials', 'Configuring Cloudflare access');
+        if (DEPLOY_R2) {
+          logger.addStep(`[Cloudflare] R2 Bucket: ${config.bucketName}`, 'Checking/creating R2 storage bucket');
+        }
+        if (DEPLOY_DB) {
+          logger.addStep(`[Cloudflare] D1 Database: ${config.databaseName}`, 'Checking/creating D1 database');
+        }
+        logger.addStep(`[Cloudflare] KV Namespace: ${config.promptCacheKV.namespaceName}`, 'Checking/creating KV namespace');
       }
     }
+    if (DEPLOY_SECRETS) logger.addStep('Deploying secrets', 'Configuring environment secrets');
+    if (DEPLOY_WORKER) logger.addStep('Deploying worker', 'Deploying Cloudflare Worker');
+    if (DEPLOY_PAGES) logger.addStep('Deploying frontend', 'Deploying Cloudflare Pages');
     logger.render();
   }
 
@@ -3999,7 +3995,28 @@ async function main() {
   }
   
   logger = new DeploymentLogger();
-  
+
+  if (process.env.DEPLOY_ENV && skipChecks) {
+    const workersOnly = args.includes('--workers-only');
+    const flags = {
+      DEPLOY_SECRETS: workersOnly ? false : !args.includes('--no-secrets'),
+      DEPLOY_DB: workersOnly ? false : !args.includes('--no-db'),
+      DEPLOY_WORKER: !args.includes('--no-worker'),
+      DEPLOY_PAGES: workersOnly ? false : !args.includes('--no-pages'),
+      DEPLOY_R2: workersOnly ? false : !args.includes('--no-r2'),
+      SKIP_CHECKS: true
+    };
+    try {
+      const result = await deploySingleEnvironmentAsChild(process.env.DEPLOY_ENV, process.cwd(), flags);
+      if (logger) logger.renderSummary(result.success ? { workerUrl: result.workerUrl || '', pagesUrl: result.pagesUrl || '' } : null);
+      process.exit(result.success ? 0 : 1);
+    } catch (err) {
+      console.error(err.message || err);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (migrateOnly) {
     logger.addStep('Checking prerequisites', 'Validating required tools');
     logger.addStep('Loading configuration', 'Reading deployment configuration');
