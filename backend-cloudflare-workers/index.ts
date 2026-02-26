@@ -209,6 +209,7 @@ const PROTECTED_MOBILE_APIS = [
   '/aging',
   '/upscaler4k',
   '/remove-object',
+  '/expression',
   '/profiles',
   '/api/products',
   '/api/user/balance',
@@ -855,8 +856,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
@@ -7286,6 +7287,188 @@ export default {
             selfie_id: body?.selfie_id,
             mask_id: body?.mask_id,
             profile_id: body?.profile_id,
+          }
+        });
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle expression endpoint - modify facial expression using predefined prompts
+    if (path === '/expression' && request.method === 'POST') {
+      let body: {
+        selfie_id?: string;
+        selfie_image_url?: string;
+        profile_id?: string;
+        expression: string;
+        aspect_ratio?: string;
+        model?: string | number;
+        provider?: 'vertex' | 'wavespeed';
+      } | undefined;
+      let creditResult: any = null;
+      try {
+        body = await request.json() as typeof body;
+
+        const hasSelfieId = body?.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body?.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body?.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Validate expression type
+        const validExpressions = ['sad', 'laugh', 'smile', 'dimpled_smile', 'open_eye', 'close_eye'];
+        const expressionKey = body?.expression?.trim().toLowerCase().replace(/\s+/g, '_') || '';
+        if (!expressionKey || !validExpressions.includes(expressionKey)) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(`Invalid expression. Must be one of: ${validExpressions.join(', ')}`, 400, debugEnabled ? { expression: body?.expression, path } : undefined, request, env);
+        }
+
+        // Map to config key
+        const expressionPrompt = IMAGE_PROCESSING_PROMPTS.EXPRESSION[expressionKey.toUpperCase()];
+        if (!expressionPrompt) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Expression prompt not configured', 500, debugEnabled ? { expressionKey, path } : undefined, request, env);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Credit deduction
+        creditResult = await deductCredits(DB, body.profile_id, 'expression', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
+        // Resolve selfie image URL
+        let selfieUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'expression');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+          if (!validateImageUrl(selfieUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
+
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
+        const modelParam = body.model;
+
+        const expressionResult = await callNanoBanana(
+          expressionPrompt,
+          selfieUrl,
+          selfieUrl,
+          env,
+          validAspectRatio,
+          modelParam,
+          { skipFacialPreservation: true, provider: body.provider }
+        );
+
+        if (!expressionResult.Success || !expressionResult.ResultImageUrl) {
+          const failureCode = expressionResult.StatusCode || 500;
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(expressionResult) : undefined;
+          const debugPayload = debugEnabled ? compact({ ...flatDebug }) : undefined;
+
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(debugPayload ? { debug: debugPayload } : {}),
+          }, httpStatus, request, env);
+        }
+
+        let resultUrl = expressionResult.ResultImageUrl;
+        if (expressionResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = expressionResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'expression', request);
+
+        // Cache result in KV
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'expression', resultUrl));
+        }
+
+        // Auto-delete selfie after processing
+        if (hasSelfieId && selfieResult) {
+          ctx.waitUntil(deleteSelfieAfterProcessing((selfieResult as any).id, (selfieResult as any).ext, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        const debugEnabled = isDebugEnabled(env);
+        const flatDebug = debugEnabled ? buildFlatDebug(expressionResult) : undefined;
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+            expression: expressionKey,
+          },
+          status: 'success',
+          message: expressionResult.Message || 'Expression modification completed',
+          code: 200,
+          ...(debugEnabled ? { debug: compact({ ...flatDebug }) } : {}),
+        });
+      } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'expression', creditResult.cost, 'Processing error', request);
+        }
+        logCriticalError('/expression', error, request, env, {
+          body: {
+            selfie_id: body?.selfie_id,
+            profile_id: body?.profile_id,
+            expression: body?.expression,
           }
         });
         const debugEnabled = isDebugEnabled(env);

@@ -45,6 +45,9 @@ Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính n
 - POST `/restore`
 - POST `/aging`
 - POST `/upscaler4k`
+- POST `/remove-object`
+- POST `/expression`
+- POST `/upload-url` (type=mask) - Upload mask image
 - POST `/profiles` - Chỉ khi tạo profile mới
 - GET `/profiles/{id}` - Chỉ khi lấy profile theo ID
 - DELETE `/results/{id}` - Xóa result
@@ -113,41 +116,44 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (15 APIs)
+## APIs cần tích hợp với mobile (18 APIs)
 
-**Tổng số API endpoints: 26**
+**Tổng số API endpoints: 29**
 
-### APIs cần tích hợp với mobile (15 APIs)
+### APIs cần tích hợp với mobile (18 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
-2. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
-3. POST `/background` - Tạo nền AI (AI Background)
-4. POST `/enhance` - AI enhance ảnh (cải thiện chất lượng kỹ thuật)
-5. POST `/beauty` - AI beautify ảnh (cải thiện thẩm mỹ khuôn mặt)
-6. POST `/filter` - AI Filter (Styles) - Áp dụng style từ preset lên selfie
-7. POST `/restore` - AI khôi phục và nâng cấp ảnh
-8. POST `/aging` - AI lão hóa khuôn mặt
-9. POST `/upscaler4k` - AI upscale ảnh lên 4K
-10. POST `/profiles` - Tạo profile
-11. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
-12. PUT `/profiles/{id}` - Cập nhật profile
-13. GET `/selfies` - Liệt kê selfies
-14. GET `/results` - Liệt kê results (generated images)
-15. DELETE `/results/{id}` - Xóa result
+2. POST `/upload-url` (type=mask) - Upload mask image (cho remove object)
+3. POST `/faceswap` - Đổi mặt (Face Swap) - luôn dùng Vertex AI, hỗ trợ multiple selfies
+4. POST `/background` - Tạo nền AI (AI Background)
+5. POST `/enhance` - AI enhance ảnh (cải thiện chất lượng kỹ thuật)
+6. POST `/beauty` - AI beautify ảnh (cải thiện thẩm mỹ khuôn mặt)
+7. POST `/filter` - AI Filter (Styles) - Áp dụng style từ preset lên selfie
+8. POST `/restore` - AI khôi phục và nâng cấp ảnh
+9. POST `/aging` - AI lão hóa khuôn mặt
+10. POST `/upscaler4k` - AI upscale ảnh lên 4K
+11. POST `/remove-object` - AI xóa vật thể khỏi ảnh bằng mask
+12. POST `/expression` - AI thay đổi biểu cảm khuôn mặt
+13. POST `/profiles` - Tạo profile
+14. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
+15. PUT `/profiles/{id}` - Cập nhật profile
+16. GET `/selfies` - Liệt kê selfies
+17. GET `/results` - Liệt kê results (generated images)
+18. DELETE `/results/{id}` - Xóa result
 
 ### APIs không cần tích hợp với mobile (11 APIs)
 
-16. GET `/profiles` - Liệt kê profiles
-17. POST `/upload-url` (type=preset) - Upload preset (backend only)
-18. GET `/presets` - Liệt kê presets
-19. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-20. DELETE `/presets/{id}` - Xóa preset
-21. DELETE `/selfies/{id}` - Xóa selfie
-22. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
-23. GET `/thumbnails` - Liệt kê thumbnails
-24. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
-25. GET `/config` - Lấy config
-26. OPTIONS `/*` - CORS preflight requests
+19. GET `/profiles` - Liệt kê profiles
+20. POST `/upload-url` (type=preset) - Upload preset (backend only)
+21. GET `/presets` - Liệt kê presets
+22. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
+23. DELETE `/presets/{id}` - Xóa preset
+24. DELETE `/selfies/{id}` - Xóa selfie
+25. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
+26. GET `/thumbnails` - Liệt kê thumbnails
+27. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+28. GET `/config` - Lấy config
+29. OPTIONS `/*` - CORS preflight requests
 
 ---
 
@@ -474,6 +480,55 @@ Khi ảnh selfie không vượt qua kiểm tra an toàn của Vision API, endpoi
   - `wedding`: Tối đa 2 ảnh (cấu hình qua `SELFIE_MAX_WEDDING`)
   - `4k`/`4K`: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_4K`)
   - Các action khác: Tối đa 1 ảnh (cấu hình qua `SELFIE_MAX_OTHER`)
+
+---
+
+#### 1.1b. POST `/upload-url` (type=mask) - Upload mask image
+
+**Mục đích:** Tải ảnh mask lên server để sử dụng với API `/remove-object`. Mask image là ảnh đen trắng, vùng trắng chỉ định vật thể cần xóa.
+
+**Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/upload-url \
+  -H "X-API-Key: your_api_key_here" \
+  -F "files=@/path/to/mask.png" \
+  -F "type=mask" \
+  -F "profile_id=profile_1234567890"
+```
+
+**Request Parameters:**
+- `files` (file[], required nếu dùng multipart): File ảnh mask.
+- `type` (string, required): Phải là `"mask"`.
+- `profile_id` (string, required): ID profile người dùng.
+
+**Response (Success 200):**
+```json
+{
+  "data": {
+    "results": [
+      {
+        "id": "mask_abc123",
+        "url": "https://resources.d.shotpix.app/faceswap-images/mask/mask_abc123.png",
+        "filename": "mask_abc123.png"
+      }
+    ],
+    "count": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "status": "success",
+  "message": "Processing successful",
+  "code": 200
+}
+```
+
+**Lưu ý:**
+- Mask được lưu vào R2 folder `mask/`
+- Trong database, mask được lưu vào bảng `selfies` với `action = 'remove_object'`
+- Mask sẽ tự động bị xóa sau khi API `/remove-object` xử lý xong
+- Không áp dụng giới hạn số lượng (không có limit enforcement)
 
 ---
 
@@ -1447,6 +1502,143 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
   }
 }
 ```
+
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
+
+---
+
+#### 2.9. POST `/remove-object` - AI Xóa vật thể
+
+**Mục đích:** Xóa vật thể hoặc vùng được chỉ định bằng mask khỏi ảnh, lấp đầy bằng nền tự nhiên.
+
+**Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Quy trình:**
+1. Upload ảnh gốc qua `POST /upload-url` (type=selfie)
+2. Upload mask qua `POST /upload-url` (type=mask) - vùng trắng = xóa, vùng đen = giữ lại
+3. Gọi `POST /remove-object` với selfie_id và mask_id
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/remove-object \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_id": "E0PtVZEio5fctjMd",
+    "mask_id": "mask_abc123",
+    "profile_id": "CbS0w8Ed8ezrlJ7o",
+    "aspect_ratio": "original"
+  }'
+```
+
+**Hoặc dùng URL trực tiếp:**
+```bash
+curl -X POST https://api.d.shotpix.app/remove-object \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
+    "mask_image_url": "https://resources.d.shotpix.app/mask/xyz.webp",
+    "profile_id": "CbS0w8Ed8ezrlJ7o",
+    "aspect_ratio": "original"
+  }'
+```
+
+**Request Parameters:**
+- `selfie_id` (string): ID ảnh gốc (từ upload-url type=selfie). Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh gốc. Không dùng cùng `selfie_id`.
+- `mask_id` (string): ID mask (từ upload-url type=mask). Không dùng cùng `mask_image_url`.
+- `mask_image_url` (string): URL mask. Không dùng cùng `mask_id`.
+- `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỉ lệ khung hình. Mặc định `original`.
+- `model` (string, optional): Model AI. Mặc định `2.5`.
+- `provider` (string, optional): `vertex` hoặc `wavespeed`.
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "result_id",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+  },
+  "status": "success",
+  "message": "Object removal completed",
+  "code": 200
+}
+```
+
+**Lưu ý:** Sau khi xử lý, selfie và mask sẽ tự động bị xóa.
+
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
+
+---
+
+#### 2.10. POST `/expression` - AI Thay đổi biểu cảm
+
+**Mục đích:** Thay đổi biểu cảm khuôn mặt trong ảnh dựa trên loại biểu cảm được chọn.
+
+**Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Danh sách Expression hỗ trợ:**
+
+| Giá trị | Mô tả |
+|---------|-------|
+| `sad` | Buồn - Nét mặt buồn bã, u sầu |
+| `laugh` | Cười lớn - Cười sảng khoái, há miệng |
+| `smile` | Mỉm cười - Nụ cười tự nhiên, ấm áp |
+| `dimpled_smile` | Cười lúm đồng tiền - Nụ cười rộng với lúm đồng tiền |
+| `open_eye` | Mở mắt to - Mắt mở rộng, ngạc nhiên |
+| `close_eye` | Nhắm mắt - Mắt nhẹ nhàng nhắm lại |
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/expression \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_id": "E0PtVZEio5fctjMd",
+    "expression": "smile",
+    "profile_id": "CbS0w8Ed8ezrlJ7o",
+    "aspect_ratio": "original"
+  }'
+```
+
+**Hoặc dùng URL trực tiếp:**
+```bash
+curl -X POST https://api.d.shotpix.app/expression \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
+    "expression": "laugh",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+**Request Parameters:**
+- `selfie_id` (string): ID selfie. Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh. Không dùng cùng `selfie_id`.
+- `expression` (string, required): Loại biểu cảm. Giá trị: `sad`, `laugh`, `smile`, `dimpled_smile`, `open_eye`, `close_eye`.
+- `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỉ lệ khung hình. Mặc định `original`.
+- `model` (string, optional): Model AI. Mặc định `2.5`.
+- `provider` (string, optional): `vertex` hoặc `wavespeed`.
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "result_id",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+    "expression": "smile"
+  },
+  "status": "success",
+  "message": "Expression modification completed",
+  "code": 200
+}
+```
+
+**Lưu ý:** Sau khi xử lý, selfie sẽ tự động bị xóa.
 
 **Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
 
