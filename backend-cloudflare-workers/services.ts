@@ -6,7 +6,7 @@ import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse, Fcm
 // Generate unique mock ID for performance testing mode to avoid database conflicts
 const generateMockId = () => `mock-${nanoid(16)}`;
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, VERTEX_SAFETY_STATUS_CODES, base64UrlEncode } from './utils';
-import { VERTEX_AI_CONFIG, VERTEX_AI_PROMPTS, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG } from './config';
+import { VERTEX_AI_CONFIG, VERTEX_AI_PROMPTS, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, GOOGLE_PLAY_CONFIG } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
 
@@ -3119,6 +3119,161 @@ export const sendResultNotification = async (
     }
   } catch (error) {
     console.error('[FCM] Auto-notify error:', error);
+  }
+};
+
+// ============================================================
+// Google Play Billing Services
+// ============================================================
+
+const getGooglePlayAccessToken = async (env: Env): Promise<string> => {
+  const email = env.GOOGLE_SERVICE_ACCOUNT_EMAIL || env.gcp?.client_email;
+  const key = env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || env.gcp?.private_key;
+  if (!email || !key) throw new Error('Google Play service account not configured');
+  return getAccessToken(email, key, env, GOOGLE_PLAY_CONFIG.SCOPE);
+};
+
+/**
+ * Verify a Google Play consumable purchase (products.get)
+ */
+export const verifyGooglePlayPurchase = async (
+  env: Env,
+  productId: string,
+  purchaseToken: string
+): Promise<{ valid: boolean; purchaseState?: number; acknowledged?: boolean; orderId?: string; raw?: any; error?: string }> => {
+  try {
+    const accessToken = await getGooglePlayAccessToken(env);
+    const packageName = env.GOOGLE_PLAY_PACKAGE_NAME;
+    if (!packageName) return { valid: false, error: 'GOOGLE_PLAY_PACKAGE_NAME not configured' };
+
+    const url = GOOGLE_PLAY_CONFIG.ENDPOINTS.PURCHASES_PRODUCTS(packageName, productId, purchaseToken);
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return { valid: false, error: `Google Play API ${resp.status}: ${errText}` };
+    }
+
+    const data = await resp.json() as any;
+    return {
+      valid: data.purchaseState === GOOGLE_PLAY_CONFIG.PURCHASE_STATE.PURCHASED,
+      purchaseState: data.purchaseState,
+      acknowledged: data.acknowledgementState === GOOGLE_PLAY_CONFIG.ACKNOWLEDGEMENT_STATE.ACKNOWLEDGED,
+      orderId: data.orderId,
+      raw: data,
+    };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+/**
+ * Acknowledge a Google Play consumable purchase
+ */
+export const acknowledgeGooglePlayPurchase = async (
+  env: Env,
+  productId: string,
+  purchaseToken: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const accessToken = await getGooglePlayAccessToken(env);
+    const packageName = env.GOOGLE_PLAY_PACKAGE_NAME;
+    if (!packageName) return { success: false, error: 'GOOGLE_PLAY_PACKAGE_NAME not configured' };
+
+    const url = GOOGLE_PLAY_CONFIG.ENDPOINTS.PURCHASES_PRODUCTS_ACKNOWLEDGE(packageName, productId, purchaseToken);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return { success: false, error: `Acknowledge failed ${resp.status}: ${errText}` };
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+/**
+ * Verify a Google Play subscription (subscriptionsv2.get)
+ */
+export const verifyGooglePlaySubscription = async (
+  env: Env,
+  subscriptionId: string,
+  purchaseToken: string
+): Promise<{ valid: boolean; expiryTimeMillis?: string; autoRenewing?: boolean; acknowledged?: boolean; paymentState?: number; raw?: any; error?: string }> => {
+  try {
+    const accessToken = await getGooglePlayAccessToken(env);
+    const packageName = env.GOOGLE_PLAY_PACKAGE_NAME;
+    if (!packageName) return { valid: false, error: 'GOOGLE_PLAY_PACKAGE_NAME not configured' };
+
+    const url = GOOGLE_PLAY_CONFIG.ENDPOINTS.PURCHASES_SUBSCRIPTIONS(packageName, subscriptionId, purchaseToken);
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return { valid: false, error: `Google Play API ${resp.status}: ${errText}` };
+    }
+
+    const data = await resp.json() as any;
+    // subscriptionsv2 returns lineItems with expiryTime
+    const lineItem = data.lineItems?.[0];
+    const expiryTime = lineItem?.expiryTime || data.expiryTime;
+    const isActive = data.subscriptionState === 'SUBSCRIPTION_STATE_ACTIVE' ||
+                     data.subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD';
+
+    return {
+      valid: isActive,
+      expiryTimeMillis: expiryTime,
+      autoRenewing: data.autoRenewEnabled ?? true,
+      acknowledged: data.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED',
+      raw: data,
+    };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+/**
+ * Acknowledge a Google Play subscription
+ */
+export const acknowledgeGooglePlaySubscription = async (
+  env: Env,
+  subscriptionId: string,
+  purchaseToken: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const accessToken = await getGooglePlayAccessToken(env);
+    const packageName = env.GOOGLE_PLAY_PACKAGE_NAME;
+    if (!packageName) return { success: false, error: 'GOOGLE_PLAY_PACKAGE_NAME not configured' };
+
+    const url = GOOGLE_PLAY_CONFIG.ENDPOINTS.PURCHASES_SUBSCRIPTIONS_ACKNOWLEDGE(packageName, subscriptionId, purchaseToken);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return { success: false, error: `Acknowledge failed ${resp.status}: ${errText}` };
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 };
 

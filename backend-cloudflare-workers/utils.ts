@@ -1218,7 +1218,8 @@ const getTokenCacheKey = (serviceAccountEmail: string): string => {
 export const getAccessToken = async (
   serviceAccountEmail: string,
   privateKey: string,
-  env: Env
+  env: Env,
+  scope: string = 'https://www.googleapis.com/auth/cloud-platform'
 ): Promise<string> => {
   const cacheKey = getTokenCacheKey(serviceAccountEmail);
   const now = Math.floor(Date.now() / 1000);
@@ -1252,7 +1253,7 @@ export const getAccessToken = async (
     aud: 'https://oauth2.googleapis.com/token',
     exp: expiry,
     iat: now,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    scope,
   };
 
   // Encode header and claim set
@@ -1457,4 +1458,41 @@ export const calculateOptimalSize = (
     height: newHeight,
     sizeString: `${newWidth}x${newHeight}`,
   };
+};
+
+// ============================================================
+// Payment & Credit System Utilities
+// ============================================================
+
+/**
+ * Get credit cost for an action, applying tier multiplier.
+ * All values come from env vars (CREDIT_COST_*, TIER_MULTIPLIER_*).
+ */
+export const getCreditCost = (action: string, tier: string, env: Env): number => {
+  const costKey = `CREDIT_COST_${action.toUpperCase()}`;
+  const baseCost = parseInt(env[costKey] || '1', 10);
+
+  const multiplierKey = `TIER_MULTIPLIER_${tier.toUpperCase()}`;
+  const multiplier = parseFloat(env[multiplierKey] || '1.0');
+
+  return Math.max(1, Math.ceil(baseCost * multiplier));
+};
+
+/**
+ * Write an entry to the audit_log table.
+ */
+export const auditLog = async (
+  db: D1Database,
+  profileId: string,
+  action: string,
+  details: Record<string, any> | null,
+  ipAddress: string | null
+): Promise<void> => {
+  try {
+    await db.prepare(
+      'INSERT INTO audit_log (profile_id, action, details, ip_address) VALUES (?, ?, ?, ?)'
+    ).bind(profileId, action, details ? JSON.stringify(details) : null, ipAddress).run();
+  } catch (error) {
+    console.error('[AuditLog] Failed to write:', error instanceof Error ? error.message : String(error));
+  }
 };

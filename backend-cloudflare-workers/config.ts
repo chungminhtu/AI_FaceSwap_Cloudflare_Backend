@@ -61,6 +61,10 @@ export const IMAGE_PROCESSING_PROMPTS = {
   // Restoration prompt - for old/damaged photos, black and white to color conversion
   RESTORE: 'Restore this old or damaged photo. If the image is black and white or sepia, colorize it with realistic, natural colors appropriate for the era and subject matter. Fix all damage including scratches, tears, fading, stains, creases, and degradation. Remove noise, dust, and artifacts. Enhance clarity and sharpness while preserving the original composition. Restore faded areas and improve overall quality. Output a fully restored, colorized (if applicable), high-quality version of the original photo.',
   // AGING: Removed - now uses prompt_json from preset (like /filter endpoint)
+
+  // Remove object prompt - uses mask to identify and remove unwanted objects from image
+  // image1 = original photo, image2 = mask (white = area to remove, black = keep)
+  REMOVE_OBJECT: 'Remove the object or area indicated by the white region in the mask image. Fill the removed area with a natural, seamless continuation of the surrounding background. Preserve the original image quality, lighting, perspective, and style. The result should look like the object was never there. Do not alter any part of the image outside the masked area.',
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings
@@ -350,6 +354,65 @@ export const DEFAULT_VALUES = {
   UPSCALER_MIME_TYPE: 'image/png',
   UPSCALER_TARGET_RESOLUTION: '4k',
   UPSCALER_OUTPUT_FORMAT: 'jpeg',
+};
+
+// Google Play Billing Configuration
+export const GOOGLE_PLAY_CONFIG = {
+  // Android Publisher API scope
+  SCOPE: 'https://www.googleapis.com/auth/androidpublisher',
+
+  // API Endpoints
+  ENDPOINTS: {
+    PURCHASES_PRODUCTS: (packageName: string, productId: string, token: string) =>
+      `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${token}`,
+    PURCHASES_PRODUCTS_ACKNOWLEDGE: (packageName: string, productId: string, token: string) =>
+      `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/${productId}/tokens/${token}:acknowledge`,
+    PURCHASES_SUBSCRIPTIONS: (packageName: string, subscriptionId: string, token: string) =>
+      `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/${token}`,
+    PURCHASES_SUBSCRIPTIONS_ACKNOWLEDGE: (packageName: string, subscriptionId: string, token: string) =>
+      `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/${subscriptionId}/tokens/${token}:acknowledge`,
+  },
+
+  // Google Play RTDN (Real-Time Developer Notification) types
+  // Ref: https://developer.android.com/google/play/billing/rtdn-reference
+  NOTIFICATION_TYPES: {
+    // Subscription notifications
+    SUBSCRIPTION_RECOVERED: 1,          // Recovered from account hold/grace
+    SUBSCRIPTION_RENEWED: 2,            // Auto-renewal successful
+    SUBSCRIPTION_CANCELED: 3,           // User or developer canceled
+    SUBSCRIPTION_PURCHASED: 4,          // New subscription purchase
+    SUBSCRIPTION_ON_HOLD: 5,            // Account hold (after grace, payment still failed)
+    SUBSCRIPTION_IN_GRACE_PERIOD: 6,    // Payment declined, grace period started
+    SUBSCRIPTION_RESTARTED: 7,          // User re-subscribed before expiry (un-cancel)
+    SUBSCRIPTION_PRICE_CHANGE_CONFIRMED: 8, // DEPRECATED
+    SUBSCRIPTION_DEFERRED: 9,           // Entitlement extended by developer
+    SUBSCRIPTION_PAUSED: 10,            // Pause took effect
+    SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED: 11, // Pause scheduled/changed
+    SUBSCRIPTION_REVOKED: 12,           // Chargeback/fraud/developer revoked
+    SUBSCRIPTION_EXPIRED: 13,           // Subscription fully expired
+    SUBSCRIPTION_ITEMS_CHANGED: 17,     // Upgrade/downgrade
+    SUBSCRIPTION_CANCELLATION_SCHEDULED: 18, // Installment cancellation scheduled
+    SUBSCRIPTION_PRICE_CHANGE_UPDATED: 19,   // Price change notification
+    SUBSCRIPTION_PENDING_PURCHASE_CANCELED: 20, // Pending purchase canceled
+    SUBSCRIPTION_PRICE_STEP_UP_CONSENT_UPDATED: 22, // KR region price step-up
+
+    // One-time product notifications
+    ONE_TIME_PRODUCT_PURCHASED: 1,
+    ONE_TIME_PRODUCT_CANCELED: 2,
+  },
+
+  // Purchase states
+  PURCHASE_STATE: {
+    PURCHASED: 0,
+    CANCELED: 1,
+    PENDING: 2,
+  },
+
+  // Acknowledgement states
+  ACKNOWLEDGEMENT_STATE: {
+    NOT_ACKNOWLEDGED: 0,
+    ACKNOWLEDGED: 1,
+  },
 };
 
 // FCM HTTP v1 Configuration

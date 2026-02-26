@@ -3,11 +3,11 @@
 import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
-import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, sendFcmSilentPush, sendResultNotification } from './services';
+import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest, DepositRequest, SubscriptionVerifyRequest, BalanceResponse } from './types';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
-import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS } from './config';
+import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
 
 // Retry helper for Vertex AI prompt generation - MUST succeed before uploading to R2
 const generateVertexPromptWithRetry = async (
@@ -176,6 +176,28 @@ const checkApiKey = (env: Env, request: Request): boolean => {
   return constantTimeCompare(apiKey, env.MOBILE_API_KEY);
 };
 
+// Profile token: HMAC-SHA256 binding profile_id to a secret, prevents profile_id spoofing.
+// Client receives profile_token on profile creation, must send it as X-Profile-Token header.
+// Enable via ENABLE_PROFILE_TOKEN_AUTH=true
+const generateProfileToken = async (profileId: string, secret: string): Promise<string> => {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(profileId));
+  return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=+$/, '');
+};
+
+const verifyProfileToken = async (profileId: string, token: string, secret: string): Promise<boolean> => {
+  const expected = await generateProfileToken(profileId, secret);
+  return constantTimeCompare(token, expected);
+};
+
+const checkProfileToken = async (env: Env, request: Request, profileId: string | null): Promise<boolean> => {
+  if (env.ENABLE_PROFILE_TOKEN_AUTH !== 'true') return true;
+  if (!profileId || !env.PROFILE_TOKEN_SECRET) return true; // Skip if not configured
+  const token = request.headers.get('X-Profile-Token');
+  if (!token) return false;
+  return verifyProfileToken(profileId, token, env.PROFILE_TOKEN_SECRET);
+};
+
 const PROTECTED_MOBILE_APIS = [
   '/upload-url',
   '/faceswap',
@@ -186,7 +208,13 @@ const PROTECTED_MOBILE_APIS = [
   '/restore',
   '/aging',
   '/upscaler4k',
+  '/remove-object',
   '/profiles',
+  '/api/products',
+  '/api/user/balance',
+  '/api/deposit',
+  '/api/subscription/verify',
+  '/api/subscription/status',
 ];
 
 const checkRequestSize = (request: Request, maxSizeBytes: number): { valid: boolean; error?: string } => {
@@ -256,6 +284,103 @@ const resolveAspectRatioForNonFaceswap = async (
   env: Env
 ): Promise<string> => {
   return resolveAspectRatio(aspectRatio, selfieImageUrl, env, { allowOriginal: true });
+};
+
+// Credit deduction helpers (saga pattern: deduct before AI, refund on failure)
+const isCreditSystemEnabled = (env: Env): boolean => env.ENABLE_CREDIT_SYSTEM === 'true';
+
+const CYCLE_DURATION_SECONDS = 30 * 86400; // 30 days
+
+const deductCredits = async (
+  db: D1Database, profileId: string, action: string, env: Env, request: Request
+): Promise<{ success: boolean; cost: number; balance: number; error?: string }> => {
+  if (!isCreditSystemEnabled(env)) return { success: true, cost: 0, balance: 0 };
+
+  // Verify profile token binding (prevents profile_id spoofing)
+  if (!(await checkProfileToken(env, request, profileId))) {
+    return { success: false, cost: 0, balance: 0, error: 'Invalid profile token' };
+  }
+
+  const profile = await db.prepare('SELECT sub_point_remaining, consumable_point_remaining, is_banned FROM profiles WHERE id = ?').bind(profileId).first() as any;
+  if (!profile) return { success: false, cost: 0, balance: 0, error: 'Profile not found' };
+  if (profile.is_banned) return { success: false, cost: 0, balance: 0, error: 'Account is banned' };
+
+  // Step 1-2: Check subscription status (include ON_HOLD to detect and zero out sub points)
+  const sub = await db.prepare(
+    'SELECT id, status, expires_at, last_reset_at, points_per_cycle, cycle_count_used FROM subscriptions WHERE profile_id = ? AND status IN (\'ACTIVE\', \'GRACE\', \'ON_HOLD\') ORDER BY created_at DESC LIMIT 1'
+  ).bind(profileId).first() as any;
+
+  const now = Math.floor(Date.now() / 1000);
+  let subPoints = profile.sub_point_remaining;
+
+  if (sub) {
+    // ON_HOLD → user lost access, zero sub points
+    if (sub.status === 'ON_HOLD') {
+      if (subPoints > 0) {
+        await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
+        subPoints = 0;
+      }
+    }
+    // Step 2: Grace period expired → mark EXPIRED, zero out sub points
+    else if (sub.status === 'GRACE' && now > sub.expires_at) {
+      await db.prepare('UPDATE subscriptions SET status = \'EXPIRED\', updated_at = unixepoch() WHERE id = ?').bind(sub.id).run();
+      await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
+      subPoints = 0;
+    }
+    // Step 3: Active → lazy reset if now >= last_reset_at + 30 days
+    else if (sub.status === 'ACTIVE' && now >= sub.last_reset_at + CYCLE_DURATION_SECONDS) {
+      subPoints = sub.points_per_cycle;
+      await db.prepare('UPDATE profiles SET sub_point_remaining = ?, updated_at = ? WHERE id = ?').bind(subPoints, now.toString(), profileId).run();
+      await db.prepare('UPDATE subscriptions SET last_reset_at = ?, cycle_count_used = cycle_count_used + 1, updated_at = unixepoch() WHERE id = ?').bind(now, sub.id).run();
+      await auditLog(db, profileId, 'SUB_LAZY_RESET', { points_per_cycle: sub.points_per_cycle, cycle: sub.cycle_count_used + 1 }, null);
+    }
+  } else {
+    // No active/grace subscription → sub points should be 0
+    if (subPoints > 0) {
+      await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
+      subPoints = 0;
+    }
+  }
+
+  // Determine cost (use 'subscriber' tier if active/grace sub with access, else 'free')
+  const hasAccess = sub && (sub.status === 'ACTIVE' || (sub.status === 'GRACE' && now <= sub.expires_at));
+  const tier = hasAccess ? 'subscriber' : 'free';
+  const cost = getCreditCost(action, tier, env);
+  const totalAvailable = subPoints + profile.consumable_point_remaining;
+
+  // Step 4: Fail fast
+  if (totalAvailable < cost) {
+    return { success: false, cost, balance: totalAvailable, error: `Insufficient credits. Need ${cost}, have ${totalAvailable}` };
+  }
+
+  // Step 5: Deduct sub first, remainder from consumable — ATOMIC with WHERE guard
+  const fromSub = Math.min(subPoints, cost);
+  const fromConsumable = cost - fromSub;
+
+  const result = await db.prepare(
+    'UPDATE profiles SET sub_point_remaining = sub_point_remaining - ?, consumable_point_remaining = consumable_point_remaining - ?, total_credits_spent = total_credits_spent + ?, updated_at = ? WHERE id = ? AND sub_point_remaining >= ? AND consumable_point_remaining >= ?'
+  ).bind(fromSub, fromConsumable, cost, now.toString(), profileId, fromSub, fromConsumable).run();
+
+  if (!result.meta?.changes || result.meta.changes === 0) {
+    // Race condition: another request deducted between our read and write
+    return { success: false, cost, balance: 0, error: 'Insufficient credits (concurrent request)' };
+  }
+
+  const ip = request.headers.get('cf-connecting-ip') || null;
+  await auditLog(db, profileId, 'CREDIT_DEDUCT', { action, cost, from_sub: fromSub, from_consumable: fromConsumable, balance_before: totalAvailable }, ip);
+
+  return { success: true, cost, balance: totalAvailable - cost };
+};
+
+const refundCredits = async (
+  db: D1Database, profileId: string, action: string, cost: number, reason: string, request: Request
+): Promise<void> => {
+  if (cost <= 0) return;
+  // Refund always goes to consumable points (simpler, always available)
+  await db.prepare('UPDATE profiles SET consumable_point_remaining = consumable_point_remaining + ?, total_credits_spent = total_credits_spent - ?, updated_at = ? WHERE id = ?')
+    .bind(cost, cost, Math.floor(Date.now() / 1000).toString(), profileId).run();
+  const ip = request.headers.get('cf-connecting-ip') || null;
+  await auditLog(db, profileId, 'CREDIT_REFUND', { action, cost, reason }, ip);
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
@@ -683,7 +808,7 @@ const extractR2KeyFromUrl = (url: string): string | null => {
 
 // Removed redundant wrapper functions - use getR2PublicUrl directly
 
-const reconstructR2Key = (id: string, ext: string, prefix: 'selfie' | 'preset' | 'results'): string => {
+const reconstructR2Key = (id: string, ext: string, prefix: 'selfie' | 'preset' | 'results' | 'mask'): string => {
   return `${prefix}/${id}.${ext}`;
 };
 
@@ -730,8 +855,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
@@ -917,6 +1042,9 @@ export default {
       if (path.startsWith('/profiles/') && path.split('/').length === 3) {
         return method === 'GET';
       }
+      if (path.startsWith('/api/deposit/status/')) {
+        return true;
+      }
       return PROTECTED_MOBILE_APIS.includes(path);
     };
 
@@ -1088,9 +1216,9 @@ export default {
         }
         type = type.trim(); // Normalize
 
-        if (type !== 'preset' && type !== 'selfie') {
+        if (type !== 'preset' && type !== 'selfie' && type !== 'mask') {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('type must be either "preset" or "selfie"', 400, debugEnabled ? { type, path } : undefined, request, env);
+          return errorResponse('type must be "preset", "selfie", or "mask"', 400, debugEnabled ? { type, path } : undefined, request, env);
         }
 
         // Log parsed parameters for debugging
@@ -1106,7 +1234,7 @@ export default {
           customPromptLength: type === 'preset' ? (customPromptText?.length || 0) : undefined
         });
 
-        if (type === 'selfie' && !checkApiKey(env, request)) {
+        if ((type === 'selfie' || type === 'mask') && !checkApiKey(env, request)) {
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
             data: null,
@@ -1184,7 +1312,7 @@ export default {
           let existingExt: string | null = null;
           let isOverride = false;
 
-          if (type === 'selfie' && fileData.filename && profileId) {
+          if ((type === 'selfie' || type === 'mask') && fileData.filename && profileId) {
             const existingResult = await DB.prepare(
               'SELECT id, ext FROM selfies WHERE profile_id = ? AND filename = ? LIMIT 1'
             ).bind(profileId, fileData.filename).first();
@@ -1696,6 +1824,67 @@ export default {
             }
 
             return response;
+          } else if (type === 'mask') {
+            // Mask upload for remove_object API - store in mask/ folder in R2
+            // Reuse selfies table with action = 'remove_object'
+            const actionValue = 'remove_object';
+
+            const validId = String(id || '').trim();
+            const validExt = String(ext || 'jpg').trim();
+            const validProfileId = String(profileId || '').trim();
+            const validFilename = fileData.filename || null;
+            const validCreatedAt = (typeof createdAt === 'number' && !isNaN(createdAt) && createdAt > 0)
+              ? Math.floor(createdAt)
+              : Math.floor(Date.now() / 1000);
+
+            // Get dimensions for this specific file (by index)
+            const fileDimensions = dimensionsArray[index] || null;
+
+            try {
+              let dbResult;
+              if (isOverride) {
+                dbResult = await DB.prepare(
+                  'UPDATE selfies SET ext = ?, action = ?, dimensions = ?, created_at = ? WHERE id = ? AND profile_id = ?'
+                ).bind(validExt, actionValue, fileDimensions, validCreatedAt, validId, validProfileId).run();
+              } else {
+                dbResult = await DB.prepare(
+                  'INSERT INTO selfies (id, ext, profile_id, action, filename, dimensions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                ).bind(validId, validExt, validProfileId, actionValue, validFilename, fileDimensions, validCreatedAt).run();
+              }
+
+              if (!dbResult.success) {
+                return {
+                  success: false,
+                  error: isOverride ? 'Database update failed' : 'Database insert failed',
+                  filename: fileData.filename
+                };
+              }
+            } catch (dbError) {
+              console.error('[Mask Upload] Database error:', {
+                error: dbError instanceof Error ? dbError.message : String(dbError),
+                id: validId, profile_id: validProfileId
+              });
+              return {
+                success: false,
+                error: `Database error: ${dbError instanceof Error ? dbError.message : String(dbError)}`,
+                filename: fileData.filename
+              };
+            }
+
+            const response: any = {
+              success: true,
+              url: publicUrl,
+              id: id,
+              filename: `${id}.${ext}`,
+              action: actionValue
+            };
+
+            const debugEnabled = isDebugEnabled(env);
+            if (debugEnabled && cdnPurgeResult) {
+              response.cdnPurge = cdnPurgeResult;
+            }
+
+            return response;
           }
 
           return { success: true, url: publicUrl };
@@ -1703,8 +1892,8 @@ export default {
 
         // Process files: presets with controlled parallelism (avoid overwhelming system), selfies sequentially (enforce limits without race conditions)
         let results: any[] = [];
-        if (type === 'preset') {
-          // Presets can be processed with controlled parallelism - no limit enforcement conflicts
+        if (type === 'preset' || type === 'mask') {
+          // Presets and masks can be processed with controlled parallelism - no limit enforcement conflicts
           // Limit to 5 concurrent uploads to prevent system overload with large zip files
           const PRESET_CONCURRENCY_LIMIT = 5;
           results = await promisePoolWithConcurrency(
@@ -3305,9 +3494,14 @@ export default {
           updated_at: new Date().toISOString()
         };
 
+        // Generate profile_token for auth binding (if PROFILE_TOKEN_SECRET configured)
+        const profileToken = env.PROFILE_TOKEN_SECRET
+          ? await generateProfileToken(profileId, env.PROFILE_TOKEN_SECRET)
+          : undefined;
+
         const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
-          data: profile,
+          data: { ...profile, ...(profileToken ? { profile_token: profileToken } : {}) },
           status: 'success',
           message: 'Profile created successfully',
           code: 200,
@@ -4515,6 +4709,7 @@ export default {
       };
 
       let body: FaceSwapRequest | undefined;
+      let creditResult: any = null;
       try {
         try {
           const rawBody = await request.text();
@@ -4567,12 +4762,18 @@ export default {
           return errorResponse('', 400, { error: requestError, path, body: { preset_image_id: body?.preset_image_id, profile_id: body?.profile_id, selfie_ids: body?.selfie_ids } }, request, env);
         }
 
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'faceswap', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         // Extract validated values (validateRequest already confirmed they exist and are correct types)
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
         const hasPresetId = body.preset_image_id && typeof body.preset_image_id === 'string' && body.preset_image_id.trim() !== '';
         const hasPresetUrl = body.preset_image_url && typeof body.preset_image_url === 'string' && body.preset_image_url.trim() !== '';
-        
+
         console.log('[Faceswap] All validations passed, proceeding to database queries', { hasPresetId, hasPresetUrl, hasSelfieIds, hasSelfieUrls });
         
         if (hasSelfieUrls && body.selfie_image_urls) {
@@ -5101,6 +5302,10 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
+        // Refund credits on failure
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'faceswap', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/faceswap', error, request, env, {
           body: {
             preset_image_id: body?.preset_image_id,
@@ -5111,9 +5316,9 @@ export default {
           }
         });
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return errorResponse('', 500, { 
-          error: errorMsg, 
-          path, 
+        return errorResponse('', 500, {
+          error: errorMsg,
+          path,
           ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {})
         }, request, env);
       }
@@ -5122,6 +5327,7 @@ export default {
     // Handle background endpoint
     if (path === '/background' && request.method === 'POST') {
       let body: BackgroundRequest | undefined;
+      let creditResult: any = null;
       try {
         body = await request.json() as BackgroundRequest;
 
@@ -5168,6 +5374,12 @@ export default {
         const DB = getD1Database(env);
         const R2_BUCKET = getR2Bucket(env);
         const requestUrl = new URL(request.url);
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'background', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
 
         // Optimize database queries: validate profile, preset, and selfie in parallel with JOINs where applicable
         const queries: Promise<any>[] = [
@@ -5545,6 +5757,9 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/background', error, request, env, {
           body: {
             preset_image_id: body?.preset_image_id,
@@ -5564,6 +5779,7 @@ export default {
     // Handle upscaler4k endpoint
     if (path === '/upscaler4k' && request.method === 'POST') {
       let body: { image_url: string; profile_id?: string; aspect_ratio?: string } | undefined;
+      let creditResult: any = null;
       try {
         body = await request.json() as { image_url: string; profile_id?: string; aspect_ratio?: string };
         
@@ -5614,6 +5830,12 @@ export default {
           }
           const selfieAction = selfieCheck.action?.toLowerCase();
           return errorResponse('Only selfies with action="4k" or "4K" can be used for 4K upscaling', 400, debugEnabled ? { selfieId, selfieAction, path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'upscaler4k', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
 
         const envError = validateEnv(env, 'vertex');
@@ -5671,6 +5893,9 @@ export default {
           ...(debugPayload ? { debug: debugPayload } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'upscaler4k', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/upscaler4k', error, request, env, {
           body: {
             image_url: body?.image_url,
@@ -5686,6 +5911,7 @@ export default {
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
       let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let creditResult: any = null;
       try {
         body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
@@ -5715,6 +5941,12 @@ export default {
         if (!profileCheck) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'enhance', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
 
         // Resolve selfie image URL
@@ -5884,6 +6116,9 @@ export default {
           }) } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'enhance', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/enhance', error, request, env, {
           body: {
             image_url: body?.image_url,
@@ -5900,6 +6135,7 @@ export default {
     // Handle beauty endpoint
     if (path === '/beauty' && request.method === 'POST') {
       let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let creditResult: any = null;
       try {
         body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
@@ -5929,6 +6165,12 @@ export default {
         if (!profileCheck) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'beauty', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
 
         // Resolve selfie image URL
@@ -6078,6 +6320,9 @@ export default {
           }) } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'beauty', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/beauty', error, request, env, {
           body: {
             selfie_id: body?.selfie_id,
@@ -6111,6 +6356,7 @@ export default {
         model?: string | number;
         additional_prompt?: string;
       } | undefined;
+      let creditResult: any = null;
       try {
         body = await request.json() as typeof body;
         if (!body || typeof body !== 'object') {
@@ -6144,6 +6390,12 @@ export default {
         }
         if (hasSelfieId && hasSelfieUrl) {
           return errorResponse('Cannot provide both selfie_id and selfie_image_url/image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'filter', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
 
         if (hasPresetId) {
@@ -6317,6 +6569,9 @@ export default {
           ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false } }) } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/filter', error, request, env, { body: { profile_id: body?.profile_id, preset_image_id: body?.preset_image_id } });
         const errMsg = error instanceof Error ? error.message : String(error);
         return errorResponse('Internal server error', 500, debugEnabled ? { error: errMsg, path } : undefined, request, env);
@@ -6326,6 +6581,7 @@ export default {
     // Handle restore endpoint
     if (path === '/restore' && request.method === 'POST') {
       let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let creditResult: any = null;
       try {
         body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
@@ -6354,6 +6610,12 @@ export default {
         if (!profileCheck) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'restore', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
 
         // Resolve selfie image URL
@@ -6478,6 +6740,9 @@ export default {
           }) } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'restore', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/restore', error, request, env, {
           body: {
             selfie_id: body?.selfie_id,
@@ -6506,6 +6771,7 @@ export default {
         additional_prompt?: string;
         provider?: 'vertex' | 'wavespeed';
       } | undefined;
+      let creditResult: any = null;
 
       try {
         body = await request.json() as typeof body;
@@ -6582,6 +6848,12 @@ export default {
           } catch {
             // Not an R2 URL, continue without r2Key
           }
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'aging', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
 
         // Resolve selfie image URL
@@ -6780,6 +7052,9 @@ export default {
           ...(debugEnabled && flatDebug ? { debug: compact({ ...flatDebug }) } : {}),
         });
       } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'aging', creditResult.cost, 'Processing error', request);
+        }
         logCriticalError('/aging', error, request, env, {
           body: {
             preset_image_id: body?.preset_image_id,
@@ -6788,6 +7063,232 @@ export default {
             aspect_ratio: body?.aspect_ratio
           }
         });
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle remove-object endpoint - removes objects from image using mask
+    if (path === '/remove-object' && request.method === 'POST') {
+      let body: {
+        selfie_id?: string;
+        selfie_image_url?: string;
+        mask_id?: string;
+        mask_image_url?: string;
+        profile_id?: string;
+        aspect_ratio?: string;
+        model?: string | number;
+        provider?: 'vertex' | 'wavespeed';
+      } | undefined;
+      let creditResult: any = null;
+      try {
+        body = await request.json() as typeof body;
+
+        const hasSelfieId = body?.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body?.selfie_image_url && body.selfie_image_url.trim() !== '';
+        const hasMaskId = body?.mask_id && body.mask_id.trim() !== '';
+        const hasMaskUrl = body?.mask_image_url && body.mask_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!hasMaskId && !hasMaskUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: mask_id or mask_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasMaskId && hasMaskUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both mask_id and mask_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body?.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'remove_object', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
+        // Resolve selfie (original) image URL
+        let selfieUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'remove_object');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+          if (!validateImageUrl(selfieUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid selfie image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        // Resolve mask image URL
+        let maskUrl: string = '';
+        let maskResult: any = null;
+
+        if (hasMaskId) {
+          maskResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.mask_id, body.profile_id).first();
+
+          if (!maskResult) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Mask not found or does not belong to profile', 404, debugEnabled ? { maskId: body.mask_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const maskR2Key = reconstructR2Key((maskResult as any).id, (maskResult as any).ext, 'mask');
+          maskUrl = getR2PublicUrl(env, maskR2Key, requestUrl.origin);
+        } else {
+          maskUrl = body.mask_image_url!;
+          if (!validateImageUrl(maskUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid mask image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        const envError = validateEnv(env, 'vertex');
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
+
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
+        const modelParam = body.model;
+        const effectiveProvider = getEffectiveProvider(body, env, 'REMOVE_OBJECT');
+
+        // Call AI with original image + mask image
+        // image sources: [original, mask] - the prompt tells the model to use the mask
+        const removeResult = await callNanoBanana(
+          IMAGE_PROCESSING_PROMPTS.REMOVE_OBJECT,
+          selfieUrl,
+          [selfieUrl, maskUrl],
+          env,
+          validAspectRatio,
+          modelParam,
+          { skipFacialPreservation: true, provider: body.provider }
+        );
+
+        if (!removeResult.Success || !removeResult.ResultImageUrl) {
+          const failureCode = removeResult.StatusCode || 500;
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(removeResult) : undefined;
+          const debugPayload = debugEnabled ? compact({ ...flatDebug }) : undefined;
+
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(debugPayload ? { debug: debugPayload } : {}),
+          }, httpStatus, request, env);
+        }
+
+        let resultUrl = removeResult.ResultImageUrl;
+        if (removeResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = removeResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove_object', request);
+
+        // Cache result in KV for retry handling
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'remove_object', resultUrl));
+        }
+
+        // Auto-delete selfie after processing
+        if (hasSelfieId && selfieResult) {
+          ctx.waitUntil(deleteSelfieAfterProcessing((selfieResult as any).id, (selfieResult as any).ext, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        // Auto-delete mask after processing
+        if (hasMaskId && maskResult) {
+          const maskId = (maskResult as any).id;
+          const maskExt = (maskResult as any).ext;
+          // Delete mask from DB and R2
+          ctx.waitUntil((async () => {
+            try {
+              await DB.prepare('DELETE FROM selfies WHERE id = ?').bind(maskId).run();
+              const maskR2Key = reconstructR2Key(maskId, maskExt, 'mask');
+              await R2_BUCKET.delete(maskR2Key);
+              console.log(`[RemoveObject] Auto-deleted mask ${maskId}`);
+            } catch (e) {
+              console.error(`[RemoveObject] Failed to auto-delete mask ${maskId}:`, e);
+            }
+          })());
+        }
+
+        const debugEnabled = isDebugEnabled(env);
+        const flatDebug = debugEnabled ? buildFlatDebug(removeResult) : undefined;
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: removeResult.Message || 'Object removal completed',
+          code: 200,
+          ...(debugEnabled ? { debug: compact({ ...flatDebug }) } : {}),
+        });
+      } catch (error) {
+        if (body?.profile_id) {
+          try { await refundCredits(DB, body.profile_id, 'remove_object', 0, 'Processing error', request); } catch (_) {}
+        }
+        logCriticalError('/remove-object', error, request, env, {
+          body: {
+            selfie_id: body?.selfie_id,
+            mask_id: body?.mask_id,
+            profile_id: body?.profile_id,
+          }
+        });
+        const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message : String(error);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
       }
@@ -6859,6 +7360,477 @@ export default {
       }, 200, request, env);
     }
 
+    // ============================================================
+    // Payment & Credit System Endpoints
+    // ============================================================
+
+    // GET /api/products - List active SKUs
+    if (path === '/api/products' && request.method === 'GET') {
+      try {
+        const products = await DB.prepare('SELECT sku, type, credits, points_per_cycle, name, description, price_micros, currency FROM products WHERE is_active = 1 ORDER BY type, price_micros').all();
+        return jsonResponse({ data: products.results, status: 'success', code: 200 }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/products', error, request, env);
+        return errorResponse('Failed to fetch products', 500, undefined, request, env);
+      }
+    }
+
+    // GET /api/user/balance - Get user dual credits + subscription status
+    if (path === '/api/user/balance' && request.method === 'GET') {
+      const profileId = requestUrl.searchParams.get('profile_id');
+      if (!profileId) return errorResponse('profile_id is required', 400, undefined, request, env);
+      try {
+        const row = await DB.prepare('SELECT sub_point_remaining, consumable_point_remaining, total_credits_purchased, total_credits_spent FROM profiles WHERE id = ?').bind(profileId).first() as any;
+        if (!row) return errorResponse('Profile not found', 404, undefined, request, env);
+        const sub = await DB.prepare(
+          'SELECT status FROM subscriptions WHERE profile_id = ? AND status NOT IN (\'EXPIRED\') ORDER BY created_at DESC LIMIT 1'
+        ).bind(profileId).first() as any;
+        const data: BalanceResponse = {
+          sub_point_remaining: row.sub_point_remaining,
+          consumable_point_remaining: row.consumable_point_remaining,
+          total_available: row.sub_point_remaining + row.consumable_point_remaining,
+          subscription_status: sub ? sub.status : 'NONE',
+          total_credits_purchased: row.total_credits_purchased,
+          total_credits_spent: row.total_credits_spent,
+        };
+        return jsonResponse({ data, status: 'success', code: 200 }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/user/balance', error, request, env);
+        return errorResponse('Failed to fetch balance', 500, undefined, request, env);
+      }
+    }
+
+    // POST /api/deposit - Verify Google Play purchase, grant credits
+    if (path === '/api/deposit' && request.method === 'POST') {
+      try {
+        const body = await request.json() as DepositRequest;
+        if (!body.profile_id || !body.sku || !body.purchase_token || !body.order_id) {
+          return errorResponse('profile_id, sku, purchase_token, and order_id are required', 400, undefined, request, env);
+        }
+
+        // Idempotency check
+        const existing = await DB.prepare('SELECT id, status FROM payments WHERE order_id = ?').bind(body.order_id).first() as any;
+        if (existing) {
+          if (existing.status === 'COMPLETED') {
+            return jsonResponse({ data: { payment_id: existing.id, status: 'COMPLETED', message: 'Already processed' }, status: 'success', code: 200 }, 200, request, env);
+          }
+        }
+
+        // Validate product
+        const product = await DB.prepare('SELECT * FROM products WHERE sku = ? AND type = \'consumable\' AND is_active = 1').bind(body.sku).first() as any;
+        if (!product) return errorResponse('Invalid or inactive product SKU', 400, undefined, request, env);
+
+        // Create pending payment
+        const paymentId = nanoid();
+        await DB.prepare(
+          'INSERT INTO payments (id, profile_id, sku, order_id, purchase_token, status, credits_granted, amount_micros, currency) VALUES (?, ?, ?, ?, ?, \'PENDING\', ?, ?, ?)'
+        ).bind(paymentId, body.profile_id, body.sku, body.order_id, body.purchase_token, product.credits, product.price_micros, product.currency).run();
+
+        // Verify with Google Play
+        const verification = await verifyGooglePlayPurchase(env, body.sku, body.purchase_token);
+        if (!verification.valid) {
+          await DB.prepare('UPDATE payments SET status = \'FAILED\', raw_response = ?, updated_at = unixepoch() WHERE id = ?')
+            .bind(JSON.stringify(verification), paymentId).run();
+          return errorResponse(`Purchase verification failed: ${verification.error || 'Invalid purchase'}`, 400, undefined, request, env);
+        }
+
+        // Acknowledge purchase
+        if (!verification.acknowledged) {
+          await acknowledgeGooglePlayPurchase(env, body.sku, body.purchase_token);
+        }
+
+        // Grant credits to consumable pool
+        await DB.prepare(
+          'UPDATE profiles SET consumable_point_remaining = consumable_point_remaining + ?, total_credits_purchased = total_credits_purchased + ?, updated_at = ? WHERE id = ?'
+        ).bind(product.credits, product.credits, Math.floor(Date.now() / 1000).toString(), body.profile_id).run();
+
+        // Mark payment completed
+        await DB.prepare('UPDATE payments SET status = \'COMPLETED\', raw_response = ?, updated_at = unixepoch() WHERE id = ?')
+          .bind(JSON.stringify(verification.raw), paymentId).run();
+
+        const ip = request.headers.get('cf-connecting-ip') || null;
+        await auditLog(DB, body.profile_id, 'DEPOSIT', { sku: body.sku, credits: product.credits, order_id: body.order_id }, ip);
+
+        return jsonResponse({ data: { payment_id: paymentId, credits_granted: product.credits, status: 'COMPLETED' }, status: 'success', code: 200 }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/deposit', error, request, env);
+        return errorResponse('Deposit failed', 500, undefined, request, env);
+      }
+    }
+
+    // GET /api/deposit/status/:order_id - Check deposit status
+    if (path.startsWith('/api/deposit/status/') && request.method === 'GET') {
+      const orderId = path.slice('/api/deposit/status/'.length);
+      if (!orderId) return errorResponse('order_id is required', 400, undefined, request, env);
+      try {
+        const payment = await DB.prepare('SELECT id, profile_id, sku, order_id, status, credits_granted, created_at, updated_at FROM payments WHERE order_id = ?').bind(orderId).first();
+        if (!payment) return errorResponse('Payment not found', 404, undefined, request, env);
+        return jsonResponse({ data: payment, status: 'success', code: 200 }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/deposit/status', error, request, env);
+        return errorResponse('Failed to fetch deposit status', 500, undefined, request, env);
+      }
+    }
+
+    // POST /api/subscription/verify - Verify & activate subscription
+    if (path === '/api/subscription/verify' && request.method === 'POST') {
+      try {
+        const body = await request.json() as SubscriptionVerifyRequest;
+        if (!body.profile_id || !body.sku || !body.purchase_token) {
+          return errorResponse('profile_id, sku, and purchase_token are required', 400, undefined, request, env);
+        }
+
+        // Validate product is subscription
+        const product = await DB.prepare('SELECT * FROM products WHERE sku = ? AND type = \'subscription\' AND is_active = 1').bind(body.sku).first() as any;
+        if (!product) return errorResponse('Invalid or inactive subscription SKU', 400, undefined, request, env);
+
+        // Check existing subscription with this token
+        const existingSub = await DB.prepare('SELECT id, status FROM subscriptions WHERE purchase_token = ?').bind(body.purchase_token).first() as any;
+        if (existingSub && existingSub.status === 'ACTIVE') {
+          return jsonResponse({ data: { subscription_id: existingSub.id, status: 'ACTIVE', message: 'Already active' }, status: 'success', code: 200 }, 200, request, env);
+        }
+
+        // Verify with Google Play
+        const verification = await verifyGooglePlaySubscription(env, body.sku, body.purchase_token);
+        if (!verification.valid) {
+          return errorResponse(`Subscription verification failed: ${verification.error || 'Invalid subscription'}`, 400, undefined, request, env);
+        }
+
+        // Acknowledge subscription purchase (required by Google Play)
+        if (!verification.acknowledged) {
+          await acknowledgeGooglePlaySubscription(env, body.sku, body.purchase_token);
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = verification.expiryTimeMillis
+          ? Math.floor(new Date(verification.expiryTimeMillis).getTime() / 1000)
+          : now + CYCLE_DURATION_SECONDS;
+
+        const subId = nanoid();
+        const pointsPerCycle = product.points_per_cycle;
+
+        if (existingSub) {
+          // Reactivate
+          await DB.prepare(
+            'UPDATE subscriptions SET status = \'ACTIVE\', points_per_cycle = ?, auto_renewing = ?, expires_at = ?, last_reset_at = ?, cycle_count_used = 1, cancelled_at = NULL, updated_at = unixepoch() WHERE id = ?'
+          ).bind(pointsPerCycle, verification.autoRenewing ? 1 : 0, expiresAt, now, existingSub.id).run();
+        } else {
+          await DB.prepare(
+            'INSERT INTO subscriptions (id, profile_id, sku, purchase_token, points_per_cycle, status, auto_renewing, expires_at, last_reset_at, cycle_count_used) VALUES (?, ?, ?, ?, ?, \'ACTIVE\', ?, ?, ?, 1)'
+          ).bind(subId, body.profile_id, body.sku, body.purchase_token, pointsPerCycle, verification.autoRenewing ? 1 : 0, expiresAt, now).run();
+        }
+
+        // Set sub points to points_per_cycle (first cycle)
+        await DB.prepare(
+          'UPDATE profiles SET sub_point_remaining = ?, updated_at = ? WHERE id = ?'
+        ).bind(pointsPerCycle, now.toString(), body.profile_id).run();
+
+        const ip = request.headers.get('cf-connecting-ip') || null;
+        await auditLog(DB, body.profile_id, 'SUBSCRIPTION_ACTIVATE', { sku: body.sku, points_per_cycle: pointsPerCycle, expires_at: expiresAt }, ip);
+
+        // FCM silent push to all devices (sync subscription state)
+        try {
+          const tokens = await DB.prepare('SELECT token, platform FROM device_tokens WHERE profile_id = ?').bind(body.profile_id).all();
+          for (const tokenRow of (tokens.results || [])) {
+            await sendFcmSilentPush(env, (tokenRow as any).token, (tokenRow as any).platform as 'android' | 'ios' | 'web', {
+              type: 'subscription_update', event: 'ACTIVATED', status: 'ACTIVE',
+            });
+          }
+        } catch (e) { console.error('[Sub Verify FCM]', e instanceof Error ? e.message : String(e)); }
+
+        return jsonResponse({
+          data: { subscription_id: existingSub?.id || subId, points_per_cycle: pointsPerCycle, expires_at: expiresAt, status: 'ACTIVE' },
+          status: 'success', code: 200
+        }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/subscription/verify', error, request, env);
+        return errorResponse('Subscription verification failed', 500, undefined, request, env);
+      }
+    }
+
+    // GET /api/subscription/status - Current subscription
+    if (path === '/api/subscription/status' && request.method === 'GET') {
+      const profileId = requestUrl.searchParams.get('profile_id');
+      if (!profileId) return errorResponse('profile_id is required', 400, undefined, request, env);
+      try {
+        const sub = await DB.prepare(
+          'SELECT id, sku, status, auto_renewing, started_at, expires_at, last_reset_at, cycle_count_used, points_per_cycle, cancelled_at FROM subscriptions WHERE profile_id = ? AND status NOT IN (\'EXPIRED\') ORDER BY created_at DESC LIMIT 1'
+        ).bind(profileId).first();
+        return jsonResponse({ data: sub || null, status: 'success', code: 200 }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/subscription/status', error, request, env);
+        return errorResponse('Failed to fetch subscription', 500, undefined, request, env);
+      }
+    }
+
+    // POST /webhooks/google - Google Play RTDN (Pub/Sub push)
+    if (path === '/webhooks/google' && request.method === 'POST') {
+      try {
+        // Authenticate webhook with shared secret
+        const authHeader = request.headers.get('Authorization') || '';
+        const webhookSecret = env.GOOGLE_WEBHOOK_SECRET;
+        if (webhookSecret && !authHeader.includes(webhookSecret)) {
+          return errorResponse('Unauthorized webhook', 401, undefined, request, env);
+        }
+
+        const rawBody = await request.json() as any;
+        // Pub/Sub wraps data in message.data (base64)
+        const messageData = rawBody.message?.data;
+        if (!messageData) {
+          return jsonResponse({ status: 'success', message: 'No data' }, 200, request, env);
+        }
+
+        const decoded = JSON.parse(atob(messageData));
+        console.log('[Webhook Google] RTDN:', JSON.stringify(decoded));
+
+        const subscriptionNotification = decoded.subscriptionNotification;
+        const oneTimeProductNotification = decoded.oneTimeProductNotification;
+
+        // Helper: send FCM silent push to all user devices after subscription state change
+        const notifySubscriptionChange = async (profileId: string, event: string, data: Record<string, string> = {}) => {
+          try {
+            const tokens = await DB.prepare('SELECT token, platform FROM device_tokens WHERE profile_id = ?').bind(profileId).all();
+            for (const tokenRow of (tokens.results || [])) {
+              await sendFcmSilentPush(env, (tokenRow as any).token, (tokenRow as any).platform as 'android' | 'ios' | 'web', {
+                type: 'subscription_update', event, ...data,
+              });
+            }
+          } catch (e) {
+            console.error('[Webhook FCM] Failed:', e instanceof Error ? e.message : String(e));
+          }
+        };
+
+        // Helper: fetch source-of-truth from Google Play subscriptionsv2.get()
+        const fetchGoogleSubState = async (subSku: string, token: string) => {
+          try {
+            return await verifyGooglePlaySubscription(env, subSku, token);
+          } catch (e) {
+            console.error('[Webhook] Failed to verify with Google:', e instanceof Error ? e.message : String(e));
+            return null;
+          }
+        };
+
+        if (subscriptionNotification) {
+          const { notificationType, purchaseToken, subscriptionId } = subscriptionNotification;
+          const now = Math.floor(Date.now() / 1000);
+
+          // (4) SUBSCRIPTION_PURCHASED — backup activation from RTDN (in case client /verify call failed)
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_PURCHASED) {
+            const existingSub = await DB.prepare('SELECT id, status FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (!existingSub) {
+              // Client didn't verify yet — activate from RTDN
+              const googleState = await fetchGoogleSubState(subscriptionId, purchaseToken);
+              if (googleState?.valid) {
+                const product = await DB.prepare('SELECT * FROM products WHERE sku = ? AND type = \'subscription\' AND is_active = 1').bind(subscriptionId).first() as any;
+                if (product) {
+                  // Find profile via decoded notification's package — we need to check payments or use obfuscated account ID
+                  // For RTDN PURCHASED, we cannot determine profile_id from notification alone
+                  // This is a backup: log it, the client /verify call is the primary path
+                  console.log('[Webhook] SUBSCRIPTION_PURCHASED received but no existing sub found. Client must call /api/subscription/verify.', { subscriptionId, purchaseToken: purchaseToken.slice(0, 20) });
+                  await auditLog(DB, 'SYSTEM', 'SUBSCRIPTION_PURCHASED_RTDN', { subscription_id: subscriptionId, note: 'No matching sub - awaiting client verify' }, null);
+                }
+              }
+            } else {
+              // Sub exists, verify and update expiry from Google
+              const googleState = await fetchGoogleSubState(subscriptionId, purchaseToken);
+              if (googleState?.valid && googleState.expiryTimeMillis) {
+                const expiresAt = Math.floor(new Date(googleState.expiryTimeMillis).getTime() / 1000);
+                await DB.prepare('UPDATE subscriptions SET expires_at = ?, updated_at = unixepoch() WHERE purchase_token = ?').bind(expiresAt, purchaseToken).run();
+              }
+              if (googleState?.valid && !googleState.acknowledged) {
+                await acknowledgeGooglePlaySubscription(env, subscriptionId, purchaseToken);
+              }
+            }
+          }
+
+          // (2) SUBSCRIPTION_RENEWED → status=ACTIVE, reset sub=points_per_cycle, cycle+1
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_RENEWED) {
+            const sub = await DB.prepare('SELECT s.profile_id, s.points_per_cycle, s.cycle_count_used, s.sku FROM subscriptions s WHERE s.purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              // Verify with Google to get accurate expiry
+              const googleState = await fetchGoogleSubState(sub.sku, purchaseToken);
+              const newExpiry = googleState?.expiryTimeMillis
+                ? Math.floor(new Date(googleState.expiryTimeMillis).getTime() / 1000)
+                : now + CYCLE_DURATION_SECONDS;
+
+              await DB.prepare(
+                'UPDATE subscriptions SET status = \'ACTIVE\', auto_renewing = 1, expires_at = ?, last_reset_at = ?, cycle_count_used = ?, updated_at = unixepoch() WHERE purchase_token = ?'
+              ).bind(newExpiry, now, sub.cycle_count_used + 1, purchaseToken).run();
+              await DB.prepare('UPDATE profiles SET sub_point_remaining = ?, updated_at = ? WHERE id = ?')
+                .bind(sub.points_per_cycle, now.toString(), sub.profile_id).run();
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_RENEWED', { points_per_cycle: sub.points_per_cycle, cycle: sub.cycle_count_used + 1 }, null);
+              await notifySubscriptionChange(sub.profile_id, 'RENEWED', { status: 'ACTIVE' });
+            }
+          }
+
+          // (6) IN_GRACE_PERIOD → status=GRACE, reset sub=points_per_cycle, cycle+1 (user retains access)
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_IN_GRACE_PERIOD) {
+            const sub = await DB.prepare('SELECT s.profile_id, s.points_per_cycle, s.cycle_count_used, s.sku FROM subscriptions s WHERE s.purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              const googleState = await fetchGoogleSubState(sub.sku, purchaseToken);
+              const graceExpiry = googleState?.expiryTimeMillis
+                ? Math.floor(new Date(googleState.expiryTimeMillis).getTime() / 1000)
+                : sub.expires_at;
+
+              await DB.prepare(
+                'UPDATE subscriptions SET status = \'GRACE\', expires_at = ?, last_reset_at = ?, cycle_count_used = ?, updated_at = unixepoch() WHERE purchase_token = ?'
+              ).bind(graceExpiry, now, sub.cycle_count_used + 1, purchaseToken).run();
+              await DB.prepare('UPDATE profiles SET sub_point_remaining = ?, updated_at = ? WHERE id = ?')
+                .bind(sub.points_per_cycle, now.toString(), sub.profile_id).run();
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_GRACE', { points_per_cycle: sub.points_per_cycle, cycle: sub.cycle_count_used + 1 }, null);
+              await notifySubscriptionChange(sub.profile_id, 'IN_GRACE_PERIOD', { status: 'GRACE' });
+            }
+          }
+
+          // (5) ON_HOLD → after grace ends, payment still failed. User LOSES access immediately.
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_ON_HOLD) {
+            const sub = await DB.prepare('SELECT profile_id FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              await DB.prepare('UPDATE subscriptions SET status = \'ON_HOLD\', updated_at = unixepoch() WHERE purchase_token = ?').bind(purchaseToken).run();
+              await DB.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?')
+                .bind(now.toString(), sub.profile_id).run();
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_ON_HOLD', { notification_type: notificationType, subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'ON_HOLD', { status: 'ON_HOLD' });
+            }
+          }
+
+          // (1) RECOVERED → from account hold OR grace. status=ACTIVE, restore sub points, NO new cycle.
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_RECOVERED) {
+            const sub = await DB.prepare('SELECT profile_id, points_per_cycle, sku FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              const googleState = await fetchGoogleSubState(sub.sku, purchaseToken);
+              const newExpiry = googleState?.expiryTimeMillis
+                ? Math.floor(new Date(googleState.expiryTimeMillis).getTime() / 1000)
+                : now + CYCLE_DURATION_SECONDS;
+
+              await DB.prepare(
+                'UPDATE subscriptions SET status = \'ACTIVE\', auto_renewing = 1, expires_at = ?, updated_at = unixepoch() WHERE purchase_token = ?'
+              ).bind(newExpiry, purchaseToken).run();
+              // Restore sub points if they were zeroed during ON_HOLD
+              const profile = await DB.prepare('SELECT sub_point_remaining FROM profiles WHERE id = ?').bind(sub.profile_id).first() as any;
+              if (profile && profile.sub_point_remaining === 0) {
+                await DB.prepare('UPDATE profiles SET sub_point_remaining = ?, updated_at = ? WHERE id = ?')
+                  .bind(sub.points_per_cycle, now.toString(), sub.profile_id).run();
+              }
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_RECOVERED', { subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'RECOVERED', { status: 'ACTIVE' });
+            }
+          }
+
+          // (3) CANCELED → mark CANCELLED, user retains access until expires_at
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_CANCELED) {
+            const sub = await DB.prepare('SELECT profile_id FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            await DB.prepare('UPDATE subscriptions SET status = \'CANCELLED\', auto_renewing = 0, cancelled_at = unixepoch(), updated_at = unixepoch() WHERE purchase_token = ?').bind(purchaseToken).run();
+            if (sub) {
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_CANCELED', { subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'CANCELED', { status: 'CANCELLED' });
+            }
+          }
+
+          // (7) RESTARTED → user un-canceled before expiry, restore to ACTIVE
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_RESTARTED) {
+            const sub = await DB.prepare('SELECT profile_id, sku FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              const googleState = await fetchGoogleSubState(sub.sku, purchaseToken);
+              const newExpiry = googleState?.expiryTimeMillis
+                ? Math.floor(new Date(googleState.expiryTimeMillis).getTime() / 1000)
+                : sub.expires_at;
+
+              await DB.prepare(
+                'UPDATE subscriptions SET status = \'ACTIVE\', auto_renewing = 1, cancelled_at = NULL, expires_at = ?, updated_at = unixepoch() WHERE purchase_token = ?'
+              ).bind(newExpiry, purchaseToken).run();
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_RESTARTED', { subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'RESTARTED', { status: 'ACTIVE' });
+            }
+          }
+
+          // (13) EXPIRED or (12) REVOKED → mark EXPIRED, zero sub points
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_REVOKED ||
+              notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_EXPIRED) {
+            const sub = await DB.prepare('SELECT profile_id FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              await DB.prepare('UPDATE subscriptions SET status = \'EXPIRED\', updated_at = unixepoch() WHERE purchase_token = ?').bind(purchaseToken).run();
+              await DB.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?')
+                .bind(now.toString(), sub.profile_id).run();
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_EXPIRED', { notification_type: notificationType, subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'EXPIRED', { status: 'EXPIRED' });
+            }
+          }
+
+          // (10) PAUSED → user-initiated pause, revoke access
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_PAUSED) {
+            const sub = await DB.prepare('SELECT profile_id FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            await DB.prepare('UPDATE subscriptions SET status = \'PAUSED\', updated_at = unixepoch() WHERE purchase_token = ?').bind(purchaseToken).run();
+            if (sub) {
+              await DB.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?')
+                .bind(now.toString(), sub.profile_id).run();
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_PAUSED', { subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'PAUSED', { status: 'PAUSED' });
+            }
+          }
+
+          // (9) DEFERRED → developer extended entitlement, update expiry
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_DEFERRED) {
+            const sub = await DB.prepare('SELECT profile_id, sku FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              const googleState = await fetchGoogleSubState(sub.sku, purchaseToken);
+              if (googleState?.expiryTimeMillis) {
+                const newExpiry = Math.floor(new Date(googleState.expiryTimeMillis).getTime() / 1000);
+                await DB.prepare('UPDATE subscriptions SET expires_at = ?, updated_at = unixepoch() WHERE purchase_token = ?').bind(newExpiry, purchaseToken).run();
+              }
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_DEFERRED', { subscription_id: subscriptionId }, null);
+            }
+          }
+
+          // (11) PAUSE_SCHEDULE_CHANGED → pause scheduled, user still has access until pause takes effect
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED) {
+            const sub = await DB.prepare('SELECT profile_id FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_PAUSE_SCHEDULED', { subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'PAUSE_SCHEDULED', { status: 'ACTIVE' });
+            }
+          }
+
+          // (18) CANCELLATION_SCHEDULED → installment plan cancellation scheduled
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.SUBSCRIPTION_CANCELLATION_SCHEDULED) {
+            const sub = await DB.prepare('SELECT profile_id FROM subscriptions WHERE purchase_token = ?').bind(purchaseToken).first() as any;
+            if (sub) {
+              await auditLog(DB, sub.profile_id, 'SUBSCRIPTION_CANCELLATION_SCHEDULED', { subscription_id: subscriptionId }, null);
+              await notifySubscriptionChange(sub.profile_id, 'CANCELLATION_SCHEDULED', { status: 'ACTIVE' });
+            }
+          }
+
+          // Log unhandled types for monitoring (8-deprecated, 17, 19, 20, 22)
+          const handledTypes = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 13, 12, 18];
+          if (!handledTypes.includes(notificationType)) {
+            console.log(`[Webhook] Unhandled subscription notification type: ${notificationType}`, { subscriptionId, purchaseToken: purchaseToken.slice(0, 20) });
+            await auditLog(DB, 'SYSTEM', 'RTDN_UNHANDLED', { notification_type: notificationType, subscription_id: subscriptionId }, null);
+          }
+        }
+
+        if (oneTimeProductNotification) {
+          const { notificationType, purchaseToken, sku } = oneTimeProductNotification;
+          // Handle refund/cancellation of one-time purchase
+          if (notificationType === GOOGLE_PLAY_CONFIG.NOTIFICATION_TYPES.ONE_TIME_PRODUCT_CANCELED) {
+            const payment = await DB.prepare('SELECT id, profile_id, credits_granted FROM payments WHERE purchase_token = ? AND status = \'COMPLETED\'').bind(purchaseToken).first() as any;
+            if (payment) {
+              await DB.prepare('UPDATE payments SET status = \'REFUNDED\', updated_at = unixepoch() WHERE id = ?').bind(payment.id).run();
+              // Deduct refunded credits from consumable (clamp to 0)
+              await DB.prepare('UPDATE profiles SET consumable_point_remaining = MAX(0, consumable_point_remaining - ?), updated_at = ? WHERE id = ?')
+                .bind(payment.credits_granted, Math.floor(Date.now() / 1000).toString(), payment.profile_id).run();
+              await auditLog(DB, payment.profile_id, 'REFUND', { payment_id: payment.id, credits_deducted: payment.credits_granted, sku }, null);
+              await notifySubscriptionChange(payment.profile_id, 'REFUND', { credits_deducted: String(payment.credits_granted) });
+            }
+          }
+        }
+
+        return jsonResponse({ status: 'success' }, 200, request, env);
+      } catch (error) {
+        console.error('[Webhook Google] Error:', error instanceof Error ? error.message : String(error));
+        return jsonResponse({ status: 'success' }, 200, request, env); // Always 200 to avoid Pub/Sub retries
+      }
+    }
+
     // 404 for unmatched routes
     const debugEnabled = isDebugEnabled(env);
     return errorResponse('Not found', 404, debugEnabled ? { path, method: request.method } : undefined, request, env);
@@ -6925,6 +7897,45 @@ export default {
       console.log('[Scheduled] 30-day result cleanup completed');
     } catch (error) {
       console.error('[Scheduled] Cleanup failed:', error instanceof Error ? error.message : String(error));
+    }
+
+    // ---- Payment/Subscription scheduled tasks ----
+    try {
+      const now = Math.floor(Date.now() / 1000);
+
+      // 1. Expire subscriptions past expiry with auto_renewing=0
+      const expiredSubs = await DB.prepare(
+        'SELECT id, profile_id FROM subscriptions WHERE status = \'ACTIVE\' AND auto_renewing = 0 AND expires_at < ?'
+      ).bind(now).all();
+      for (const sub of (expiredSubs.results || [])) {
+        await DB.prepare('UPDATE subscriptions SET status = \'EXPIRED\', updated_at = ? WHERE id = ?').bind(now, (sub as any).id).run();
+        await DB.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), (sub as any).profile_id).run();
+        console.log(`[Scheduled] Expired subscription ${(sub as any).id} for profile ${(sub as any).profile_id}`);
+      }
+
+      // 2. Expire CANCELLED subscriptions past expires_at
+      const cancelledExpired = await DB.prepare(
+        'SELECT id, profile_id FROM subscriptions WHERE status = \'CANCELLED\' AND expires_at < ?'
+      ).bind(now).all();
+      for (const sub of (cancelledExpired.results || [])) {
+        await DB.prepare('UPDATE subscriptions SET status = \'EXPIRED\', updated_at = ? WHERE id = ?').bind(now, (sub as any).id).run();
+        await DB.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), (sub as any).profile_id).run();
+        console.log(`[Scheduled] Expired cancelled subscription ${(sub as any).id}`);
+      }
+
+      // 3. Mark stale PENDING payments (>1 hour old) as FAILED
+      const oneHourAgo = now - 3600;
+      await DB.prepare(
+        'UPDATE payments SET status = \'FAILED\', updated_at = ? WHERE status = \'PENDING\' AND created_at < ?'
+      ).bind(now, oneHourAgo).run();
+
+      // 4. Clean old audit_log entries (>90 days)
+      const ninetyDaysAgo = now - (90 * 86400);
+      await DB.prepare('DELETE FROM audit_log WHERE created_at < ?').bind(ninetyDaysAgo).run();
+
+      console.log('[Scheduled] Payment/subscription cleanup completed');
+    } catch (error) {
+      console.error('[Scheduled] Payment cleanup failed:', error instanceof Error ? error.message : String(error));
     }
   },
 };

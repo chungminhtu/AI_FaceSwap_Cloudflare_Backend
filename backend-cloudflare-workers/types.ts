@@ -138,6 +138,79 @@ export interface Profile {
   updated_at: string;
 }
 
+// ============================================================
+// Payment & Credit System Types
+// ============================================================
+
+export interface Product {
+  sku: string;
+  type: 'consumable' | 'subscription';
+  credits: number;
+  points_per_cycle: number;
+  name: string;
+  description: string;
+  price_micros: number;
+  currency: string;
+  is_active: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface Payment {
+  id: string;
+  profile_id: string;
+  sku: string;
+  order_id: string;
+  purchase_token: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
+  credits_granted: number;
+  amount_micros: number;
+  currency: string;
+  platform: string;
+  raw_response: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface Subscription {
+  id: string;
+  profile_id: string;
+  sku: string;
+  purchase_token: string;
+  points_per_cycle: number;
+  status: 'ACTIVE' | 'GRACE' | 'ON_HOLD' | 'CANCELLED' | 'EXPIRED' | 'PAUSED';
+  auto_renewing: number;
+  started_at: number;
+  expires_at: number;
+  last_reset_at: number;
+  cycle_count_used: number;
+  cancelled_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DepositRequest {
+  profile_id: string;
+  sku: string;
+  purchase_token: string;
+  order_id: string;
+}
+
+export interface SubscriptionVerifyRequest {
+  profile_id: string;
+  sku: string;
+  purchase_token: string;
+}
+
+export interface BalanceResponse {
+  sub_point_remaining: number;
+  consumable_point_remaining: number;
+  total_available: number;
+  subscription_status: 'ACTIVE' | 'GRACE' | 'ON_HOLD' | 'CANCELLED' | 'EXPIRED' | 'PAUSED' | 'NONE';
+  total_credits_purchased: number;
+  total_credits_spent: number;
+}
+
 // FCM Device Token for push notifications
 export interface DeviceToken {
   token: string;
