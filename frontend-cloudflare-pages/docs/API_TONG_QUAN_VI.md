@@ -116,11 +116,11 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (19 APIs)
+## APIs cần tích hợp với mobile (20 APIs)
 
 **Tổng số API endpoints: 30**
 
-### APIs cần tích hợp với mobile (19 APIs)
+### APIs cần tích hợp với mobile (20 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/upload-url` (type=mask) - Upload mask image (cho remove object)
@@ -135,12 +135,13 @@ Khi API key không hợp lệ hoặc thiếu:
 11. POST `/remove-object` - AI xóa vật thể khỏi ảnh bằng mask
 12. POST `/expression` - AI thay đổi biểu cảm khuôn mặt
 13. POST `/expand` - AI mở rộng ảnh
-14. POST `/profiles` - Tạo profile
-15. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
-16. PUT `/profiles/{id}` - Cập nhật profile
-17. GET `/selfies` - Liệt kê selfies
-18. GET `/results` - Liệt kê results (generated images)
-19. DELETE `/results/{id}` - Xóa result
+14. POST `/replace-object` - AI thay thế vật thể trong ảnh
+15. POST `/profiles` - Tạo profile
+16. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
+17. PUT `/profiles/{id}` - Cập nhật profile
+18. GET `/selfies` - Liệt kê selfies
+19. GET `/results` - Liệt kê results (generated images)
+20. DELETE `/results/{id}` - Xóa result
 
 ### APIs không cần tích hợp với mobile (11 APIs)
 
@@ -1696,6 +1697,63 @@ curl -X POST https://api.d.shotpix.app/expand \
   },
   "status": "success",
   "message": "Image expansion completed",
+  "code": 200
+}
+```
+
+**Lưu ý:** Sau khi xử lý, selfie sẽ tự động bị xóa.
+
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
+
+#### 2.12. POST `/replace-object` - AI Replace Object
+
+**Mục đích:** Thay thế vật thể/vùng được đánh dấu trong ảnh bằng nội dung mới do người dùng mô tả. Sử dụng WaveSpeed AI flux-2-klein-9b/edit.
+
+**Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Cách hoạt động:**
+1. Frontend ghép ảnh gốc + mask thành 1 ảnh duy nhất (vùng highlight = nơi cần thay thế)
+2. Upload ảnh đã ghép lên
+3. Gọi API kèm `custom_prompt` mô tả nội dung muốn thay thế vào
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/replace-object \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_id": "E0PtVZEio5fctjMd",
+    "custom_prompt": "a red sports car",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+```bash
+curl -X POST https://api.d.shotpix.app/replace-object \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.png",
+    "custom_prompt": "a beautiful garden with flowers",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+**Request Parameters:**
+- `selfie_id` (string): ID ảnh đã ghép (origin + mask). Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh đã ghép. Không dùng cùng `selfie_id`.
+- `custom_prompt` (string, required): Mô tả nội dung muốn thay thế vào vùng được đánh dấu.
+- `profile_id` (string, required): ID profile người dùng.
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "result_id",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+  },
+  "status": "success",
+  "message": "Object replacement completed",
   "code": 200
 }
 ```

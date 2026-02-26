@@ -78,6 +78,10 @@ export const IMAGE_PROCESSING_PROMPTS = {
   // Remove object prompt - uses mask to identify and remove unwanted objects from image
   // image1 = original photo, image2 = mask (white = area to remove, black = keep)
   REMOVE_OBJECT: 'Remove the object or area indicated by the white region in the mask image. Fill the removed area with a natural, seamless continuation of the surrounding background. Preserve the original image quality, lighting, perspective, and style. The result should look like the object was never there. Do not alter any part of the image outside the masked area.',
+
+  // Replace object prompt - merged image (origin + mask) sent to WaveSpeed edit
+  // {{custom_prompt}} is replaced with user's custom text at runtime
+  REPLACE_OBJECT: 'Replace the highlighted part in the provided image to another subject - {{custom_prompt}}. Try to be as much as careful as you can you to ensure the image is not damaged, and seems exactly as original.',
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings
