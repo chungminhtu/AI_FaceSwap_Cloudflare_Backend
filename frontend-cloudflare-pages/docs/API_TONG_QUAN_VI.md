@@ -116,11 +116,11 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (18 APIs)
+## APIs cần tích hợp với mobile (19 APIs)
 
-**Tổng số API endpoints: 29**
+**Tổng số API endpoints: 30**
 
-### APIs cần tích hợp với mobile (18 APIs)
+### APIs cần tích hợp với mobile (19 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/upload-url` (type=mask) - Upload mask image (cho remove object)
@@ -134,26 +134,27 @@ Khi API key không hợp lệ hoặc thiếu:
 10. POST `/upscaler4k` - AI upscale ảnh lên 4K
 11. POST `/remove-object` - AI xóa vật thể khỏi ảnh bằng mask
 12. POST `/expression` - AI thay đổi biểu cảm khuôn mặt
-13. POST `/profiles` - Tạo profile
-14. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
-15. PUT `/profiles/{id}` - Cập nhật profile
-16. GET `/selfies` - Liệt kê selfies
-17. GET `/results` - Liệt kê results (generated images)
-18. DELETE `/results/{id}` - Xóa result
+13. POST `/expand` - AI mở rộng ảnh
+14. POST `/profiles` - Tạo profile
+15. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
+16. PUT `/profiles/{id}` - Cập nhật profile
+17. GET `/selfies` - Liệt kê selfies
+18. GET `/results` - Liệt kê results (generated images)
+19. DELETE `/results/{id}` - Xóa result
 
 ### APIs không cần tích hợp với mobile (11 APIs)
 
-19. GET `/profiles` - Liệt kê profiles
-20. POST `/upload-url` (type=preset) - Upload preset (backend only)
-21. GET `/presets` - Liệt kê presets
-22. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
-23. DELETE `/presets/{id}` - Xóa preset
-24. DELETE `/selfies/{id}` - Xóa selfie
-25. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
-26. GET `/thumbnails` - Liệt kê thumbnails
-27. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
-28. GET `/config` - Lấy config
-29. OPTIONS `/*` - CORS preflight requests
+20. GET `/profiles` - Liệt kê profiles
+21. POST `/upload-url` (type=preset) - Upload preset (backend only)
+22. GET `/presets` - Liệt kê presets
+23. GET `/presets/{id}` - Lấy preset theo ID (bao gồm prompt_json)
+24. DELETE `/presets/{id}` - Xóa preset
+25. DELETE `/selfies/{id}` - Xóa selfie
+26. POST `/upload-thumbnails` - Tải lên thumbnails và presets (batch)
+27. GET `/thumbnails` - Liệt kê thumbnails
+28. GET `/thumbnails/{id}/preset` - Lấy preset_id từ thumbnail_id
+29. GET `/config` - Lấy config
+30. OPTIONS `/*` - CORS preflight requests
 
 ---
 
@@ -1638,6 +1639,98 @@ curl -X POST https://api.d.shotpix.app/expression \
   },
   "status": "success",
   "message": "Expression modification completed",
+  "code": 200
+}
+```
+
+**Lưu ý:** Sau khi xử lý, selfie sẽ tự động bị xóa.
+
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
+
+---
+
+#### 2.11. POST `/expand` - AI Expand
+
+**Mục đích:** Mở rộng/outpaint ảnh theo kích thước mục tiêu sử dụng WaveSpeed AI. Hữu ích khi cần thay đổi tỉ lệ ảnh cho các nền tảng mạng xã hội hoặc kích thước tùy chỉnh.
+
+**Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Danh sách Preset hỗ trợ:**
+
+| Preset | Tỉ lệ | Kích thước output | Loại |
+|--------|--------|-------------------|------|
+| `instagram_post` | 1:1 | 1536x1536 | Social |
+| `instagram_portrait` | 4:5 | 1229x1536 | Social |
+| `instagram_story` | 9:16 | 864x1536 | Social |
+| `facebook_profile` | 1:1 | 1536x1536 | Social |
+| `facebook_story` | 9:16 | 864x1536 | Social |
+| `facebook_cover` | 2.63:1 | 1536x584 | Social |
+| `youtube_thumbnail` | 16:9 | 1536x864 | Social |
+| `tiktok_post` | 9:16 | 864x1536 | Social |
+| `twitter_post` | 16:9 | 1536x864 | Social |
+| `linkedin_profile` | 1:1 | 1536x1536 | Social |
+| `square` | 1:1 | 1536x1536 | Fixed |
+| `photograph` | 2:3 | 1024x1536 | Fixed |
+| `camera` | 3:2 | 1536x1024 | Fixed |
+| `portrait` | 3:4 | 1152x1536 | Fixed |
+| `widescreen` | 16:9 | 1536x864 | Fixed |
+
+**Hỗ trợ freeform:** Ngoài preset, có thể dùng:
+- Tỉ lệ tùy chỉnh: `"16:9"`, `"2.63:1"`, `"9:16"`
+- Kích thước trực tiếp: `"1024x768"` (tối đa 1536px mỗi chiều)
+
+**Request (với preset):**
+```bash
+curl -X POST https://api.d.shotpix.app/expand \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_id": "E0PtVZEio5fctjMd",
+    "target_size": "instagram_post",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+**Request (với ratio):**
+```bash
+curl -X POST https://api.d.shotpix.app/expand \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
+    "target_size": "16:9",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+**Request (với kích thước trực tiếp):**
+```bash
+curl -X POST https://api.d.shotpix.app/expand \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
+    "target_size": "1024x768",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+**Request Parameters:**
+- `selfie_id` (string): ID selfie. Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh. Không dùng cùng `selfie_id`.
+- `target_size` (string, required): Kích thước mục tiêu. Preset name, ratio (vd: `"16:9"`), hoặc dimensions (vd: `"1024x768"`).
+- `profile_id` (string, required): ID profile người dùng.
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "result_id",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
+    "target_size": "instagram_post"
+  },
+  "status": "success",
+  "message": "Image expansion completed",
   "code": 200
 }
 ```

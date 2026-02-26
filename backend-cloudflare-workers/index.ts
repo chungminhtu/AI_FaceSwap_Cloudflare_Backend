@@ -5,9 +5,9 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest, DepositRequest, SubscriptionVerifyRequest, BalanceResponse } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
-import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
+import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG, EXPAND_SIZE_PRESETS } from './config';
 
 // Retry helper for Vertex AI prompt generation - MUST succeed before uploading to R2
 const generateVertexPromptWithRetry = async (
@@ -210,6 +210,7 @@ const PROTECTED_MOBILE_APIS = [
   '/upscaler4k',
   '/remove-object',
   '/expression',
+  '/expand',
   '/profiles',
   '/api/products',
   '/api/user/balance',
@@ -856,8 +857,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
@@ -7450,6 +7451,188 @@ export default {
             selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,
             expression: body?.expression,
+          }
+        });
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle expand endpoint - AI image expansion/outpainting
+    if (path === '/expand' && request.method === 'POST') {
+      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string; target_size?: string } | undefined;
+      let creditResult: any = null;
+      try {
+        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string; target_size?: string };
+
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.target_size || body.target_size.trim() === '') {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: target_size (preset name, ratio like "16:9", or dimensions like "1024x768")', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Credit deduction (before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'expand', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
+        // Resolve selfie image URL
+        let selfieUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'expand');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, target_size: body.target_size, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+          if (!validateImageUrl(selfieUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        // Calculate effective size from target_size
+        const MAX_DIM = 1536;
+        const targetSize = body.target_size.trim();
+        let effectiveSize: string;
+
+        // Helper: convert ratio to dimensions with max dimension = MAX_DIM
+        const ratioToDimensions = (ratioStr: string): string => {
+          const parts = ratioStr.split(':');
+          const w = parseFloat(parts[0]);
+          const h = parseFloat(parts[1]);
+          if (w >= h) {
+            const width = MAX_DIM;
+            const height = Math.round((h / w) * MAX_DIM);
+            return `${width}x${height}`;
+          } else {
+            const height = MAX_DIM;
+            const width = Math.round((w / h) * MAX_DIM);
+            return `${width}x${height}`;
+          }
+        };
+
+        if (EXPAND_SIZE_PRESETS[targetSize]) {
+          // Preset name → get ratio → convert to dimensions
+          effectiveSize = ratioToDimensions(EXPAND_SIZE_PRESETS[targetSize]);
+        } else if (/^\d+(\.\d+)?:\d+(\.\d+)?$/.test(targetSize)) {
+          // Ratio like "16:9" or "2.63:1"
+          effectiveSize = ratioToDimensions(targetSize);
+        } else if (/^\d+x\d+$/.test(targetSize)) {
+          // Direct dimensions like "1024x768"
+          effectiveSize = targetSize;
+        } else {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Invalid target_size format. Use a preset name (e.g. "instagram_post"), ratio (e.g. "16:9"), or dimensions (e.g. "1024x768")', 400, debugEnabled ? { path, targetSize } : undefined, request, env);
+        }
+
+        const expandResult = await callWaveSpeedEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.EXPAND, env, undefined, effectiveSize);
+
+        if (!expandResult.Success || !expandResult.ResultImageUrl) {
+          const failureCode = expandResult.StatusCode || 500;
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(expandResult) : undefined;
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(flatDebug ? { debug: flatDebug } : {}),
+          }, httpStatus);
+        }
+
+        let resultUrl = expandResult.ResultImageUrl;
+        if (expandResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = expandResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'expand', request);
+
+        // Cache result in KV for retry handling
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'expand', resultUrl));
+        }
+
+        // Auto-delete selfie after processing
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        const debugEnabled = isDebugEnabled(env);
+        const flatDebug = debugEnabled ? buildFlatDebug(expandResult) : undefined;
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+            target_size: body.target_size,
+          },
+          status: 'success',
+          message: expandResult.Message || 'Image expansion completed',
+          code: 200,
+          ...(debugEnabled ? { debug: compact({ ...flatDebug, effectiveSize }) } : {}),
+        });
+      } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'expand', creditResult.cost, 'Processing error', request);
+        }
+        logCriticalError('/expand', error, request, env, {
+          body: {
+            selfie_id: body?.selfie_id,
+            profile_id: body?.profile_id,
+            target_size: body?.target_size,
           }
         });
         const debugEnabled = isDebugEnabled(env);

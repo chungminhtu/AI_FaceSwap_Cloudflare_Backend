@@ -72,6 +72,9 @@ export const IMAGE_PROCESSING_PROMPTS = {
     CLOSE_EYE: 'Modify the eyes of the person in this photo to be gently closed. Close both eyes naturally as if peacefully resting or blinking, with relaxed eyelids. Keep everything else exactly the same: same person, same identity, same facial features, same mouth expression, same hair, same clothing, same background, same lighting, same image quality, same composition. Only change the eyes. The result must look like a natural photograph, not artificial or distorted.',
   } as Record<string, string>,
 
+  // AI Expand prompt - outpaint/expand image to fill target dimensions
+  EXPAND: 'Expand the image, try to be as much natural as you can be.',
+
   // Remove object prompt - uses mask to identify and remove unwanted objects from image
   // image1 = original photo, image2 = mask (white = area to remove, black = keep)
   REMOVE_OBJECT: 'Remove the object or area indicated by the white region in the mask image. Fill the removed area with a natural, seamless continuation of the surrounding background. Preserve the original image quality, lighting, perspective, and style. The result should look like the object was never there. Do not alter any part of the image outside the masked area.',
@@ -333,6 +336,27 @@ export const API_ENDPOINTS = {
   WAVESPEED_BRIA_ERASER: 'https://api.wavespeed.ai/api/v3/bria/eraser',
   WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v1/predictions/${requestId}/result`,
   OAUTH_TOKEN: 'https://oauth2.googleapis.com/token',
+};
+
+// AI Expand size presets - maps preset names to aspect ratios
+export const EXPAND_SIZE_PRESETS: Record<string, string> = {
+  // Social media
+  'instagram_post': '1:1',
+  'instagram_portrait': '4:5',
+  'instagram_story': '9:16',
+  'facebook_profile': '1:1',
+  'facebook_story': '9:16',
+  'facebook_cover': '2.63:1',
+  'youtube_thumbnail': '16:9',
+  'tiktok_post': '9:16',
+  'twitter_post': '16:9',
+  'linkedin_profile': '1:1',
+  // Fixed ratios
+  'square': '1:1',
+  'photograph': '2:3',
+  'camera': '3:2',
+  'portrait': '3:4',
+  'widescreen': '16:9',
 };
 
 export const TIMEOUT_CONFIG = {
