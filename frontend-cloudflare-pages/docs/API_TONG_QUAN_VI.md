@@ -656,6 +656,7 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 ```
 
 **Supported Art Styles:**
+
 | Style | Description |
 |-------|-------------|
 | `auto` | Auto-detect style (default) |
