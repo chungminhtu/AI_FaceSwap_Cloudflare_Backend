@@ -1516,12 +1516,12 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
 
 #### 2.9. POST `/remove-object` - AI Xóa vật thể
 
-**Mục đích:** Xóa vật thể hoặc vùng được chỉ định bằng mask khỏi ảnh, lấp đầy bằng nền tự nhiên.
+**Mục đích:** Xóa vật thể hoặc vùng được chỉ định bằng mask khỏi ảnh, lấp đầy bằng nền tự nhiên. Sử dụng WaveSpeed Bria Eraser API (SOTA object removal).
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Quy trình:**
-1. Upload ảnh gốc qua `POST /upload-url` (type=selfie)
+1. Upload ảnh gốc qua `POST /upload-url` (type=selfie, action=remove_object)
 2. Upload mask qua `POST /upload-url` (type=mask) - vùng trắng = xóa, vùng đen = giữ lại
 3. Gọi `POST /remove-object` với selfie_id và mask_id
 
@@ -1533,8 +1533,7 @@ curl -X POST https://api.d.shotpix.app/remove-object \
   -d '{
     "selfie_id": "E0PtVZEio5fctjMd",
     "mask_id": "mask_abc123",
-    "profile_id": "CbS0w8Ed8ezrlJ7o",
-    "aspect_ratio": "original"
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
 
@@ -1546,8 +1545,7 @@ curl -X POST https://api.d.shotpix.app/remove-object \
   -d '{
     "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
     "mask_image_url": "https://resources.d.shotpix.app/mask/xyz.webp",
-    "profile_id": "CbS0w8Ed8ezrlJ7o",
-    "aspect_ratio": "original"
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
 
@@ -1557,9 +1555,8 @@ curl -X POST https://api.d.shotpix.app/remove-object \
 - `mask_id` (string): ID mask (từ upload-url type=mask). Không dùng cùng `mask_image_url`.
 - `mask_image_url` (string): URL mask. Không dùng cùng `mask_id`.
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỉ lệ khung hình. Mặc định `original`.
-- `model` (string, optional): Model AI. Mặc định `2.5`.
-- `provider` (string, optional): `vertex` hoặc `wavespeed`.
+
+**Lưu ý kỹ thuật:** API sử dụng WaveSpeed Bria Eraser - không cần prompt, chỉ gửi ảnh gốc + mask. Không hỗ trợ `aspect_ratio`, `model`, `provider` (luôn dùng Bria Eraser).
 
 **Response:**
 ```json
