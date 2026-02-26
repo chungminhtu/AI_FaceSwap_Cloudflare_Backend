@@ -1651,74 +1651,40 @@ curl -X POST https://api.d.shotpix.app/expression \
 
 #### 2.11. POST `/expand` - AI Expand
 
-**Mục đích:** Mở rộng/outpaint ảnh theo kích thước mục tiêu sử dụng WaveSpeed AI. Hữu ích khi cần thay đổi tỉ lệ ảnh cho các nền tảng mạng xã hội hoặc kích thước tùy chỉnh.
+**Mục đích:** Mở rộng/outpaint ảnh sử dụng WaveSpeed AI. Client tạo PNG với vùng transparent là nơi AI sẽ fill nội dung mới.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
-**Danh sách Preset hỗ trợ:**
+**Cách hoạt động:**
+1. Client tạo ảnh PNG với kích thước mong muốn (vd: 1080x1920 cho story)
+2. Đặt ảnh gốc vào vị trí mong muốn trong canvas
+3. Vùng transparent (alpha=0) là nơi AI sẽ tự động fill/expand
+4. Upload PNG lên và gọi API
 
-| Preset | Tỉ lệ | Kích thước output | Loại |
-|--------|--------|-------------------|------|
-| `instagram_post` | 1:1 | 1536x1536 | Social |
-| `instagram_portrait` | 4:5 | 1229x1536 | Social |
-| `instagram_story` | 9:16 | 864x1536 | Social |
-| `facebook_profile` | 1:1 | 1536x1536 | Social |
-| `facebook_story` | 9:16 | 864x1536 | Social |
-| `facebook_cover` | 2.63:1 | 1536x584 | Social |
-| `youtube_thumbnail` | 16:9 | 1536x864 | Social |
-| `tiktok_post` | 9:16 | 864x1536 | Social |
-| `twitter_post` | 16:9 | 1536x864 | Social |
-| `linkedin_profile` | 1:1 | 1536x1536 | Social |
-| `square` | 1:1 | 1536x1536 | Fixed |
-| `photograph` | 2:3 | 1024x1536 | Fixed |
-| `camera` | 3:2 | 1536x1024 | Fixed |
-| `portrait` | 3:4 | 1152x1536 | Fixed |
-| `widescreen` | 16:9 | 1536x864 | Fixed |
-
-**Hỗ trợ freeform:** Ngoài preset, có thể dùng:
-- Tỉ lệ tùy chỉnh: `"16:9"`, `"2.63:1"`, `"9:16"`
-- Kích thước trực tiếp: `"1024x768"` (tối đa 1536px mỗi chiều)
-
-**Request (với preset):**
+**Request:**
 ```bash
 curl -X POST https://api.d.shotpix.app/expand \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
     "selfie_id": "E0PtVZEio5fctjMd",
-    "target_size": "instagram_post",
     "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
 
-**Request (với ratio):**
 ```bash
 curl -X POST https://api.d.shotpix.app/expand \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
-    "target_size": "16:9",
-    "profile_id": "CbS0w8Ed8ezrlJ7o"
-  }'
-```
-
-**Request (với kích thước trực tiếp):**
-```bash
-curl -X POST https://api.d.shotpix.app/expand \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your_api_key_here" \
-  -d '{
-    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.webp",
-    "target_size": "1024x768",
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.png",
     "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
 
 **Request Parameters:**
-- `selfie_id` (string): ID selfie. Không dùng cùng `selfie_image_url`.
-- `selfie_image_url` (string): URL ảnh. Không dùng cùng `selfie_id`.
-- `target_size` (string, required): Kích thước mục tiêu. Preset name, ratio (vd: `"16:9"`), hoặc dimensions (vd: `"1024x768"`).
+- `selfie_id` (string): ID selfie (PNG với transparent areas). Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh PNG. Không dùng cùng `selfie_id`.
 - `profile_id` (string, required): ID profile người dùng.
 
 **Response:**
@@ -1726,8 +1692,7 @@ curl -X POST https://api.d.shotpix.app/expand \
 {
   "data": {
     "id": "result_id",
-    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg",
-    "target_size": "instagram_post"
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
   },
   "status": "success",
   "message": "Image expansion completed",

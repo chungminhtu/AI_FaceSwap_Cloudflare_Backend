@@ -7,7 +7,7 @@ import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
-import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG, EXPAND_SIZE_PRESETS } from './config';
+import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
 
 // Retry helper for Vertex AI prompt generation - MUST succeed before uploading to R2
 const generateVertexPromptWithRetry = async (
@@ -7461,10 +7461,10 @@ export default {
 
     // Handle expand endpoint - AI image expansion/outpainting
     if (path === '/expand' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string; target_size?: string } | undefined;
+      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string; target_size?: string };
+        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string };
 
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
         const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
@@ -7482,11 +7482,6 @@ export default {
         if (!body.profile_id) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
-        }
-
-        if (!body.target_size || body.target_size.trim() === '') {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Missing required field: target_size (preset name, ratio like "16:9", or dimensions like "1024x768")', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileCheck = await DB.prepare(
@@ -7520,7 +7515,7 @@ export default {
             const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'expand');
             if (cachedResult) {
               return jsonResponse({
-                data: { resultImageUrl: cachedResult, target_size: body.target_size, cached: true },
+                data: { resultImageUrl: cachedResult, cached: true },
                 status: 'success',
                 message: 'Cached result returned (selfie was auto-deleted after previous processing)',
                 code: 200,
@@ -7540,42 +7535,8 @@ export default {
           }
         }
 
-        // Calculate effective size from target_size
-        const MAX_DIM = 1536;
-        const targetSize = body.target_size.trim();
-        let effectiveSize: string;
-
-        // Helper: convert ratio to dimensions with max dimension = MAX_DIM
-        const ratioToDimensions = (ratioStr: string): string => {
-          const parts = ratioStr.split(':');
-          const w = parseFloat(parts[0]);
-          const h = parseFloat(parts[1]);
-          if (w >= h) {
-            const width = MAX_DIM;
-            const height = Math.round((h / w) * MAX_DIM);
-            return `${width}x${height}`;
-          } else {
-            const height = MAX_DIM;
-            const width = Math.round((w / h) * MAX_DIM);
-            return `${width}x${height}`;
-          }
-        };
-
-        if (EXPAND_SIZE_PRESETS[targetSize]) {
-          // Preset name → get ratio → convert to dimensions
-          effectiveSize = ratioToDimensions(EXPAND_SIZE_PRESETS[targetSize]);
-        } else if (/^\d+(\.\d+)?:\d+(\.\d+)?$/.test(targetSize)) {
-          // Ratio like "16:9" or "2.63:1"
-          effectiveSize = ratioToDimensions(targetSize);
-        } else if (/^\d+x\d+$/.test(targetSize)) {
-          // Direct dimensions like "1024x768"
-          effectiveSize = targetSize;
-        } else {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Invalid target_size format. Use a preset name (e.g. "instagram_post"), ratio (e.g. "16:9"), or dimensions (e.g. "1024x768")', 400, debugEnabled ? { path, targetSize } : undefined, request, env);
-        }
-
-        const expandResult = await callWaveSpeedEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.EXPAND, env, undefined, effectiveSize);
+        // Send PNG (with transparent areas to fill) directly to WaveSpeed
+        const expandResult = await callWaveSpeedEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.EXPAND, env);
 
         if (!expandResult.Success || !expandResult.ResultImageUrl) {
           const failureCode = expandResult.StatusCode || 500;
@@ -7617,12 +7578,11 @@ export default {
           data: {
             id: savedResultId !== null ? String(savedResultId) : null,
             resultImageUrl: resultUrl,
-            target_size: body.target_size,
           },
           status: 'success',
           message: expandResult.Message || 'Image expansion completed',
           code: 200,
-          ...(debugEnabled ? { debug: compact({ ...flatDebug, effectiveSize }) } : {}),
+          ...(debugEnabled ? { debug: flatDebug } : {}),
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
@@ -7632,7 +7592,6 @@ export default {
           body: {
             selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,
-            target_size: body?.target_size,
           }
         });
         const debugEnabled = isDebugEnabled(env);
