@@ -425,13 +425,19 @@ curl -X POST https://api.d.shotpix.app/upload-url \
 **Request Parameters:**
 - `files` (file[], required nếu dùng multipart): Mảng file ảnh selfie cần upload (hỗ trợ nhiều file).
 - `image_url` hoặc `image_urls` (string/string[], required nếu dùng JSON): URL ảnh selfie trực tiếp.
-- `type` (string, required): Phải là `"selfie"` cho mobile app.
+- `type` (string, required): Loại upload. Các giá trị hỗ trợ:
+  - `"selfie"`: Upload ảnh selfie cho mobile app.
+  - `"mask"`: Upload ảnh mask (đen trắng) cho API `/remove-object`. Mask được lưu vào R2 folder `mask/`, action tự động đặt là `remove_object`.
+  - `"preset"`: Upload preset (backend only, không cần API key).
 - `profile_id` (string, required): ID profile người dùng.
-- `action` (string, required, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Phải được chỉ định rõ ràng. Các giá trị hỗ trợ:
+- `action` (string, chỉ áp dụng cho `type=selfie`): Loại action của selfie. Nếu không truyền, mặc định là `"faceswap"`. Các giá trị hỗ trợ:
   - `"faceswap"`: Tối đa 8 ảnh (có thể cấu hình), tự động xóa ảnh cũ khi upload ảnh mới (giữ lại số ảnh mới nhất theo giới hạn). **Không kiểm tra Vision API.**
+  - `"filter"`: Tối đa 5 ảnh (có thể cấu hình), tự động xóa ảnh cũ khi upload ảnh mới. **Không kiểm tra Vision API.**
   - `"wedding"`: Tối đa 2 ảnh, tự động xóa ảnh cũ khi upload ảnh mới (giữ lại 1 ảnh mới nhất). **Không kiểm tra Vision API.**
   - `"4k"` hoặc `"4K"`: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Ảnh sẽ được kiểm tra bằng Vision API trước khi lưu vào database.**
-  - Các action khác: Tối đa 1 ảnh, tự động xóa ảnh cũ khi upload ảnh mới. **Không kiểm tra Vision API.**
+  - `"remove_object"`: Dùng cho ảnh gốc cần xóa vật thể. Không giới hạn số lượng, tự động xóa sau khi API xử lý xong.
+  - `"expression"`: Dùng cho ảnh cần thay đổi biểu cảm. Không giới hạn số lượng, tự động xóa sau khi API xử lý xong.
+  - Các action khác (`"enhance"`, `"beauty"`, `"restore"`, `"aging"`, ...): Không giới hạn số lượng, tự động xóa sau khi API xử lý xong. **Không kiểm tra Vision API.**
 - `dimensions` (string | string[], optional): Kích thước ảnh selfie theo định dạng `"widthxheight"` (ví dụ: `"1024x768"`). Được sử dụng để truyền kích thước ảnh gốc cho WaveSpeed API khi thực hiện face swap, giúp giữ nguyên tỷ lệ và kích thước ảnh đầu ra. Nếu không cung cấp, WaveSpeed API sẽ tự động xác định kích thước từ ảnh đầu vào.
   - **Cho single file**: Có thể truyền string đơn: `"1024x768"`
   - **Cho multiple files**: Truyền JSON array cùng thứ tự với files: `["1024x768", "800x600", null]` (null cho file không xác định được kích thước)
