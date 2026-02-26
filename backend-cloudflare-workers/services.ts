@@ -2628,6 +2628,100 @@ export const callWaveSpeedEdit = async (
   }
 };
 
+export const callWaveSpeedBriaEraser = async (
+  imageUrl: string,
+  maskUrl: string,
+  env: Env,
+): Promise<FaceSwapResponse> => {
+  if (!env.WAVESPEED_API_KEY) {
+    return { Success: false, Message: 'WAVESPEED_API_KEY is required', StatusCode: 500 };
+  }
+
+  const debugEnabled = env.ENABLE_DEBUG_RESPONSE === 'true';
+  let debugInfo: Record<string, any> | undefined = debugEnabled ? {
+    provider: 'wavespeed_bria_eraser',
+    image: imageUrl,
+    mask: maskUrl,
+  } : undefined;
+
+  try {
+    const endpoint = API_ENDPOINTS.WAVESPEED_BRIA_ERASER;
+    const requestBody = {
+      enable_base64_output: false,
+      enable_sync_mode: true,
+      image: imageUrl,
+      mask_image: maskUrl,
+    };
+
+    if (debugInfo) {
+      debugInfo.curl = `curl -X POST "${endpoint}" -H "Content-Type: application/json" -H "Authorization: Bearer ${env.WAVESPEED_API_KEY}" -d '${JSON.stringify(requestBody)}'`;
+    }
+
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.WAVESPEED_API_KEY}`,
+      },
+      body: JSON.stringify(requestBody),
+    }, 120000);
+
+    const rawResponse = await response.text();
+    if (debugInfo) {
+      debugInfo.httpStatus = response.status;
+      debugInfo.rawResponse = rawResponse.substring(0, 1000);
+    }
+
+    if (!response.ok) {
+      return {
+        Success: false,
+        Message: `Bria Eraser API error: ${response.status}`,
+        StatusCode: response.status,
+        Error: rawResponse.substring(0, 500),
+        Debug: debugInfo,
+      };
+    }
+
+    const data = JSON.parse(rawResponse);
+
+    // Sync mode: response contains outputs directly
+    if (data.data?.outputs && Array.isArray(data.data.outputs) && data.data.outputs.length > 0) {
+      return {
+        Success: true,
+        ResultImageUrl: data.data.outputs[0],
+        Message: 'Bria Eraser completed',
+        StatusCode: 200,
+        Debug: debugInfo,
+      };
+    }
+
+    if (data.outputs && Array.isArray(data.outputs) && data.outputs.length > 0) {
+      return {
+        Success: true,
+        ResultImageUrl: data.outputs[0],
+        Message: 'Bria Eraser completed',
+        StatusCode: 200,
+        Debug: debugInfo,
+      };
+    }
+
+    return {
+      Success: false,
+      Message: 'Bria Eraser: No output image in response',
+      StatusCode: 500,
+      Debug: debugInfo,
+    };
+  } catch (error) {
+    return {
+      Success: false,
+      Message: `Bria Eraser error: ${error instanceof Error ? error.message : String(error)}`,
+      StatusCode: 500,
+      Error: error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200),
+      Debug: debugInfo,
+    };
+  }
+};
+
 export const callWaveSpeedGeminiImageEdit = async (
   imageUrls: string[],
   prompt: string,

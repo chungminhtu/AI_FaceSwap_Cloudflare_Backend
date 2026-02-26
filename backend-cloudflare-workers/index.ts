@@ -5,7 +5,7 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest, DepositRequest, SubscriptionVerifyRequest, BalanceResponse } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
 
@@ -7193,27 +7193,8 @@ export default {
           }
         }
 
-        const envError = validateEnv(env, 'vertex');
-        if (envError) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
-        }
-
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
-        const modelParam = body.model;
-        const effectiveProvider = getEffectiveProvider(body, env, 'REMOVE_OBJECT');
-
-        // Call AI with original image + mask image
-        // image sources: [original, mask] - the prompt tells the model to use the mask
-        const removeResult = await callNanoBanana(
-          IMAGE_PROCESSING_PROMPTS.REMOVE_OBJECT,
-          selfieUrl,
-          [selfieUrl, maskUrl],
-          env,
-          validAspectRatio,
-          modelParam,
-          { skipFacialPreservation: true, provider: body.provider }
-        );
+        // Use WaveSpeed Bria Eraser API (no prompt needed, just image + mask)
+        const removeResult = await callWaveSpeedBriaEraser(selfieUrl, maskUrl, env);
 
         if (!removeResult.Success || !removeResult.ResultImageUrl) {
           const failureCode = removeResult.StatusCode || 500;
