@@ -2739,7 +2739,7 @@ export const callWaveSpeedGeminiImageEdit = async (
   const requestBody: Record<string, any> = {
     enable_base64_output: false,
     enable_sync_mode: true,
-    images: imageUrls.length === 1 ? [imageUrls[0], imageUrls[0]] : imageUrls,
+    images: imageUrls,
     output_format: 'jpeg',
     prompt,
   };
