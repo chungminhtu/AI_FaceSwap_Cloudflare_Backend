@@ -5,7 +5,7 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest, DepositRequest, SubscriptionVerifyRequest, BalanceResponse } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, callWaveSpeedGeminiImageEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
 
@@ -212,6 +212,7 @@ const PROTECTED_MOBILE_APIS = [
   '/expression',
   '/expand',
   '/replace-object',
+  '/remove-text',
   '/profiles',
   '/api/products',
   '/api/user/balance',
@@ -858,8 +859,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
@@ -7735,6 +7736,142 @@ export default {
           await refundCredits(DB, body.profile_id, 'replace_object', creditResult.cost, 'Processing error', request);
         }
         logCriticalError('/replace-object', error, request, env, {
+          body: {
+            selfie_id: body?.selfie_id,
+            profile_id: body?.profile_id,
+          }
+        });
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle remove-text endpoint - remove highlighted text from image using Gemini 2.5 Flash
+    if (path === '/remove-text' && request.method === 'POST') {
+      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string } | undefined;
+      let creditResult: any = null;
+      try {
+        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string };
+
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body.profile_id).first();
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        creditResult = await deductCredits(DB, body.profile_id, 'remove_text', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
+        let selfieUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body.selfie_id, body.profile_id).first();
+
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'remove_text');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+          if (!validateImageUrl(selfieUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        const removeTextResult = await callWaveSpeedGeminiImageEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.REMOVE_TEXT, env);
+
+        if (!removeTextResult.Success || !removeTextResult.ResultImageUrl) {
+          const failureCode = removeTextResult.StatusCode || 500;
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(removeTextResult) : undefined;
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(flatDebug ? { debug: flatDebug } : {}),
+          }, httpStatus);
+        }
+
+        let resultUrl = removeTextResult.ResultImageUrl;
+        if (removeTextResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = removeTextResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove_text', request);
+
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'remove_text', resultUrl));
+        }
+
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        const debugEnabled = isDebugEnabled(env);
+        const flatDebug = debugEnabled ? buildFlatDebug(removeTextResult) : undefined;
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: removeTextResult.Message || 'Text removal completed',
+          code: 200,
+          ...(debugEnabled ? { debug: flatDebug } : {}),
+        });
+      } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'remove_text', creditResult.cost, 'Processing error', request);
+        }
+        logCriticalError('/remove-text', error, request, env, {
           body: {
             selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,
