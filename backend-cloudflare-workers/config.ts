@@ -81,7 +81,7 @@ export const IMAGE_PROCESSING_PROMPTS = {
 
   // Replace object prompt - merged image (origin + mask) sent to WaveSpeed edit
   // {{custom_prompt}} is replaced with user's custom text at runtime
-  REPLACE_OBJECT: 'Replace the highlighted part in the provided image to another subject - {{custom_prompt}}. Try to be as much as careful as you can you to ensure the image is not damaged, and seems exactly as original.',
+  REPLACE_OBJECT: 'Replace only the object inside the highlighted (masked) area with the specified new subject {{custom_prompt}}. Keep all surrounding elements, including hands, pose, lighting, shadows, perspective, and background unchanged. Ensure the new subject fits naturally in scale and orientation and blends seamlessly with the original image. Do not modify any content outside the masked region.',
 
   // Remove text prompt - merged image (origin + mask) sent to Gemini 2.5 Flash edit
   REMOVE_TEXT: 'Remove only the highlighted (masked) text. Perform edits strictly inside the highlighted area only and do not modify any content outside the mask. Keep all non-highlighted text, layout, alignment, font style, and formatting unchanged. Within the affected text box, automatically reflow and resize the remaining text to fill the space naturally while maintaining consistent formatting and proportions. Restore the background cleanly where needed without artifacts. Do not add new text outside the original text box.',
