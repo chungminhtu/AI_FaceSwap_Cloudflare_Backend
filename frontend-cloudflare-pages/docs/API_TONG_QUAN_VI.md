@@ -797,6 +797,8 @@ curl -X POST https://api.d.shotpix.app/upload-thumbnails \
 
 **Mục đích:** Thực hiện face swap giữa ảnh preset và ảnh selfie. Hỗ trợ multiple selfies để tạo composite results (ví dụ: wedding photos với cả male và female).
 
+**API làm gì:** Gửi preset + selfie(s) → AI (Vertex dùng prompt_json từ preset; WaveSpeed dùng prompt cố định) thay mặt/đặt người vào preset → trả `resultImageUrl`.
+
 **Lưu ý:**
 - Khác với `/background`: FaceSwap thay đổi khuôn mặt trong preset, còn AI Background merge selfie vào preset scene.
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
@@ -914,7 +916,14 @@ curl -X POST https://api.d.shotpix.app/faceswap \
 
 #### 2.2. POST `/background` - AI Background
 
-**Mục đích:** Tạo ảnh mới bằng cách merge selfie (người) vào preset (cảnh nền) sử dụng AI. Selfie sẽ được đặt vào preset scene một cách tự nhiên với nền AI được tạo tự động. Hỗ trợ 3 cách cung cấp nền: preset_image_id (từ database), preset_image_url (URL trực tiếp), hoặc custom_prompt (tạo nền từ text prompt sử dụng Vertex AI).
+**Mục đích:** Tạo ảnh mới bằng cách đặt selfie (người) vào nền. Hỗ trợ 3 cách cung cấp nền: `preset_image_id`, `preset_image_url`, hoặc `custom_prompt`.
+
+**Luồng xử lý (Logic):**
+
+| Trường hợp | API làm gì |
+|------------|------------|
+| **Có `custom_prompt`** | Một bước: ghép chuỗi `custom_prompt` của client vào template (có `{{place_holder}}`), gửi **một ảnh selfie** + prompt đó vào [WaveSpeed Seedream v4 edit-sequential](https://wavespeed.ai/models/bytedance/seedream-v4/edit-sequential). Không tạo ảnh nền từ text; chỉ gọi edit với 1 ảnh + prompt. |
+| **Không có `custom_prompt`** | Hai thứ: (1) Lấy ảnh nền từ preset (DB hoặc `remove_bg/background/` hoặc URL). (2) Merge: selfie + ảnh nền với prompt merge cố định (Vertex hoặc WaveSpeed), trả về ảnh composite. |
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -973,11 +982,8 @@ curl -X POST https://api.d.shotpix.app/background \
 ```
 
 **Lưu ý về custom_prompt:**
-- Khi sử dụng `custom_prompt`, hệ thống sẽ thực hiện 2 bước:
-  1. **Tạo ảnh nền**: Sử dụng Vertex AI Gemini để tạo ảnh nền từ text prompt
-  2. **Merge selfie**: Tự động merge selfie vào ảnh nền vừa tạo với lighting và color grading phù hợp
-- `custom_prompt` không thể kết hợp với `preset_image_id` hoặc `preset_image_url` (chỉ chọn một trong ba)
-- `aspect_ratio` và `model` sẽ được áp dụng cho cả việc tạo nền và merge
+- Khi dùng `custom_prompt`: prompt gửi đi = template (trong config) với `{{place_holder}}` được thay bằng chuỗi client gửi; gọi WaveSpeed Seedream v4 edit-sequential với **1 ảnh selfie** và prompt đó.
+- `custom_prompt` không thể kết hợp với `preset_image_id` hoặc `preset_image_url` (chỉ chọn một trong ba).
 
 **Lưu ý về preset_image_id:**
 - Hỗ trợ cả preset từ database (trong bảng `presets`) và file trực tiếp trong folder `/remove_bg/background/` trên R2
@@ -988,14 +994,11 @@ curl -X POST https://api.d.shotpix.app/background \
 **Request Parameters:**
 - `preset_image_id` (string, optional): ID ảnh preset hoặc filename trong folder `/remove_bg/background/`. Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `preset_image_url` (string, optional): URL ảnh preset trực tiếp (thay thế cho `preset_image_id`). Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
-- `custom_prompt` (string, optional): Prompt tùy chỉnh để tạo ảnh nền từ text sử dụng Vertex AI (thay thế cho preset image). Khi sử dụng `custom_prompt`, hệ thống sẽ:
-  1. Tạo ảnh nền từ text prompt bằng Vertex AI Gemini
-  2. Merge selfie vào ảnh nền đã tạo
-  Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
+- `custom_prompt` (string, optional): Chuỗi mô tả nền/scene do client gửi; được thay vào `{{place_holder}}` trong template và gửi cùng **một ảnh selfie** tới WaveSpeed Seedream v4 edit-sequential. Phải cung cấp `preset_image_id` HOẶC `preset_image_url` HOẶC `custom_prompt` (chỉ một trong ba).
 - `selfie_id` (string, optional): ID ảnh selfie đã lưu trong database (người). Phải cung cấp `selfie_id` HOẶC `selfie_image_url` (không phải cả hai).
 - `selfie_image_url` (string, optional): URL ảnh selfie trực tiếp (thay thế cho `selfie_id`).
 - `profile_id` (string, required): ID profile người dùng.
-- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"3:4"`. Khi sử dụng `custom_prompt`, tỷ lệ này sẽ được áp dụng cho cả việc tạo nền và merge.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Các giá trị hỗ trợ: `"original"`, `"1:1"`, `"3:2"`, `"2:3"`, `"3:4"`, `"4:3"`, `"4:5"`, `"5:4"`, `"9:16"`, `"16:9"`, `"21:9"`. Mặc định: `"3:4"`.
 
 **Response:**
 ```json
@@ -1046,6 +1049,8 @@ curl -X POST https://api.d.shotpix.app/background \
 #### 2.3. POST `/enhance` - AI Enhance
 
 **Mục đích:** AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
+
+**API làm gì:** Gửi `image_url` → AI (Vertex hoặc WaveSpeed) enhance ảnh → trả `resultImageUrl`.
 
 **Lưu ý:** 
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
@@ -1102,6 +1107,8 @@ curl -X POST https://api.d.shotpix.app/enhance \
 #### 2.4. POST `/beauty` - AI Beauty
 
 **Mục đích:** AI beautify ảnh - cải thiện thẩm mỹ khuôn mặt (lý tưởng cho selfies và chân dung). Làm mịn da, xóa mụn, làm sáng mắt, tinh chỉnh khuôn mặt một cách tự nhiên.
+
+**API làm gì:** Gửi `image_url` → AI beautify (Vertex/WaveSpeed) → trả `resultImageUrl`.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -1162,6 +1169,8 @@ curl -X POST https://api.d.shotpix.app/beauty \
 #### 2.5. POST `/filter` - AI Filter (Styles)
 
 **Mục đích:** AI Filter (Styles) - Áp dụng các style sáng tạo hoặc điện ảnh từ preset lên selfie trong khi giữ nguyên tính toàn vẹn khuôn mặt.
+
+**API làm gì:** Gửi preset + selfie → AI (Vertex dùng prompt_json; WaveSpeed phân tích style từ preset) áp dụng style lên selfie, giữ mặt → trả `resultImageUrl`.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -1320,6 +1329,8 @@ flowchart TD
 
 **Mục đích:** AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
 
+**API làm gì:** Gửi `image_url` → AI restore (Vertex/WaveSpeed) → trả `resultImageUrl`.
+
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Request:**
@@ -1375,6 +1386,8 @@ curl -X POST https://api.d.shotpix.app/restore \
 #### 2.7. POST `/aging` - AI Aging
 
 **Mục đích:** AI biến đổi tuổi khuôn mặt - áp dụng style tuổi từ preset lên selfie. Mỗi preset chứa prompt_json định nghĩa style tuổi cụ thể (em bé, người già, v.v.).
+
+**API làm gì:** Gửi preset (có prompt_json style tuổi) + selfie → AI (Vertex/WaveSpeed) áp dụng biến đổi tuổi → trả `resultImageUrl`.
 
 **Lưu ý:**
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
@@ -1460,6 +1473,8 @@ curl -X POST https://api.d.shotpix.app/aging \
 
 **Mục đích:** Upscale ảnh lên độ phân giải 4K sử dụng WaveSpeed AI.
 
+**API làm gì:** Gửi `image_url` → WaveSpeed upscaler → trả `resultImageUrl` (4K).
+
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Request:**
@@ -1520,6 +1535,8 @@ curl -X POST https://api.d.shotpix.app/upscaler4k \
 #### 2.9. POST `/remove-object` - AI Xóa vật thể
 
 **Mục đích:** Xóa vật thể hoặc vùng được chỉ định bằng mask khỏi ảnh, lấp đầy bằng nền tự nhiên. Sử dụng WaveSpeed Bria Eraser API (SOTA object removal).
+
+**API làm gì:** Gửi ảnh gốc + mask (selfie_id + mask_id hoặc URL) → WaveSpeed Bria Eraser xóa vùng trắng trên mask → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -1583,6 +1600,8 @@ curl -X POST https://api.d.shotpix.app/remove-object \
 #### 2.10. POST `/expression` - AI Thay đổi biểu cảm
 
 **Mục đích:** Thay đổi biểu cảm khuôn mặt trong ảnh dựa trên loại biểu cảm được chọn.
+
+**API làm gì:** Gửi selfie + `expression` (sad/laugh/smile/...) → AI (Vertex/WaveSpeed) chỉnh biểu cảm → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -1655,6 +1674,8 @@ curl -X POST https://api.d.shotpix.app/expression \
 
 **Mục đích:** Mở rộng/outpaint ảnh sử dụng WaveSpeed AI. Client tạo PNG với vùng transparent là nơi AI sẽ fill nội dung mới.
 
+**API làm gì:** Gửi ảnh PNG (có vùng trong suốt) → AI fill/expand vùng transparent → trả `resultImageUrl`.
+
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Cách hoạt động:**
@@ -1709,6 +1730,8 @@ curl -X POST https://api.d.shotpix.app/expand \
 #### 2.12. POST `/replace-object` - AI Replace Object
 
 **Mục đích:** Thay thế vật thể/vùng được đánh dấu trong ảnh bằng nội dung mới do người dùng mô tả. Sử dụng WaveSpeed AI flux-2-klein-9b/edit.
+
+**API làm gì:** Gửi ảnh đã ghép (gốc + mask) + `custom_prompt` mô tả nội dung thay thế → AI edit vùng highlight → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -1766,6 +1789,8 @@ curl -X POST https://api.d.shotpix.app/replace-object \
 #### 2.13. POST `/remove-text` - AI Remove Text
 
 **Mục đích:** Xóa text được đánh dấu (masked) khỏi ảnh sử dụng Gemini 2.5 Flash Image Edit qua WaveSpeed.
+
+**API làm gì:** Gửi ảnh đã ghép (gốc + mask, vùng highlight = text cần xóa) → AI xóa text trong vùng mask, giữ layout → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
