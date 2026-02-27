@@ -404,6 +404,7 @@ export const validateImageUrl = (url: string, env: any): boolean => {
     
     allowedDomains.push('.r2.cloudflarestorage.com');
     allowedDomains.push('.r2.dev');
+    allowedDomains.push('.cloudfront.net');
     
     const isAllowed = allowedDomains.some(domain => 
       hostname === domain || hostname.endsWith(domain)
