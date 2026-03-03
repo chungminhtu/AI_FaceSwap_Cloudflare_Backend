@@ -2549,7 +2549,7 @@ export const callWaveSpeedEdit = async (
       enable_base64_output: false,
       enable_sync_mode: true,
       images: imageUrls,
-      prompt: prompt,
+      prompt: `${prompt}\n\n${VERTEX_AI_PROMPTS.CONTENT_SAFETY_INSTRUCTION}`,
       seed: -1,
     };
 
@@ -2741,7 +2741,7 @@ export const callWaveSpeedGeminiImageEdit = async (
     enable_sync_mode: true,
     images: imageUrls,
     output_format: 'jpeg',
-    prompt,
+    prompt: `${prompt}\n\n${VERTEX_AI_PROMPTS.CONTENT_SAFETY_INSTRUCTION}`,
   };
   // Pass aspect_ratio to WaveSpeed Gemini API if provided (vertex-style ratio like "3:4", "9:16")
   if (aspectRatio && aspectRatio !== 'original') {
@@ -2801,7 +2801,7 @@ export const callWaveSpeedSeedreamEdit = async (
     enable_base64_output: false,
     enable_sync_mode: true,
     images: imageUrls,
-    prompt,
+    prompt: `${prompt}\n\n${VERTEX_AI_PROMPTS.CONTENT_SAFETY_INSTRUCTION}`,
   };
   if (debugInfo) (debugInfo as any).curl = 'curl -X POST "' + endpoint + '" -H "Content-Type: application/json" -H "Authorization: Bearer ' + apiKey + '" -d \'' + JSON.stringify(requestBody) + '\'';
 
