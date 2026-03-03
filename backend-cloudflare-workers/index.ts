@@ -5,7 +5,7 @@ const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest, DepositRequest, SubscriptionVerifyRequest, BalanceResponse } from './types';
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
-import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, generateBackgroundFromPrompt, callWaveSpeedTextToImage, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, callWaveSpeedGeminiImageEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
+import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, callWaveSpeedGeminiImageEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
 
@@ -5417,77 +5417,103 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
+        let selfieUrl: string;
+        let selfieResultForDelete: any = null;
+        if (hasSelfieId) {
+          const selfieResult = results[hasPresetId ? 2 : 1];
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'background');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse(`Selfie with ID ${body.selfie_id} not found or does not belong to profile`, 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+          selfieResultForDelete = selfieResult;
+          const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+        }
+
         let targetUrl: string;
         let presetName: string;
         let presetImageId: string | null = null;
 
         if (hasCustomPrompt) {
-          // Custom prompt (text-to-image) works with both Vertex AI and WaveSpeed
-          const effectiveProvider = env.IMAGE_PROVIDER;
-
-          // Get selfie URL for aspect ratio calculation
-          let selfieUrlForRatio = '';
-          if (hasSelfieId) {
-            const selfieResult = results[hasPresetId ? 2 : 1];
-            if (selfieResult) {
-              const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
-              selfieUrlForRatio = getR2PublicUrl(env, storedKey, requestUrl.origin);
-            }
-          } else if (hasSelfieUrl) {
-            selfieUrlForRatio = body.selfie_image_url!;
+          const envError = validateEnv(env, 'wavespeed');
+          if (envError) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
           }
-          
-          // Resolve aspect ratio from selfie image if "original" is specified
-          const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrlForRatio, env, { allowOriginal: true });
-          const modelParam = body.model;
-
-          let backgroundGenResult;
-          
-          if (effectiveProvider === 'wavespeed') {
-            // WaveSpeed text-to-image
-            const envError = validateEnv(env, 'wavespeed');
-            if (envError) {
-              const debugEnabled = isDebugEnabled(env);
-              return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
-            }
-            backgroundGenResult = await callWaveSpeedTextToImage(body.custom_prompt!, env, validAspectRatio);
-          } else {
-            // Vertex AI text-to-image (default)
-            const envError = validateEnv(env, 'vertex');
-            if (envError) {
-              const debugEnabled = isDebugEnabled(env);
-              return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
-            }
-            backgroundGenResult = await generateBackgroundFromPrompt(body.custom_prompt!, env, validAspectRatio, modelParam);
+          const customPrompt = VERTEX_AI_PROMPTS.BACKGROUND_CUSTOM_PROMPT_TEMPLATE.replace(/\{\{place_holder\}\}/g, body.custom_prompt!.trim());
+          const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
+          let sizeForProvider: string | undefined;
+          const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
+          if (!userExplicitlySetAspectRatio) {
+            try {
+              const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
+              const imageDimensionsExtended = await getImageDimensionsExtended(selfieUrl, env);
+              if (imageDimensionsExtended) {
+                const optimal = calculateOptimalSize(imageDimensionsExtended.width, imageDimensionsExtended.height, 1536, 256);
+                sizeForProvider = optimal.sizeString;
+              }
+            } catch (e) {}
           }
-
-          if (!backgroundGenResult.Success || !backgroundGenResult.ResultImageUrl) {
-            const failureCode = backgroundGenResult.StatusCode || 500;
+          const mergeResult = await callWaveSpeedSeedreamEdit([selfieUrl], customPrompt, env, validAspectRatio, sizeForProvider);
+          if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
+            const failureCode = mergeResult.StatusCode || 500;
             const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
             const debugEnabled = isDebugEnabled(env);
-            const flatDebug = debugEnabled ? buildFlatDebug(backgroundGenResult) : undefined;
-            const debugPayload = debugEnabled ? compact({
-              ...flatDebug,
-            }) : undefined;
-
+            const flatDebug = debugEnabled ? buildFlatDebug(mergeResult) : undefined;
             return jsonResponse({
               data: null,
               status: 'error',
               message: '',
               code: failureCode,
-              ...(debugPayload ? { debug: debugPayload } : {}),
+              ...(debugEnabled && flatDebug ? { debug: compact(flatDebug) } : {}),
             }, httpStatus);
           }
-
-          if (backgroundGenResult.ResultImageUrl?.startsWith('r2://')) {
-            const r2Key = backgroundGenResult.ResultImageUrl.replace('r2://', '');
-            targetUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
-          } else {
-            targetUrl = backgroundGenResult.ResultImageUrl!;
+          let resultUrl = mergeResult.ResultImageUrl;
+          if (resultUrl?.startsWith('r2://')) {
+            const r2Key = resultUrl.replace('r2://', '');
+            resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
           }
-          presetName = 'Generated Background';
-          presetImageId = null;
-        } else if (hasPresetId) {
+          let savedResultId: string | null = null;
+          if (body.profile_id) {
+            try {
+              savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'background', request);
+            } catch (dbError) {}
+          }
+          if (hasSelfieId && body.selfie_id) {
+            ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id || null, 'background', resultUrl));
+          }
+          if (hasSelfieId && selfieResultForDelete) {
+            const selfieId = (selfieResultForDelete as any).id;
+            const selfieExt = (selfieResultForDelete as any).ext;
+            ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+          }
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(mergeResult) : undefined;
+          const debugPayload = debugEnabled && flatDebug ? compact(flatDebug) : undefined;
+          if (body.profile_id) {
+            ctx.waitUntil(sendResultNotification(env, body.profile_id, 'background', { success: true, resultId: savedResultId !== null ? String(savedResultId) : undefined }));
+          }
+          return jsonResponse({
+            data: { id: savedResultId !== null ? String(savedResultId) : null, resultImageUrl: resultUrl },
+            status: 'success',
+            message: mergeResult.Message || 'Processing successful',
+            code: 200,
+            ...(debugPayload ? { debug: debugPayload } : {}),
+          });
+        }
+
+        if (hasPresetId) {
           const presetResult = results[1];
 
           // If preset not found in database, try looking in remove_bg/background folder
@@ -5545,32 +5571,6 @@ export default {
           targetUrl = body.preset_image_url!;
           presetName = 'Result Preset';
           presetImageId = null;
-        }
-
-        let selfieUrl: string;
-        let selfieResultForDelete: any = null;
-        if (hasSelfieId) {
-          const selfieResult = results[hasPresetId ? 2 : 1];
-          if (!selfieResult) {
-            // Selfie not found - check for cached result (selfie may have been auto-deleted)
-            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id || null, 'background');
-            if (cachedResult) {
-              return jsonResponse({
-                data: { resultImageUrl: cachedResult, cached: true },
-                status: 'success',
-                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
-                code: 200,
-              });
-            }
-            const debugEnabled = isDebugEnabled(env);
-            return errorResponse(`Selfie with ID ${body.selfie_id} not found or does not belong to profile`, 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
-          }
-          selfieResultForDelete = selfieResult;
-
-          const storedKey = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
-          selfieUrl = getR2PublicUrl(env, storedKey, requestUrl.origin);
-        } else {
-          selfieUrl = body.selfie_image_url!;
         }
 
         // Check IMAGE_PROVIDER configuration

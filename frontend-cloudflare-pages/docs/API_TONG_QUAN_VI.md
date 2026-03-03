@@ -9,8 +9,9 @@ Tài liệu này mô tả đầy đủ các điểm cuối (endpoint) mà Cloudf
 ## Mục lục
 
 - [Xác thực API](#xác-thực-api-api-authentication)
-- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-15-apis)
+- [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-21-apis)
 - [Provider Aspect Ratio (Vertex / WaveSpeed)](#provider-aspect-ratio-vertex--wavespeed)
+- [AI Model / Provider theo từng API](#ai-model--provider-theo-từng-api)
 - [Error Codes Reference](#error-codes-reference)
 - [API Endpoints (Chi tiết)](#api-endpoints-chi-tiết)
   - [1. Upload & Quản lý File](#1-upload--quản-lý-file)
@@ -47,6 +48,9 @@ Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính n
 - POST `/upscaler4k`
 - POST `/remove-object`
 - POST `/expression`
+- POST `/expand`
+- POST `/replace-object`
+- POST `/remove-text`
 - POST `/upload-url` (type=mask) - Upload mask image
 - POST `/profiles` - Chỉ khi tạo profile mới
 - GET `/profiles/{id}` - Chỉ khi lấy profile theo ID
@@ -189,6 +193,30 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 ### Endpoints áp dụng
 
 `/enhance`, `/beauty`, `/restore`, `/aging`, `/filter`, `/faceswap` — đều hỗ trợ cả hai provider với hành vi trên.
+
+---
+
+## AI Model / Provider theo từng API
+
+Thứ tự ưu tiên: `body.provider` → `env.IMAGE_PROVIDER_<MODE>` (vd. `IMAGE_PROVIDER_FACESWAP`) → `env.IMAGE_PROVIDER`. Endpoint một đường đi (upscaler4k, remove-object, expand, replace-object, remove-text) luôn dùng model cố định.
+
+| Endpoint | Current AI model |
+|----------|------------------|
+| POST `/faceswap` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
+| POST `/background` | **WaveSpeed** Seedream v4 (merge) |
+| POST `/enhance` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
+| POST `/beauty` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
+| POST `/filter` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
+| POST `/restore` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
+| POST `/aging` | **WaveSpeed** `gemini-2.5-flash-image` (edit) |
+| POST `/expression` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
+| POST `/upscaler4k` | **WaveSpeed** `image-upscaler` |
+| POST `/remove-object` | **WaveSpeed Bria** `bria/eraser` |
+| POST `/expand` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
+| POST `/replace-object` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
+| POST `/remove-text` | **WaveSpeed** `gemini-2.5-flash-image/edit` |
+
+Override từng endpoint: `IMAGE_PROVIDER_FACESWAP`, `IMAGE_PROVIDER_FILTER`, `IMAGE_PROVIDER_AGING`, `IMAGE_PROVIDER_RESTORE`, `IMAGE_PROVIDER_BEAUTY`, `IMAGE_PROVIDER_ENHANCE`, `IMAGE_PROVIDER_MERGE`, `IMAGE_PROVIDER_4K` (trong deployments-secrets hoặc env).
 
 ---
 
@@ -1672,7 +1700,9 @@ curl -X POST https://api.d.shotpix.app/expression \
 
 #### 2.11. POST `/expand` - AI Expand
 
-**Mục đích:** Mở rộng/outpaint ảnh sử dụng WaveSpeed AI. Client tạo PNG với vùng transparent là nơi AI sẽ fill nội dung mới.
+**Mục đích:** Mở rộng/outpaint ảnh. Client tạo PNG với vùng transparent là nơi AI sẽ fill nội dung mới.
+
+**AI model:** WaveSpeed **Flux 2 Klein 9B** (edit) — endpoint `api.wavespeed.ai/.../flux-2-klein-9b/edit`. Chỉ dùng WaveSpeed; không hỗ trợ đổi provider.
 
 **API làm gì:** Gửi ảnh PNG (có vùng trong suốt) → AI fill/expand vùng transparent → trả `resultImageUrl`.
 
@@ -2889,7 +2919,7 @@ Chi phí = `CREDIT_COST_*` × `TIER_MULTIPLIER_*`
 
 **Tổng số API endpoints: 33**
 
-Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-15-apis) ở đầu tài liệu.
+Xem danh sách đầy đủ tại [APIs cần tích hợp với mobile](#apis-cần-tích-hợp-với-mobile-21-apis) ở đầu tài liệu.
 
 ---
 

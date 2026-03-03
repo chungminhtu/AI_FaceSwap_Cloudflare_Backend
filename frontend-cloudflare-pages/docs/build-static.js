@@ -71,7 +71,7 @@ function generateSidebarFromAPI(files) {
   lines.forEach((line) => {
     const trimmed = line.trim();
     
-    if (trimmed.includes('### APIs cần tích hợp với mobile (14 APIs)')) {
+    if (trimmed.includes('### APIs cần tích hợp với mobile (21 APIs)')) {
       inMobileAPIs = true;
       return;
     }
@@ -112,12 +112,35 @@ function generateSidebarFromAPI(files) {
     }
   });
   
+  let inSubSection = false;
+  const subSectionItems = [];
+  lines.forEach((line) => {
+    const t = line.trim();
+    if (t.startsWith('## 6. Thanh toán & Subscription')) {
+      inSubSection = true;
+      subSectionItems.push({ level: 2, title: '6. Thanh toán & Subscription (Google Play Billing)', raw: t });
+      return;
+    }
+    if (inSubSection && t.startsWith('## ') && !t.startsWith('## 6.')) {
+      inSubSection = false;
+      return;
+    }
+    if (inSubSection && t.startsWith('### ')) {
+      const title = t.replace(/^###\s+/, '');
+      subSectionItems.push({ level: 3, title, raw: t });
+    }
+    if (inSubSection && t.startsWith('#### ')) {
+      const title = t.replace(/^####\s+/, '').replace(/`/g, '').trim();
+      subSectionItems.push({ level: 4, title, raw: t });
+    }
+  });
+
   if (mobileAPIs.length > 0) {
     const mobileSectionIndex = sidebar.findIndex(line => line.includes('📚 Tổng quan API'));
     const insertIndex = mobileSectionIndex + 2;
-    
-    sidebar.splice(insertIndex, 0, '* **APIs cần tích hợp với mobile (14 APIs)**');
-    
+
+    sidebar.splice(insertIndex, 0, '* **APIs cần tích hợp với mobile (21 APIs)**');
+
     const anchorMap = {
       'POST /upload-url': '11-post-upload-url-typeselfie---upload-selfie',
       'POST /faceswap': '21-post-faceswap---face-swap',
@@ -142,6 +165,16 @@ function generateSidebarFromAPI(files) {
     });
     
     sidebar.splice(insertIndex + mobileAPIs.length + 1, 0, '');
+  }
+
+  if (subSectionItems.length > 0) {
+    sidebar.push('* **💳 Thanh toán & Subscription**');
+    subSectionItems.forEach((item) => {
+      const anchor = slugify(item.title);
+      const indent = item.level === 4 ? '    ' : item.level === 3 ? '  ' : '';
+      sidebar.push(`${indent}* [${item.title}](API_TONG_QUAN_VI.md#${anchor})`);
+    });
+    sidebar.push('');
   }
 
   if (files['FCM_SETUP_COMPLETE_VI.md']) {
@@ -219,7 +252,7 @@ function buildSearchIndex(files) {
 
 function slugify(text) {
   return text.toLowerCase()
-    .replace(/[^\w\s-]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .trim();
