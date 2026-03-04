@@ -514,6 +514,16 @@ function generateStaticHTML(files, sidebar, searchIndex) {
       },
       notFoundPage: true,
       executeScript: true,
+      markdown: {
+        renderer: {
+          code: function(code, lang) {
+            if (lang === 'mermaid') {
+              return '<div class="mermaid">' + code + '</div>';
+            }
+            return this.origin.code.apply(this, arguments);
+          }
+        }
+      },
       pagination: {
         previousText: 'Trước',
         nextText: 'Tiếp',
@@ -571,6 +581,15 @@ function generateStaticHTML(files, sidebar, searchIndex) {
             return originalFetch.apply(this, arguments);
           };
           
+          // Render mermaid diagrams after page load
+          hook.doneEach(function() {
+            var els = document.querySelectorAll('.mermaid');
+            els.forEach(function(el) {
+              if (el.getAttribute('data-processed')) return;
+              try { mermaid.run({ nodes: [el] }); } catch(e) { console.warn('Mermaid render error:', e); }
+            });
+          });
+
           // Inject search index when search plugin loads
           hook.doneEach(function() {
             if (window.Docsify && window.Docsify.util && window.__staticSearchIndex) {
@@ -613,6 +632,8 @@ function generateStaticHTML(files, sidebar, searchIndex) {
     };
   </script>
   
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: false, theme: 'default' });</script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/pagination.min.js"></script>
