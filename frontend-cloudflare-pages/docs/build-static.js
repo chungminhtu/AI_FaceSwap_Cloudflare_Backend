@@ -19,11 +19,9 @@ function buildStatic() {
     }
   });
   
-  // Generate sidebar from API documentation structure (prioritize API docs)
+  // Generate sidebar from _sidebar.md or auto-generate from files
   let sidebarContent = '';
-  if (files['API_TONG_QUAN_VI.md']) {
-    sidebarContent = generateSidebarFromAPI(files);
-  } else if (fs.existsSync(path.join(docsDir, '_sidebar.md'))) {
+  if (fs.existsSync(path.join(docsDir, '_sidebar.md'))) {
     sidebarContent = fs.readFileSync(path.join(docsDir, '_sidebar.md'), 'utf8');
   } else {
     // Generate sidebar from files
