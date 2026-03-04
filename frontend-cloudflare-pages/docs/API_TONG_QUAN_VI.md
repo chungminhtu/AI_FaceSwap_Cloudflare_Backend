@@ -51,6 +51,7 @@ Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính n
 - POST `/expand`
 - POST `/replace-object`
 - POST `/remove-text`
+- POST `/hair-style`
 - POST `/upload-url` (type=mask) - Upload mask image
 - POST `/profiles` - Chỉ khi tạo profile mới
 - GET `/profiles/{id}` - Chỉ khi lấy profile theo ID
@@ -120,11 +121,11 @@ Khi API key không hợp lệ hoặc thiếu:
 
 ---
 
-## APIs cần tích hợp với mobile (21 APIs)
+## APIs cần tích hợp với mobile (22 APIs)
 
 **Tổng số API endpoints: 30**
 
-### APIs cần tích hợp với mobile (21 APIs)
+### APIs cần tích hợp với mobile (22 APIs)
 
 1. POST `/upload-url` (type=selfie) - Upload selfie
 2. POST `/upload-url` (type=mask) - Upload mask image (cho remove object)
@@ -141,12 +142,13 @@ Khi API key không hợp lệ hoặc thiếu:
 13. POST `/expand` - AI mở rộng ảnh
 14. POST `/replace-object` - AI thay thế vật thể trong ảnh
 15. POST `/remove-text` - AI xóa text khỏi ảnh
-16. POST `/profiles` - Tạo profile
-17. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
-18. PUT `/profiles/{id}` - Cập nhật profile
-19. GET `/selfies` - Liệt kê selfies
-20. GET `/results` - Liệt kê results (generated images)
-21. DELETE `/results/{id}` - Xóa result
+16. POST `/hair-style` - AI thay đổi kiểu tóc
+17. POST `/profiles` - Tạo profile
+18. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
+19. PUT `/profiles/{id}` - Cập nhật profile
+20. GET `/selfies` - Liệt kê selfies
+21. GET `/results` - Liệt kê results (generated images)
+22. DELETE `/results/{id}` - Xóa result
 
 ### APIs không cần tích hợp với mobile (11 APIs)
 
@@ -213,6 +215,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/expand` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
 | POST `/replace-object` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
 | POST `/remove-text` | **WaveSpeed** `gemini-2.5-flash-image/edit` |
+| POST `/hair-style` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
 
 ---
 
