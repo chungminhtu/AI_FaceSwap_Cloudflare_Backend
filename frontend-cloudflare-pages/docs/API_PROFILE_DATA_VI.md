@@ -447,7 +447,7 @@ curl https://api.d.shotpix.app/results?profile_id=profile_1234567890
 **Response:** `data` là mảng phẳng (flat array) các result. Mỗi item:
 - `id`: ID duy nhất của result
 - `result_url`: URL public của ảnh kết quả
-- `action`: Loại action (`faceswap`, `background`, `upscaler4k`, `enhance`, `beauty`, `filter`, `restore`, `aging`). Có thể null.
+- `action`: Tên endpoint API đã tạo ra result này. Giá trị chính là tên route không có `/`: `faceswap`, `background`, `enhance`, `beauty`, `filter`, `restore`, `aging`, `upscaler4k`, `remove-object`, `expression`, `expand`, `replace-object`, `remove-text`, `hair-style`. Có thể null.
 - `created_at`: Thời gian tạo (ISO 8601)
 
 ---
