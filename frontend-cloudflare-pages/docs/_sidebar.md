@@ -4,7 +4,4 @@
 * [👤 3-4. Profile & Dữ liệu](API_PROFILE_DATA_VI.md)
 * [⚙️ 5. Hệ thống & Cấu hình](API_SYSTEM_VI.md)
 * [💳 6. Thanh toán & Subscription](API_BILLING_VI.md)
-* [📊 Credit System Diagrams](CREDIT_SYSTEM_DIAGRAMS.md)
 * [🔔 Push (FCM)](FCM_SETUP_COMPLETE_VI.md)
-* [🏪 Google Play Setup](GOOGLE_PLAY_SETUP_VI.md)
-* [📋 Requirements](REQUIREMENTS.md)
