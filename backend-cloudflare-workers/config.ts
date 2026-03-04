@@ -50,7 +50,7 @@ export const WAVESPEED_PROMPTS = {
 
   // Background merge mode: 1 selfie + 1 background/preset
   // image1 = selfie (person with or without transparent background), image2 = background scene
-  MERGE_PROMPT_DEFAULT: `Seamlessly place the person from Image 1 into the scene from Image 2. Integrate the person naturally with proper scale, perspective, and positioning. Match lighting, shadows, color temperature, and contrast perfectly with the background environment. Ensure realistic compositing with proper edge blending, ambient occlusion, and environmental reflections. The person should look naturally grounded in the scene as if photographed together.`,
+  MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. Seamlessly integrate the subject with corrected, realistic proportions. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and naturally integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. For people: preserve facial features and expressions, adjust clothing if needed to match the scene. For objects/animals: preserve key characteristics and scale appropriately. Ensure the final composite looks like a natural, unedited photograph.`,
 };
 
 // Image Processing Prompts Configuration
