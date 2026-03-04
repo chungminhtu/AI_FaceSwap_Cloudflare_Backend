@@ -1044,7 +1044,7 @@ export default {
         return method === 'POST';
       }
       if (path.startsWith('/profiles/') && path.split('/').length === 3) {
-        return method === 'GET';
+        return method === 'GET' || method === 'DELETE';
       }
       if (path.startsWith('/api/deposit/status/')) {
         return true;
@@ -3659,6 +3659,87 @@ export default {
         const debugEnabled = isDebugEnabled(env);
         const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
         return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 500) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle profile deletion
+    if (path.startsWith('/profiles/') && request.method === 'DELETE') {
+      try {
+        const idParam = extractPathId(path, '/profiles/');
+        if (!idParam) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Resolve profile by id, device_id, or user_id (same as GET)
+        let foundBy = '';
+        let result = await DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(idParam).first();
+        if (result) foundBy = 'profile_id';
+        if (!result) {
+          result = await DB.prepare('SELECT id FROM profiles WHERE device_id = ?').bind(idParam).first();
+          if (result) foundBy = 'device_id';
+        }
+        if (!result) {
+          result = await DB.prepare('SELECT id FROM profiles WHERE user_id = ?').bind(idParam).first();
+          if (result) foundBy = 'user_id';
+        }
+
+        if (!result) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { idParam, searchedBy: 'id, device_id, and user_id', path } : undefined, request, env);
+        }
+
+        const profileId = (result as any).id;
+
+        // Delete R2 files for selfies owned by this profile
+        const selfies = await DB.prepare('SELECT id, ext FROM selfies WHERE profile_id = ?').bind(profileId).all();
+        if (selfies.results?.length) {
+          const deletePromises = selfies.results.map((s: any) => {
+            const key = `selfie/${s.id}.${s.ext}`;
+            return R2_BUCKET.delete(key).catch(() => {});
+          });
+          ctx.waitUntil(Promise.all(deletePromises));
+        }
+
+        // Delete R2 files for results owned by this profile
+        const results_rows = await DB.prepare('SELECT id, ext FROM results WHERE profile_id = ?').bind(profileId).all();
+        if (results_rows.results?.length) {
+          const deletePromises = results_rows.results.map((r: any) => {
+            if (r.id && r.ext) {
+              const key = `results/${r.id}.${r.ext}`;
+              return R2_BUCKET.delete(key).catch(() => {});
+            }
+            return Promise.resolve();
+          });
+          ctx.waitUntil(Promise.all(deletePromises));
+        }
+
+        // Delete from DB (selfies, device_tokens cascade; others need manual delete)
+        await DB.batch([
+          DB.prepare('DELETE FROM audit_log WHERE profile_id = ?').bind(profileId),
+          DB.prepare('DELETE FROM subscriptions WHERE profile_id = ?').bind(profileId),
+          DB.prepare('DELETE FROM payments WHERE profile_id = ?').bind(profileId),
+          DB.prepare('DELETE FROM results WHERE profile_id = ?').bind(profileId),
+          DB.prepare('DELETE FROM selfies WHERE profile_id = ?').bind(profileId),
+          DB.prepare('DELETE FROM device_tokens WHERE profile_id = ?').bind(profileId),
+          DB.prepare('DELETE FROM profiles WHERE id = ?').bind(profileId),
+        ]);
+
+        const debugEnabled = isDebugEnabled(env);
+        return jsonResponse({
+          data: { id: profileId },
+          status: 'success',
+          message: 'Profile and all associated data deleted successfully',
+          code: 200,
+          ...(debugEnabled ? { debug: { idParam, foundBy, selfiesDeleted: selfies.results?.length || 0, resultsDeleted: results_rows.results?.length || 0 } } : {})
+        }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/profiles/{id} (DELETE)', error, request, env, {
+          idParam: extractPathId(path, '/profiles/')
+        });
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message.substring(0, 200) : String(error).substring(0, 200);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path } : undefined, request, env);
       }
     }
 

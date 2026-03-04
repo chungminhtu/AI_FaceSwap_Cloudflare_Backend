@@ -237,6 +237,44 @@ curl https://api.d.shotpix.app/profiles
 
 ---
 
+### 3.5. DELETE `/profiles/{id}` - Xóa profile
+
+**Mục đích:** Xóa profile và toàn bộ dữ liệu liên quan (selfies, results, subscriptions, payments, device tokens, audit log). File R2 cũng được xóa.
+
+**Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Request:**
+```bash
+curl -X DELETE https://api.d.shotpix.app/profiles/{id} \
+  -H "X-API-Key: your_api_key_here"
+```
+
+| Param | Type | Required | Mô tả |
+|-------|------|----------|-------|
+| `id` | string | Yes | Có thể là Profile ID, Device ID, hoặc User ID |
+
+**Response thành công:**
+```json
+{
+  "data": { "id": "profile_1234567890_abc123" },
+  "status": "success",
+  "message": "Profile and all associated data deleted successfully",
+  "code": 200
+}
+```
+
+**Response lỗi (404):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Profile not found",
+  "code": 404
+}
+```
+
+---
+
 ## 4. Truy vấn Dữ liệu
 
 ### 4.1. GET `/presets` - Liệt kê presets
