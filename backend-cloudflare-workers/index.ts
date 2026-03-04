@@ -5484,6 +5484,23 @@ export default {
             const r2Key = resultUrl.replace('r2://', '');
             resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
           }
+
+          // Post-generation safety check for custom prompt results
+          const safetyCheck = await checkSafeSearch(resultUrl, env);
+          if (!safetyCheck.isSafe) {
+            if (body.profile_id && creditResult?.cost > 0) {
+              await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Content safety violation', request);
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return jsonResponse({
+              data: null,
+              status: 'error',
+              message: '',
+              code: safetyCheck.statusCode || 1001,
+              ...(debugEnabled ? { debug: { safetyCategory: safetyCheck.violationCategory, safetyLevel: safetyCheck.violationLevel, safetyDetails: safetyCheck.details } } : {}),
+            }, 422);
+          }
+
           let savedResultId: string | null = null;
           if (body.profile_id) {
             try {
@@ -7705,6 +7722,22 @@ export default {
         if (replaceResult.ResultImageUrl?.startsWith('r2://')) {
           const r2Key = replaceResult.ResultImageUrl.replace('r2://', '');
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        // Post-generation safety check for custom prompt results
+        const safetyCheck = await checkSafeSearch(resultUrl, env);
+        if (!safetyCheck.isSafe) {
+          if (body.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'replace_object', creditResult.cost, 'Content safety violation', request);
+          }
+          const debugEnabled = isDebugEnabled(env);
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: safetyCheck.statusCode || 1001,
+            ...(debugEnabled ? { debug: { safetyCategory: safetyCheck.violationCategory, safetyLevel: safetyCheck.violationLevel, safetyDetails: safetyCheck.details } } : {}),
+          }, 422);
         }
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'replace_object', request);
