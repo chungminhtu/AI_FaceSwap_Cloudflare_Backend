@@ -7238,7 +7238,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove_object', request);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove-object', request);
 
         // Cache result in KV for retry handling
         if (hasSelfieId && body.selfie_id) {
@@ -7740,7 +7740,7 @@ export default {
           }, 422);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'replace_object', request);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'replace-object', request);
 
         if (hasSelfieId && body.selfie_id) {
           ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'replace_object', resultUrl));
@@ -7876,7 +7876,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove_text', request);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove-text', request);
 
         if (hasSelfieId && body.selfie_id) {
           ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'remove_text', resultUrl));
@@ -8057,7 +8057,7 @@ export default {
           resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'hair_style', request);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'hair-style', request);
 
         if (hasSelfieId && body.selfie_id) {
           ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id, 'hair_style', resultUrl));
