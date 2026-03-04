@@ -198,12 +198,10 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 
 ## AI Model / Provider theo từng API
 
-Thứ tự ưu tiên: `body.provider` → `env.IMAGE_PROVIDER_<MODE>` (vd. `IMAGE_PROVIDER_FACESWAP`) → `env.IMAGE_PROVIDER`. Endpoint một đường đi (upscaler4k, remove-object, expand, replace-object, remove-text) luôn dùng model cố định.
-
 | Endpoint | Current AI model |
 |----------|------------------|
 | POST `/faceswap` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/background` | **WaveSpeed** Seedream v4 (merge) |
+| POST `/background` | **WaveSpeed** ByteDance `seedream-v4/edit-sequential` |
 | POST `/enhance` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
 | POST `/beauty` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
 | POST `/filter` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
@@ -215,8 +213,6 @@ Thứ tự ưu tiên: `body.provider` → `env.IMAGE_PROVIDER_<MODE>` (vd. `IMAG
 | POST `/expand` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
 | POST `/replace-object` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
 | POST `/remove-text` | **WaveSpeed** `gemini-2.5-flash-image/edit` |
-
-Override từng endpoint: `IMAGE_PROVIDER_FACESWAP`, `IMAGE_PROVIDER_FILTER`, `IMAGE_PROVIDER_AGING`, `IMAGE_PROVIDER_RESTORE`, `IMAGE_PROVIDER_BEAUTY`, `IMAGE_PROVIDER_ENHANCE`, `IMAGE_PROVIDER_MERGE`, `IMAGE_PROVIDER_4K` (trong deployments-secrets hoặc env).
 
 ---
 
@@ -1864,6 +1860,70 @@ curl -X POST https://api.d.shotpix.app/remove-text \
   },
   "status": "success",
   "message": "Text removal completed",
+  "code": 200
+}
+```
+
+**Lưu ý:** Sau khi xử lý, selfie sẽ tự động bị xóa.
+
+**Error Responses:** Xem [Error Codes Reference](#error-codes-reference)
+
+---
+
+#### 2.14. POST `/hair-style` - AI Hair Style
+
+**Mục đích:** Áp dụng kiểu tóc từ preset lên ảnh selfie sử dụng WaveSpeed flux-2-klein-9b.
+
+**API làm gì:** Lấy prompt từ R2 metadata của preset → gửi ảnh selfie + prompt → AI tạo ảnh với kiểu tóc mới → trả `resultImageUrl`.
+
+**Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Cách hoạt động:**
+1. Frontend chọn preset kiểu tóc (có `prompt_json` metadata trong R2)
+2. Gọi API với `preset_image_id` + ảnh selfie
+3. API đọc prompt từ preset metadata → gửi đến WaveSpeed AI → trả kết quả
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/hair-style \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "preset_image_id": "hair_preset_001",
+    "selfie_id": "E0PtVZEio5fctjMd",
+    "profile_id": "CbS0w8Ed8ezrlJ7o",
+    "aspect_ratio": "original"
+  }'
+```
+
+```bash
+curl -X POST https://api.d.shotpix.app/hair-style \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "preset_image_id": "hair_preset_001",
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.png",
+    "profile_id": "CbS0w8Ed8ezrlJ7o",
+    "aspect_ratio": "original"
+  }'
+```
+
+**Request Parameters:**
+- `preset_image_id` (string, required): ID preset kiểu tóc (phải có `prompt_json` metadata trong R2).
+- `selfie_id` (string): ID ảnh selfie. Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh selfie. Không dùng cùng `selfie_id`.
+- `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ khung hình. Mặc định `"original"`.
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "result_id",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+  },
+  "status": "success",
+  "message": "Hair style applied successfully",
   "code": 200
 }
 ```

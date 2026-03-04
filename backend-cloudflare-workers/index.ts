@@ -859,8 +859,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT' | 'HAIR_STYLE';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
@@ -7873,6 +7873,188 @@ export default {
         }
         logCriticalError('/remove-text', error, request, env, {
           body: {
+            selfie_id: body?.selfie_id,
+            profile_id: body?.profile_id,
+          }
+        });
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle hair-style endpoint - apply hair style preset to selfie using WaveSpeed flux-2-klein-9b
+    if (path === '/hair-style' && request.method === 'POST') {
+      let body: { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string } | undefined;
+      let creditResult: any = null;
+      try {
+        body = await request.json() as { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string };
+
+        if (!body.preset_image_id || body.preset_image_id.trim() === '') {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: preset_image_id', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Normalize preset_image_id
+        const normalized = normalizePresetId(body.preset_image_id);
+        if (normalized) {
+          body.preset_image_id = normalized;
+        }
+
+        // Parallel DB queries: profile + preset + optional selfie
+        const queries: Promise<any>[] = [
+          DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first(),
+          DB.prepare('SELECT id, ext FROM presets WHERE id = ?').bind(body.preset_image_id).first(),
+        ];
+        if (hasSelfieId) {
+          queries.push(
+            DB.prepare(`
+              SELECT s.id, s.ext, p.id as profile_exists
+              FROM selfies s
+              INNER JOIN profiles p ON s.profile_id = p.id
+              WHERE s.id = ? AND p.id = ?
+            `).bind(body.selfie_id, body.profile_id).first()
+          );
+        }
+        const [profileCheck, presetResult, selfieResult] = await Promise.all(queries);
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        if (!presetResult) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
+        }
+
+        creditResult = await deductCredits(DB, body.profile_id, 'hair_style', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
+        // Resolve selfie URL
+        let selfieUrl: string = '';
+        if (hasSelfieId) {
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, body.preset_image_id, 'hair_style');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+          }
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          selfieUrl = body.selfie_image_url!;
+          if (!validateImageUrl(selfieUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        // Get prompt from preset R2 metadata
+        const presetR2Key = reconstructR2Key((presetResult as any).id, (presetResult as any).ext, 'preset');
+        const r2Object = await R2_BUCKET.head(presetR2Key);
+        const promptJsonStr = r2Object?.customMetadata?.prompt_json;
+        if (!promptJsonStr?.trim()) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Preset has no prompt_json metadata', 400, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
+        }
+
+        let prompt: string;
+        try {
+          const parsed = JSON.parse(promptJsonStr);
+          prompt = parsed.prompt;
+          if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
+            throw new Error('prompt field missing or empty');
+          }
+        } catch (e) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Invalid prompt_json in preset metadata', 400, debugEnabled ? { presetId: body.preset_image_id, error: e instanceof Error ? e.message : String(e), path } : undefined, request, env);
+        }
+
+        // Resolve aspect ratio
+        const aspectRatio = await resolveAspectRatio(body.aspect_ratio || 'original', selfieUrl, env, { allowOriginal: true });
+        const size = aspectRatio === 'custom' ? undefined : undefined;
+
+        const hairResult = await callWaveSpeedEdit([selfieUrl], prompt, env, aspectRatio, size);
+
+        if (!hairResult.Success || !hairResult.ResultImageUrl) {
+          const failureCode = hairResult.StatusCode || 500;
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(hairResult) : undefined;
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(flatDebug ? { debug: flatDebug } : {}),
+          }, httpStatus);
+        }
+
+        let resultUrl = hairResult.ResultImageUrl;
+        if (hairResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = hairResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'hair_style', request);
+
+        if (hasSelfieId && body.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, body.preset_image_id, 'hair_style', resultUrl));
+        }
+
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        const debugEnabled = isDebugEnabled(env);
+        const flatDebug = debugEnabled ? buildFlatDebug(hairResult) : undefined;
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: hairResult.Message || 'Hair style applied successfully',
+          code: 200,
+          ...(debugEnabled ? { debug: flatDebug } : {}),
+        });
+      } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'hair_style', creditResult.cost, 'Processing error', request);
+        }
+        logCriticalError('/hair-style', error, request, env, {
+          body: {
+            preset_image_id: body?.preset_image_id,
             selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,
           }
