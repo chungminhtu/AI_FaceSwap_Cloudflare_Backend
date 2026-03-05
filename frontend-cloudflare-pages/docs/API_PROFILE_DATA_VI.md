@@ -30,6 +30,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
     "userID": "user_external_123",
     "name": "John Doe",
     "email": "john@example.com",
+    "phone": "+84123456789",
     "avatar_url": "https://example.com/avatar.jpg",
     "preferences": "{\"theme\":\"dark\",\"language\":\"vi\"}"
   }'
@@ -44,6 +45,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
     "device_id": "device_1765774126587_yaq0uh6rvz",
     "name": "John Doe",
     "email": "john@example.com",
+    "phone": "+84123456789",
     "avatar_url": "https://example.com/avatar.jpg",
     "preferences": {
       "theme": "dark",
@@ -70,6 +72,7 @@ curl -X POST https://api.d.shotpix.app/profiles \
 - `id` (string, optional): ID profile nội bộ. Nếu không có, hệ thống tự tạo bằng `nanoid(16)`.
 - `name` (string, optional): tên profile.
 - `email` (string, optional): email.
+- `phone` (string, optional): số điện thoại (ví dụ: "+84123456789"). Dùng cho xác minh khi xóa profile.
 - `avatar_url` (string, optional): URL avatar.
 - `preferences` (string hoặc object, optional): preferences dạng JSON string hoặc object. Nếu là object, hệ thống tự động chuyển thành JSON string trước khi lưu vào D1 database (vì D1 không hỗ trợ JSON object trực tiếp).
 
@@ -134,6 +137,7 @@ curl https://api.d.shotpix.app/profiles/user_external_123 \
     "user_id": "user_external_123",
     "name": "John Doe",
     "email": "john@example.com",
+    "phone": "+84123456789",
     "avatar_url": "https://example.com/avatar.jpg",
     "preferences": "{\"theme\":\"dark\",\"language\":\"vi\"}",
     "created_at": "2025-12-15T04:48:47.676Z",
@@ -162,6 +166,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
   -d '{
     "name": "John Doe Updated",
     "email": "john.updated@example.com",
+    "phone": "+84987654321",
     "avatar_url": "https://example.com/new-avatar.jpg",
     "preferences": {
       "theme": "light",
@@ -173,6 +178,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 **Request Parameters:**
 - `name` (string, optional): tên profile.
 - `email` (string, optional): email.
+- `phone` (string, optional): số điện thoại.
 - `avatar_url` (string, optional): URL avatar.
 - `preferences` (string hoặc object, optional): preferences dạng JSON string hoặc object. Nếu là object, hệ thống tự động chuyển thành JSON string trước khi lưu vào D1 database (vì D1 không hỗ trợ JSON object trực tiếp).
 
@@ -187,6 +193,7 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
     "user_id": "user_external_123",
     "name": "John Doe Updated",
     "email": "john.updated@example.com",
+    "phone": "+84987654321",
     "avatar_url": "https://example.com/new-avatar.jpg",
     "preferences": "{\"theme\":\"light\",\"language\":\"en\"}",
     "created_at": "2025-12-15T04:48:47.676Z",
@@ -222,6 +229,7 @@ curl https://api.d.shotpix.app/profiles
         "user_id": "user_external_123",
         "name": "John Doe",
         "email": "john@example.com",
+        "phone": "+84123456789",
         "avatar_url": "https://example.com/avatar.jpg",
         "preferences": "{\"theme\":\"dark\",\"language\":\"vi\"}",
         "created_at": "2025-12-15T04:48:47.676Z",
@@ -237,33 +245,81 @@ curl https://api.d.shotpix.app/profiles
 
 ---
 
-### 3.5. DELETE `/profiles/{id}` - Xóa profile
+### 3.5. DELETE `/profiles/{id}` - Xóa profile (Yêu cầu xác minh)
 
 **Mục đích:** Xóa profile và toàn bộ dữ liệu liên quan (selfies, results, subscriptions, payments, device tokens, audit log). File R2 cũng được xóa.
 
 **Authentication:** Yêu cầu API key khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
+**Bảo mật:** Endpoint này yêu cầu xác minh danh tính bằng **3 thông tin** trước khi xóa:
+1. `profile_id` (bắt buộc) - phải khớp với URL param
+2. `user_id` (bắt buộc) - phải khớp với DB
+3. `email` hoặc `phone` (bắt buộc 1 trong 2) - phải khớp với DB
+
 **Request:**
 ```bash
-curl -X DELETE https://api.d.shotpix.app/profiles/{id} \
-  -H "X-API-Key: your_api_key_here"
+curl -X DELETE https://api.d.shotpix.app/profiles/uYNgRR70Ry9OFuMV \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "profile_id": "uYNgRR70Ry9OFuMV",
+    "user_id": "user_external_123",
+    "email": "john@example.com"
+  }'
 ```
+
+**Hoặc dùng phone thay email:**
+```bash
+curl -X DELETE https://api.d.shotpix.app/profiles/uYNgRR70Ry9OFuMV \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "profile_id": "uYNgRR70Ry9OFuMV",
+    "user_id": "user_external_123",
+    "phone": "+84123456789"
+  }'
+```
+
+**Request Body Parameters:**
 
 | Param | Type | Required | Mô tả |
 |-------|------|----------|-------|
-| `id` | string | Yes | Có thể là Profile ID, Device ID, hoặc User ID |
+| `profile_id` | string | **Yes** | Profile ID - phải khớp với `{id}` trong URL |
+| `user_id` | string | **Yes** | User ID bên ngoài - phải khớp với DB |
+| `email` | string | Yes (nếu không có phone) | Email - phải khớp với DB |
+| `phone` | string | Yes (nếu không có email) | Số điện thoại - phải khớp với DB |
 
 **Response thành công:**
 ```json
 {
-  "data": { "id": "profile_1234567890_abc123" },
+  "data": { "id": "uYNgRR70Ry9OFuMV" },
   "status": "success",
   "message": "Profile and all associated data deleted successfully",
   "code": 200
 }
 ```
 
-**Response lỗi (404):**
+**Response lỗi - thiếu thông tin (400):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Missing required field: user_id",
+  "code": 400
+}
+```
+
+**Response lỗi - xác minh thất bại (403):**
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Verification failed: user_id does not match",
+  "code": 403
+}
+```
+
+**Response lỗi - không tìm thấy (404):**
 ```json
 {
   "data": null,
