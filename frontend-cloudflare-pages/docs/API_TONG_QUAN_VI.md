@@ -145,8 +145,9 @@ Khi API key không hợp lệ hoặc thiếu:
 16. POST `/hair-style` - AI thay đổi kiểu tóc
 17. POST `/profiles` - Tạo profile
 18. GET `/profiles/{id}` - Lấy profile (hỗ trợ cả Profile ID và Device ID)
-19. PUT `/profiles/{id}` - Cập nhật profile
-20. GET `/selfies` - Liệt kê selfies
+19. PUT `/profiles/{id}` - Cập nhật profile (hỗ trợ phone)
+20. DELETE `/profiles/{id}` - Xóa profile (yêu cầu xác minh: profile_id + user_id + email hoặc phone)
+21. GET `/selfies` - Liệt kê selfies
 21. GET `/results` - Liệt kê results (generated images)
 22. DELETE `/results/{id}` - Xóa result
 

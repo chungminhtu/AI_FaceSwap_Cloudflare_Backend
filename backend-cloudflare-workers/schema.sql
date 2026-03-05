@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   user_id TEXT, -- External user ID for searchable indexing
   name TEXT,
   email TEXT,
+  phone TEXT,
   avatar_url TEXT,
   preferences TEXT, -- JSON string for preferences
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),

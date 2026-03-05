@@ -3462,13 +3462,14 @@ export default {
           : null;
 
         const result = await DB.prepare(
-          'INSERT INTO profiles (id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO profiles (id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).bind(
           profileId,
           deviceId,
           userId,
           body.name || null,
           body.email || null,
+          body.phone || null,
           body.avatar_url || null,
           preferencesString,
           createdAt,
@@ -3495,6 +3496,7 @@ export default {
           user_id: userId || undefined,
           name: body.name || undefined,
           email: body.email || undefined,
+          phone: body.phone || undefined,
           avatar_url: ensureFullUrl(body.avatar_url, env, requestUrl.origin),
           preferences: body.preferences || undefined,
           created_at: new Date().toISOString(),
@@ -3542,14 +3544,14 @@ export default {
 
         // Try to find by profile ID first
         let result = await DB.prepare(
-          'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(idParam).first();
         if (result) foundBy = 'profile_id';
 
         // If not found by ID, try by device_id
         if (!result) {
           result = await DB.prepare(
-            'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE device_id = ?'
+            'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE device_id = ?'
           ).bind(idParam).first();
           if (result) foundBy = 'device_id';
         }
@@ -3557,7 +3559,7 @@ export default {
         // If not found by device_id, try by user_id
         if (!result) {
           result = await DB.prepare(
-            'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE user_id = ?'
+            'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE user_id = ?'
           ).bind(idParam).first();
           if (result) foundBy = 'user_id';
         }
@@ -3573,6 +3575,7 @@ export default {
           user_id: (result as any).user_id || undefined,
           name: (result as any).name || undefined,
           email: (result as any).email || undefined,
+          phone: (result as any).phone || undefined,
           avatar_url: ensureFullUrl((result as any).avatar_url, env, requestUrl.origin),
           preferences: (result as any).preferences || undefined,
           created_at: new Date((result as any).created_at * 1000).toISOString(),
@@ -3613,10 +3616,11 @@ export default {
           : null;
 
         const result = await DB.prepare(
-          'UPDATE profiles SET name = ?, email = ?, avatar_url = ?, preferences = ?, updated_at = ? WHERE id = ?'
+          'UPDATE profiles SET name = ?, email = ?, phone = ?, avatar_url = ?, preferences = ?, updated_at = ? WHERE id = ?'
         ).bind(
           body.name || null,
           body.email || null,
+          body.phone || null,
           body.avatar_url || null,
           preferencesString,
           Math.floor(Date.now() / 1000),
@@ -3630,7 +3634,7 @@ export default {
 
         // Return updated profile
         const updatedResult = await DB.prepare(
-          'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
         if (!updatedResult) {
@@ -3644,6 +3648,7 @@ export default {
           user_id: (updatedResult as any).user_id || undefined,
           name: (updatedResult as any).name || undefined,
           email: (updatedResult as any).email || undefined,
+          phone: (updatedResult as any).phone || undefined,
           avatar_url: ensureFullUrl((updatedResult as any).avatar_url, env, requestUrl.origin),
           preferences: (updatedResult as any).preferences || undefined,
           created_at: new Date((updatedResult as any).created_at * 1000).toISOString(),
@@ -3665,7 +3670,7 @@ export default {
       }
     }
 
-    // Handle profile deletion
+    // Handle profile deletion (requires profile_id + user_id + email or phone for safety)
     if (path.startsWith('/profiles/') && request.method === 'DELETE') {
       try {
         const idParam = extractPathId(path, '/profiles/');
@@ -3674,22 +3679,55 @@ export default {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        // Resolve profile by id, device_id, or user_id (same as GET)
-        let foundBy = '';
-        let result = await DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(idParam).first();
-        if (result) foundBy = 'profile_id';
-        if (!result) {
-          result = await DB.prepare('SELECT id FROM profiles WHERE device_id = ?').bind(idParam).first();
-          if (result) foundBy = 'device_id';
-        }
-        if (!result) {
-          result = await DB.prepare('SELECT id FROM profiles WHERE user_id = ?').bind(idParam).first();
-          if (result) foundBy = 'user_id';
+        // Parse request body for verification fields
+        let body: { profile_id?: string; user_id?: string; email?: string; phone?: string } = {};
+        try {
+          body = await request.json() as typeof body;
+        } catch {
+          return errorResponse('Request body is required for profile deletion. Must include: profile_id, user_id, and either email or phone', 400, undefined, request, env);
         }
 
+        const debugEnabled = isDebugEnabled(env);
+
+        // Validate required fields: profile_id and user_id are MUST
+        if (!body.profile_id || !body.profile_id.trim()) {
+          return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path, provided: Object.keys(body) } : undefined, request, env);
+        }
+        if (!body.user_id || !body.user_id.trim()) {
+          return errorResponse('Missing required field: user_id', 400, debugEnabled ? { path, provided: Object.keys(body) } : undefined, request, env);
+        }
+        // Either email or phone is required
+        const hasEmail = !!(body.email && body.email.trim());
+        const hasPhone = !!(body.phone && body.phone.trim());
+        if (!hasEmail && !hasPhone) {
+          return errorResponse('Missing required field: either email or phone must be provided', 400, debugEnabled ? { path, provided: Object.keys(body) } : undefined, request, env);
+        }
+
+        // profile_id in body must match URL param
+        if (body.profile_id.trim() !== idParam) {
+          return errorResponse('profile_id in body does not match URL parameter', 400, debugEnabled ? { urlParam: idParam, bodyProfileId: body.profile_id, path } : undefined, request, env);
+        }
+
+        // Fetch the profile and verify ALL fields match
+        const result = await DB.prepare(
+          'SELECT id, user_id, email, phone FROM profiles WHERE id = ?'
+        ).bind(idParam).first();
+
         if (!result) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Profile not found', 404, debugEnabled ? { idParam, searchedBy: 'id, device_id, and user_id', path } : undefined, request, env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { idParam, path } : undefined, request, env);
+        }
+
+        // Verify user_id matches
+        if ((result as any).user_id !== body.user_id.trim()) {
+          return errorResponse('Verification failed: user_id does not match', 403, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        // Verify email or phone matches
+        if (hasEmail && (result as any).email !== body.email!.trim()) {
+          return errorResponse('Verification failed: email does not match', 403, debugEnabled ? { path } : undefined, request, env);
+        }
+        if (hasPhone && (result as any).phone !== body.phone!.trim()) {
+          return errorResponse('Verification failed: phone does not match', 403, debugEnabled ? { path } : undefined, request, env);
         }
 
         const profileId = (result as any).id;
@@ -3728,13 +3766,12 @@ export default {
           DB.prepare('DELETE FROM profiles WHERE id = ?').bind(profileId),
         ]);
 
-        const debugEnabled = isDebugEnabled(env);
         return jsonResponse({
           data: { id: profileId },
           status: 'success',
           message: 'Profile and all associated data deleted successfully',
           code: 200,
-          ...(debugEnabled ? { debug: { idParam, foundBy, selfiesDeleted: selfies.results?.length || 0, resultsDeleted: results_rows.results?.length || 0 } } : {})
+          ...(debugEnabled ? { debug: { idParam, selfiesDeleted: selfies.results?.length || 0, resultsDeleted: results_rows.results?.length || 0 } } : {})
         }, 200, request, env);
       } catch (error) {
         logCriticalError('/profiles/{id} (DELETE)', error, request, env, {
@@ -3750,7 +3787,7 @@ export default {
     if (path === '/profiles' && request.method === 'GET') {
       try {
         const results = await DB.prepare(
-          'SELECT id, device_id, user_id, name, email, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
+          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles ORDER BY created_at DESC'
         ).all();
 
         const profiles: Profile[] = results.results?.map((row: any) => ({
@@ -3759,6 +3796,7 @@ export default {
           user_id: row.user_id || undefined,
           name: row.name || undefined,
           email: row.email || undefined,
+          phone: row.phone || undefined,
           avatar_url: ensureFullUrl(row.avatar_url, env, requestUrl.origin),
           preferences: row.preferences || undefined,
           created_at: new Date(row.created_at * 1000).toISOString(),

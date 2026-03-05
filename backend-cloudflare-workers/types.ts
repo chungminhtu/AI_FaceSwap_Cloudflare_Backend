@@ -132,6 +132,7 @@ export interface Profile {
   user_id?: string; // External user ID for searching
   name?: string;
   email?: string;
+  phone?: string;
   avatar_url?: string;
   preferences?: string; // JSON string
   created_at: string;
