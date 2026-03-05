@@ -1403,25 +1403,28 @@ export default {
           const publicUrl = getR2PublicUrl(env, key, requestUrl.origin);
           const createdAt = Math.floor(Date.now() / 1000);
 
-          // Scan selfie uploads with vision API before saving to database (only for 4k/4K action)
+          // Scan ALL selfie uploads with vision API before saving to database
+          // Exception: custom prompt flow skips pre-upload check (checked after generation instead)
           let visionCheckResult: any = null;
           if (type === 'selfie') {
             const actionValue = action || 'faceswap';
-            const needsVisionCheck = actionValue.toLowerCase() === '4k';
+            const hasCustomPrompt = !!(customPromptText && customPromptText.trim());
+            const needsVisionCheck = !hasCustomPrompt; // All selfie uploads except custom prompt flow
             const disableVisionApi = env.DISABLE_VISION_API === 'true';
-            
+
             // Always log for debugging
             console.log('[VisionCheck] Upload-url check:', {
               type,
               action,
               actionValue,
+              hasCustomPrompt,
               needsVisionCheck,
               DISABLE_VISION_API: env.DISABLE_VISION_API,
               disableVisionApi,
               shouldCheck: needsVisionCheck && !disableVisionApi,
               publicUrl
             });
-            
+
             if (needsVisionCheck && !disableVisionApi) {
               // Run Vision API safety scan
               console.log('[VisionCheck] Running Vision API scan for:', publicUrl);

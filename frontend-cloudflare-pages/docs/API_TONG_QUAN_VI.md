@@ -224,7 +224,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 ### Vision API Safety Error Codes (1001-1005)
 
 Các error codes này được trả về khi Google Vision API SafeSearch phát hiện nội dung không phù hợp trong ảnh. Được sử dụng cho:
-- POST `/upload-url` (type=selfie, action="4k" hoặc "4K") - Kiểm tra ảnh selfie trước khi lưu
+- POST `/upload-url` (type=selfie) - Kiểm tra **tất cả** ảnh selfie trước khi lưu (trừ custom prompt flow - kiểm tra sau khi generate xong)
 
 | Error Code | Category | Mô tả |
 |------------|----------|-------|
