@@ -300,20 +300,16 @@ export const errorResponse = (message: string, status = 500, debug?: Record<stri
     };
   }
   
-  // For 500 errors, ALWAYS use generic message (never expose internals, even with debug)
-  // For 400 errors, use detailed messages only when debug is enabled
+  // SECURITY: 500 errors NEVER expose internal details in message
+  // 400 errors use the provided message if explicitly set, otherwise generic "Bad Request"
+  // Internal details (DB errors, stack traces) are only in debug object when ENABLE_DEBUG_RESPONSE=true
   let finalMessage: string;
   if (status === 500) {
-    // SECURITY: 500 errors NEVER expose internal details in message
     finalMessage = 'Internal Server Error';
   } else if (status === 400) {
-    if (debugEnabled && debugWithError && debugWithError.error) {
-      finalMessage = debugWithError.error;
-    } else if (debugEnabled && message && message !== 'Bad Request') {
-      finalMessage = message;
-    } else {
-      finalMessage = 'Bad Request';
-    }
+    // Use explicitly provided message (e.g. "Missing required field: profile_id")
+    // but never pull from debug.error into message
+    finalMessage = (message && message.trim() !== '') ? message : 'Bad Request';
   } else {
     finalMessage = message;
   }
