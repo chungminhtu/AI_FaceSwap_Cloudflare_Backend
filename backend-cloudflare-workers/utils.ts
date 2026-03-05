@@ -300,22 +300,19 @@ export const errorResponse = (message: string, status = 500, debug?: Record<stri
     };
   }
   
-  // For 400 and 500 errors, use detailed messages when debug is enabled
+  // For 500 errors, ALWAYS use generic message (never expose internals, even with debug)
+  // For 400 errors, use detailed messages only when debug is enabled
   let finalMessage: string;
-  if (status === 400 || status === 500) {
-    // If debug is enabled and debug object has error message, use it
+  if (status === 500) {
+    // SECURITY: 500 errors NEVER expose internal details in message
+    finalMessage = 'Internal Server Error';
+  } else if (status === 400) {
     if (debugEnabled && debugWithError && debugWithError.error) {
       finalMessage = debugWithError.error;
-    } else if (debugEnabled && message && message !== 'Bad Request' && message !== 'Internal Server Error') {
-      // If debug enabled but no debug.error, use the message parameter if provided
+    } else if (debugEnabled && message && message !== 'Bad Request') {
       finalMessage = message;
     } else {
-      // Generic messages when debug is disabled
-      if (status === 400) {
-        finalMessage = 'Bad Request';
-      } else {
-        finalMessage = 'Internal Server Error';
-      }
+      finalMessage = 'Bad Request';
     }
   } else {
     finalMessage = message;
