@@ -104,15 +104,15 @@ export const VERTEX_AI_CONFIG = {
 
   // Locations and Endpoints
   LOCATIONS: {
-    DEFAULT: 'us-central1',
+    DEFAULT: 'global',
     SUPPORTED: ['us-central1', 'us-east1', 'us-west1', 'europe-west1', 'asia-southeast1', 'global'],
     // Model-specific preferred locations
     MODEL_LOCATIONS: {
-      'gemini-2.0-flash-lite': 'us-central1',
-      'gemini-2.5-flash-image': 'us-central1',
-      'gemini-2.5-flash-lite': 'us-central1',
+      'gemini-2.0-flash-lite': 'global',
+      'gemini-2.5-flash-image': 'global',
+      'gemini-2.5-flash-lite': 'global',
       'gemini-3-pro-image-preview': 'global',
-      'gemini-3-flash-preview': 'us-central1',
+      'gemini-3-flash-preview': 'global',
     },
   },
 
