@@ -868,9 +868,11 @@ const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env,
   const modeKey = 'IMAGE_PROVIDER_' + mode;
   const fromMode = env[modeKey];
   if (fromMode != null && String(fromMode).trim() !== '') return String(fromMode).trim();
-  if (env.IMAGE_PROVIDER != null && String(env.IMAGE_PROVIDER).trim() !== '') return String(env.IMAGE_PROVIDER).trim();
+  // Mode-specific defaults take priority over global IMAGE_PROVIDER
   if (GEMINI_IMAGE_DEFAULT_MODES.includes(mode)) return 'wavespeed_gemini_2_5_flash_image';
-  return WAVESPEED_DEFAULT_MODES.includes(mode) ? 'wavespeed' : 'vertex';
+  if (WAVESPEED_DEFAULT_MODES.includes(mode)) return 'wavespeed';
+  if (env.IMAGE_PROVIDER != null && String(env.IMAGE_PROVIDER).trim() !== '') return String(env.IMAGE_PROVIDER).trim();
+  return 'vertex';
 };
 
 // Build a single flat debug object - no nested provider/vertex structure
