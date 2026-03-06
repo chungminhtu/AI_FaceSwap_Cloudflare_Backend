@@ -201,22 +201,24 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 
 ## AI Model / Provider theo từng API
 
-| Endpoint | Current AI model |
-|----------|------------------|
-| POST `/faceswap` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/background` | **WaveSpeed** ByteDance `seedream-v4/edit-sequential` |
-| POST `/enhance` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/beauty` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/filter` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/restore` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/aging` | **WaveSpeed** `gemini-2.5-flash-image` (edit) |
-| POST `/expression` | **WaveSpeed** Flux `flux-2-klein-9b/edit` |
-| POST `/upscaler4k` | **WaveSpeed** `image-upscaler` |
-| POST `/remove-object` | **WaveSpeed Bria** `bria/eraser` |
-| POST `/expand` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
-| POST `/replace-object` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
-| POST `/remove-text` | **WaveSpeed** `gemini-2.5-flash-image/edit` |
-| POST `/hair-style` | **WaveSpeed** Flux 2 Klein 9B `flux-2-klein-9b/edit` |
+| Endpoint | Current AI model | API Endpoint | Cost/call |
+|----------|------------------|--------------|-----------|
+| POST `/faceswap` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/background` | **WaveSpeed** ByteDance Seedream V4 (edit-sequential) | `api/v3/bytedance/seedream-v4/edit-sequential` | $0.027 |
+| POST `/enhance` | **WaveSpeed** Google Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B v3 (≥ 800px) | `api/v3/google/gemini-2.5-flash-image/edit` hoặc `api/v3/wavespeed-ai/flux-2-klein-9b/edit` | $0.038 / $0.016 |
+| POST `/beauty` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/filter` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/restore` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/aging` | **WaveSpeed** Google Gemini 2.5 Flash Image (edit) | `api/v3/google/gemini-2.5-flash-image/edit` | $0.038 |
+| POST `/expression` | **Vertex AI** Gemini (default) / WaveSpeed (nếu set provider) | Vertex AI hoặc WaveSpeed tùy config | — |
+| POST `/upscaler4k` | **WaveSpeed** Image Upscaler | `api/v1/wavespeed-ai/image-upscaler` | $0.010 |
+| POST `/remove-object` | **WaveSpeed** Bria Eraser | `api/v3/bria/eraser` | $0.040 |
+| POST `/expand` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/replace-object` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/remove-text` | **WaveSpeed** Google Gemini 2.5 Flash Image (edit) | `api/v3/google/gemini-2.5-flash-image/edit` | $0.038 |
+| POST `/hair-style` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+
+> **Ghi chú giá:** Giá trên từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. `/enhance` tự động chọn model theo kích thước ảnh: ảnh nhỏ (< 800px cạnh lớn nhất) dùng Gemini 2.5 Flash Image cho chất lượng tốt hơn, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B v3.
 
 ---
 
