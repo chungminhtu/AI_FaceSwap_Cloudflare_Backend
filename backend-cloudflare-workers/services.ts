@@ -2463,7 +2463,8 @@ export const callWaveSpeedEdit = async (
   prompt: string,
   env: Env,
   aspectRatio?: string,
-  size?: string
+  size?: string,
+  endpointOverride?: string
 ): Promise<FaceSwapResponse> => {
   if (!env.WAVESPEED_API_KEY) {
     return {
@@ -2544,7 +2545,7 @@ export const callWaveSpeedEdit = async (
   } : undefined;
 
   try {
-    const endpoint = 'https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit';
+    const endpoint = endpointOverride || 'https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit';
     const requestBody: Record<string, any> = {
       enable_base64_output: false,
       enable_sync_mode: true,

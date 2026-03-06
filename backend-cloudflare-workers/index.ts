@@ -7,7 +7,7 @@ import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest
 import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, callWaveSpeedGeminiImageEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
-import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG } from './config';
+import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG, API_ENDPOINTS } from './config';
 
 // Retry helper for Vertex AI prompt generation - MUST succeed before uploading to R2
 const generateVertexPromptWithRetry = async (
@@ -6156,8 +6156,6 @@ export default {
         }
 
         const modelParam = body.model;
-        // FORCED: enhance ALWAYS uses Gemini 2.5 Flash Image via WaveSpeed - never flux-2-klein-9b
-        const effectiveProvider = 'wavespeed_gemini_2_5_flash_image';
 
         const envError = validateEnv(env, 'wavespeed');
         if (envError) {
@@ -6167,15 +6165,11 @@ export default {
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
 
-        // Get extended image dimensions for debug (includes EXIF orientation)
-        let imageDimensionsExtended: import('./utils').ImageDimensionsExtended | null = null;
-        if (body.aspect_ratio === 'original' || !body.aspect_ratio) {
-          const { getImageDimensionsExtended } = await import('./utils');
-          imageDimensionsExtended = await getImageDimensionsExtended(imageUrl, env);
-        }
+        // Always get image dimensions for enhance (needed for provider routing + size calc)
+        const { getImageDimensionsExtended } = await import('./utils');
+        const imageDimensionsExtended = await getImageDimensionsExtended(imageUrl, env);
 
         // Calculate optimal output size at max 1536px for best quality
-        // Scale proportionally so the larger dimension = 1536px
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio && imageDimensionsExtended) {
@@ -6184,15 +6178,23 @@ export default {
           sizeForProvider = optimal.sizeString;
         }
 
-        const enhancedResult = await callNanoBanana(
-          IMAGE_PROCESSING_PROMPTS.ENHANCE,
-          imageUrl,
-          imageUrl,
-          env,
-          validAspectRatio,
-          modelParam,
-          { provider: effectiveProvider as any, size: sizeForProvider }
-        );
+        // Route by image size: < 800px largest dimension → Gemini 2.5 Flash Image, otherwise → Flux Klein v3
+        const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
+        const useGemini = largestDim < 800;
+        const effectiveProvider = useGemini ? 'wavespeed_gemini_2_5_flash_image' : 'wavespeed';
+
+        let enhancedResult: FaceSwapResponse;
+        if (useGemini) {
+          enhancedResult = await callWaveSpeedGeminiImageEdit(
+            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.ENHANCE === 'string' ? IMAGE_PROCESSING_PROMPTS.ENHANCE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.ENHANCE),
+            env, validAspectRatio, sizeForProvider
+          );
+        } else {
+          enhancedResult = await callWaveSpeedEdit(
+            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.ENHANCE === 'string' ? IMAGE_PROCESSING_PROMPTS.ENHANCE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.ENHANCE),
+            env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
+          );
+        }
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
           const failureCode = enhancedResult.StatusCode || 500;

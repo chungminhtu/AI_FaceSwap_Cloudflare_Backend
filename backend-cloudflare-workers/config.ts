@@ -342,6 +342,7 @@ export const API_ENDPOINTS = {
   WAVESPEED_UPSCALER: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler',
   WAVESPEED_TEXT_TO_IMAGE: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-dev/text-to-image',
   WAVESPEED_GEMINI_2_5_FLASH_IMAGE_EDIT: 'https://api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit',
+  WAVESPEED_FLUX_KLEIN_EDIT_V3: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit',
   WAVESPEED_SEEDREAM_EDIT: 'https://api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential',
   WAVESPEED_BRIA_ERASER: 'https://api.wavespeed.ai/api/v3/bria/eraser',
   WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v1/predictions/${requestId}/result`,
