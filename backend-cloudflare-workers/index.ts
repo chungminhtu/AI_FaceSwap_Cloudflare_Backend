@@ -6156,9 +6156,10 @@ export default {
         }
 
         const modelParam = body.model;
-        const effectiveProvider = getEffectiveProvider(body, env, 'ENHANCE');
+        // FORCED: enhance ALWAYS uses Gemini 2.5 Flash Image via WaveSpeed - never flux-2-klein-9b
+        const effectiveProvider = 'wavespeed_gemini_2_5_flash_image';
 
-        const envError = validateEnv(env, (effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image') ? 'wavespeed' : 'vertex');
+        const envError = validateEnv(env, 'wavespeed');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
