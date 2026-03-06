@@ -1507,7 +1507,7 @@ export const checkSafeSearch = async (
       };
     }
 
-    // Blocks POSSIBLE, LIKELY, and VERY_LIKELY
+    // Blocks LIKELY+ for most categories, VERY_LIKELY only for racy
     const isUnsafeResult = isUnsafe(annotation);
 
     // Find worst violation (highest severity)

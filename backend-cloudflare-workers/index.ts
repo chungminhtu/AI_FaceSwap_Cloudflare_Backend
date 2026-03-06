@@ -860,7 +860,8 @@ const isDebugEnabled = (env: Env): boolean => {
 };
 
 type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT' | 'HAIR_STYLE';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'ENHANCE', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE'];
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE'];
+const GEMINI_IMAGE_DEFAULT_MODES: ImageProviderMode[] = ['ENHANCE'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
   if (fromBody) return fromBody;
@@ -868,6 +869,7 @@ const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env,
   const fromMode = env[modeKey];
   if (fromMode != null && String(fromMode).trim() !== '') return String(fromMode).trim();
   if (env.IMAGE_PROVIDER != null && String(env.IMAGE_PROVIDER).trim() !== '') return String(env.IMAGE_PROVIDER).trim();
+  if (GEMINI_IMAGE_DEFAULT_MODES.includes(mode)) return 'wavespeed_gemini_2_5_flash_image';
   return WAVESPEED_DEFAULT_MODES.includes(mode) ? 'wavespeed' : 'vertex';
 };
 
@@ -6129,12 +6131,6 @@ export default {
           }
         }
 
-        const envError = validateEnv(env, 'vertex');
-        if (envError) {
-          const debugEnabled = isDebugEnabled(env);
-          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
-        }
-
         // Safety pre-check with Gemini 2.5 Flash Lite before processing
         const safetyCheck = await checkImageSafetyWithFlashLite(imageUrl, env);
         if (!safetyCheck.safe) {
@@ -6157,9 +6153,16 @@ export default {
           );
         }
 
-        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const modelParam = body.model;
         const effectiveProvider = getEffectiveProvider(body, env, 'ENHANCE');
+
+        const envError = validateEnv(env, (effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image') ? 'wavespeed' : 'vertex');
+        if (envError) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
+        }
+
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
 
         // Get extended image dimensions for debug (includes EXIF orientation)
         let imageDimensionsExtended: import('./utils').ImageDimensionsExtended | null = null;
@@ -6185,7 +6188,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { provider: body.provider, size: sizeForProvider }
+          { provider: effectiveProvider as any, size: sizeForProvider }
         );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {

@@ -51,7 +51,9 @@ function getSeverity(level: string): number {
 }
 
 // Block POSSIBLE, LIKELY, and VERY_LIKELY
-const UNSAFE_LEVELS = ['POSSIBLE', 'LIKELY', 'VERY_LIKELY'];
+const UNSAFE_LEVELS = ['LIKELY', 'VERY_LIKELY'];
+// Racy is less strict — only block VERY_LIKELY
+const RACY_UNSAFE_LEVELS = ['VERY_LIKELY'];
 
 const COMMON_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -355,7 +357,7 @@ export const isUnsafe = (
   return (
     UNSAFE_LEVELS.includes(annotation.adult) ||
     UNSAFE_LEVELS.includes(annotation.violence) ||
-    UNSAFE_LEVELS.includes(annotation.racy)
+    RACY_UNSAFE_LEVELS.includes(annotation.racy)
   );
 };
 
@@ -936,11 +938,8 @@ export const getWorstViolation = (
     spoof?: string;
   }
 ): { code: number; category: string; level: string } | null => {
-  // Only check levels that should be blocked
-  const unsafeLevels = UNSAFE_LEVELS;
   const violations: Array<{ category: string; level: string; severity: number; code: number }> = [];
 
-  // Define category mappings
   const categories = [
     { key: 'adult', code: SAFETY_STATUS_CODES.ADULT },
     { key: 'violence', code: SAFETY_STATUS_CODES.VIOLENCE },
@@ -949,10 +948,10 @@ export const getWorstViolation = (
     { key: 'spoof', code: SAFETY_STATUS_CODES.SPOOF },
   ];
 
-  // Check each category - only include violations that should be blocked
   for (const { key, code } of categories) {
     const level = annotation[key as keyof typeof annotation];
-    if (level && unsafeLevels.includes(level)) {
+    const thresholds = key === 'racy' ? RACY_UNSAFE_LEVELS : UNSAFE_LEVELS;
+    if (level && thresholds.includes(level)) {
       violations.push({
         category: key,
         level,
