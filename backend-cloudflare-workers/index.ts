@@ -812,6 +812,87 @@ const extractR2KeyFromUrl = (url: string): string | null => {
 
 // Removed redundant wrapper functions - use getR2PublicUrl directly
 
+// Detect flat/solid color images to prevent abuse (blank canvas uploads used to generate inappropriate content)
+// Analyzes compressed image byte entropy and file size ratio — runs BEFORE vision API to save costs
+const isFlatColorImage = (buffer: ArrayBuffer, dimensions?: string | null): { isFlat: boolean; reason?: string; details?: Record<string, any> } => {
+  const bytes = new Uint8Array(buffer);
+  const fileSize = bytes.length;
+
+  // Skip tiny files (thumbnails/icons — not worth checking)
+  if (fileSize < 500) {
+    return { isFlat: false };
+  }
+
+  // Check 1: File size vs dimensions ratio (most reliable indicator)
+  // Solid color images compress to extremely small sizes relative to pixel count
+  // Normal photos: typically 0.3-3.0 bytes/pixel in JPEG, solid color: < 0.02
+  if (dimensions) {
+    const match = dimensions.match(/^(\d+)[xX×](\d+)$/);
+    if (match) {
+      const width = parseInt(match[1]);
+      const height = parseInt(match[2]);
+      const totalPixels = width * height;
+      if (totalPixels > 10000) { // Only for images > ~100x100
+        const bytesPerPixel = fileSize / totalPixels;
+        if (bytesPerPixel < 0.03) {
+          return {
+            isFlat: true,
+            reason: 'extremely_low_compression_ratio',
+            details: { bytesPerPixel: parseFloat(bytesPerPixel.toFixed(4)), width, height, fileSize }
+          };
+        }
+      }
+    }
+  }
+
+  // Check 2: Byte entropy analysis (format-agnostic)
+  // Skip first ~10% or 512 bytes (file headers), analyze body data
+  const headerOffset = Math.min(512, Math.floor(fileSize * 0.1));
+  const sampleEnd = Math.min(fileSize, headerOffset + 16384); // Sample up to 16KB after header
+  const sampleSize = sampleEnd - headerOffset;
+
+  if (sampleSize < 256) {
+    return { isFlat: false }; // Too small to reliably analyze
+  }
+
+  const freq = new Array(256).fill(0);
+  for (let i = headerOffset; i < sampleEnd; i++) {
+    freq[bytes[i]]++;
+  }
+
+  let entropy = 0;
+  let uniqueBytes = 0;
+  for (let i = 0; i < 256; i++) {
+    if (freq[i] > 0) {
+      uniqueBytes++;
+      const p = freq[i] / sampleSize;
+      entropy -= p * Math.log2(p);
+    }
+  }
+
+  // Normal JPEG/PNG photo: entropy ~7.0-8.0, 200+ unique byte values
+  // Solid color JPEG: entropy ~2-5, fewer unique bytes
+  // Solid color PNG: entropy ~1-4, very few unique bytes
+  if (entropy < 3.5 && fileSize < 50000) {
+    return {
+      isFlat: true,
+      reason: 'very_low_entropy',
+      details: { entropy: parseFloat(entropy.toFixed(2)), uniqueBytes, fileSize, sampleSize }
+    };
+  }
+
+  // Check 3: Very few unique byte values in the data portion (strong flat indicator)
+  if (uniqueBytes < 25 && sampleSize > 1000) {
+    return {
+      isFlat: true,
+      reason: 'very_few_unique_bytes',
+      details: { uniqueBytes, entropy: parseFloat(entropy.toFixed(2)), fileSize, sampleSize }
+    };
+  }
+
+  return { isFlat: false, details: { entropy: parseFloat(entropy.toFixed(2)), uniqueBytes, fileSize } };
+};
+
 const reconstructR2Key = (id: string, ext: string, prefix: 'selfie' | 'preset' | 'results' | 'mask'): string => {
   return `${prefix}/${id}.${ext}`;
 };
@@ -1351,6 +1432,32 @@ export default {
             }
           }
           const key = `${type}/${id}.${ext}`;
+
+          // Flat/solid color image detection — block blank canvas uploads for selfies
+          // Runs BEFORE R2 upload and vision API to save resources
+          if (type === 'selfie') {
+            const fileDims = dimensionsArray[index] || null;
+            const flatCheck = isFlatColorImage(fileData.fileData, fileDims);
+            console.log('[FlatColorCheck] Result:', {
+              isFlat: flatCheck.isFlat,
+              reason: flatCheck.reason,
+              filename: fileData.filename,
+              details: flatCheck.details
+            });
+            if (flatCheck.isFlat) {
+              return {
+                success: false,
+                error: 'Upload failed',
+                filename: fileData.filename,
+                visionBlocked: true,
+                visionStatusCode: 1010,
+                ...(isDebugEnabled(env) ? {
+                  flatColorDetails: flatCheck.details,
+                  flatColorReason: flatCheck.reason
+                } : {})
+              };
+            }
+          }
 
           // Track URLs for CDN purge
           const urlsToPurge: string[] = [];
@@ -1929,11 +2036,14 @@ export default {
           const visionDetails = (visionBlockedResult as any).visionDetails || {};
           const debugEnabled = isDebugEnabled(env);
           
+          const flatColorDetails = (visionBlockedResult as any).flatColorDetails;
+          const flatColorReason = (visionBlockedResult as any).flatColorReason;
           const debugPayload = debugEnabled ? compact({
             vision: {
               checked: true,
               isSafe: false,
               statusCode: visionStatusCode,
+              ...(flatColorReason ? { flatColorReason, flatColorDetails } : {}),
               violationCategory: visionDetails.violationCategory,
               violationLevel: visionDetails.violationLevel,
               details: visionDetails.details,
