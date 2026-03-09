@@ -7919,22 +7919,25 @@ export default {
 
     // Handle remove-text endpoint - remove highlighted text from image using Gemini 2.5 Flash
     if (path === '/remove-text' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string } | undefined;
+      let body: { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string };
+        body = await request.json() as { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string };
 
-        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+        // Support both new (image_id/image_url) and legacy (selfie_id/selfie_image_url) param names
+        const effectiveImageId = body.image_id || body.selfie_id;
+        const effectiveImageUrl = body.image_url || body.selfie_image_url;
+        const hasSelfieId = effectiveImageId && effectiveImageId.trim() !== '';
+        const hasSelfieUrl = effectiveImageUrl && effectiveImageUrl.trim() !== '';
 
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Missing required field: image_id or image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (hasSelfieId && hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Cannot provide both image_id and image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body.profile_id) {
@@ -7965,26 +7968,26 @@ export default {
             FROM selfies s
             INNER JOIN profiles p ON s.profile_id = p.id
             WHERE s.id = ? AND p.id = ?
-          `).bind(body.selfie_id, body.profile_id).first();
+          `).bind(effectiveImageId, body.profile_id).first();
 
           if (!selfieResult) {
-            const cachedResult = await getCachedResultFromKV(env, body.selfie_id!, null, 'remove_text');
+            const cachedResult = await getCachedResultFromKV(env, effectiveImageId!, null, 'remove_text');
             if (cachedResult) {
               return jsonResponse({
                 data: { resultImageUrl: cachedResult, cached: true },
                 status: 'success',
-                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                message: 'Cached result returned (image was auto-deleted after previous processing)',
                 code: 200,
               });
             }
             const debugEnabled = isDebugEnabled(env);
-            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body.selfie_id, profileId: body.profile_id, path } : undefined, request, env);
+            return errorResponse('Image not found or does not belong to profile', 404, debugEnabled ? { imageId: effectiveImageId, profileId: body.profile_id, path } : undefined, request, env);
           }
 
           const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
           selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
         } else {
-          selfieUrl = body.selfie_image_url!;
+          selfieUrl = effectiveImageUrl!;
           if (!validateImageUrl(selfieUrl, env)) {
             const debugEnabled = isDebugEnabled(env);
             return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
@@ -8015,8 +8018,8 @@ export default {
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'remove-text', request);
 
-        if (hasSelfieId && body.selfie_id) {
-          ctx.waitUntil(cacheResultInKV(env, body.selfie_id, null, 'remove_text', resultUrl));
+        if (hasSelfieId && effectiveImageId) {
+          ctx.waitUntil(cacheResultInKV(env, effectiveImageId, null, 'remove_text', resultUrl));
         }
 
         if (hasSelfieId && selfieResult) {
@@ -8043,7 +8046,8 @@ export default {
         }
         logCriticalError('/remove-text', error, request, env, {
           body: {
-            selfie_id: body?.selfie_id,
+            image_id: body?.image_id || body?.selfie_id,
+            image_url: body?.image_url || body?.selfie_image_url,
             profile_id: body?.profile_id,
           }
         });

@@ -1014,7 +1014,7 @@ curl -X POST https://api.d.shotpix.app/remove-text \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "selfie_id": "E0PtVZEio5fctjMd",
+    "image_id": "E0PtVZEio5fctjMd",
     "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
@@ -1024,14 +1024,14 @@ curl -X POST https://api.d.shotpix.app/remove-text \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.png",
+    "image_url": "https://resources.d.shotpix.app/selfie/abc.png",
     "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
 
 **Request Parameters:**
-- `selfie_id` (string): ID ảnh đã ghép (origin + mask). Không dùng cùng `selfie_image_url`.
-- `selfie_image_url` (string): URL ảnh đã ghép. Không dùng cùng `selfie_id`.
+- `image_id` (string): ID ảnh đã ghép (origin + mask). Không dùng cùng `image_url`. (Legacy: `selfie_id` vẫn được hỗ trợ)
+- `image_url` (string): URL ảnh đã ghép. Không dùng cùng `image_id`. (Legacy: `selfie_image_url` vẫn được hỗ trợ)
 - `profile_id` (string, required): ID profile người dùng.
 
 **Response:**
@@ -1047,7 +1047,7 @@ curl -X POST https://api.d.shotpix.app/remove-text \
 }
 ```
 
-**Lưu ý:** Sau khi xử lý, selfie sẽ tự động bị xóa.
+**Lưu ý:** Sau khi xử lý, ảnh sẽ tự động bị xóa.
 
 **Error Responses:** Xem [Error Codes Reference](API_TONG_QUAN_VI.md#error-codes-reference)
 
