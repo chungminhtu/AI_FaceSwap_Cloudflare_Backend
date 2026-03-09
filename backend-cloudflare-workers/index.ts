@@ -6806,36 +6806,43 @@ export default {
           }
         }
 
-        const envError = validateEnv(env, 'vertex');
+        const envError = validateEnv(env, 'wavespeed');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
-        const modelParam = body.model;
-        const effectiveProvider = getEffectiveProvider(body, env, 'RESTORE');
 
+        // Always get image dimensions for restore (needed for provider routing + size calc)
+        const { getImageDimensionsExtended } = await import('./utils');
+        const imageDimensionsExtended = await getImageDimensionsExtended(imageUrl, env);
+
+        // Calculate optimal output size at max 1536px for best quality
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
-        if (!userExplicitlySetAspectRatio) {
-          const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
-          const dims = await getImageDimensionsExtended(imageUrl, env);
-          if (dims) {
-            const optimal = calculateOptimalSize(dims.width, dims.height, 1536, 256);
-            sizeForProvider = optimal.sizeString;
-          }
+        if (!userExplicitlySetAspectRatio && imageDimensionsExtended) {
+          const { calculateOptimalSize } = await import('./utils');
+          const optimal = calculateOptimalSize(imageDimensionsExtended.width, imageDimensionsExtended.height, 1536, 256);
+          sizeForProvider = optimal.sizeString;
         }
 
-        const restoredResult = await callNanoBanana(
-          IMAGE_PROCESSING_PROMPTS.RESTORE,
-          imageUrl,
-          imageUrl,
-          env,
-          validAspectRatio,
-          modelParam,
-          { skipFacialPreservation: true, provider: body.provider, size: sizeForProvider }
-        );
+        // Route by image size: < 800px largest dimension → Gemini 2.5 Flash Image, otherwise → Flux Klein v3
+        const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
+        const useGemini = largestDim < 800;
+
+        let restoredResult: FaceSwapResponse;
+        if (useGemini) {
+          restoredResult = await callWaveSpeedGeminiImageEdit(
+            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.RESTORE === 'string' ? IMAGE_PROCESSING_PROMPTS.RESTORE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.RESTORE),
+            env, validAspectRatio, sizeForProvider
+          );
+        } else {
+          restoredResult = await callWaveSpeedEdit(
+            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.RESTORE === 'string' ? IMAGE_PROCESSING_PROMPTS.RESTORE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.RESTORE),
+            env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
+          );
+        }
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
           const failureCode = restoredResult.StatusCode || 500;

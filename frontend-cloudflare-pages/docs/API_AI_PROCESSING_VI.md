@@ -536,7 +536,7 @@ flowchart TD
 
 **Mục đích:** AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
 
-**API làm gì:** Gửi `image_url` → AI restore (Vertex/WaveSpeed) → trả `resultImageUrl`.
+**API làm gì:** Gửi `image_url` → AI restore (WaveSpeed) → trả `resultImageUrl`. Tự động chọn model theo kích thước ảnh: ảnh nhỏ (< 800px cạnh lớn nhất) dùng Gemini 2.5 Flash Image, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B v3.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 

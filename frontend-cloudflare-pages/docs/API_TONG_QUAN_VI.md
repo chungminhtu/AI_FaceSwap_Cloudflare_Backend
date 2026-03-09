@@ -208,7 +208,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/enhance` | **WaveSpeed** Google Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B v3 (≥ 800px) | `api/v3/google/gemini-2.5-flash-image/edit` hoặc `api/v3/wavespeed-ai/flux-2-klein-9b/edit` | $0.038 / $0.016 |
 | POST `/beauty` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
 | POST `/filter` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
-| POST `/restore` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
+| POST `/restore` | **WaveSpeed** Google Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B v3 (≥ 800px) | `api/v3/google/gemini-2.5-flash-image/edit` hoặc `api/v3/wavespeed-ai/flux-2-klein-9b/edit` | $0.038 / $0.016 |
 | POST `/aging` | **WaveSpeed** Google Gemini 2.5 Flash Image (edit) | `api/v3/google/gemini-2.5-flash-image/edit` | $0.038 |
 | POST `/expression` | **Vertex AI** Gemini (default) / WaveSpeed (nếu set provider) | Vertex AI hoặc WaveSpeed tùy config | — |
 | POST `/upscaler4k` | **WaveSpeed** Image Upscaler | `api/v1/wavespeed-ai/image-upscaler` | $0.010 |
@@ -218,7 +218,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/remove-text` | **WaveSpeed** Google Gemini 2.5 Flash Image (edit) | `api/v3/google/gemini-2.5-flash-image/edit` | $0.038 |
 | POST `/hair-style` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
 
-> **Ghi chú giá:** Giá trên từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. `/enhance` tự động chọn model theo kích thước ảnh: ảnh nhỏ (< 800px cạnh lớn nhất) dùng Gemini 2.5 Flash Image cho chất lượng tốt hơn, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B v3.
+> **Ghi chú giá:** Giá trên từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. `/enhance` và `/restore` tự động chọn model theo kích thước ảnh: ảnh nhỏ (< 800px cạnh lớn nhất) dùng Gemini 2.5 Flash Image cho chất lượng tốt hơn, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B v3.
 
 ---
 
