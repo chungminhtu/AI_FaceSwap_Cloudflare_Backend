@@ -1433,9 +1433,10 @@ export default {
           }
           const key = `${type}/${id}.${ext}`;
 
-          // Flat/solid color image detection — block blank canvas uploads for selfies
+          // Flat/solid color image detection — block blank canvas uploads for selfies only
+          // Skip for masks (action='remove_object') which are naturally simple/flat images
           // Runs BEFORE R2 upload and vision API to save resources
-          if (type === 'selfie') {
+          if (type === 'selfie' && action !== 'remove_object') {
             const fileDims = dimensionsArray[index] || null;
             const flatCheck = isFlatColorImage(fileData.fileData, fileDims);
             console.log('[FlatColorCheck] Result:', {
