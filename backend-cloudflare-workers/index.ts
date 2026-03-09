@@ -834,7 +834,7 @@ const isFlatColorImage = (buffer: ArrayBuffer, dimensions?: string | null): { is
       const totalPixels = width * height;
       if (totalPixels > 10000) { // Only for images > ~100x100
         const bytesPerPixel = fileSize / totalPixels;
-        if (bytesPerPixel < 0.03) {
+        if (bytesPerPixel < 0.015) {
           return {
             isFlat: true,
             reason: 'extremely_low_compression_ratio',
@@ -1434,9 +1434,10 @@ export default {
           const key = `${type}/${id}.${ext}`;
 
           // Flat/solid color image detection — block blank canvas uploads for selfies only
-          // Skip for masks (action='remove_object') which are naturally simple/flat images
+          // Skip for mask/remove-text actions (these images can be simple/flat)
           // Runs BEFORE R2 upload and vision API to save resources
-          if (type === 'selfie' && action !== 'remove_object') {
+          const skipFlatCheck = action === 'mask' || action === 'remove_text' || action === 'remove-text';
+          if (type === 'selfie' && !skipFlatCheck) {
             const fileDims = dimensionsArray[index] || null;
             const flatCheck = isFlatColorImage(fileData.fileData, fileDims);
             console.log('[FlatColorCheck] Result:', {
