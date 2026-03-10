@@ -14,7 +14,7 @@
 - **Vertex AI (mặc định):** Sử dụng `prompt_json` từ metadata của preset để thực hiện faceswap.
 - **WaveSpeed (`provider: "wavespeed"`):** Không sử dụng `prompt_json`. Sử dụng prompt cố định:
   - **Single mode (1 selfie):** Gửi `[selfie, preset]` với prompt: "Put the person in image1 into image2, keep all the makeup same as preset."
-  - **Couple mode (2 selfies):** Gửi `[selfie1, selfie2, preset]` với prompt: "Put both persons in image1 and image2 into image3, keep all the makeup same as preset."
+  - **Couple mode (2 selfies):** Gửi `[selfie1, selfie2, preset]` với prompt có cấu trúc Goal/Action/Expressions/Scale/Skin/Body Integrity/Constraints: đặt cả hai người từ Image 1 và Image 2 vào Image 3, giữ nguyên biểu cảm, tỷ lệ cơ thể, và perspective. Bao gồm body integrity checks (không thừa/thiếu ngón tay, tay chân không bị biến dạng) và constraints (không mang phụ kiện từ ảnh nguồn, giữ nguyên filter đen trắng nếu có).
 
 **Request:**
 
