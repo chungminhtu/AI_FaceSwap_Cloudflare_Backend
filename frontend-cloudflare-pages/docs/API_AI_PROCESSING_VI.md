@@ -255,9 +255,9 @@ curl -X POST https://api.d.shotpix.app/background \
 
 ## 2.3. POST `/enhance` - AI Enhance
 
-**Mục đích:** AI enhance ảnh - cải thiện chất lượng, độ sáng, độ tương phản và chi tiết của ảnh.
+**Mục đích:** AI restoration và enhancement ảnh - cải thiện sharpness, clarity, và fine detail trong khi giữ nguyên chính xác objects và structure từ ảnh gốc. Chỉ restore detail bị mất do blur, noise, hoặc compression — không tạo thêm objects mới.
 
-**API làm gì:** Gửi `image_url` → AI (Vertex hoặc WaveSpeed) enhance ảnh → trả `resultImageUrl`.
+**API làm gì:** Gửi `image_url` → AI (WaveSpeed) enhance ảnh → trả `resultImageUrl`. Tự động chọn model theo kích thước: ảnh nhỏ (< 800px) dùng Gemini 2.5 Flash Image, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B.
 
 **Lưu ý:**
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
