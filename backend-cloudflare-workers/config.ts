@@ -75,7 +75,7 @@ export const IMAGE_PROCESSING_PROMPTS = {
   } as Record<string, string>,
 
   // AI Expand prompt - outpaint/expand image to fill target dimensions
-  EXPAND: 'Expand the image, try to be as much natural as you can be.',
+  EXPAND: 'Expand the image beyond its original boundaries while preserving the original content. Continue the scene naturally with consistent lighting, perspective, colors, textures, and environmental details so the expansion blends seamlessly with the existing image. Do not modify the original subjects or objects inside the image, and avoid introducing unrelated elements that do not logically belong to the scene.\n\nSafety Policy:\nDo not generate nudity, sexual content, lingerie, explicit poses, or fetish-related imagery.\nDo not expose private body areas.\nDo not modify the subject to appear as a minor.\nDo not generate violent, illegal, hateful, or disturbing content.\nKeep all outputs appropriate for general audiences.\n\nConstraints:\nIf the expansion reveals more of a person\'s body, add natural clothing to maintain appropriate coverage.\nClothing additions must look realistic and consistent with the scene and lighting.',
 
   // Remove object prompt - uses mask to identify and remove unwanted objects from image
   // image1 = original photo, image2 = mask (white = area to remove, black = keep)

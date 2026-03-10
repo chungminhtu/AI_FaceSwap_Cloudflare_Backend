@@ -877,7 +877,7 @@ curl -X POST https://api.d.shotpix.app/expression \
 
 ## 2.11. POST `/expand` - AI Expand
 
-**Mục đích:** Mở rộng/outpaint ảnh. Client tạo PNG với vùng transparent là nơi AI sẽ fill nội dung mới.
+**Mục đích:** Mở rộng/outpaint ảnh. Gửi 1 ảnh origin + size ảnh mong muốn. AI sẽ expand vùng mới với lighting, perspective, colors, textures nhất quán. Không thay đổi nội dung gốc. Bao gồm safety policy (không tạo nội dung không phù hợp) và tự động thêm quần áo tự nhiên nếu expand lộ thêm cơ thể.
 
 **AI model:** WaveSpeed **Flux 2 Klein 9B** (edit) — endpoint `api.wavespeed.ai/.../flux-2-klein-9b/edit`. Chỉ dùng WaveSpeed; không hỗ trợ đổi provider.
 
