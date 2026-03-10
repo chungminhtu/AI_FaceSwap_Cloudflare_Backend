@@ -6,7 +6,7 @@ import type { Env, FaceSwapResponse, SafeSearchResult, GoogleVisionResponse, Fcm
 // Generate unique mock ID for performance testing mode to avoid database conflicts
 const generateMockId = () => `mock-${nanoid(16)}`;
 import { isUnsafe, getWorstViolation, getAccessToken, getVertexAILocation, getVertexAIEndpoint, getVertexModelId, validateImageUrl, fetchWithTimeout, getVertexSafetyViolation, VERTEX_SAFETY_STATUS_CODES, base64UrlEncode } from './utils';
-import { VERTEX_AI_CONFIG, VERTEX_AI_PROMPTS, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, GOOGLE_PLAY_CONFIG } from './config';
+import { VERTEX_AI_CONFIG, VERTEX_AI_PROMPTS, ASPECT_RATIO_CONFIG, API_ENDPOINTS, TIMEOUT_CONFIG, DEFAULT_VALUES, CACHE_CONFIG, GOOGLE_PLAY_CONFIG, FCM_CONFIG } from './config';
 
 const SENSITIVE_KEYS = ['key', 'token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'private_key', 'privatekey', 'access_token', 'accesstoken', 'bearer', 'credential', 'credentials'];
 
@@ -1617,7 +1617,7 @@ export const checkImageSafetyWithFlashLite = async (
         ]
       }],
       generationConfig: VERTEX_AI_CONFIG.SAFETY_CHECK,
-      safetySettings: VERTEX_AI_CONFIG.SAFETY_CHECK_SETTINGS,
+      safetySettings: VERTEX_AI_CONFIG.SAFETY_SETTINGS,
     };
 
     // Get OAuth token
@@ -3035,10 +3035,10 @@ export const getFcmAccessToken = async (env: Env): Promise<string> => {
   const claimSet = {
     iss: saEmail,
     sub: saEmail,
-    aud: 'https://oauth2.googleapis.com/token',
+    aud: FCM_CONFIG.TOKEN_URL,
     exp: expiry,
     iat: now,
-    scope: 'https://www.googleapis.com/auth/firebase.messaging',  // FCM-specific scope
+    scope: FCM_CONFIG.SCOPE,
   };
 
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
@@ -3068,7 +3068,7 @@ export const getFcmAccessToken = async (env: Env): Promise<string> => {
   const jwt = `${signatureInput}.${encodedSignature}`;
 
   // Exchange JWT for access token
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+  const tokenResponse = await fetch(FCM_CONFIG.TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -3089,8 +3089,8 @@ export const getFcmAccessToken = async (env: Env): Promise<string> => {
     try {
       await tokenCacheKV.put(cacheKey, JSON.stringify({
         token: access_token,
-        expiresAt: now + 3300  // 55 minutes
-      }), { expirationTtl: 3300 });
+        expiresAt: now + FCM_CONFIG.TOKEN_CACHE_TTL,
+      }), { expirationTtl: FCM_CONFIG.TOKEN_CACHE_TTL });
     } catch {}
   }
 
@@ -3126,7 +3126,7 @@ export const sendFcmSilentPush = async (
     const creds = getFcmCredentials(env);
     if (!creds) return { token, platform, success: false, error: 'FCM credentials not configured' };
     const response = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${creds.projectId}/messages:send`,
+      FCM_CONFIG.SEND_URL(creds.projectId),
       {
         method: 'POST',
         headers: {
@@ -3140,7 +3140,7 @@ export const sendFcmSilentPush = async (
     if (!response.ok) {
       const errorBody = await response.text();
       // Check if token should be removed (uninstalled app, rotated token)
-      const shouldRemove = ['NOT_REGISTERED', 'INVALID_ARGUMENT', 'UNREGISTERED'].some(e => errorBody.includes(e));
+      const shouldRemove = FCM_CONFIG.INVALID_TOKEN_ERRORS.some(e => errorBody.includes(e));
       return { token, platform, success: false, error: `FCM: ${response.status}`, should_remove: shouldRemove };
     }
 

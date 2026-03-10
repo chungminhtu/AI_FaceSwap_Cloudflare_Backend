@@ -48,9 +48,8 @@ export const WAVESPEED_PROMPTS = {
   // image1 = selfie1 (Subject_1_Identity), image2 = selfie2 (Subject_2_Identity), image3 = preset (placeholder people)
   FACESWAP_COUPLE: `Put both persons in image1 and image 2 into image 3, keep all the makeup same as preset. Image 3 is a finished image containing two people. Make very slight adjustments to the facial structure of each person in Image 3, inspired by the general facial characteristics of Subject_1_Identity and Subject_2_Identity. Preserve the original facial expression and emotional tone of each person in Image 3. Replace the entire hair with blending features from Image 3 using image 1 and image 2. Blend the hair naturally. Maintain the original body proportions, head-to-body ratio, pose, and camera perspective from Image 3. Blend the skin naturally. Scale and align the replaced subject to fit naturally into Image 3. Scale the head smaller. Do not add or remove people.`,
 
-  // Background merge mode: 1 selfie + 1 background/preset
-  // image1 = selfie (person with or without transparent background), image2 = background scene
-  MERGE_PROMPT_DEFAULT: `Create photorealistic composite placing the subject from [Image 1] into the scene of [Image 2]. The lighting, color temperature, contrast, and shadows on the subject perfectly match the background environment, making them look completely grounded and seamlessly integrated into the photograph. Ensure color grading and contrast are consistent between the subject and the environment for a natural look. If needed you can replace the outfit to match with the scene and environment, but keep each subject face and expression. Even the body propositions can be replace to ensure the photo is most realistic. Ensure the clothing fits the subjects body shapes and proportions correctly. Avoid dramatic relighting or artificial 3D rendering effects. Body: No extra fingers or missing fingers. No warped hands or bent wrists. No elongated or shortened limbs. No duplicated arms or legs. Proper shoulder and hip alignment. Natural perspective scaling. Safety Policy: Do not generate nudity, sexual content, lingerie, explicit poses, or fetish-related imagery. Do not expose private body areas. Do not modify the subject into a minor. Do not generate violent, illegal, hateful, or disturbing content. Keep all outputs appropriate for general audiences.`,
+  // Background merge mode: reuses the shared merge prompt from VERTEX_AI_PROMPTS
+  MERGE_PROMPT_DEFAULT: VERTEX_AI_PROMPTS.MERGE_PROMPT_DEFAULT,
 };
 
 // Image Processing Prompts Configuration
@@ -214,15 +213,8 @@ export const VERTEX_AI_CONFIG = {
   // Enable/disable safety pre-check (set to false to disable)
   SAFETY_CHECK_ENABLED: false,
 
-  // Safety settings for pre-check (block only HIGH, allow MEDIUM and below)
-  SAFETY_CHECK_SETTINGS: [
-    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' as const },
-    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' as const },
-    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' as const },
-    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' as const },
-  ],
-
   // Safety Settings - Only block HIGH confidence, allow NEGLIGIBLE, LOW, and MEDIUM
+  // Used for both general requests and safety pre-checks (same thresholds)
   SAFETY_SETTINGS: [
     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' as const },
     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' as const },
@@ -248,91 +240,6 @@ export const VERTEX_AI_CONFIG = {
   },
 };
 
-// Keep backward compatibility
-export const API_PROMPTS = VERTEX_AI_PROMPTS;
-
-export const API_CONFIG = {
-  IMAGE_GENERATION: {
-    temperature: 1,
-    maxOutputTokens: 32768,
-    topP: 0.95,
-    responseModalities: ['TEXT', 'IMAGE'] as const,
-    imageConfig: {
-      imageSize: '1K' as const,
-      personGeneration: 'ALLOW_ALL' as const,
-      imageOutputOptions: {
-        mimeType: 'image/jpeg',
-        compressionQuality: 100,
-      },
-    },
-  },
-
-  PROMPT_GENERATION: {
-    temperature: 0.1,
-    topK: 1,
-    topP: 1,
-    maxOutputTokens: 2048,
-    responseMimeType: 'application/json' as const,
-    responseSchema: {
-      type: 'object',
-      properties: {
-        prompt: {
-          type: 'string',
-          description: 'Detailed HDR scene description including subject, environment, atmosphere, visual mood, and preservation instructions',
-        },
-        style: {
-          type: 'string',
-          description: 'Visual style description',
-        },
-        lighting: {
-          type: 'string',
-          description: 'HDR lighting description',
-        },
-        composition: {
-          type: 'string',
-          description: 'Composition details',
-        },
-        camera: {
-          type: 'string',
-          description: 'Camera settings and lens information',
-        },
-        background: {
-          type: 'string',
-          description: 'Background environment description',
-        },
-        art_style: {
-          type: 'object',
-          description: 'Art style metadata for image transformation',
-          properties: {
-            type: { type: 'string', description: 'Detected or specified art style type' },
-            keywords: { type: 'array', items: { type: 'string' }, description: 'Style-specific keywords' },
-            face_swap_instruction: { type: 'string', description: 'Style-specific subject preservation instruction' },
-          },
-        },
-      },
-      required: ['prompt', 'style', 'lighting', 'composition', 'camera', 'background'],
-    },
-  },
-};
-
-export const SAFETY_SETTINGS = [
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' as const },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' as const },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' as const },
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' as const },
-];
-
-export const MODEL_CONFIG = {
-  IMAGE_GENERATION_MODEL: 'gemini-2.5-flash-image',
-  PROMPT_GENERATION_MODEL: 'gemini-3-flash-preview',
-  MODEL_MAPPING: {
-    '2.5': 'gemini-2.5-flash-image',
-    '3p': 'gemini-3-pro-image-preview',
-    '3f': 'gemini-3-flash-preview',
-  },
-  DEFAULT_MODEL: '2.5',
-};
-
 export const ASPECT_RATIO_CONFIG = {
   SUPPORTED: ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
   DEFAULT: '3:4',
@@ -347,27 +254,6 @@ export const API_ENDPOINTS = {
   WAVESPEED_BRIA_ERASER: 'https://api.wavespeed.ai/api/v3/bria/eraser',
   WAVESPEED_RESULT: (requestId: string) => `https://api.wavespeed.ai/api/v1/predictions/${requestId}/result`,
   OAUTH_TOKEN: 'https://oauth2.googleapis.com/token',
-};
-
-// AI Expand size presets - maps preset names to aspect ratios
-export const EXPAND_SIZE_PRESETS: Record<string, string> = {
-  // Social media
-  'instagram_post': '1:1',
-  'instagram_portrait': '4:5',
-  'instagram_story': '9:16',
-  'facebook_profile': '1:1',
-  'facebook_story': '9:16',
-  'facebook_cover': '2.63:1',
-  'youtube_thumbnail': '16:9',
-  'tiktok_post': '9:16',
-  'twitter_post': '16:9',
-  'linkedin_profile': '1:1',
-  // Fixed ratios
-  'square': '1:1',
-  'photograph': '2:3',
-  'camera': '3:2',
-  'portrait': '3:4',
-  'widescreen': '16:9',
 };
 
 export const TIMEOUT_CONFIG = {
