@@ -313,9 +313,9 @@ curl -X POST https://api.d.shotpix.app/enhance \
 
 ## 2.4. POST `/beauty` - AI Beauty
 
-**Mục đích:** AI beautify ảnh - cải thiện thẩm mỹ khuôn mặt (lý tưởng cho selfies và chân dung). Làm mịn da, xóa mụn, làm sáng mắt, tinh chỉnh khuôn mặt một cách tự nhiên.
+**Mục đích:** AI beautify ảnh - retouching tự nhiên cho portrait. Làm mịn da, xóa mụn, makeup nhẹ tự nhiên. Không chỉnh sửa vùng mắt (giữ nguyên trạng thái mắt mở/nhắm). Bao gồm body integrity checks.
 
-**API làm gì:** Gửi `image_url` → AI beautify (Vertex/WaveSpeed) → trả `resultImageUrl`.
+**API làm gì:** Gửi `image_url` → AI beautify (WaveSpeed Flux 2 Klein 9B) → trả `resultImageUrl`.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -357,17 +357,15 @@ curl -X POST https://api.d.shotpix.app/beauty \
 ```
 
 **Tính năng AI Beauty:**
-- Làm mịn da (smooth skin)
-- Xóa mụn và vết thâm (removes blemishes/acne)
-- Đều màu da (evens skin tone)
-- Làm thon mặt và đường viền hàm một cách tinh tế (slims face/jawline subtly)
-- Làm sáng mắt (brightens eyes)
-- Tăng cường môi và lông mày (enhances lips and eyebrows)
-- Mở rộng mắt nhẹ (enlarges eyes slightly, optional)
-- Làm mềm hoặc chỉnh hình mũi (softens or reshapes nose)
-- Tự động điều chỉnh makeup (adjusts makeup automatically)
+- Làm mịn da tự nhiên (smooth skin, remove acne/blemishes)
+- Đều màu da toàn thân (consistent skin tone across all visible areas)
+- Makeup nhẹ tự nhiên (subtle natural makeup on lips/complexion only)
+- **Không chỉnh sửa vùng mắt** (preserve eye state, eyelids, eyelashes, eyebrows exactly)
+- Xóa lông trên cơ thể (remove body hair)
+- Giữ nguyên cấu trúc khuôn mặt và biểu cảm gốc
+- Body integrity: không thừa/thiếu ngón tay, không biến dạng tay chân
 
-**Lưu ý:** AI Beauty tập trung vào cải thiện thẩm mỹ khuôn mặt, khác với AI Enhance (cải thiện chất lượng kỹ thuật như độ sắc nét, giảm nhiễu).
+**Lưu ý:** AI Beauty tập trung vào retouching tự nhiên — không reconstruct khuôn mặt hoặc tạo thêm chi tiết không có trong ảnh gốc. Khác với AI Enhance (cải thiện chất lượng kỹ thuật).
 
 **Error Responses:** Xem [Error Codes Reference](API_TONG_QUAN_VI.md#error-codes-reference)
 
