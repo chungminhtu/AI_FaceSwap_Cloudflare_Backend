@@ -7871,22 +7871,27 @@ export default {
 
     // Handle editor endpoint - general-purpose image editing with user's custom prompt
     if (path === '/editor' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
+      let body: { selfie_id?: string; selfie_image_url?: string; image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
       let creditResult: any = null;
       try {
         body = await request.json() as typeof body;
+
+        // Accept image_url as alias for selfie_image_url
+        if (body!.image_url && !body!.selfie_image_url) {
+          body!.selfie_image_url = body!.image_url;
+        }
 
         const hasSelfieId = body!.selfie_id && body!.selfie_id.trim() !== '';
         const hasSelfieUrl = body!.selfie_image_url && body!.selfie_image_url.trim() !== '';
 
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Missing required field: selfie_id, selfie_image_url, or image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (hasSelfieId && hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
-          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          return errorResponse('Cannot provide both selfie_id and image URL', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
         if (!body!.profile_id) {
