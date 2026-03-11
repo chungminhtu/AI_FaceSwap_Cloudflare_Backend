@@ -3405,6 +3405,8 @@
                 const modelSelect = document.getElementById('gemini-model');
                 const selectedModel = modelSelect?.value || localStorage.getItem('faceswap:model') || '2.5';
                 const selectedFormat = localStorage.getItem('preset:format') || 'webp';
+                const providerSelect = document.getElementById('image-provider');
+                const selectedProvider = providerSelect?.value || localStorage.getItem('faceswap:provider') || '';
                 const additionalPromptInput = document.getElementById('additional-prompt');
                 const additionalPrompt = additionalPromptInput?.value.trim() || '';
 
