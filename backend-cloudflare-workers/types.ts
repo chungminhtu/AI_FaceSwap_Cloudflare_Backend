@@ -26,6 +26,8 @@ export interface BackgroundRequest {
   preset_image_url?: string; // Optional: Preset image URL (alternative to preset_image_id)
   selfie_id?: string; // Optional: Selfie ID from database (person with transparent background)
   selfie_image_url?: string; // Optional: Selfie image URL (alternative to selfie_id)
+  image_id?: string; // Optional: Alias for selfie_id
+  image_url?: string; // Optional: Alias for selfie_image_url
   profile_id: string; // Required: Profile ID for the operation
   custom_prompt?: string; // Optional: Custom prompt to generate background image from text (alternative to preset_image_id/preset_image_url)
   aspect_ratio?: string; // Optional: Aspect ratio for image generation (e.g., "1:1", "16:9", "9:16", etc.)

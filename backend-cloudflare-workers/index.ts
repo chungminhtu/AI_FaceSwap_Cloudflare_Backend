@@ -5601,6 +5601,10 @@ export default {
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
+
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
         const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
 
@@ -6170,14 +6174,17 @@ export default {
 
     // Handle enhance endpoint
     if (path === '/enhance' && request.method === 'POST') {
-      let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
-        // Support both legacy image_url and new selfie_id/selfie_image_url
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
+
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
         
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
@@ -6398,14 +6405,17 @@ export default {
 
     // Handle beauty endpoint
     if (path === '/beauty' && request.method === 'POST') {
-      let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
-        // Support both legacy image_url and new selfie_id/selfie_image_url
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
+
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
         
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
@@ -6614,6 +6624,7 @@ export default {
         preset_image_url?: string;
         selfie_id?: string;
         selfie_image_url?: string;
+        image_id?: string;
         image_url?: string;
         profile_id: string;
         aspect_ratio?: string;
@@ -6647,8 +6658,12 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
+
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
         if (!hasSelfieId && !hasSelfieUrl) {
           return errorResponse('Missing required field: selfie_id, selfie_image_url, or image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
@@ -6844,14 +6859,17 @@ export default {
 
     // Handle restore endpoint
     if (path === '/restore' && request.method === 'POST') {
-      let body: { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
+      let body: { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
+        body = await request.json() as { image_id?: string; image_url?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string; model?: string | number; provider?: 'vertex' | 'wavespeed' };
 
-        // Support both legacy image_url and new selfie_id/selfie_image_url
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
+
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = (body.selfie_image_url && body.selfie_image_url.trim() !== '') || (body.image_url && body.image_url.trim() !== '');
+        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
         
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
@@ -7036,6 +7054,8 @@ export default {
         preset_image_url?: string;
         selfie_id?: string;
         selfie_image_url?: string;
+        image_id?: string;
+        image_url?: string;
         profile_id: string;
         aspect_ratio?: string;
         model?: string | number;
@@ -7052,6 +7072,10 @@ export default {
           const normalized = normalizePresetId(body.preset_image_id);
           if (normalized) body.preset_image_id = normalized;
         }
+
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body?.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body?.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
 
         const envError = validateEnv(env, 'vertex');
         if (envError) {
@@ -7344,6 +7368,8 @@ export default {
       let body: {
         selfie_id?: string;
         selfie_image_url?: string;
+        image_id?: string;
+        image_url?: string;
         mask_id?: string;
         mask_image_url?: string;
         profile_id?: string;
@@ -7354,6 +7380,10 @@ export default {
       let creditResult: any = null;
       try {
         body = await request.json() as typeof body;
+
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body?.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body?.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
 
         const hasSelfieId = body?.selfie_id && body.selfie_id.trim() !== '';
         const hasSelfieUrl = body?.selfie_image_url && body.selfie_image_url.trim() !== '';
@@ -7551,6 +7581,8 @@ export default {
       let body: {
         selfie_id?: string;
         selfie_image_url?: string;
+        image_id?: string;
+        image_url?: string;
         profile_id?: string;
         expression: string;
         aspect_ratio?: string;
@@ -7560,6 +7592,10 @@ export default {
       let creditResult: any = null;
       try {
         body = await request.json() as typeof body;
+
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body?.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body?.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
 
         const hasSelfieId = body?.selfie_id && body.selfie_id.trim() !== '';
         const hasSelfieUrl = body?.selfie_image_url && body.selfie_image_url.trim() !== '';
@@ -7730,13 +7766,17 @@ export default {
 
     // Handle expand endpoint - AI image expansion/outpainting
     if (path === '/expand' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string } | undefined;
+      let body: { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string };
+        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string };
 
-        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body!.image_id && !body!.selfie_id) body!.selfie_id = body!.image_id;
+        if (body!.image_url && !body!.selfie_image_url) body!.selfie_image_url = body!.image_url;
+
+        const hasSelfieId = body!.selfie_id && body!.selfie_id.trim() !== '';
+        const hasSelfieUrl = body!.selfie_image_url && body!.selfie_image_url.trim() !== '';
 
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
@@ -7871,15 +7911,14 @@ export default {
 
     // Handle editor endpoint - general-purpose image editing with user's custom prompt
     if (path === '/editor' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
+      let body: { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
       let creditResult: any = null;
       try {
         body = await request.json() as typeof body;
 
-        // Accept image_url as alias for selfie_image_url
-        if (body!.image_url && !body!.selfie_image_url) {
-          body!.selfie_image_url = body!.image_url;
-        }
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body!.image_id && !body!.selfie_id) body!.selfie_id = body!.image_id;
+        if (body!.image_url && !body!.selfie_image_url) body!.selfie_image_url = body!.image_url;
 
         const hasSelfieId = body!.selfie_id && body!.selfie_id.trim() !== '';
         const hasSelfieUrl = body!.selfie_image_url && body!.selfie_image_url.trim() !== '';
@@ -8079,10 +8118,14 @@ export default {
 
     // Handle replace-object endpoint - replace highlighted area with custom content using WaveSpeed edit
     if (path === '/replace-object' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string; custom_prompt?: string } | undefined;
+      let body: { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; custom_prompt?: string } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; profile_id?: string; custom_prompt?: string };
+        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; custom_prompt?: string };
+
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body.image_id && !body.selfie_id) body.selfie_id = body.image_id;
+        if (body.image_url && !body.selfie_image_url) body.selfie_image_url = body.image_url;
 
         const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
         const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
@@ -8380,18 +8423,22 @@ export default {
 
     // Handle hair-style endpoint - apply hair style preset to selfie using WaveSpeed flux-2-klein-9b
     if (path === '/hair-style' && request.method === 'POST') {
-      let body: { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string } | undefined;
+      let body: { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; aspect_ratio?: string } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; profile_id?: string; aspect_ratio?: string };
+        body = await request.json() as { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; aspect_ratio?: string };
 
-        if (!body.preset_image_id || body.preset_image_id.trim() === '') {
+        // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
+        if (body!.image_id && !body!.selfie_id) body!.selfie_id = body!.image_id;
+        if (body!.image_url && !body!.selfie_image_url) body!.selfie_image_url = body!.image_url;
+
+        if (!body!.preset_image_id || body!.preset_image_id.trim() === '') {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Missing required field: preset_image_id', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        const hasSelfieId = body.selfie_id && body.selfie_id.trim() !== '';
-        const hasSelfieUrl = body.selfie_image_url && body.selfie_image_url.trim() !== '';
+        const hasSelfieId = body!.selfie_id && body!.selfie_id.trim() !== '';
+        const hasSelfieUrl = body!.selfie_image_url && body!.selfie_image_url.trim() !== '';
 
         if (!hasSelfieId && !hasSelfieUrl) {
           const debugEnabled = isDebugEnabled(env);
