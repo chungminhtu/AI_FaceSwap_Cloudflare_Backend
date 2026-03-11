@@ -88,9 +88,9 @@ export const IMAGE_PROCESSING_PROMPTS = {
   // Remove text prompt - merged image (origin + mask) sent to Gemini 2.5 Flash edit
   REMOVE_TEXT: 'Remove only the highlighted (masked) text. Perform edits strictly inside the highlighted area only and do not modify any content outside the mask. Keep all non-highlighted text, layout, alignment, font style, and formatting unchanged. Within the affected text box, automatically reflow and resize the remaining text to fill the space naturally while maintaining consistent formatting and proportions. Restore the background cleanly where needed without artifacts. Do not add new text outside the original text box.',
 
-  // Edit prompt - general-purpose image editing with user's custom instruction
+  // Editor prompt - general-purpose image editing with user's custom instruction
   // {{custom_prompt}} is replaced with the user's custom text at runtime
-  EDIT: 'Edit the image according to the following instruction: {{custom_prompt}}. Preserve the overall composition, lighting, perspective, and style of the original image unless the instruction explicitly asks to change them. The result must look like a natural, high-quality photograph. Do not introduce artifacts or unrelated elements.\n\nSafety Policy:\nDo not generate nudity, sexual content, lingerie, explicit poses, or fetish-related imagery.\nDo not expose private body areas.\nDo not modify the subject to appear as a minor.\nDo not generate violent, illegal, hateful, or disturbing content.\nKeep all outputs appropriate for general audiences.',
+  EDITOR: 'Edit the image according to the following instruction: {{custom_prompt}}. Preserve the overall composition, lighting, perspective, and style of the original image unless the instruction explicitly asks to change them. The result must look like a natural, high-quality photograph. Do not introduce artifacts or unrelated elements.\n\nSafety Policy:\nDo not generate nudity, sexual content, lingerie, explicit poses, or fetish-related imagery.\nDo not expose private body areas.\nDo not modify the subject to appear as a minor.\nDo not generate violent, illegal, hateful, or disturbing content.\nKeep all outputs appropriate for general audiences.',
 };
 
 // Vertex AI Configuration - Centralized all Vertex AI settings

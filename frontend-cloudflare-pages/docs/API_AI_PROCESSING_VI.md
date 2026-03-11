@@ -1051,7 +1051,7 @@ curl -X POST https://api.d.shotpix.app/remove-text \
 
 ---
 
-## 2.14. POST `/edit` - AI Image Edit
+## 2.14. POST `/editor` - AI Image Editor
 
 **Mục đích:** Chỉnh sửa ảnh theo hướng dẫn tự do từ người dùng. Hỗ trợ provider routing tự động (Gemini 2.5 Flash Image cho ảnh nhỏ < 800px, WaveSpeed Flux Klein v3 cho ảnh lớn hơn).
 
@@ -1066,7 +1066,7 @@ curl -X POST https://api.d.shotpix.app/remove-text \
 
 **Request:**
 ```bash
-curl -X POST https://api.d.shotpix.app/edit \
+curl -X POST https://api.d.shotpix.app/editor \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
@@ -1077,7 +1077,7 @@ curl -X POST https://api.d.shotpix.app/edit \
 ```
 
 ```bash
-curl -X POST https://api.d.shotpix.app/edit \
+curl -X POST https://api.d.shotpix.app/editor \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{

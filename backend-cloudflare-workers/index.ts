@@ -213,7 +213,7 @@ const PROTECTED_MOBILE_APIS = [
   '/expand',
   '/replace-object',
   '/remove-text',
-  '/edit',
+  '/editor',
   '/profiles',
   '/api/products',
   '/api/user/balance',
@@ -941,8 +941,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT' | 'HAIR_STYLE' | 'EDIT';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE', 'EDIT'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT' | 'HAIR_STYLE' | 'EDITOR';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE', 'EDITOR'];
 const GEMINI_IMAGE_DEFAULT_MODES: ImageProviderMode[] = ['ENHANCE'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
@@ -7869,8 +7869,8 @@ export default {
       }
     }
 
-    // Handle edit endpoint - general-purpose image editing with user's custom prompt
-    if (path === '/edit' && request.method === 'POST') {
+    // Handle editor endpoint - general-purpose image editing with user's custom prompt
+    if (path === '/editor' && request.method === 'POST') {
       let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
       let creditResult: any = null;
       try {
@@ -7908,7 +7908,7 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body!.profile_id, path } : undefined, request, env);
         }
 
-        creditResult = await deductCredits(DB, body!.profile_id, 'edit', env, request);
+        creditResult = await deductCredits(DB, body!.profile_id, 'editor', env, request);
         if (!creditResult.success) {
           return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
         }
@@ -7925,7 +7925,7 @@ export default {
           `).bind(body!.selfie_id, body!.profile_id).first();
 
           if (!selfieResult) {
-            const cachedResult = await getCachedResultFromKV(env, body!.selfie_id!, null, 'edit');
+            const cachedResult = await getCachedResultFromKV(env, body!.selfie_id!, null, 'editor');
             if (cachedResult) {
               return jsonResponse({
                 data: { resultImageUrl: cachedResult, cached: true },
@@ -7952,7 +7952,7 @@ export default {
         const inputSafetyCheck = await checkImageSafetyWithFlashLite(selfieUrl, env);
         if (!inputSafetyCheck.safe) {
           if (body!.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body!.profile_id, 'edit', creditResult.cost, 'Input image safety violation', request);
+            await refundCredits(DB, body!.profile_id, 'editor', creditResult.cost, 'Input image safety violation', request);
           }
           const debugEnabled = isDebugEnabled(env);
           return errorResponse(
@@ -7964,7 +7964,7 @@ export default {
         }
 
         // Build prompt from template with user's custom_prompt
-        const promptTemplate = IMAGE_PROCESSING_PROMPTS.EDIT;
+        const promptTemplate = IMAGE_PROCESSING_PROMPTS.EDITOR;
         const finalPrompt = (typeof promptTemplate === 'string' ? promptTemplate : JSON.stringify(promptTemplate)).replace('{{custom_prompt}}', body!.custom_prompt!.trim());
 
         // Get image dimensions for optimal size calculation
@@ -7981,7 +7981,7 @@ export default {
         }
 
         // Provider routing: small images → Gemini, larger → WaveSpeed Flux Klein v3
-        const effectiveProvider = getEffectiveProvider(body, env, 'EDIT');
+        const effectiveProvider = getEffectiveProvider(body, env, 'EDITOR');
         const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
         const useGemini = effectiveProvider.includes('gemini') || (effectiveProvider === 'wavespeed' && largestDim < 800);
 
@@ -8020,7 +8020,7 @@ export default {
         const safetyCheck = await checkSafeSearch(resultUrl, env);
         if (!safetyCheck.isSafe) {
           if (body!.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body!.profile_id, 'edit', creditResult.cost, 'Content safety violation', request);
+            await refundCredits(DB, body!.profile_id, 'editor', creditResult.cost, 'Content safety violation', request);
           }
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
@@ -8032,10 +8032,10 @@ export default {
           }, 422);
         }
 
-        const savedResultId = await saveResultToDatabase(DB, resultUrl, body!.profile_id, env, R2_BUCKET, 'edit', request);
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body!.profile_id, env, R2_BUCKET, 'editor', request);
 
         if (hasSelfieId && body!.selfie_id) {
-          ctx.waitUntil(cacheResultInKV(env, body!.selfie_id, null, 'edit', resultUrl));
+          ctx.waitUntil(cacheResultInKV(env, body!.selfie_id, null, 'editor', resultUrl));
         }
 
         if (hasSelfieId && selfieResult) {
@@ -8058,9 +8058,9 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'edit', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'editor', creditResult.cost, 'Processing error', request);
         }
-        logCriticalError('/edit', error, request, env, {
+        logCriticalError('/editor', error, request, env, {
           body: {
             selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,
