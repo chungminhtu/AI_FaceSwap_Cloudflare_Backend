@@ -6777,17 +6777,6 @@ export default {
           }
         }
 
-        const safetyCheck = await checkImageSafetyWithFlashLite(imageUrl, env);
-        if (!safetyCheck.safe) {
-          return errorResponse(
-            safetyCheck.reason || 'Image failed safety check',
-            400,
-            debugEnabled ? { path, safetyCheck: { safe: false, reason: safetyCheck.reason, category: safetyCheck.category, error: safetyCheck.error } } : undefined,
-            request,
-            env
-          );
-        }
-
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, imageUrl, env, { allowOriginal: true });
         const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
@@ -6831,6 +6820,21 @@ export default {
         let resultUrl = filterResult.ResultImageUrl;
         if (filterResult.ResultImageUrl?.startsWith('r2://')) {
           resultUrl = getR2PublicUrl(env, filterResult.ResultImageUrl.replace('r2://', ''), requestUrl.origin);
+        }
+
+        // Post-processing safety scan on result image
+        const safetyCheck = await checkImageSafetyWithFlashLite(resultUrl, env);
+        if (!safetyCheck.safe) {
+          if (body.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Result failed safety check', request);
+          }
+          return errorResponse(
+            safetyCheck.reason || 'Result image failed safety check',
+            400,
+            debugEnabled ? { path, safetyCheck: { safe: false, reason: safetyCheck.reason, category: safetyCheck.category, error: safetyCheck.error } } : undefined,
+            request,
+            env
+          );
         }
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter', request);
