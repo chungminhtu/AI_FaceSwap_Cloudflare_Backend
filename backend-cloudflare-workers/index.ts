@@ -7911,10 +7911,10 @@ export default {
 
     // Handle editor endpoint - general-purpose image editing with user's custom prompt
     if (path === '/editor' && request.method === 'POST') {
-      let body: { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
+      let body: { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; ref_image_id?: string; ref_image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
       let creditResult: any = null;
       try {
-        body = await request.json() as typeof body;
+        body = await request.json() as { selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; ref_image_id?: string; ref_image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string };
 
         // Accept image_id/image_url as aliases for selfie_id/selfie_image_url
         if (body!.image_id && !body!.selfie_id) body!.selfie_id = body!.image_id;
@@ -7992,11 +7992,43 @@ export default {
           }
         }
 
+        // Resolve optional reference image (uploaded with type=selfie, action=ref)
+        let refImageUrl: string | undefined;
+        let refResult: any = null;
+        const hasRefId = body.ref_image_id && body.ref_image_id.trim() !== '';
+        const hasRefUrl = body.ref_image_url && body.ref_image_url.trim() !== '';
+
+        if (hasRefId && hasRefUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both ref_image_id and ref_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasRefId) {
+          refResult = await DB.prepare(`
+            SELECT s.id, s.ext FROM selfies s
+            WHERE s.id = ? AND s.profile_id = ?
+          `).bind(body.ref_image_id, body.profile_id).first();
+
+          if (!refResult) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Reference image not found or does not belong to profile', 404, debugEnabled ? { refImageId: body.ref_image_id, path } : undefined, request, env);
+          }
+
+          const refR2Key = reconstructR2Key(refResult.id, refResult.ext, 'selfie');
+          refImageUrl = getR2PublicUrl(env, refR2Key, requestUrl.origin);
+        } else if (hasRefUrl) {
+          if (!validateImageUrl(body.ref_image_url!, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid ref_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+          refImageUrl = body.ref_image_url!;
+        }
+
         // Pre-processing safety check on the input image
         const inputSafetyCheck = await checkImageSafetyWithFlashLite(selfieUrl, env);
         if (!inputSafetyCheck.safe) {
-          if (body!.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body!.profile_id, 'editor', creditResult.cost, 'Input image safety violation', request);
+          if (body.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'editor', creditResult.cost, 'Input image safety violation', request);
           }
           const debugEnabled = isDebugEnabled(env);
           return errorResponse(
@@ -8009,20 +8041,23 @@ export default {
 
         // Build prompt from template with user's custom_prompt
         const promptTemplate = IMAGE_PROCESSING_PROMPTS.EDITOR;
-        const finalPrompt = (typeof promptTemplate === 'string' ? promptTemplate : JSON.stringify(promptTemplate)).replace('{{custom_prompt}}', body!.custom_prompt!.trim());
+        const finalPrompt = (typeof promptTemplate === 'string' ? promptTemplate : JSON.stringify(promptTemplate)).replace('{{custom_prompt}}', body.custom_prompt!.trim());
 
         // Get image dimensions for optimal size calculation
         const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
         const imageDimensionsExtended = await getImageDimensionsExtended(selfieUrl, env);
 
-        const validAspectRatio = await resolveAspectRatio(body!.aspect_ratio, selfieUrl, env, { allowOriginal: true });
+        const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
 
-        const userExplicitlySetAspectRatio = body!.aspect_ratio && body!.aspect_ratio.trim() !== '' && body!.aspect_ratio.toLowerCase() !== 'original';
+        const userExplicitlySetAspectRatio = body.aspect_ratio && body.aspect_ratio.trim() !== '' && body.aspect_ratio.toLowerCase() !== 'original';
         let sizeForProvider: string | undefined;
         if (!userExplicitlySetAspectRatio && imageDimensionsExtended) {
           const optimal = calculateOptimalSize(imageDimensionsExtended.width, imageDimensionsExtended.height, 1536, 256);
           sizeForProvider = optimal.sizeString;
         }
+
+        // Build image array: main image + optional reference image
+        const imageUrls = refImageUrl ? [selfieUrl, refImageUrl] : [selfieUrl];
 
         // Provider routing: small images → Gemini, larger → WaveSpeed Flux Klein v3
         const effectiveProvider = getEffectiveProvider(body, env, 'EDITOR');
@@ -8032,11 +8067,11 @@ export default {
         let editResult: FaceSwapResponse;
         if (useGemini) {
           editResult = await callWaveSpeedGeminiImageEdit(
-            [selfieUrl], finalPrompt, env, validAspectRatio, sizeForProvider
+            imageUrls, finalPrompt, env, validAspectRatio, sizeForProvider
           );
         } else {
           editResult = await callWaveSpeedEdit(
-            [selfieUrl], finalPrompt, env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
+            imageUrls, finalPrompt, env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
           );
         }
 
@@ -8086,6 +8121,11 @@ export default {
           const selfieId = (selfieResult as any).id;
           const selfieExt = (selfieResult as any).ext;
           ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        // Auto-delete reference image after processing
+        if (hasRefId && refResult) {
+          ctx.waitUntil(deleteSelfieAfterProcessing(refResult.id, refResult.ext, env, DB, R2_BUCKET, requestUrl.origin));
         }
 
         const debugEnabled = isDebugEnabled(env);

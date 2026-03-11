@@ -1060,9 +1060,10 @@ curl -X POST https://api.d.shotpix.app/remove-text \
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Cách hoạt động:**
-1. Upload ảnh cần chỉnh sửa (selfie)
-2. Gọi API kèm `custom_prompt` mô tả cách muốn chỉnh sửa
-3. Hệ thống kiểm tra an toàn ảnh đầu vào (pre-check) và kết quả (post-check)
+1. Upload ảnh cần chỉnh sửa (selfie hoặc image_url)
+2. (Tùy chọn) Upload ảnh tham chiếu bằng `type=selfie, action=ref` rồi truyền `ref_image_id`, hoặc truyền `ref_image_url` trực tiếp
+3. Gọi API kèm `custom_prompt` mô tả cách muốn chỉnh sửa
+4. Hệ thống kiểm tra an toàn ảnh đầu vào (pre-check) và kết quả (post-check)
 
 **Request:**
 ```bash
@@ -1070,7 +1071,7 @@ curl -X POST https://api.d.shotpix.app/editor \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "selfie_id": "E0PtVZEio5fctjMd",
+    "image_id": "E0PtVZEio5fctjMd",
     "custom_prompt": "Change the sky to a golden sunset with warm orange and pink tones",
     "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
@@ -1081,18 +1082,33 @@ curl -X POST https://api.d.shotpix.app/editor \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your_api_key_here" \
   -d '{
-    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.png",
-    "custom_prompt": "Add a pair of stylish sunglasses to the person",
-    "aspect_ratio": "1:1",
+    "image_url": "https://resources.d.shotpix.app/selfie/abc.png",
+    "custom_prompt": "Make the person look like the reference image style",
+    "ref_image_url": "https://example.com/reference-style.jpg",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+```bash
+# With uploaded reference image (type=selfie, action=ref)
+curl -X POST https://api.d.shotpix.app/editor \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "image_url": "https://resources.d.shotpix.app/selfie/abc.png",
+    "custom_prompt": "Apply the hairstyle from the reference image",
+    "ref_image_id": "RefImageIdHere",
     "profile_id": "CbS0w8Ed8ezrlJ7o"
   }'
 ```
 
 **Request Parameters:**
-- `selfie_id` (string): ID ảnh cần chỉnh sửa. Không dùng cùng `selfie_image_url`.
-- `selfie_image_url` (string): URL ảnh cần chỉnh sửa. Không dùng cùng `selfie_id`.
+- `selfie_id` / `image_id` (string): ID ảnh cần chỉnh sửa. Không dùng cùng URL.
+- `selfie_image_url` / `image_url` (string): URL ảnh cần chỉnh sửa. Không dùng cùng ID.
 - `custom_prompt` (string, required): Mô tả cách chỉnh sửa ảnh (tự do, bất kỳ yêu cầu nào).
 - `profile_id` (string, required): ID profile người dùng.
+- `ref_image_id` (string, optional): ID ảnh tham chiếu (upload với `type=selfie, action=ref`). Tự động xóa sau khi xử lý.
+- `ref_image_url` (string, optional): URL ảnh tham chiếu. Không dùng cùng `ref_image_id`.
 - `aspect_ratio` (string, optional): Tỷ lệ ảnh đầu ra (ví dụ: "1:1", "3:4", "16:9"). Mặc định giữ nguyên tỷ lệ gốc.
 - `provider` (string, optional): Chọn provider xử lý. Mặc định tự động theo kích thước ảnh.
 
