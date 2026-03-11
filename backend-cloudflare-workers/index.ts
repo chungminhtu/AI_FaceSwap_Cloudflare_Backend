@@ -6849,7 +6849,7 @@ export default {
           status: 'success',
           message: filterResult.Message || 'Style filter applied successfully',
           code: 200,
-          ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false } }) } : {}),
+          ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), safetyCheck: { safe: safetyCheck.safe, category: safetyCheck.category || null }, database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false } }) } : {}),
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
