@@ -6822,19 +6822,19 @@ export default {
           resultUrl = getR2PublicUrl(env, filterResult.ResultImageUrl.replace('r2://', ''), requestUrl.origin);
         }
 
-        // Post-processing safety scan on result image
-        const safetyCheck = await checkImageSafetyWithFlashLite(resultUrl, env);
-        if (!safetyCheck.safe) {
+        // Post-processing safety scan on result image using Google Vision API
+        const safetyCheck = await checkSafeSearch(resultUrl, env);
+        if (!safetyCheck.isSafe) {
           if (body.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Result failed safety check', request);
+            await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Content safety violation', request);
           }
-          return errorResponse(
-            safetyCheck.reason || 'Result image failed safety check',
-            400,
-            debugEnabled ? { path, safetyCheck: { safe: false, reason: safetyCheck.reason, category: safetyCheck.category, error: safetyCheck.error } } : undefined,
-            request,
-            env
-          );
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: safetyCheck.statusCode || 1001,
+            ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), visionScan: safetyCheck.debug || null, safetyCategory: safetyCheck.violationCategory, safetyLevel: safetyCheck.violationLevel, safetyDetails: safetyCheck.details }) } : {}),
+          }, 422);
         }
 
         const savedResultId = await saveResultToDatabase(DB, resultUrl, body.profile_id, env, R2_BUCKET, 'filter', request);
@@ -6849,7 +6849,7 @@ export default {
           status: 'success',
           message: filterResult.Message || 'Style filter applied successfully',
           code: 200,
-          ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), safetyCheck: { safe: safetyCheck.safe, category: safetyCheck.category || null }, database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false } }) } : {}),
+          ...(debugEnabled ? { debug: compact({ ...buildFlatDebug(filterResult), visionScan: safetyCheck.debug || null, safetyDetails: safetyCheck.details, database: savedResultId ? { saved: true, resultId: savedResultId } : { saved: false } }) } : {}),
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
