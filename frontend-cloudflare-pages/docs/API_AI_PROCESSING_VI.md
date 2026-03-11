@@ -1051,7 +1051,71 @@ curl -X POST https://api.d.shotpix.app/remove-text \
 
 ---
 
-## 2.14. POST `/hair-style` - AI Hair Style
+## 2.14. POST `/edit` - AI Image Edit
+
+**Mục đích:** Chỉnh sửa ảnh theo hướng dẫn tự do từ người dùng. Hỗ trợ provider routing tự động (Gemini 2.5 Flash Image cho ảnh nhỏ < 800px, WaveSpeed Flux Klein v3 cho ảnh lớn hơn).
+
+**API làm gì:** Nhận ảnh + `custom_prompt` mô tả cách chỉnh sửa → kiểm tra an toàn ảnh đầu vào → AI chỉnh sửa theo hướng dẫn → kiểm tra an toàn kết quả → trả `resultImageUrl`.
+
+**Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
+
+**Cách hoạt động:**
+1. Upload ảnh cần chỉnh sửa (selfie)
+2. Gọi API kèm `custom_prompt` mô tả cách muốn chỉnh sửa
+3. Hệ thống kiểm tra an toàn ảnh đầu vào (pre-check) và kết quả (post-check)
+
+**Request:**
+```bash
+curl -X POST https://api.d.shotpix.app/edit \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_id": "E0PtVZEio5fctjMd",
+    "custom_prompt": "Change the sky to a golden sunset with warm orange and pink tones",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+```bash
+curl -X POST https://api.d.shotpix.app/edit \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "selfie_image_url": "https://resources.d.shotpix.app/selfie/abc.png",
+    "custom_prompt": "Add a pair of stylish sunglasses to the person",
+    "aspect_ratio": "1:1",
+    "profile_id": "CbS0w8Ed8ezrlJ7o"
+  }'
+```
+
+**Request Parameters:**
+- `selfie_id` (string): ID ảnh cần chỉnh sửa. Không dùng cùng `selfie_image_url`.
+- `selfie_image_url` (string): URL ảnh cần chỉnh sửa. Không dùng cùng `selfie_id`.
+- `custom_prompt` (string, required): Mô tả cách chỉnh sửa ảnh (tự do, bất kỳ yêu cầu nào).
+- `profile_id` (string, required): ID profile người dùng.
+- `aspect_ratio` (string, optional): Tỷ lệ ảnh đầu ra (ví dụ: "1:1", "3:4", "16:9"). Mặc định giữ nguyên tỷ lệ gốc.
+- `provider` (string, optional): Chọn provider xử lý. Mặc định tự động theo kích thước ảnh.
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "result_id",
+    "resultImageUrl": "https://resources.d.shotpix.app/faceswap-images/results/result_123.jpg"
+  },
+  "status": "success",
+  "message": "Image edit completed",
+  "code": 200
+}
+```
+
+**Lưu ý:** Sau khi xử lý, selfie sẽ tự động bị xóa.
+
+**Error Responses:** Xem [Error Codes Reference](API_TONG_QUAN_VI.md#error-codes-reference)
+
+---
+
+## 2.15. POST `/hair-style` - AI Hair Style
 
 **Mục đích:** Áp dụng kiểu tóc từ preset lên ảnh selfie sử dụng WaveSpeed flux-2-klein-9b.
 

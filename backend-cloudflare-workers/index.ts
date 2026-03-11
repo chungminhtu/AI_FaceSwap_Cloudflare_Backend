@@ -213,6 +213,7 @@ const PROTECTED_MOBILE_APIS = [
   '/expand',
   '/replace-object',
   '/remove-text',
+  '/edit',
   '/profiles',
   '/api/products',
   '/api/user/balance',
@@ -940,8 +941,8 @@ const isDebugEnabled = (env: Env): boolean => {
   return env.ENABLE_DEBUG_RESPONSE === 'true';
 };
 
-type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT' | 'HAIR_STYLE';
-const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE'];
+type ImageProviderMode = 'FACESWAP' | 'FILTER' | 'AGING' | 'RESTORE' | 'BEAUTY' | 'ENHANCE' | 'MERGE' | 'REMOVE_OBJECT' | 'EXPRESSION' | 'EXPAND' | 'REPLACE_OBJECT' | 'REMOVE_TEXT' | 'HAIR_STYLE' | 'EDIT';
+const WAVESPEED_DEFAULT_MODES: ImageProviderMode[] = ['FACESWAP', 'FILTER', 'AGING', 'RESTORE', 'BEAUTY', 'REMOVE_OBJECT', 'EXPRESSION', 'EXPAND', 'REPLACE_OBJECT', 'REMOVE_TEXT', 'HAIR_STYLE', 'EDIT'];
 const GEMINI_IMAGE_DEFAULT_MODES: ImageProviderMode[] = ['ENHANCE'];
 const getEffectiveProvider = (body: { provider?: string } | undefined, env: Env, mode: ImageProviderMode): string => {
   const fromBody = body?.provider != null && String(body.provider).trim() !== '' ? String(body.provider).trim() : null;
@@ -7857,6 +7858,209 @@ export default {
           await refundCredits(DB, body.profile_id, 'expand', creditResult.cost, 'Processing error', request);
         }
         logCriticalError('/expand', error, request, env, {
+          body: {
+            selfie_id: body?.selfie_id,
+            profile_id: body?.profile_id,
+          }
+        });
+        const debugEnabled = isDebugEnabled(env);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return errorResponse('', 500, debugEnabled ? { error: errorMsg, path, ...(error instanceof Error && error.stack ? { stack: error.stack.substring(0, 1000) } : {}) } : undefined, request, env);
+      }
+    }
+
+    // Handle edit endpoint - general-purpose image editing with user's custom prompt
+    if (path === '/edit' && request.method === 'POST') {
+      let body: { selfie_id?: string; selfie_image_url?: string; profile_id?: string; custom_prompt?: string; aspect_ratio?: string; provider?: string } | undefined;
+      let creditResult: any = null;
+      try {
+        body = await request.json() as typeof body;
+
+        const hasSelfieId = body!.selfie_id && body!.selfie_id.trim() !== '';
+        const hasSelfieUrl = body!.selfie_image_url && body!.selfie_image_url.trim() !== '';
+
+        if (!hasSelfieId && !hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: selfie_id or selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (hasSelfieId && hasSelfieUrl) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Cannot provide both selfie_id and selfie_image_url', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body!.profile_id) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: profile_id', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        if (!body!.custom_prompt || body!.custom_prompt.trim() === '') {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Missing required field: custom_prompt', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+
+        const profileCheck = await DB.prepare(
+          'SELECT id FROM profiles WHERE id = ?'
+        ).bind(body!.profile_id).first();
+
+        if (!profileCheck) {
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body!.profile_id, path } : undefined, request, env);
+        }
+
+        creditResult = await deductCredits(DB, body!.profile_id, 'edit', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
+        let selfieUrl: string = '';
+        let selfieResult: any = null;
+
+        if (hasSelfieId) {
+          selfieResult = await DB.prepare(`
+            SELECT s.id, s.ext, p.id as profile_exists
+            FROM selfies s
+            INNER JOIN profiles p ON s.profile_id = p.id
+            WHERE s.id = ? AND p.id = ?
+          `).bind(body!.selfie_id, body!.profile_id).first();
+
+          if (!selfieResult) {
+            const cachedResult = await getCachedResultFromKV(env, body!.selfie_id!, null, 'edit');
+            if (cachedResult) {
+              return jsonResponse({
+                data: { resultImageUrl: cachedResult, cached: true },
+                status: 'success',
+                message: 'Cached result returned (selfie was auto-deleted after previous processing)',
+                code: 200,
+              });
+            }
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Selfie not found or does not belong to profile', 404, debugEnabled ? { selfieId: body!.selfie_id, profileId: body!.profile_id, path } : undefined, request, env);
+          }
+
+          const selfieR2Key = reconstructR2Key((selfieResult as any).id, (selfieResult as any).ext, 'selfie');
+          selfieUrl = getR2PublicUrl(env, selfieR2Key, requestUrl.origin);
+        } else {
+          selfieUrl = body!.selfie_image_url!;
+          if (!validateImageUrl(selfieUrl, env)) {
+            const debugEnabled = isDebugEnabled(env);
+            return errorResponse('Invalid image URL', 400, debugEnabled ? { path } : undefined, request, env);
+          }
+        }
+
+        // Pre-processing safety check on the input image
+        const inputSafetyCheck = await checkImageSafetyWithFlashLite(selfieUrl, env);
+        if (!inputSafetyCheck.safe) {
+          if (body!.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body!.profile_id, 'edit', creditResult.cost, 'Input image safety violation', request);
+          }
+          const debugEnabled = isDebugEnabled(env);
+          return errorResponse(
+            inputSafetyCheck.reason || 'Image failed safety check',
+            400,
+            debugEnabled ? { path, safetyCheck: { safe: false, reason: inputSafetyCheck.reason, category: inputSafetyCheck.category } } : undefined,
+            request, env
+          );
+        }
+
+        // Build prompt from template with user's custom_prompt
+        const promptTemplate = IMAGE_PROCESSING_PROMPTS.EDIT;
+        const finalPrompt = (typeof promptTemplate === 'string' ? promptTemplate : JSON.stringify(promptTemplate)).replace('{{custom_prompt}}', body!.custom_prompt!.trim());
+
+        // Get image dimensions for optimal size calculation
+        const { getImageDimensionsExtended, calculateOptimalSize } = await import('./utils');
+        const imageDimensionsExtended = await getImageDimensionsExtended(selfieUrl, env);
+
+        const validAspectRatio = await resolveAspectRatio(body!.aspect_ratio, selfieUrl, env, { allowOriginal: true });
+
+        const userExplicitlySetAspectRatio = body!.aspect_ratio && body!.aspect_ratio.trim() !== '' && body!.aspect_ratio.toLowerCase() !== 'original';
+        let sizeForProvider: string | undefined;
+        if (!userExplicitlySetAspectRatio && imageDimensionsExtended) {
+          const optimal = calculateOptimalSize(imageDimensionsExtended.width, imageDimensionsExtended.height, 1536, 256);
+          sizeForProvider = optimal.sizeString;
+        }
+
+        // Provider routing: small images → Gemini, larger → WaveSpeed Flux Klein v3
+        const effectiveProvider = getEffectiveProvider(body, env, 'EDIT');
+        const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
+        const useGemini = effectiveProvider.includes('gemini') || (effectiveProvider === 'wavespeed' && largestDim < 800);
+
+        let editResult: FaceSwapResponse;
+        if (useGemini) {
+          editResult = await callWaveSpeedGeminiImageEdit(
+            [selfieUrl], finalPrompt, env, validAspectRatio, sizeForProvider
+          );
+        } else {
+          editResult = await callWaveSpeedEdit(
+            [selfieUrl], finalPrompt, env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
+          );
+        }
+
+        if (!editResult.Success || !editResult.ResultImageUrl) {
+          const failureCode = editResult.StatusCode || 500;
+          const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
+          const debugEnabled = isDebugEnabled(env);
+          const flatDebug = debugEnabled ? buildFlatDebug(editResult) : undefined;
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: failureCode,
+            ...(flatDebug ? { debug: flatDebug } : {}),
+          }, httpStatus);
+        }
+
+        let resultUrl = editResult.ResultImageUrl;
+        if (editResult.ResultImageUrl?.startsWith('r2://')) {
+          const r2Key = editResult.ResultImageUrl.replace('r2://', '');
+          resultUrl = getR2PublicUrl(env, r2Key, requestUrl.origin);
+        }
+
+        // Post-generation safety check for custom prompt results
+        const safetyCheck = await checkSafeSearch(resultUrl, env);
+        if (!safetyCheck.isSafe) {
+          if (body!.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body!.profile_id, 'edit', creditResult.cost, 'Content safety violation', request);
+          }
+          const debugEnabled = isDebugEnabled(env);
+          return jsonResponse({
+            data: null,
+            status: 'error',
+            message: '',
+            code: safetyCheck.statusCode || 1001,
+            ...(debugEnabled ? { debug: { safetyCategory: safetyCheck.violationCategory, safetyLevel: safetyCheck.violationLevel, safetyDetails: safetyCheck.details } } : {}),
+          }, 422);
+        }
+
+        const savedResultId = await saveResultToDatabase(DB, resultUrl, body!.profile_id, env, R2_BUCKET, 'edit', request);
+
+        if (hasSelfieId && body!.selfie_id) {
+          ctx.waitUntil(cacheResultInKV(env, body!.selfie_id, null, 'edit', resultUrl));
+        }
+
+        if (hasSelfieId && selfieResult) {
+          const selfieId = (selfieResult as any).id;
+          const selfieExt = (selfieResult as any).ext;
+          ctx.waitUntil(deleteSelfieAfterProcessing(selfieId, selfieExt, env, DB, R2_BUCKET, requestUrl.origin));
+        }
+
+        const debugEnabled = isDebugEnabled(env);
+        const flatDebug = debugEnabled ? buildFlatDebug(editResult) : undefined;
+        return jsonResponse({
+          data: {
+            id: savedResultId !== null ? String(savedResultId) : null,
+            resultImageUrl: resultUrl,
+          },
+          status: 'success',
+          message: editResult.Message || 'Image edit completed',
+          code: 200,
+          ...(debugEnabled ? { debug: { ...flatDebug, provider: useGemini ? 'gemini_2_5_flash_image' : 'wavespeed_flux_klein_v3' } } : {}),
+        });
+      } catch (error) {
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'edit', creditResult.cost, 'Processing error', request);
+        }
+        logCriticalError('/edit', error, request, env, {
           body: {
             selfie_id: body?.selfie_id,
             profile_id: body?.profile_id,

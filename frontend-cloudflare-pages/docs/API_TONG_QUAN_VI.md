@@ -51,6 +51,7 @@ Hệ thống hỗ trợ xác thực bằng API key cho các mobile APIs. Tính n
 - POST `/expand`
 - POST `/replace-object`
 - POST `/remove-text`
+- POST `/edit`
 - POST `/hair-style`
 - POST `/upload-url` (type=mask) - Upload mask image
 - POST `/profiles` - Chỉ khi tạo profile mới
@@ -216,6 +217,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/expand` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
 | POST `/replace-object` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
 | POST `/remove-text` | **WaveSpeed** Google Gemini 2.5 Flash Image (edit) | `api/v3/google/gemini-2.5-flash-image/edit` | $0.038 |
+| POST `/edit` | **WaveSpeed** Auto-route: Gemini 2.5 Flash Image (< 800px) / Flux Klein v3 (≥ 800px) | `api/v3/google/gemini-2.5-flash-image/edit` or `api/v3/wavespeed-ai/flux-2-klein-9b/edit` | $0.016-$0.038 |
 | POST `/hair-style` | **WaveSpeed** Flux 2 Klein 9B (edit) | `api/v1/wavespeed-ai/flux-2-klein-9b/edit` | $0.016 |
 
 > **Ghi chú giá:** Giá trên từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. `/enhance` và `/restore` tự động chọn model theo kích thước ảnh: ảnh nhỏ (< 800px cạnh lớn nhất) dùng Gemini 2.5 Flash Image cho chất lượng tốt hơn, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B v3.
