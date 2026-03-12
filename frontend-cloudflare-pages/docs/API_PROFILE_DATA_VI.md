@@ -140,6 +140,10 @@ curl https://api.d.shotpix.app/profiles/user_external_123 \
     "phone": "+84123456789",
     "avatar_url": "https://example.com/avatar.jpg",
     "preferences": "{\"theme\":\"dark\",\"language\":\"vi\"}",
+    "sub_point_remaining": 800,
+    "consumable_point_remaining": 50,
+    "total_credits_purchased": 100,
+    "total_credits_spent": 50,
     "created_at": "2025-12-15T04:48:47.676Z",
     "updated_at": "2025-12-15T04:48:47.676Z"
   },
@@ -171,7 +175,9 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
     "preferences": {
       "theme": "light",
       "language": "en"
-    }
+    },
+    "sub_point_remaining": 100,
+    "consumable_point_remaining": 500
   }'
 ```
 
@@ -181,6 +187,8 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
 - `phone` (string, optional): số điện thoại.
 - `avatar_url` (string, optional): URL avatar.
 - `preferences` (string hoặc object, optional): preferences dạng JSON string hoặc object. Nếu là object, hệ thống tự động chuyển thành JSON string trước khi lưu vào D1 database (vì D1 không hỗ trợ JSON object trực tiếp).
+- `sub_point_remaining` (number, optional): số điểm subscription còn lại (dùng cho testing).
+- `consumable_point_remaining` (number, optional): số điểm consumable còn lại (dùng cho testing).
 
 **Lưu ý:** ID profile phải được cung cấp trong URL path (`/profiles/{id}`), không cần gửi trong body.
 
@@ -196,6 +204,10 @@ curl -X PUT https://api.d.shotpix.app/profiles/profile_1234567890 \
     "phone": "+84987654321",
     "avatar_url": "https://example.com/new-avatar.jpg",
     "preferences": "{\"theme\":\"light\",\"language\":\"en\"}",
+    "sub_point_remaining": 100,
+    "consumable_point_remaining": 500,
+    "total_credits_purchased": 100,
+    "total_credits_spent": 50,
     "created_at": "2025-12-15T04:48:47.676Z",
     "updated_at": "2025-12-15T05:00:00.000Z"
   },

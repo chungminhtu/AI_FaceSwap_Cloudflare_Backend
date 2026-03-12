@@ -30,8 +30,30 @@ Hệ thống điểm kép (dual credit):
 ## Cấu hình
 
 - `ENABLE_CREDIT_SYSTEM`: `"true"` để bật hệ thống credit (mặc định `"false"`)
-- `CREDIT_COST_*`: Chi phí cho từng action (FACESWAP, BACKGROUND, ENHANCE, BEAUTY, FILTER, RESTORE, AGING, UPSCALER4K)
+- `CREDIT_COST_*`: Chi phí cho từng action (override bằng env var, ví dụ `CREDIT_COST_FACESWAP=10`)
 - `TIER_MULTIPLIER_*`: Hệ số theo tier (FREE=1.0, SUBSCRIBER=0.8)
+
+### Chi phí mặc định (Default Credit Costs)
+
+| Category | Action | Endpoint | Cost |
+|----------|--------|----------|------|
+| **Enhance** | Image Enhance | `/enhance` | 2 |
+| | Image Restore | `/restore` | 2 |
+| | HD 4K Upscale | `/upscaler4k` | 5 |
+| **Portrait** | AI Beautify | `/beauty` | 2 |
+| | AI Filter | `/filter` | 3 |
+| | AI Avatar | `/faceswap` | 5 |
+| | AI Expressions | `/expression` | 1 |
+| | AI Hairstyles | `/hair-style` | 1 |
+| | AI Aging | `/aging` | 1 |
+| **Edit** | Remove Object | `/remove-object` | 1 |
+| | AI Background | `/background` | 5 |
+| | AI Expand | `/expand` | 2 |
+| | AI Replace | `/replace-object` | 2 |
+| | AI Remove Text | `/remove-text` | 1 |
+| | AI Editor | `/editor` | 5 |
+
+Chi phí thực tế = `CREDIT_COST_*` × `TIER_MULTIPLIER_*` (mặc định subscriber = 0.8× free)
 
 ## Subscription SKUs
 
