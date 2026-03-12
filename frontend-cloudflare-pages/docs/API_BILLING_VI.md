@@ -55,25 +55,39 @@ Hệ thống điểm kép (dual credit):
 | | AI Remove Text | `/remove-text` | 1 |
 | | AI Editor | `/editor` | 5 |
 
-Chi phí = `CREDIT_COST_*` × country multiplier (tối thiểu 1 điểm/action)
+Chi phí được xác định theo country tier (tối thiểu 1 điểm/action). Có thể override bằng env var `CREDIT_COST_<ACTION>`.
 
 ### Country-Based Pricing (Giá theo quốc gia)
 
 Quốc gia được xác định tự động bởi Cloudflare (`CF-IPCountry` header) — user không thể giả mạo.
 
+Mỗi tier có **bảng giá riêng** cho từng action (không dùng multiplier):
+
 **Cấu hình:** Set env var `COUNTRY_PRICING` dạng JSON:
 
 ```json
 [
-  { "multiplier": 2.0, "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"] },
-  { "multiplier": 1.5, "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"] },
-  { "multiplier": 0.5, "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"] }
+  {
+    "name": "high",
+    "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"],
+    "costs": { "faceswap": 10, "background": 10, "upscaler4k": 10, "enhance": 4, "beauty": 4, "filter": 6, "restore": 4, "aging": 2, "remove_object": 2, "expression": 2, "expand": 4, "editor": 10, "replace_object": 4, "remove_text": 2, "hair_style": 2 }
+  },
+  {
+    "name": "mid",
+    "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"],
+    "costs": { "faceswap": 7, "background": 7, "upscaler4k": 7, "enhance": 3, "beauty": 3, "filter": 4, "restore": 3, "aging": 1, "remove_object": 1, "expression": 1, "expand": 3, "editor": 7, "replace_object": 3, "remove_text": 1, "hair_style": 1 }
+  },
+  {
+    "name": "low",
+    "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"],
+    "costs": { "faceswap": 3, "background": 3, "upscaler4k": 3, "enhance": 1, "beauty": 1, "filter": 2, "restore": 1, "aging": 1, "remove_object": 1, "expression": 1, "expand": 1, "editor": 3, "replace_object": 1, "remove_text": 1, "hair_style": 1 }
+  }
 ]
 ```
 
-- Quốc gia không nằm trong danh sách = multiplier 1.0 (mặc định)
-- Không set `COUNTRY_PRICING` = tất cả quốc gia multiplier 1.0
-- Ví dụ: faceswap (base=5) + user ở US (2.0x) = 10 điểm; ở VN (0.5x) = 3 điểm
+- Quốc gia không nằm trong danh sách = dùng `DEFAULT_CREDIT_COSTS`
+- Không set `COUNTRY_PRICING` = tất cả quốc gia dùng default
+- Ví dụ: faceswap ở US = 10 điểm; ở VN = 3 điểm; ở Brazil (không trong list) = 5 điểm (default)
 
 **API kiểm tra giá:** `GET /api/credit-costs` — trả giá theo quốc gia hiện tại của caller:
 

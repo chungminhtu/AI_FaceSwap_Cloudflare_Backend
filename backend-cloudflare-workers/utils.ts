@@ -1480,51 +1480,68 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
 };
 
 /**
- * Country pricing tiers. Set env var COUNTRY_PRICING as JSON:
+ * Country pricing tiers with custom point costs per tier.
+ * Set env var COUNTRY_PRICING as JSON array of tiers, each with its own costs:
  * [
- *   { "multiplier": 2.0, "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"] },
- *   { "multiplier": 1.5, "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"] },
- *   { "multiplier": 0.5, "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"] }
+ *   {
+ *     "name": "high",
+ *     "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"],
+ *     "costs": { "faceswap": 10, "background": 10, "upscaler4k": 10, "enhance": 4, "beauty": 4, "filter": 6, "restore": 4, "aging": 2, "remove_object": 2, "expression": 2, "expand": 4, "editor": 10, "replace_object": 4, "remove_text": 2, "hair_style": 2 }
+ *   },
+ *   {
+ *     "name": "mid",
+ *     "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"],
+ *     "costs": { "faceswap": 7, "background": 7, "upscaler4k": 7, "enhance": 3, "beauty": 3, "filter": 4, "restore": 3, "aging": 1, "remove_object": 1, "expression": 1, "expand": 3, "editor": 7, "replace_object": 3, "remove_text": 1, "hair_style": 1 }
+ *   },
+ *   {
+ *     "name": "low",
+ *     "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"],
+ *     "costs": { "faceswap": 3, "background": 3, "upscaler4k": 3, "enhance": 1, "beauty": 1, "filter": 2, "restore": 1, "aging": 1, "remove_object": 1, "expression": 1, "expand": 1, "editor": 3, "replace_object": 1, "remove_text": 1, "hair_style": 1 }
+ *   }
  * ]
- * Countries not listed default to multiplier 1.0.
+ * Countries not listed fall back to DEFAULT_CREDIT_COSTS.
  * Country code from Cloudflare CF-IPCountry header (ISO 3166-1 alpha-2, server-determined, can't be faked).
  */
-let _countryPricingCache: { map: Record<string, number>; raw: string } | null = null;
+let _countryPricingCache: { map: Record<string, Record<string, number>>; raw: string } | null = null;
 
-const getCountryMultiplier = (country: string, env: Env): number => {
-  if (!env.COUNTRY_PRICING) return 1.0;
+const getCountryTierCosts = (country: string, env: Env): Record<string, number> | null => {
+  if (!env.COUNTRY_PRICING) return null;
   const raw = String(env.COUNTRY_PRICING);
-  // Cache parsed map per unique config string
   if (!_countryPricingCache || _countryPricingCache.raw !== raw) {
     try {
-      const tiers: Array<{ multiplier: number; countries: string[] }> = JSON.parse(raw);
-      const map: Record<string, number> = {};
+      const tiers: Array<{ name: string; countries: string[]; costs: Record<string, number> }> = JSON.parse(raw);
+      const map: Record<string, Record<string, number>> = {};
       for (const tier of tiers) {
         for (const cc of tier.countries) {
-          map[cc.toUpperCase()] = tier.multiplier;
+          map[cc.toUpperCase()] = tier.costs;
         }
       }
       _countryPricingCache = { map, raw };
     } catch {
-      return 1.0;
+      return null;
     }
   }
-  return _countryPricingCache.map[country.toUpperCase()] ?? 1.0;
+  return _countryPricingCache.map[country.toUpperCase()] ?? null;
 };
 
 /**
- * Get credit cost for an action, with country-based pricing.
- * baseCost from DEFAULT_CREDIT_COSTS (or CREDIT_COST_<ACTION> env override).
- * Multiplied by country tier multiplier (from COUNTRY_PRICING env var).
+ * Get credit cost for an action with country-based pricing.
+ * If the country matches a tier in COUNTRY_PRICING, uses that tier's custom cost.
+ * Otherwise falls back to DEFAULT_CREDIT_COSTS (or CREDIT_COST_<ACTION> env override).
  * Cost is always >= 1 to prevent zero-cost bypass.
  */
 export const getCreditCost = (action: string, _tier: string, env: Env, country?: string): number => {
+  // Check country tier first for custom cost
+  if (country) {
+    const tierCosts = getCountryTierCosts(country, env);
+    if (tierCosts && action in tierCosts) {
+      return Math.max(1, tierCosts[action]);
+    }
+  }
+  // Fallback: env override or default
   const costKey = `CREDIT_COST_${action.toUpperCase()}`;
   const defaultCost = DEFAULT_CREDIT_COSTS[action] ?? 1;
-  const baseCost = parseInt(env[costKey] || String(defaultCost), 10);
-  const multiplier = country ? getCountryMultiplier(country, env) : 1.0;
-
-  return Math.max(1, Math.ceil(baseCost * multiplier));
+  return Math.max(1, parseInt(env[costKey] || String(defaultCost), 10));
 };
 
 /**
