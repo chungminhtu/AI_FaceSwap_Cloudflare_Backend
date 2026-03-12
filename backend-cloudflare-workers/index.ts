@@ -5395,7 +5395,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'faceswap', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         let faceSwapResult;
@@ -5746,7 +5746,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'background', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         if (hasCustomPrompt) {
@@ -6172,7 +6172,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'upscaler4k', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const upscalerResult = await callUpscaler4k(body.image_url, env);
@@ -6370,7 +6370,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'enhance', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         let enhancedResult: FaceSwapResponse;
@@ -6597,7 +6597,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'beauty', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const beautyResult = await callNanoBanana(
@@ -6867,7 +6867,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'filter', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const filterResult = await callNanoBanana(
@@ -7042,7 +7042,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'restore', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         let restoredResult: FaceSwapResponse;
@@ -7344,7 +7344,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'aging', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const useWaveSpeedStyleAging = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
@@ -7579,7 +7579,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'remove_object', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         // Use WaveSpeed Bria Eraser API (no prompt needed, just image + mask)
@@ -7779,7 +7779,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'expression', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const expressionResult = await callNanoBanana(
@@ -7936,7 +7936,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'expand', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         // Send PNG (with transparent areas to fill) directly to WaveSpeed
@@ -8157,7 +8157,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body!.profile_id, 'editor', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         let editResult: FaceSwapResponse;
@@ -8340,7 +8340,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'replace_object', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const replaceResult = await callWaveSpeedEdit([selfieUrl], finalPrompt, env);
@@ -8499,7 +8499,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'remove_text', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const removeTextResult = await callWaveSpeedGeminiImageEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.REMOVE_TEXT, env);
@@ -8689,7 +8689,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'hair_style', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 400, reason: creditResult.reason }, 400, request, env);
+          return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
         const hairResult = await callWaveSpeedEdit([selfieUrl], prompt, env, aspectRatio, size);

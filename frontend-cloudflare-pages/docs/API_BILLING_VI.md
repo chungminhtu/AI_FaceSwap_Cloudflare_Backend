@@ -266,15 +266,15 @@ Mỗi AI endpoint tự động trừ điểm theo 5 bước:
 
 Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (saga compensation).
 
-### Response khi credit check thất bại (HTTP 400)
+### Response khi credit check thất bại (HTTP 402)
 
 ```json
 {
   "data": null,
   "status": "error",
   "message": "Credit check failed",
-  "code": 400,
-  "reason": "INSUFFICIENT_CREDITS"
+  "code": 402,
+  "reason": 4070
 }
 ```
 
