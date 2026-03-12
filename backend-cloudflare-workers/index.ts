@@ -307,15 +307,15 @@ const CYCLE_DURATION_SECONDS = 30 * 86400; // 30 days
 
 const deductCredits = async (
   db: D1Database, profileId: string, action: string, env: Env, request: Request
-): Promise<{ success: boolean; cost: number; balance: number; error?: string; reason?: number; subscription_status?: string }> => {
+): Promise<{ success: boolean; cost: number; fromSub: number; fromConsumable: number; balance: number; error?: string; reason?: number; subscription_status?: string }> => {
   // Verify profile token binding (prevents profile_id spoofing)
   if (!(await checkProfileToken(env, request, profileId))) {
-    return { success: false, cost: 0, balance: 0, error: 'Invalid profile token', reason: 4010 };
+    return { success: false, cost: 0, fromSub: 0, fromConsumable: 0, balance: 0, error: 'Invalid profile token', reason: 4010 };
   }
 
   const profile = await db.prepare('SELECT sub_point_remaining, consumable_point_remaining, is_banned FROM profiles WHERE id = ?').bind(profileId).first() as any;
-  if (!profile) return { success: false, cost: 0, balance: 0, error: 'Profile not found', reason: 4020 };
-  if (profile.is_banned) return { success: false, cost: 0, balance: 0, error: 'Account is banned', reason: 4030 };
+  if (!profile) return { success: false, cost: 0, fromSub: 0, fromConsumable: 0, balance: 0, error: 'Profile not found', reason: 4020 };
+  if (profile.is_banned) return { success: false, cost: 0, fromSub: 0, fromConsumable: 0, balance: 0, error: 'Account is banned', reason: 4030 };
 
   // Step 1-2: Check subscription status (include ON_HOLD to detect and zero out sub points)
   const sub = await db.prepare(
@@ -366,7 +366,7 @@ const deductCredits = async (
     let reason = 4060; // no active subscription
     if (sub?.status === 'ON_HOLD') reason = 4040;
     else if (subscriptionStatus === 'EXPIRED') reason = 4050;
-    return { success: false, cost: 0, balance: subPoints + profile.consumable_point_remaining, reason, subscription_status: subscriptionStatus };
+    return { success: false, cost: 0, fromSub: 0, fromConsumable: 0, balance: subPoints + profile.consumable_point_remaining, reason, subscription_status: subscriptionStatus };
   }
 
   const tier = hasAccess ? 'subscriber' : 'free';
@@ -376,7 +376,7 @@ const deductCredits = async (
 
   // Free actions (cost = 0) skip deduction entirely
   if (cost === 0) {
-    return { success: true, cost: 0, balance: totalAvailable, };
+    return { success: true, cost: 0, fromSub: 0, fromConsumable: 0, balance: totalAvailable, };
   }
 
   // Step 4: Fail fast
@@ -385,7 +385,7 @@ const deductCredits = async (
     if (sub?.status === 'ON_HOLD') reason = 4040;
     else if (subscriptionStatus === 'EXPIRED') reason = 4050;
     else if (subscriptionStatus === 'NONE') reason = 4060;
-    return { success: false, cost, balance: totalAvailable, reason };
+    return { success: false, cost, fromSub: 0, fromConsumable: 0, balance: totalAvailable, reason };
   }
 
   // Step 5: Deduct sub first, remainder from consumable — ATOMIC with WHERE guard
@@ -397,24 +397,25 @@ const deductCredits = async (
   ).bind(fromSub, fromConsumable, cost, now.toString(), profileId, fromSub, fromConsumable).run();
 
   if (!result.meta?.changes || result.meta.changes === 0) {
-    return { success: false, cost, balance: 0, reason: 4080 };
+    return { success: false, cost, fromSub: 0, fromConsumable: 0, balance: 0, reason: 4080 };
   }
 
   const ip = request.headers.get('cf-connecting-ip') || null;
   await auditLog(db, profileId, 'CREDIT_DEDUCT', { action, cost, from_sub: fromSub, from_consumable: fromConsumable, balance_before: totalAvailable, country: country || undefined }, ip);
 
-  return { success: true, cost, balance: totalAvailable - cost, };
+  return { success: true, cost, fromSub, fromConsumable, balance: totalAvailable - cost, };
 };
 
 const refundCredits = async (
-  db: D1Database, profileId: string, action: string, cost: number, reason: string, request: Request
+  db: D1Database, profileId: string, action: string, fromSub: number, fromConsumable: number, reason: string, request: Request
 ): Promise<void> => {
+  const cost = fromSub + fromConsumable;
   if (cost <= 0) return;
-  // Refund always goes to consumable points (simpler, always available)
-  await db.prepare('UPDATE profiles SET consumable_point_remaining = consumable_point_remaining + ?, total_credits_spent = total_credits_spent - ?, updated_at = ? WHERE id = ?')
-    .bind(cost, cost, Math.floor(Date.now() / 1000).toString(), profileId).run();
+  // Refund to exact same pools the points were deducted from
+  await db.prepare('UPDATE profiles SET sub_point_remaining = sub_point_remaining + ?, consumable_point_remaining = consumable_point_remaining + ?, total_credits_spent = total_credits_spent - ?, updated_at = ? WHERE id = ?')
+    .bind(fromSub, fromConsumable, cost, Math.floor(Date.now() / 1000).toString(), profileId).run();
   const ip = request.headers.get('cf-connecting-ip') || null;
-  await auditLog(db, profileId, 'CREDIT_REFUND', { action, cost, reason }, ip);
+  await auditLog(db, profileId, 'CREDIT_REFUND', { action, cost, refund_to_sub: fromSub, refund_to_consumable: fromConsumable, reason }, ip);
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
@@ -5473,7 +5474,7 @@ export default {
 
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
             if (body?.profile_id && creditResult?.cost > 0) {
-              await refundCredits(DB, body.profile_id, 'faceswap', creditResult.cost, 'Processing failed', request);
+              await refundCredits(DB, body.profile_id, 'faceswap', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
             }
             console.error('[Vertex] Nano Banana provider failed:', faceSwapResult.Message || 'Unknown error');
 
@@ -5500,7 +5501,7 @@ export default {
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'faceswap', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'faceswap', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = faceSwapResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -5621,7 +5622,7 @@ export default {
       } catch (error) {
         // Refund credits on failure
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'faceswap', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'faceswap', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/faceswap', error, request, env, {
           body: {
@@ -5785,7 +5786,7 @@ export default {
           const mergeResult = await callWaveSpeedSeedreamEdit([selfieUrl], customPrompt, env, validAspectRatio, sizeForProvider);
           if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
             if (body?.profile_id && creditResult?.cost > 0) {
-              await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Processing failed', request);
+              await refundCredits(DB, body.profile_id, 'background', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
             }
             const failureCode = mergeResult.StatusCode || 500;
             const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -5809,7 +5810,7 @@ export default {
           const safetyCheck = await checkSafeSearch(resultUrl, env);
           if (!safetyCheck.isSafe) {
             if (body.profile_id && creditResult?.cost > 0) {
-              await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Content safety violation', request);
+              await refundCredits(DB, body.profile_id, 'background', creditResult.fromSub, creditResult.fromConsumable, 'Content safety violation', request);
             }
             const debugEnabled = isDebugEnabled(env);
             return jsonResponse({
@@ -5972,7 +5973,7 @@ export default {
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'background', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = mergeResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -6102,7 +6103,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'background', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/background', error, request, env, {
           body: {
@@ -6192,7 +6193,7 @@ export default {
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'upscaler4k', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'upscaler4k', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = upscalerResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -6241,7 +6242,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'upscaler4k', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'upscaler4k', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/upscaler4k', error, request, env, {
           body: {
@@ -6401,7 +6402,7 @@ export default {
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'enhance', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'enhance', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = enhancedResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -6474,7 +6475,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'enhance', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'enhance', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/enhance', error, request, env, {
           body: {
@@ -6625,7 +6626,7 @@ export default {
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'beauty', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'beauty', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = beautyResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -6684,7 +6685,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'beauty', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'beauty', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/beauty', error, request, env, {
           body: {
@@ -6895,7 +6896,7 @@ export default {
 
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'filter', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = filterResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -6918,7 +6919,7 @@ export default {
         const safetyCheck = await checkSafeSearch(resultUrl, env);
         if (!safetyCheck.isSafe) {
           if (body.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Content safety violation', request);
+            await refundCredits(DB, body.profile_id, 'filter', creditResult.fromSub, creditResult.fromConsumable, 'Content safety violation', request);
           }
           return jsonResponse({
             data: null,
@@ -6945,7 +6946,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'filter', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/filter', error, request, env, { body: { profile_id: body?.profile_id, preset_image_id: body?.preset_image_id } });
         const errMsg = error instanceof Error ? error.message : String(error);
@@ -7073,7 +7074,7 @@ export default {
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'restore', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'restore', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = restoredResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -7129,7 +7130,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'restore', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'restore', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/restore', error, request, env, {
           body: {
@@ -7407,7 +7408,7 @@ export default {
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'aging', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'aging', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = agingResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -7450,7 +7451,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'aging', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'aging', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/aging', error, request, env, {
           body: {
@@ -7600,7 +7601,7 @@ export default {
 
         if (!removeResult.Success || !removeResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'remove_object', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'remove_object', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = removeResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -7666,7 +7667,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'remove_object', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'remove_object', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/remove-object', error, request, env, {
           body: {
@@ -7807,7 +7808,7 @@ export default {
 
         if (!expressionResult.Success || !expressionResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'expression', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'expression', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = expressionResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -7857,7 +7858,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'expression', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'expression', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/expression', error, request, env, {
           body: {
@@ -7957,7 +7958,7 @@ export default {
 
         if (!expandResult.Success || !expandResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'expand', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'expand', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = expandResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -8006,7 +8007,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'expand', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'expand', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/expand', error, request, env, {
           body: {
@@ -8186,7 +8187,7 @@ export default {
 
         if (!editResult.Success || !editResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'editor', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'editor', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = editResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -8211,7 +8212,7 @@ export default {
         const safetyCheck = await checkSafeSearch(resultUrl, env);
         if (!safetyCheck.isSafe) {
           if (body!.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body!.profile_id, 'editor', creditResult.cost, 'Content safety violation', request);
+            await refundCredits(DB, body!.profile_id, 'editor', creditResult.fromSub, creditResult.fromConsumable, 'Content safety violation', request);
           }
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
@@ -8254,7 +8255,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'editor', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'editor', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/editor', error, request, env, {
           body: {
@@ -8360,7 +8361,7 @@ export default {
 
         if (!replaceResult.Success || !replaceResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'replace_object', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'replace_object', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = replaceResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -8385,7 +8386,7 @@ export default {
         const safetyCheck = await checkSafeSearch(resultUrl, env);
         if (!safetyCheck.isSafe) {
           if (body.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'replace_object', creditResult.cost, 'Content safety violation', request);
+            await refundCredits(DB, body.profile_id, 'replace_object', creditResult.fromSub, creditResult.fromConsumable, 'Content safety violation', request);
           }
           const debugEnabled = isDebugEnabled(env);
           return jsonResponse({
@@ -8423,7 +8424,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'replace_object', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'replace_object', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/replace-object', error, request, env, {
           body: {
@@ -8519,7 +8520,7 @@ export default {
 
         if (!removeTextResult.Success || !removeTextResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'remove_text', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'remove_text', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = removeTextResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -8566,7 +8567,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'remove_text', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'remove_text', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/remove-text', error, request, env, {
           body: {
@@ -8709,7 +8710,7 @@ export default {
 
         if (!hairResult.Success || !hairResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'hair_style', creditResult.cost, 'Processing failed', request);
+            await refundCredits(DB, body.profile_id, 'hair_style', creditResult.fromSub, creditResult.fromConsumable, 'Processing failed', request);
           }
           const failureCode = hairResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
@@ -8756,7 +8757,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id && creditResult?.cost > 0) {
-          await refundCredits(DB, body.profile_id, 'hair_style', creditResult.cost, 'Processing error', request);
+          await refundCredits(DB, body.profile_id, 'hair_style', creditResult.fromSub, creditResult.fromConsumable, 'Processing error', request);
         }
         logCriticalError('/hair-style', error, request, env, {
           body: {

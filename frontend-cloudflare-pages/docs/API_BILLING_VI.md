@@ -310,7 +310,7 @@ Mỗi AI endpoint tự động trừ điểm theo 6 bước:
 5. **Fail fast** — sub + consumable < cost → HTTP 402, reason = `4070`
 6. **Trừ điểm** — sub trước, hết sub thì trừ consumable (atomic UPDATE với WHERE guard)
 
-Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (saga compensation).
+Nếu AI xử lý lỗi → hoàn điểm chính xác về nguồn đã trừ: `sub_point_remaining` nhận lại phần đã trừ từ sub, `consumable_point_remaining` nhận lại phần đã trừ từ consumable (saga compensation). Audit log ghi `refund_to_sub` và `refund_to_consumable` để truy vết.
 
 **Quan trọng:** Consumable points CHỈ dùng được khi có subscription active. Mua consumable points mà không có subscription = không dùng được.
 
