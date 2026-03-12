@@ -3763,28 +3763,28 @@ export default {
         }
         const body = await request.json() as Partial<Profile>;
 
-        // Convert preferences to JSON string if it's an object
-        const preferencesString = body.preferences 
-          ? (typeof body.preferences === 'string' ? body.preferences : JSON.stringify(body.preferences))
-          : null;
+        // Build dynamic SET clause — only update fields present in body
+        const setClauses: string[] = ['updated_at = ?'];
+        const bindValues: any[] = [Math.floor(Date.now() / 1000)];
 
-        // Build dynamic update for credit fields
-        const setClauses = ['name = ?', 'email = ?', 'phone = ?', 'avatar_url = ?', 'preferences = ?', 'updated_at = ?'];
-        const bindValues: any[] = [
-          body.name || null,
-          body.email || null,
-          body.phone || null,
-          body.avatar_url || null,
-          preferencesString,
-          Math.floor(Date.now() / 1000),
-        ];
-        if ((body as any).sub_point_remaining !== undefined) {
-          setClauses.push('sub_point_remaining = ?');
-          bindValues.push(Number((body as any).sub_point_remaining));
+        if ('name' in body) { setClauses.push('name = ?'); bindValues.push(body.name || null); }
+        if ('email' in body) { setClauses.push('email = ?'); bindValues.push(body.email || null); }
+        if ('phone' in body) { setClauses.push('phone = ?'); bindValues.push(body.phone || null); }
+        if ('avatar_url' in body) { setClauses.push('avatar_url = ?'); bindValues.push(body.avatar_url || null); }
+        if ('preferences' in body) {
+          const preferencesString = body.preferences
+            ? (typeof body.preferences === 'string' ? body.preferences : JSON.stringify(body.preferences))
+            : null;
+          setClauses.push('preferences = ?');
+          bindValues.push(preferencesString);
         }
-        if ((body as any).consumable_point_remaining !== undefined) {
+        if ('sub_point_remaining' in body) {
+          setClauses.push('sub_point_remaining = ?');
+          bindValues.push(Number((body as any).sub_point_remaining) || 0);
+        }
+        if ('consumable_point_remaining' in body) {
           setClauses.push('consumable_point_remaining = ?');
-          bindValues.push(Number((body as any).consumable_point_remaining));
+          bindValues.push(Number((body as any).consumable_point_remaining) || 0);
         }
         bindValues.push(profileId);
 
@@ -3799,8 +3799,8 @@ export default {
 
         // Auto-create ACTIVE subscription when sub_point_remaining is set via admin UI
         // so deductCredits won't zero it out (it requires an active subscription row)
-        const subPointsValue = Number((body as any).sub_point_remaining);
-        if ((body as any).sub_point_remaining !== undefined && subPointsValue > 0) {
+        const subPointsValue = Number((body as any).sub_point_remaining) || 0;
+        if ('sub_point_remaining' in body && subPointsValue > 0) {
           const existingSub = await DB.prepare(
             "SELECT id FROM subscriptions WHERE profile_id = ? AND status IN ('ACTIVE', 'GRACE') ORDER BY created_at DESC LIMIT 1"
           ).bind(profileId).first();
