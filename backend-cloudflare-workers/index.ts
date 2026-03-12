@@ -3779,7 +3779,7 @@ export default {
             const subId = `admin_${profileId}_${now}`;
             await DB.prepare(
               'INSERT INTO subscriptions (id, profile_id, sku, purchase_token, points_per_cycle, status, auto_renewing, started_at, expires_at, last_reset_at, cycle_count_used) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1)'
-            ).bind(subId, profileId, 'admin_test', `admin_token_${now}`, subPointsValue, 'ACTIVE', now, now + 30 * 86400, now).run();
+            ).bind(subId, profileId, 'sub_monthly', `admin_${profileId}_${now}`, subPointsValue, 'ACTIVE', now, now + 30 * 86400, now).run();
           }
         }
 
