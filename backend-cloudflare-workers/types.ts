@@ -137,6 +137,10 @@ export interface Profile {
   phone?: string;
   avatar_url?: string;
   preferences?: string; // JSON string
+  sub_point_remaining?: number;
+  consumable_point_remaining?: number;
+  total_credits_purchased?: number;
+  total_credits_spent?: number;
   created_at: string;
   updated_at: string;
 }

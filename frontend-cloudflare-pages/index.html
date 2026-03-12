@@ -1223,6 +1223,19 @@
                         <textarea id="profile-edit-preferences" placeholder='{"theme":"dark","language":"vi"}' rows="4" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; font-family: monospace; resize: vertical;"></textarea>
                         <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Có thể để trống hoặc nhập JSON hợp lệ</div>
                     </div>
+                    <div style="border-top: 1px solid var(--border); margin: 16px 0; padding-top: 16px;">
+                        <label style="display: block; margin-bottom: 10px; font-size: 13px; color: var(--text-secondary); font-weight: 600;">Credits (Testing):</label>
+                        <div style="display: flex; gap: 12px;">
+                            <div style="flex:1;">
+                                <label style="display: block; margin-bottom: 4px; font-size: 11px; color: var(--text-muted);">Sub Points</label>
+                                <input type="number" id="profile-edit-sub-points" min="0" placeholder="0" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px;">
+                            </div>
+                            <div style="flex:1;">
+                                <label style="display: block; margin-bottom: 4px; font-size: 11px; color: var(--text-muted);">Consumable Points</label>
+                                <input type="number" id="profile-edit-con-points" min="0" placeholder="0" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px;">
+                            </div>
+                        </div>
+                    </div>
                     <div style="display: flex; gap: 12px; justify-content: flex-end;">
                         <button type="button" onclick="closeProfileEditModal()" style="padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 14px; font-weight: 500;">Hủy</button>
                         <button type="submit" style="padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; font-weight: 600;">💾 Lưu</button>
@@ -1608,32 +1621,46 @@
             }
         }
 
-        function openProfileEditModal() {
+        async function openProfileEditModal() {
             const profile = window.profileManager?.currentProfile;
             if (!profile) {
                 showStatusMessage('Không có hồ sơ để chỉnh sửa', 'error');
                 return;
             }
+            // Fetch latest profile data (including fresh credit balances)
+            try {
+                const res = await fetch(`${WORKER_URL}/profiles/${profile.id}`, { headers: buildHeaders() });
+                const json = await res.json();
+                if (json.status === 'success' && json.data) {
+                    Object.assign(profile, json.data);
+                    window.profileManager.currentProfile = profile;
+                }
+            } catch (_) {}
+
             const modal = $('profile-edit-modal');
             const nameInput = $('profile-edit-name');
             const emailInput = $('profile-edit-email');
             const avatarInput = $('profile-edit-avatar');
             const preferencesInput = $('profile-edit-preferences');
-            
+
             if (nameInput) nameInput.value = profile.name || '';
             if (emailInput) emailInput.value = profile.email || '';
             if (avatarInput) avatarInput.value = profile.avatar_url || '';
             if (preferencesInput) {
                 try {
-                    const prefs = typeof profile.preferences === 'string' 
-                        ? JSON.parse(profile.preferences) 
+                    const prefs = typeof profile.preferences === 'string'
+                        ? JSON.parse(profile.preferences)
                         : profile.preferences;
                     preferencesInput.value = prefs ? JSON.stringify(prefs, null, 2) : '';
                 } catch (e) {
                     preferencesInput.value = profile.preferences || '';
                 }
             }
-            
+            const subInput = $('profile-edit-sub-points');
+            const conInput = $('profile-edit-con-points');
+            if (subInput) subInput.value = profile.sub_point_remaining ?? 0;
+            if (conInput) conInput.value = profile.consumable_point_remaining ?? 0;
+
             if (modal) modal.style.display = 'flex';
         }
 
@@ -1654,12 +1681,14 @@
             const emailInput = $('profile-edit-email');
             const avatarInput = $('profile-edit-avatar');
             const preferencesInput = $('profile-edit-preferences');
+            const subInput = $('profile-edit-sub-points');
+            const conInput = $('profile-edit-con-points');
 
             const updates = {};
             if (nameInput?.value.trim()) updates.name = nameInput.value.trim();
             if (emailInput?.value.trim()) updates.email = emailInput.value.trim();
             if (avatarInput?.value.trim()) updates.avatar_url = avatarInput.value.trim();
-            
+
             if (preferencesInput?.value.trim()) {
                 try {
                     const prefs = JSON.parse(preferencesInput.value.trim());
@@ -1669,6 +1698,8 @@
                     return;
                 }
             }
+            if (subInput?.value !== '') updates.sub_point_remaining = parseInt(subInput.value, 10);
+            if (conInput?.value !== '') updates.consumable_point_remaining = parseInt(conInput.value, 10);
 
             showLoading('Đang cập nhật hồ sơ...');
             try {

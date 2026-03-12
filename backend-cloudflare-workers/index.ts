@@ -3667,14 +3667,14 @@ export default {
 
         // Try to find by profile ID first
         let result = await DB.prepare(
-          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, sub_point_remaining, consumable_point_remaining, total_credits_purchased, total_credits_spent, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(idParam).first();
         if (result) foundBy = 'profile_id';
 
         // If not found by ID, try by device_id
         if (!result) {
           result = await DB.prepare(
-            'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE device_id = ?'
+            'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, sub_point_remaining, consumable_point_remaining, total_credits_purchased, total_credits_spent, created_at, updated_at FROM profiles WHERE device_id = ?'
           ).bind(idParam).first();
           if (result) foundBy = 'device_id';
         }
@@ -3682,7 +3682,7 @@ export default {
         // If not found by device_id, try by user_id
         if (!result) {
           result = await DB.prepare(
-            'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE user_id = ?'
+            'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, sub_point_remaining, consumable_point_remaining, total_credits_purchased, total_credits_spent, created_at, updated_at FROM profiles WHERE user_id = ?'
           ).bind(idParam).first();
           if (result) foundBy = 'user_id';
         }
@@ -3701,6 +3701,10 @@ export default {
           phone: (result as any).phone || undefined,
           avatar_url: ensureFullUrl((result as any).avatar_url, env, requestUrl.origin),
           preferences: (result as any).preferences || undefined,
+          sub_point_remaining: (result as any).sub_point_remaining ?? 0,
+          consumable_point_remaining: (result as any).consumable_point_remaining ?? 0,
+          total_credits_purchased: (result as any).total_credits_purchased ?? 0,
+          total_credits_spent: (result as any).total_credits_spent ?? 0,
           created_at: new Date((result as any).created_at * 1000).toISOString(),
           updated_at: new Date((result as any).updated_at * 1000).toISOString()
         };
@@ -3738,17 +3742,29 @@ export default {
           ? (typeof body.preferences === 'string' ? body.preferences : JSON.stringify(body.preferences))
           : null;
 
-        const result = await DB.prepare(
-          'UPDATE profiles SET name = ?, email = ?, phone = ?, avatar_url = ?, preferences = ?, updated_at = ? WHERE id = ?'
-        ).bind(
+        // Build dynamic update for credit fields
+        const setClauses = ['name = ?', 'email = ?', 'phone = ?', 'avatar_url = ?', 'preferences = ?', 'updated_at = ?'];
+        const bindValues: any[] = [
           body.name || null,
           body.email || null,
           body.phone || null,
           body.avatar_url || null,
           preferencesString,
           Math.floor(Date.now() / 1000),
-          profileId
-        ).run();
+        ];
+        if ((body as any).sub_point_remaining !== undefined) {
+          setClauses.push('sub_point_remaining = ?');
+          bindValues.push(Number((body as any).sub_point_remaining));
+        }
+        if ((body as any).consumable_point_remaining !== undefined) {
+          setClauses.push('consumable_point_remaining = ?');
+          bindValues.push(Number((body as any).consumable_point_remaining));
+        }
+        bindValues.push(profileId);
+
+        const result = await DB.prepare(
+          `UPDATE profiles SET ${setClauses.join(', ')} WHERE id = ?`
+        ).bind(...bindValues).run();
 
         if (!result.success || result.meta?.changes === 0) {
           const debugEnabled = isDebugEnabled(env);
@@ -3757,7 +3773,7 @@ export default {
 
         // Return updated profile
         const updatedResult = await DB.prepare(
-          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, created_at, updated_at FROM profiles WHERE id = ?'
+          'SELECT id, device_id, user_id, name, email, phone, avatar_url, preferences, sub_point_remaining, consumable_point_remaining, total_credits_purchased, total_credits_spent, created_at, updated_at FROM profiles WHERE id = ?'
         ).bind(profileId).first();
 
         if (!updatedResult) {
@@ -3774,6 +3790,10 @@ export default {
           phone: (updatedResult as any).phone || undefined,
           avatar_url: ensureFullUrl((updatedResult as any).avatar_url, env, requestUrl.origin),
           preferences: (updatedResult as any).preferences || undefined,
+          sub_point_remaining: (updatedResult as any).sub_point_remaining ?? 0,
+          consumable_point_remaining: (updatedResult as any).consumable_point_remaining ?? 0,
+          total_credits_purchased: (updatedResult as any).total_credits_purchased ?? 0,
+          total_credits_spent: (updatedResult as any).total_credits_spent ?? 0,
           created_at: new Date((updatedResult as any).created_at * 1000).toISOString(),
           updated_at: new Date((updatedResult as any).updated_at * 1000).toISOString()
         };
@@ -8774,51 +8794,6 @@ export default {
         };
       }
       return jsonResponse({ data: costs, status: 'success', code: 200 }, 200, request, env);
-    }
-
-    // POST /api/admin/credits - Update profile credits (for testing)
-    if (path === '/api/admin/credits' && request.method === 'POST') {
-      try {
-        const body = await request.json() as any;
-        if (!body.profile_id) return errorResponse('profile_id is required', 400, undefined, request, env);
-
-        const updates: string[] = [];
-        const bindings: any[] = [];
-
-        if (body.sub_point_remaining !== undefined) {
-          updates.push('sub_point_remaining = ?');
-          bindings.push(Number(body.sub_point_remaining));
-        }
-        if (body.consumable_point_remaining !== undefined) {
-          updates.push('consumable_point_remaining = ?');
-          bindings.push(Number(body.consumable_point_remaining));
-        }
-        if (updates.length === 0) return errorResponse('No fields to update', 400, undefined, request, env);
-
-        updates.push('updated_at = ?');
-        bindings.push(Math.floor(Date.now() / 1000).toString());
-        bindings.push(body.profile_id);
-
-        const result = await DB.prepare(`UPDATE profiles SET ${updates.join(', ')} WHERE id = ?`).bind(...bindings).run();
-        if (!result.meta?.changes) return errorResponse('Profile not found', 404, undefined, request, env);
-
-        const ip = request.headers.get('cf-connecting-ip') || null;
-        await auditLog(DB, body.profile_id, 'ADMIN_CREDIT_UPDATE', { sub_point_remaining: body.sub_point_remaining, consumable_point_remaining: body.consumable_point_remaining }, ip);
-
-        const row = await DB.prepare('SELECT sub_point_remaining, consumable_point_remaining FROM profiles WHERE id = ?').bind(body.profile_id).first() as any;
-        return jsonResponse({
-          data: {
-            sub_point_remaining: row.sub_point_remaining,
-            consumable_point_remaining: row.consumable_point_remaining,
-            total_available: row.sub_point_remaining + row.consumable_point_remaining,
-          },
-          status: 'success',
-          code: 200,
-        }, 200, request, env);
-      } catch (error) {
-        logCriticalError('/api/admin/credits', error, request, env);
-        return errorResponse('Failed to update credits', 500, undefined, request, env);
-      }
     }
 
     // POST /api/deposit - Verify Google Play purchase, grant credits
