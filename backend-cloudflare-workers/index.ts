@@ -8581,7 +8581,7 @@ export default {
       }
     }
 
-    // Handle hair-style endpoint - apply hair style preset to selfie using WaveSpeed flux-2-klein-9b
+    // Handle hair-style endpoint - apply hair style preset to selfie using WaveSpeed Gemini 2.5 Flash Image Edit
     if (path === '/hair-style' && request.method === 'POST') {
       let body: { preset_image_id?: string; selfie_id?: string; selfie_image_url?: string; image_id?: string; image_url?: string; profile_id?: string; aspect_ratio?: string } | undefined;
       let creditResult: any = null;
@@ -8705,7 +8705,7 @@ export default {
           return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
-        const hairResult = await callWaveSpeedEdit([selfieUrl], prompt, env, aspectRatio, size);
+        const hairResult = await callWaveSpeedGeminiImageEdit([selfieUrl], prompt, env, aspectRatio, size);
 
         if (!hairResult.Success || !hairResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {

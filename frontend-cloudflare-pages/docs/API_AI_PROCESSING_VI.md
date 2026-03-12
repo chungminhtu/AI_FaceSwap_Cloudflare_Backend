@@ -1133,9 +1133,9 @@ curl -X POST https://api.d.shotpix.app/editor \
 
 ## 2.15. POST `/hair-style` - AI Hair Style
 
-**Mục đích:** Áp dụng kiểu tóc từ preset lên ảnh selfie sử dụng WaveSpeed flux-2-klein-9b.
+**Mục đích:** Áp dụng kiểu tóc từ preset lên ảnh selfie sử dụng WaveSpeed Gemini 2.5 Flash Image Edit.
 
-**API làm gì:** Lấy prompt từ R2 metadata của preset → gửi ảnh selfie + prompt → AI tạo ảnh với kiểu tóc mới → trả `resultImageUrl`.
+**API làm gì:** Lấy prompt từ R2 metadata của preset → gửi ảnh selfie + prompt → Gemini 2.5 Flash tạo ảnh với kiểu tóc mới → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
