@@ -30,8 +30,10 @@ Hệ thống điểm kép (dual credit):
 ## Cấu hình
 
 - Hệ thống credit **luôn bật** (không cần toggle)
+- **Bắt buộc subscription active** để dùng điểm (cả sub + consumable)
 - `CREDIT_COST_*`: Chi phí cho từng action (override bằng env var, ví dụ `CREDIT_COST_FACESWAP=10`)
-- `TIER_MULTIPLIER_*`: Hệ số theo tier (FREE=1.0, SUBSCRIBER=0.8)
+- Chi phí tối thiểu = 1 (không thể set cost = 0 qua env var)
+- `PROFILE_TOKEN_SECRET`: Bắt buộc cho production — khi set, mọi endpoint yêu cầu `X-Profile-Token` header
 
 ### Chi phí mặc định (Default Credit Costs)
 
@@ -53,7 +55,7 @@ Hệ thống điểm kép (dual credit):
 | | AI Remove Text | `/remove-text` | 1 |
 | | AI Editor | `/editor` | 5 |
 
-Chi phí thực tế = `CREDIT_COST_*` × `TIER_MULTIPLIER_*` (mặc định subscriber = 0.8× free)
+Chi phí = `CREDIT_COST_*` (tối thiểu 1 điểm/action, không có tier multiplier)
 
 ## Subscription SKUs
 
@@ -110,7 +112,7 @@ Chi phí thực tế = `CREDIT_COST_*` × `TIER_MULTIPLIER_*` (mặc định sub
 
 ### GET `/api/user/balance?profile_id={id}` - Số dư điểm kép + trạng thái subscription
 
-**Auth:** API Key
+**Auth:** API Key + Profile Token
 
 ```json
 // Response
@@ -132,7 +134,7 @@ Chi phí thực tế = `CREDIT_COST_*` × `TIER_MULTIPLIER_*` (mặc định sub
 
 ### POST `/api/deposit` - Nạp consumable points (verify Google Play purchase)
 
-**Auth:** API Key
+**Auth:** API Key + Profile Token
 
 Mua consumable → điểm vào `consumable_point_remaining` (không bao giờ reset).
 
@@ -181,7 +183,7 @@ Mua consumable → điểm vào `consumable_point_remaining` (không bao giờ r
 
 ### POST `/api/subscription/verify` - Kích hoạt subscription (app gọi sau khi mua trên Google Play)
 
-**Auth:** API Key
+**Auth:** API Key + Profile Token
 
 **Luồng:** User mua subscription trên Google Play → app nhận `purchaseToken` → app gọi endpoint này → backend verify với Google Play API → kích hoạt + gán `sub_point_remaining = points_per_cycle`.
 
@@ -208,7 +210,7 @@ Mua consumable → điểm vào `consumable_point_remaining` (không bao giờ r
 
 ### GET `/api/subscription/status?profile_id={id}` - Trạng thái subscription hiện tại
 
-**Auth:** API Key
+**Auth:** API Key + Profile Token
 
 ```json
 // Response
@@ -252,19 +254,22 @@ Nhận thông báo từ Google Play qua Pub/Sub (RTDN). App **KHÔNG** gọi end
 
 ## Trừ điểm trong AI Endpoints (Dual Credit Deduction)
 
-Mỗi AI endpoint tự động trừ điểm theo 5 bước:
+Mỗi AI endpoint tự động trừ điểm theo 6 bước:
 
-1. **Auth check** — verify profile token → fail = `INVALID_TOKEN`
-2. **Profile check** — profile tồn tại? bị ban? → fail = `PROFILE_NOT_FOUND` / `ACCOUNT_BANNED`
+1. **Auth check** — verify profile token → fail = reason `4010`
+2. **Profile check** — profile tồn tại? bị ban? → fail = reason `4020` / `4030`
 3. **Subscription check:**
-   - Có sub ON_HOLD → zero sub points, reason = `SUB_ON_HOLD`
-   - Có sub GRACE nhưng hết hạn → mark EXPIRED, zero sub, reason = `SUB_GRACE_EXPIRED`
+   - Có sub ON_HOLD → zero sub points
+   - Có sub GRACE nhưng hết hạn → mark EXPIRED, zero sub
    - Có sub ACTIVE quá 30 ngày → lazy reset sub = points_per_cycle
-   - Không có sub → zero sub points, reason = `SUB_NONE`
-4. **Fail fast** — sub + consumable < cost → HTTP 402, reason = `INSUFFICIENT_CREDITS` (hoặc reason cụ thể hơn nếu do sub status)
-5. **Trừ điểm** — sub trước, hết sub thì trừ consumable (atomic UPDATE với WHERE guard)
+   - Không có sub → zero sub points
+4. **Subscription required** — **BẮT BUỘC** có subscription ACTIVE hoặc GRACE để dùng điểm. Không có subscription = chặn hoàn toàn (kể cả có consumable points). Fail = reason `4040`/`4050`/`4060`
+5. **Fail fast** — sub + consumable < cost → HTTP 402, reason = `4070`
+6. **Trừ điểm** — sub trước, hết sub thì trừ consumable (atomic UPDATE với WHERE guard)
 
 Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (saga compensation).
+
+**Quan trọng:** Consumable points CHỈ dùng được khi có subscription active. Mua consumable points mà không có subscription = không dùng được.
 
 ### Response khi credit check thất bại (HTTP 402)
 
@@ -278,27 +283,46 @@ Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (sag
 }
 ```
 
-### Bảng `reason` codes
+### Bảng `reason` codes (numeric)
 
 | reason | Ý nghĩa | App nên làm gì |
 |--------|---------|-----------------|
-| `INVALID_TOKEN` | Token xác thực sai | Re-login |
-| `PROFILE_NOT_FOUND` | Profile không tồn tại | Tạo profile mới |
-| `ACCOUNT_BANNED` | Tài khoản bị cấm | Hiện thông báo ban |
-| `SUB_ON_HOLD` | Thanh toán bị giữ | Hiện "Cập nhật thanh toán" |
-| `SUB_GRACE_EXPIRED` | Grace period hết | Hiện "Gia hạn subscription" |
-| `SUB_NONE` | Không có subscription | Hiện "Mua subscription" hoặc "Mua credits" |
-| `INSUFFICIENT_CREDITS` | Hết điểm | Hiện "Mua thêm credits" |
-| `CONCURRENT_CONFLICT` | Trùng request | Retry 1 lần |
+| `4010` | Token xác thực sai | Re-login, lấy lại profile_token |
+| `4020` | Profile không tồn tại | Tạo profile mới |
+| `4030` | Tài khoản bị cấm | Hiện thông báo ban |
+| `4040` | Subscription ON_HOLD (thanh toán bị giữ) | Hiện "Cập nhật thanh toán" |
+| `4050` | Grace period hết, subscription expired | Hiện "Gia hạn subscription" |
+| `4060` | Không có subscription active | Hiện "Mua subscription" |
+| `4070` | Hết điểm (sub + consumable < cost) | Hiện "Mua thêm credits" |
+| `4080` | Trùng request (race condition) | Retry 1 lần |
 
-Chi phí = `CREDIT_COST_*` × `TIER_MULTIPLIER_*`
+**Lưu ý:** Reason `4040`/`4050`/`4060` = phải có subscription active mới dùng được điểm (kể cả consumable).
 
-## Tiers
+## Authentication
 
-| Tier | Multiplier mặc định | Mô tả |
-|------|---------------------|-------|
-| free | 1.0 | Không có subscription |
-| subscriber | 0.8 | Có subscription đang active/grace |
+### Hai lớp bảo vệ:
+
+| Lớp | Header | Mục đích |
+|-----|--------|----------|
+| **API Key** | `X-API-Key` hoặc `Authorization: Bearer` | Xác thực app (shared key, nhúng trong APK) |
+| **Profile Token** | `X-Profile-Token` | Xác thực quyền sở hữu profile (HMAC-SHA256, mỗi profile khác nhau) |
+
+### Profile Token hoạt động thế nào:
+
+1. App tạo profile → backend trả `profile_token` (HMAC-SHA256 của profile_id với server secret)
+2. App lưu `profile_token` cùng `profile_id`
+3. Mọi request gửi `X-Profile-Token` header → backend verify
+4. Nếu không khớp → HTTP 401
+
+**Khi nào bật:** Tự động bật khi `PROFILE_TOKEN_SECRET` được set (production). Không set = skip check (chỉ dùng lúc setup ban đầu).
+
+**Endpoints yêu cầu Profile Token:**
+- Tất cả AI endpoints (`/faceswap`, `/background`, `/enhance`, v.v.)
+- `PUT /profiles/{id}` — chỉnh sửa profile
+- `GET /api/user/balance` — xem số dư
+- `POST /api/deposit` — nạp tiền
+- `POST /api/subscription/verify` — kích hoạt subscription
+- `GET /api/subscription/status` — xem trạng thái subscription
 
 ---
 # Sơ Đồ Hệ Thống Điểm & Subscription

@@ -191,8 +191,8 @@ const verifyProfileToken = async (profileId: string, token: string, secret: stri
 };
 
 const checkProfileToken = async (env: Env, request: Request, profileId: string | null): Promise<boolean> => {
-  if (env.ENABLE_PROFILE_TOKEN_AUTH !== 'true') return true;
-  if (!profileId || !env.PROFILE_TOKEN_SECRET) return true; // Skip if not configured
+  if (!env.PROFILE_TOKEN_SECRET) return true; // Skip if secret not configured (initial setup only)
+  if (!profileId) return true;
   const token = request.headers.get('X-Profile-Token');
   if (!token) return false;
   return verifyProfileToken(profileId, token, env.PROFILE_TOKEN_SECRET);
@@ -3756,6 +3756,9 @@ export default {
         if (!profileId) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 400, debugEnabled ? { path } : undefined, request, env);
+        }
+        if (!(await checkProfileToken(env, request, profileId))) {
+          return errorResponse('Invalid profile token', 401, undefined, request, env);
         }
         const body = await request.json() as Partial<Profile>;
 
@@ -8852,6 +8855,9 @@ export default {
     if (path === '/api/user/balance' && request.method === 'GET') {
       const profileId = requestUrl.searchParams.get('profile_id');
       if (!profileId) return errorResponse('profile_id is required', 400, undefined, request, env);
+      if (!(await checkProfileToken(env, request, profileId))) {
+        return errorResponse('Invalid profile token', 401, undefined, request, env);
+      }
       try {
         const row = await DB.prepare('SELECT sub_point_remaining, consumable_point_remaining, total_credits_purchased, total_credits_spent FROM profiles WHERE id = ?').bind(profileId).first() as any;
         if (!row) return errorResponse('Profile not found', 404, undefined, request, env);
@@ -8892,6 +8898,9 @@ export default {
         const body = await request.json() as DepositRequest;
         if (!body.profile_id || !body.sku || !body.purchase_token || !body.order_id) {
           return errorResponse('profile_id, sku, purchase_token, and order_id are required', 400, undefined, request, env);
+        }
+        if (!(await checkProfileToken(env, request, body.profile_id))) {
+          return errorResponse('Invalid profile token', 401, undefined, request, env);
         }
 
         // Idempotency check
@@ -8964,6 +8973,9 @@ export default {
         const body = await request.json() as SubscriptionVerifyRequest;
         if (!body.profile_id || !body.sku || !body.purchase_token) {
           return errorResponse('profile_id, sku, and purchase_token are required', 400, undefined, request, env);
+        }
+        if (!(await checkProfileToken(env, request, body.profile_id))) {
+          return errorResponse('Invalid profile token', 401, undefined, request, env);
         }
 
         // Validate product is subscription
@@ -9038,6 +9050,9 @@ export default {
     if (path === '/api/subscription/status' && request.method === 'GET') {
       const profileId = requestUrl.searchParams.get('profile_id');
       if (!profileId) return errorResponse('profile_id is required', 400, undefined, request, env);
+      if (!(await checkProfileToken(env, request, profileId))) {
+        return errorResponse('Invalid profile token', 401, undefined, request, env);
+      }
       try {
         const sub = await DB.prepare(
           'SELECT id, sku, status, auto_renewing, started_at, expires_at, last_reset_at, cycle_count_used, points_per_cycle, cancelled_at FROM subscriptions WHERE profile_id = ? AND status NOT IN (\'EXPIRED\') ORDER BY created_at DESC LIMIT 1'
