@@ -415,7 +415,7 @@ const refundCredits = async (
   await db.prepare('UPDATE profiles SET sub_point_remaining = sub_point_remaining + ?, consumable_point_remaining = consumable_point_remaining + ?, total_credits_spent = total_credits_spent - ?, updated_at = ? WHERE id = ?')
     .bind(fromSub, fromConsumable, cost, Math.floor(Date.now() / 1000).toString(), profileId).run();
   const ip = request.headers.get('cf-connecting-ip') || null;
-  await auditLog(db, profileId, 'CREDIT_REFUND', { action, cost, refund_to_sub: fromSub, refund_to_consumable: fromConsumable, reason }, ip);
+  await auditLog(db, profileId, 'CREDIT_REFUND', { action, cost, reason }, ip);
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
