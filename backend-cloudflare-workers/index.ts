@@ -293,15 +293,11 @@ const resolveAspectRatioForNonFaceswap = async (
 };
 
 // Credit deduction helpers (saga pattern: deduct before AI, refund on failure)
-const isCreditSystemEnabled = (env: Env): boolean => env.ENABLE_CREDIT_SYSTEM === 'true';
-
 const CYCLE_DURATION_SECONDS = 30 * 86400; // 30 days
 
 const deductCredits = async (
   db: D1Database, profileId: string, action: string, env: Env, request: Request
 ): Promise<{ success: boolean; cost: number; balance: number; error?: string }> => {
-  if (!isCreditSystemEnabled(env)) return { success: true, cost: 0, balance: 0 };
-
   // Verify profile token binding (prevents profile_id spoofing)
   if (!(await checkProfileToken(env, request, profileId))) {
     return { success: false, cost: 0, balance: 0, error: 'Invalid profile token' };
