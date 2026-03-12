@@ -29,7 +29,7 @@ Hệ thống điểm kép (dual credit):
 
 ## Cấu hình
 
-- `ENABLE_CREDIT_SYSTEM`: `"true"` để bật hệ thống credit (mặc định `"false"`)
+- Hệ thống credit **luôn bật** (không cần toggle)
 - `CREDIT_COST_*`: Chi phí cho từng action (override bằng env var, ví dụ `CREDIT_COST_FACESWAP=10`)
 - `TIER_MULTIPLIER_*`: Hệ số theo tier (FREE=1.0, SUBSCRIBER=0.8)
 
@@ -252,13 +252,12 @@ Nhận thông báo từ Google Play qua Pub/Sub (RTDN). App **KHÔNG** gọi end
 
 ## Trừ điểm trong AI Endpoints (Dual Credit Deduction)
 
-Khi `ENABLE_CREDIT_SYSTEM=true`, mỗi AI endpoint tự động trừ điểm theo 5 bước:
+Mỗi AI endpoint tự động trừ điểm theo 4 bước:
 
-1. **Check subscription** — expired → REJECT
-2. **Grace hết hạn?** — now > expires_at → mark expired → REJECT
-3. **Lazy reset** — (chỉ ACTIVE) nếu now ≥ last_reset_at + 30 ngày → reset sub = points_per_cycle
-4. **Fail fast** — sub + consumable < cost → REJECT (HTTP 402)
-5. **Trừ điểm** — sub trước, hết sub thì trừ consumable
+1. **Check subscription** (nếu có) — ON_HOLD → zero sub; GRACE hết hạn → mark expired, zero sub; ACTIVE quá 30 ngày → lazy reset sub = points_per_cycle
+2. **Nếu không có subscription** — giữ nguyên sub points (cho phép top-up thủ công để test)
+3. **Fail fast** — sub + consumable < cost → REJECT (HTTP 402)
+4. **Trừ điểm** — sub trước, hết sub thì trừ consumable (atomic UPDATE với WHERE guard)
 
 Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (saga compensation).
 
