@@ -1236,6 +1236,11 @@
                             </div>
                         </div>
                     </div>
+                    <div style="border-top: 1px solid var(--border); margin: 16px 0; padding-top: 16px;">
+                        <label style="display: block; margin-bottom: 10px; font-size: 13px; color: var(--text-secondary); font-weight: 600;">Subscription:</label>
+                        <div id="profile-edit-sub-status" style="padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; font-weight: 600;">--</div>
+                        <div id="profile-edit-sub-warning" style="display: none; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); font-size: 12px; color: #ef4444;"></div>
+                    </div>
                     <div style="display: flex; gap: 12px; justify-content: flex-end;">
                         <button type="button" onclick="closeProfileEditModal()" style="padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font-size: 14px; font-weight: 500;">Hủy</button>
                         <button type="submit" style="padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; font-weight: 600;">💾 Lưu</button>
@@ -1660,6 +1665,30 @@
             const conInput = $('profile-edit-con-points');
             if (subInput) subInput.value = profile.sub_point_remaining ?? 0;
             if (conInput) conInput.value = profile.consumable_point_remaining ?? 0;
+
+            // Fetch balance info (includes subscription_status)
+            try {
+                const balRes = await fetch(`${WORKER_URL}/api/user/balance?profile_id=${profile.id}`, { headers: buildHeaders() });
+                const balJson = await balRes.json();
+                if (balJson.status === 'success' && balJson.data) {
+                    const subStatusEl = $('profile-edit-sub-status');
+                    const warningEl = $('profile-edit-sub-warning');
+                    const subStatus = balJson.data.subscription_status || 'NONE';
+                    const hasAccess = subStatus === 'ACTIVE' || subStatus === 'GRACE';
+                    if (subStatusEl) {
+                        subStatusEl.textContent = subStatus;
+                        subStatusEl.style.color = hasAccess ? '#22c55e' : '#ef4444';
+                    }
+                    if (warningEl) {
+                        if (!hasAccess) {
+                            warningEl.style.display = 'block';
+                            warningEl.textContent = 'This profile CANNOT use points — active subscription required. Use admin sub_point_remaining to auto-create subscription.';
+                        } else {
+                            warningEl.style.display = 'none';
+                        }
+                    }
+                }
+            } catch (_) {}
 
             if (modal) modal.style.display = 'flex';
         }

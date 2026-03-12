@@ -360,6 +360,15 @@ const deductCredits = async (
 
   // Determine cost (use 'subscriber' tier if active/grace sub with access, else 'free')
   const hasAccess = sub && (sub.status === 'ACTIVE' || (sub.status === 'GRACE' && now <= sub.expires_at));
+
+  // Block all point usage without active subscription
+  if (!hasAccess) {
+    let reason = 4060; // no active subscription
+    if (sub?.status === 'ON_HOLD') reason = 4040;
+    else if (subscriptionStatus === 'EXPIRED') reason = 4050;
+    return { success: false, cost: 0, balance: subPoints + profile.consumable_point_remaining, reason, subscription_status: subscriptionStatus };
+  }
+
   const tier = hasAccess ? 'subscriber' : 'free';
   const cost = getCreditCost(action, tier, env);
   const totalAvailable = subPoints + profile.consumable_point_remaining;

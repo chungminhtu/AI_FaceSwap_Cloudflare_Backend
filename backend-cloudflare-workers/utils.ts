@@ -1480,18 +1480,17 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
 };
 
 /**
- * Get credit cost for an action, applying tier multiplier.
- * Uses DEFAULT_CREDIT_COSTS as fallback, overridable by env vars (CREDIT_COST_*, TIER_MULTIPLIER_*).
+ * Get credit cost for an action.
+ * Uses DEFAULT_CREDIT_COSTS as fallback, overridable by env vars (CREDIT_COST_<ACTION>).
+ * Tier multiplier is hardcoded: subscriber=1.0, free=1.0 (no env override to prevent abuse).
+ * Cost is always >= 1 to prevent zero-cost bypass.
  */
-export const getCreditCost = (action: string, tier: string, env: Env): number => {
+export const getCreditCost = (action: string, _tier: string, env: Env): number => {
   const costKey = `CREDIT_COST_${action.toUpperCase()}`;
   const defaultCost = DEFAULT_CREDIT_COSTS[action] ?? 1;
   const baseCost = parseInt(env[costKey] || String(defaultCost), 10);
 
-  const multiplierKey = `TIER_MULTIPLIER_${tier.toUpperCase()}`;
-  const multiplier = parseFloat(env[multiplierKey] || '1.0');
-
-  return Math.max(0, Math.ceil(baseCost * multiplier));
+  return Math.max(1, baseCost);
 };
 
 /**
