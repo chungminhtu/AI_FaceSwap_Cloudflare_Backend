@@ -295,28 +295,27 @@ const resolveAspectRatioForNonFaceswap = async (
 // Credit deduction helpers (saga pattern: deduct before AI, refund on failure)
 const CYCLE_DURATION_SECONDS = 30 * 86400; // 30 days
 
-// Credit deduction reason codes (returned in API response body for app to handle)
-// INVALID_TOKEN        - profile token auth failed
-// PROFILE_NOT_FOUND    - profile_id doesn't exist
-// ACCOUNT_BANNED       - profile is banned
-// SUB_ON_HOLD          - subscription payment on hold, sub points zeroed
-// SUB_GRACE_EXPIRED    - grace period ended, subscription expired
-// SUB_NONE             - no active subscription, sub points zeroed
-// INSUFFICIENT_CREDITS - not enough credits (sub + consumable < cost)
-// CONCURRENT_CONFLICT  - race condition, another request deducted first
-type CreditFailReason = 'INVALID_TOKEN' | 'PROFILE_NOT_FOUND' | 'ACCOUNT_BANNED' | 'SUB_ON_HOLD' | 'SUB_GRACE_EXPIRED' | 'SUB_NONE' | 'INSUFFICIENT_CREDITS' | 'CONCURRENT_CONFLICT';
+// Credit status codes (numeric, predefined between client & server)
+// 4010 - invalid token
+// 4020 - profile not found
+// 4030 - account banned
+// 4040 - subscription on hold
+// 4050 - grace expired
+// 4060 - no subscription
+// 4070 - insufficient credits
+// 4080 - concurrent conflict
 
 const deductCredits = async (
   db: D1Database, profileId: string, action: string, env: Env, request: Request
-): Promise<{ success: boolean; cost: number; balance: number; error?: string; reason?: CreditFailReason; subscription_status?: string }> => {
+): Promise<{ success: boolean; cost: number; balance: number; error?: string; reason?: number; subscription_status?: string }> => {
   // Verify profile token binding (prevents profile_id spoofing)
   if (!(await checkProfileToken(env, request, profileId))) {
-    return { success: false, cost: 0, balance: 0, error: 'Invalid profile token', reason: 'INVALID_TOKEN' };
+    return { success: false, cost: 0, balance: 0, error: 'Invalid profile token', reason: 4010 };
   }
 
   const profile = await db.prepare('SELECT sub_point_remaining, consumable_point_remaining, is_banned FROM profiles WHERE id = ?').bind(profileId).first() as any;
-  if (!profile) return { success: false, cost: 0, balance: 0, error: 'Profile not found', reason: 'PROFILE_NOT_FOUND' };
-  if (profile.is_banned) return { success: false, cost: 0, balance: 0, error: 'Account is banned', reason: 'ACCOUNT_BANNED' };
+  if (!profile) return { success: false, cost: 0, balance: 0, error: 'Profile not found', reason: 4020 };
+  if (profile.is_banned) return { success: false, cost: 0, balance: 0, error: 'Account is banned', reason: 4030 };
 
   // Step 1-2: Check subscription status (include ON_HOLD to detect and zero out sub points)
   const sub = await db.prepare(
@@ -367,17 +366,16 @@ const deductCredits = async (
 
   // Free actions (cost = 0) skip deduction entirely
   if (cost === 0) {
-    return { success: true, cost: 0, balance: totalAvailable, subscription_status: subscriptionStatus };
+    return { success: true, cost: 0, balance: totalAvailable, };
   }
 
   // Step 4: Fail fast
   if (totalAvailable < cost) {
-    // Determine the specific reason for insufficient credits
-    let reason: CreditFailReason = 'INSUFFICIENT_CREDITS';
-    if (sub?.status === 'ON_HOLD') reason = 'SUB_ON_HOLD';
-    else if (subscriptionStatus === 'EXPIRED') reason = 'SUB_GRACE_EXPIRED';
-    else if (subscriptionStatus === 'NONE') reason = 'SUB_NONE';
-    return { success: false, cost, balance: totalAvailable, error: `Insufficient credits. Need ${cost}, have ${totalAvailable}`, reason, subscription_status: subscriptionStatus };
+    let reason = 4070; // insufficient credits
+    if (sub?.status === 'ON_HOLD') reason = 4040;
+    else if (subscriptionStatus === 'EXPIRED') reason = 4050;
+    else if (subscriptionStatus === 'NONE') reason = 4060;
+    return { success: false, cost, balance: totalAvailable, reason };
   }
 
   // Step 5: Deduct sub first, remainder from consumable — ATOMIC with WHERE guard
@@ -389,13 +387,13 @@ const deductCredits = async (
   ).bind(fromSub, fromConsumable, cost, now.toString(), profileId, fromSub, fromConsumable).run();
 
   if (!result.meta?.changes || result.meta.changes === 0) {
-    return { success: false, cost, balance: 0, error: 'Insufficient credits (concurrent request)', reason: 'CONCURRENT_CONFLICT', subscription_status: subscriptionStatus };
+    return { success: false, cost, balance: 0, reason: 4080 };
   }
 
   const ip = request.headers.get('cf-connecting-ip') || null;
   await auditLog(db, profileId, 'CREDIT_DEDUCT', { action, cost, from_sub: fromSub, from_consumable: fromConsumable, balance_before: totalAvailable }, ip);
 
-  return { success: true, cost, balance: totalAvailable - cost, subscription_status: subscriptionStatus };
+  return { success: true, cost, balance: totalAvailable - cost, };
 };
 
 const refundCredits = async (
