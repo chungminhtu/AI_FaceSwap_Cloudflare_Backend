@@ -55,7 +55,38 @@ Hệ thống điểm kép (dual credit):
 | | AI Remove Text | `/remove-text` | 1 |
 | | AI Editor | `/editor` | 5 |
 
-Chi phí = `CREDIT_COST_*` (tối thiểu 1 điểm/action, không có tier multiplier)
+Chi phí = `CREDIT_COST_*` × country multiplier (tối thiểu 1 điểm/action)
+
+### Country-Based Pricing (Giá theo quốc gia)
+
+Quốc gia được xác định tự động bởi Cloudflare (`CF-IPCountry` header) — user không thể giả mạo.
+
+**Cấu hình:** Set env var `COUNTRY_PRICING` dạng JSON:
+
+```json
+[
+  { "multiplier": 2.0, "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"] },
+  { "multiplier": 1.5, "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"] },
+  { "multiplier": 0.5, "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"] }
+]
+```
+
+- Quốc gia không nằm trong danh sách = multiplier 1.0 (mặc định)
+- Không set `COUNTRY_PRICING` = tất cả quốc gia multiplier 1.0
+- Ví dụ: faceswap (base=5) + user ở US (2.0x) = 10 điểm; ở VN (0.5x) = 3 điểm
+
+**API kiểm tra giá:** `GET /api/credit-costs` — trả giá theo quốc gia hiện tại của caller:
+
+```json
+{
+  "data": {
+    "faceswap": { "base": 5, "cost": 3 },
+    "background": { "base": 5, "cost": 3 }
+  },
+  "country": "VN",
+  "status": "success"
+}
+```
 
 ## Subscription SKUs
 

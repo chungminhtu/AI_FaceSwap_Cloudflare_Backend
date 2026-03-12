@@ -370,7 +370,8 @@ const deductCredits = async (
   }
 
   const tier = hasAccess ? 'subscriber' : 'free';
-  const cost = getCreditCost(action, tier, env);
+  const country = request.headers.get('CF-IPCountry') || '';
+  const cost = getCreditCost(action, tier, env, country);
   const totalAvailable = subPoints + profile.consumable_point_remaining;
 
   // Free actions (cost = 0) skip deduction entirely
@@ -400,7 +401,7 @@ const deductCredits = async (
   }
 
   const ip = request.headers.get('cf-connecting-ip') || null;
-  await auditLog(db, profileId, 'CREDIT_DEDUCT', { action, cost, from_sub: fromSub, from_consumable: fromConsumable, balance_before: totalAvailable }, ip);
+  await auditLog(db, profileId, 'CREDIT_DEDUCT', { action, cost, from_sub: fromSub, from_consumable: fromConsumable, balance_before: totalAvailable, country: country || undefined }, ip);
 
   return { success: true, cost, balance: totalAvailable - cost, };
 };
@@ -8882,14 +8883,15 @@ export default {
     // GET /api/credit-costs - Get credit cost table for all actions
     if (path === '/api/credit-costs' && request.method === 'GET') {
       const actions = Object.keys(DEFAULT_CREDIT_COSTS);
-      const costs: Record<string, { free: number; subscriber: number }> = {};
+      const country = request.headers.get('CF-IPCountry') || '';
+      const costs: Record<string, { base: number; cost: number }> = {};
       for (const action of actions) {
         costs[action] = {
-          free: getCreditCost(action, 'free', env),
-          subscriber: getCreditCost(action, 'subscriber', env),
+          base: getCreditCost(action, 'subscriber', env),
+          cost: getCreditCost(action, 'subscriber', env, country),
         };
       }
-      return jsonResponse({ data: costs, status: 'success', code: 200 }, 200, request, env);
+      return jsonResponse({ data: costs, country: country || 'unknown', status: 'success', code: 200 }, 200, request, env);
     }
 
     // POST /api/deposit - Verify Google Play purchase, grant credits

@@ -1480,17 +1480,51 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
 };
 
 /**
- * Get credit cost for an action.
- * Uses DEFAULT_CREDIT_COSTS as fallback, overridable by env vars (CREDIT_COST_<ACTION>).
- * Tier multiplier is hardcoded: subscriber=1.0, free=1.0 (no env override to prevent abuse).
+ * Country pricing tiers. Set env var COUNTRY_PRICING as JSON:
+ * [
+ *   { "multiplier": 2.0, "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"] },
+ *   { "multiplier": 1.5, "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"] },
+ *   { "multiplier": 0.5, "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"] }
+ * ]
+ * Countries not listed default to multiplier 1.0.
+ * Country code from Cloudflare CF-IPCountry header (ISO 3166-1 alpha-2, server-determined, can't be faked).
+ */
+let _countryPricingCache: { map: Record<string, number>; raw: string } | null = null;
+
+const getCountryMultiplier = (country: string, env: Env): number => {
+  if (!env.COUNTRY_PRICING) return 1.0;
+  const raw = String(env.COUNTRY_PRICING);
+  // Cache parsed map per unique config string
+  if (!_countryPricingCache || _countryPricingCache.raw !== raw) {
+    try {
+      const tiers: Array<{ multiplier: number; countries: string[] }> = JSON.parse(raw);
+      const map: Record<string, number> = {};
+      for (const tier of tiers) {
+        for (const cc of tier.countries) {
+          map[cc.toUpperCase()] = tier.multiplier;
+        }
+      }
+      _countryPricingCache = { map, raw };
+    } catch {
+      return 1.0;
+    }
+  }
+  return _countryPricingCache.map[country.toUpperCase()] ?? 1.0;
+};
+
+/**
+ * Get credit cost for an action, with country-based pricing.
+ * baseCost from DEFAULT_CREDIT_COSTS (or CREDIT_COST_<ACTION> env override).
+ * Multiplied by country tier multiplier (from COUNTRY_PRICING env var).
  * Cost is always >= 1 to prevent zero-cost bypass.
  */
-export const getCreditCost = (action: string, _tier: string, env: Env): number => {
+export const getCreditCost = (action: string, _tier: string, env: Env, country?: string): number => {
   const costKey = `CREDIT_COST_${action.toUpperCase()}`;
   const defaultCost = DEFAULT_CREDIT_COSTS[action] ?? 1;
   const baseCost = parseInt(env[costKey] || String(defaultCost), 10);
+  const multiplier = country ? getCountryMultiplier(country, env) : 1.0;
 
-  return Math.max(1, baseCost);
+  return Math.max(1, Math.ceil(baseCost * multiplier));
 };
 
 /**
