@@ -202,30 +202,25 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 
 ## AI Model / Provider theo từng API
 
-| Endpoint | AI Model | Provider | API Endpoint | Điểm | Chi phí/lần | Custom Prompt | Vision |
-|----------|----------|----------|-------------|------|-------------|---------------|--------|
-| POST `/enhance` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
-| POST `/restore` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
-| POST `/upscaler4k` | WaveSpeed Image Upscaler | WaveSpeed | `v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | — |
-| POST `/beauty` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
-| POST `/filter` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 3 | $0.016 | Có | Sau khi gen |
-| POST `/faceswap` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 5 | $0.016 | Có | — |
-| POST `/expression` | Gemini 2.5 Flash Image | Vertex AI trực tiếp | `aiplatform.googleapis.com/.../generateContent` | 1 | ~$0.039 | Không | — |
-| POST `/hair-style` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
-| POST `/aging` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Có | — |
-| POST `/remove-object` | Bria Eraser | WaveSpeed | `v3/bria/eraser` | 1 | $0.040 | Không | — |
-| POST `/background` | Seedream v4 (ByteDance) | WaveSpeed | `v3/.../seedream-v4/edit-sequential` | 5 | $0.027 | Có | Sau khi gen |
-| POST `/expand` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
-| POST `/replace-object` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Có | Sau khi gen |
-| POST `/remove-text` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
-| POST `/editor` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Sau khi gen |
+| Endpoint | Provider URL | Điểm | Chi phí/lần | Custom Prompt | Vision |
+|----------|-------------|------|-------------|---------------|--------|
+| POST `/enhance` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
+| POST `/restore` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
+| POST `/upscaler4k` | `api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | — |
+| POST `/beauty` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
+| POST `/filter` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 3 | $0.016 | Có | Sau khi gen |
+| POST `/faceswap` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016 | Có | — |
+| POST `/expression` | Vertex AI Gemini (`aiplatform.googleapis.com`) | 1 | — | Không | — |
+| POST `/hair-style` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
+| POST `/aging` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Có | — |
+| POST `/remove-object` | `api.wavespeed.ai/api/v3/bria/eraser` | 1 | $0.040 | Không | — |
+| POST `/background` | `api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential` | 5 | $0.027 | Có | Sau khi gen |
+| POST `/expand` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
+| POST `/replace-object` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Có | Sau khi gen |
+| POST `/remove-text` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
+| POST `/editor` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Sau khi gen |
 
-> **Ghi chú:**
-> - Giá từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. Điểm = chi phí credits khi `ENABLE_CREDIT_SYSTEM=true`, có thể override bằng env var `CREDIT_COST_*`.
-> - `/enhance`, `/restore`, `/editor` tự động chọn model theo kích thước ảnh: nhỏ (< 800px) dùng Gemini 2.5 Flash Image (v3), lớn (≥ 800px) dùng Flux 2 Klein 9B (v3).
-> - `/expand`, `/replace-object`, `/beauty`, `/filter`, `/faceswap` dùng Flux 2 Klein 9B endpoint **v1** (default trong `callWaveSpeedEdit`).
-> - `/expression` mặc định dùng **Vertex AI Gemini trực tiếp** (không qua WaveSpeed), có thể override bằng `body.provider` hoặc env `IMAGE_PROVIDER`.
-> - **Vision** = Google Vision SafeSearch API — chạy **sau khi gen ảnh xong**, chỉ áp dụng cho endpoint nhận custom prompt từ user.
+> **Ghi chú:** Giá từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. `/enhance` và `/restore` tự động chọn model theo kích thước ảnh: nhỏ (< 800px) dùng Gemini 2.5 Flash Image, lớn (≥ 800px) dùng Flux 2 Klein 9B v3. Điểm = chi phí credits khi `ENABLE_CREDIT_SYSTEM=true`, có thể override bằng env var `CREDIT_COST_*`. Vision = Google Vision SafeSearch API, chạy sau khi gen ảnh xong.
 
 ---
 
