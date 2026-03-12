@@ -220,8 +220,6 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/remove-text` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
 | POST `/editor` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Sau khi gen |
 
-> **Ghi chú:** Giá từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. `/enhance` và `/restore` tự động chọn model theo kích thước ảnh: nhỏ (< 800px) dùng Gemini 2.5 Flash Image, lớn (≥ 800px) dùng Flux 2 Klein 9B v3. Điểm = chi phí credits khi `ENABLE_CREDIT_SYSTEM=true`, có thể override bằng env var `CREDIT_COST_*`.
-
 ---
 
 ## Error Codes Reference
