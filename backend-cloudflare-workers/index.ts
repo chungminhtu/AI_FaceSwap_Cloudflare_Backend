@@ -336,8 +336,13 @@ const deductCredits = async (
       await db.prepare('UPDATE subscriptions SET last_reset_at = ?, cycle_count_used = cycle_count_used + 1, updated_at = unixepoch() WHERE id = ?').bind(now, sub.id).run();
       await auditLog(db, profileId, 'SUB_LAZY_RESET', { points_per_cycle: sub.points_per_cycle, cycle: sub.cycle_count_used + 1 }, null);
     }
+  } else {
+    // No active/grace subscription → sub points should be 0
+    if (subPoints > 0) {
+      await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
+      subPoints = 0;
+    }
   }
-  // If no subscription found, just use whatever sub points are in the profile (allows manual top-up for testing)
 
   // Determine cost (use 'subscriber' tier if active/grace sub with access, else 'free')
   const hasAccess = sub && (sub.status === 'ACTIVE' || (sub.status === 'GRACE' && now <= sub.expires_at));
@@ -3760,6 +3765,22 @@ export default {
         if (!result.success || result.meta?.changes === 0) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('Profile not found or update failed', 404, debugEnabled ? { profileId, path } : undefined, request, env);
+        }
+
+        // Auto-create ACTIVE subscription when sub_point_remaining is set via admin UI
+        // so deductCredits won't zero it out (it requires an active subscription row)
+        const subPointsValue = Number((body as any).sub_point_remaining);
+        if ((body as any).sub_point_remaining !== undefined && subPointsValue > 0) {
+          const existingSub = await DB.prepare(
+            "SELECT id FROM subscriptions WHERE profile_id = ? AND status IN ('ACTIVE', 'GRACE') ORDER BY created_at DESC LIMIT 1"
+          ).bind(profileId).first();
+          if (!existingSub) {
+            const now = Math.floor(Date.now() / 1000);
+            const subId = `admin_${profileId}_${now}`;
+            await DB.prepare(
+              'INSERT INTO subscriptions (id, profile_id, sku, purchase_token, points_per_cycle, status, auto_renewing, started_at, expires_at, last_reset_at, cycle_count_used) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1)'
+            ).bind(subId, profileId, 'admin_test', `admin_token_${now}`, subPointsValue, 'ACTIVE', now, now + 30 * 86400, now).run();
+          }
         }
 
         // Return updated profile
