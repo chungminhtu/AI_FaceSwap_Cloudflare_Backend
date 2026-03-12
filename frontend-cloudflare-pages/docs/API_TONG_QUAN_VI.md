@@ -204,21 +204,21 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 
 | Endpoint | Provider URL | Điểm | Chi phí/lần | Custom Prompt | Vision |
 |----------|-------------|------|-------------|---------------|--------|
-| POST `/enhance` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | Upload |
-| POST `/restore` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | Upload |
-| POST `/upscaler4k` | `api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | Upload |
-| POST `/beauty` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Upload |
-| POST `/filter` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 3 | $0.016 | Có | Upload + Sau khi gen |
-| POST `/faceswap` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016 | Có | Upload |
-| POST `/expression` | Vertex AI Gemini (`aiplatform.googleapis.com`) | 1 | — | Không | Upload |
-| POST `/hair-style` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Upload |
-| POST `/aging` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Có | Upload |
-| POST `/remove-object` | `api.wavespeed.ai/api/v3/bria/eraser` | 1 | $0.040 | Không | Upload |
-| POST `/background` | `api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential` | 5 | $0.027 | Có | Upload + Sau khi gen |
-| POST `/expand` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Upload |
-| POST `/replace-object` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Có | Upload + Sau khi gen |
-| POST `/remove-text` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Upload |
-| POST `/editor` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Upload + Sau khi gen |
+| POST `/enhance` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | Check Vision sau khi upload selfie. |
+| POST `/restore` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | Check Vision sau khi upload selfie. |
+| POST `/upscaler4k` | `api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | Check Vision sau khi upload selfie. |
+| POST `/beauty` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Check Vision sau khi upload selfie. |
+| POST `/filter` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 3 | $0.016 | Có | Check Vision sau khi upload selfie. Check Vision kết quả sau khi gen ảnh. |
+| POST `/faceswap` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016 | Có | Check Vision sau khi upload selfie. |
+| POST `/expression` | Vertex AI Gemini (`aiplatform.googleapis.com`) | 1 | — | Không | Check Vision sau khi upload selfie. |
+| POST `/hair-style` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Check Vision sau khi upload selfie. |
+| POST `/aging` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Có | Check Vision sau khi upload selfie. |
+| POST `/remove-object` | `api.wavespeed.ai/api/v3/bria/eraser` | 1 | $0.040 | Không | Check Vision sau khi upload selfie. |
+| POST `/background` | `api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential` | 5 | $0.027 | Có | Check Vision sau khi upload selfie. Check Vision kết quả sau khi gen ảnh. |
+| POST `/expand` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Check Vision sau khi upload selfie. |
+| POST `/replace-object` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Có | Check Vision sau khi upload selfie. Check Vision kết quả sau khi gen ảnh. |
+| POST `/remove-text` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Check Vision sau khi upload selfie. |
+| POST `/editor` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Check Vision sau khi upload selfie. Check Vision kết quả sau khi gen ảnh. |
 
 ---
 
