@@ -55,39 +55,37 @@ Hệ thống điểm kép (dual credit):
 | | AI Remove Text | `/remove-text` | 1 |
 | | AI Editor | `/editor` | 5 |
 
-Chi phí được xác định theo country tier (tối thiểu 1 điểm/action). Có thể override bằng env var `CREDIT_COST_<ACTION>`.
+Chi phí được xác định theo pricing tier (tối thiểu 1 điểm/action). Có thể override bằng env var `CREDIT_COST_<ACTION>`.
 
-### Country-Based Pricing (Giá theo quốc gia)
+### Pricing Tiers (Bảng giá theo tier)
 
-Quốc gia được xác định tự động bởi Cloudflare (`CF-IPCountry` header) — user không thể giả mạo.
+Mỗi tier có **bảng giá riêng** cho từng action — cấu hình độc lập, không dùng multiplier.
 
-Mỗi tier có **bảng giá riêng** cho từng action (không dùng multiplier):
-
-**Cấu hình:** Set env var `COUNTRY_PRICING` dạng JSON:
+**Bước 1:** Set env var `PRICING_TIERS` — định nghĩa bảng giá cho mỗi tier:
 
 ```json
-[
-  {
-    "name": "high",
-    "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"],
-    "costs": { "faceswap": 10, "background": 10, "upscaler4k": 10, "enhance": 4, "beauty": 4, "filter": 6, "restore": 4, "aging": 2, "remove_object": 2, "expression": 2, "expand": 4, "editor": 10, "replace_object": 4, "remove_text": 2, "hair_style": 2 }
-  },
-  {
-    "name": "mid",
-    "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"],
-    "costs": { "faceswap": 7, "background": 7, "upscaler4k": 7, "enhance": 3, "beauty": 3, "filter": 4, "restore": 3, "aging": 1, "remove_object": 1, "expression": 1, "expand": 3, "editor": 7, "replace_object": 3, "remove_text": 1, "hair_style": 1 }
-  },
-  {
-    "name": "low",
-    "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"],
-    "costs": { "faceswap": 3, "background": 3, "upscaler4k": 3, "enhance": 1, "beauty": 1, "filter": 2, "restore": 1, "aging": 1, "remove_object": 1, "expression": 1, "expand": 1, "editor": 3, "replace_object": 1, "remove_text": 1, "hair_style": 1 }
-  }
-]
+{
+  "high": { "faceswap": 10, "background": 10, "upscaler4k": 10, "enhance": 4, "beauty": 4, "filter": 6, "restore": 4, "aging": 2, "remove_object": 2, "expression": 2, "expand": 4, "editor": 10, "replace_object": 4, "remove_text": 2, "hair_style": 2 },
+  "mid":  { "faceswap": 7,  "background": 7,  "upscaler4k": 7,  "enhance": 3, "beauty": 3, "filter": 4, "restore": 3, "aging": 1, "remove_object": 1, "expression": 1, "expand": 3, "editor": 7,  "replace_object": 3, "remove_text": 1, "hair_style": 1 },
+  "low":  { "faceswap": 3,  "background": 3,  "upscaler4k": 3,  "enhance": 1, "beauty": 1, "filter": 2, "restore": 1, "aging": 1, "remove_object": 1, "expression": 1, "expand": 1, "editor": 3,  "replace_object": 1, "remove_text": 1, "hair_style": 1 }
+}
 ```
 
-- Quốc gia không nằm trong danh sách = dùng `DEFAULT_CREDIT_COSTS`
-- Không set `COUNTRY_PRICING` = tất cả quốc gia dùng default
-- Ví dụ: faceswap ở US = 10 điểm; ở VN = 3 điểm; ở Brazil (không trong list) = 5 điểm (default)
+**Bước 2:** Set env var `COUNTRY_TIER_MAP` — map quốc gia vào tier:
+
+```json
+{
+  "US": "high", "GB": "high", "AU": "high", "CA": "high", "DE": "high", "FR": "high", "NL": "high", "SE": "high", "NO": "high", "DK": "high", "CH": "high", "AT": "high", "IE": "high", "FI": "high", "BE": "high", "LU": "high", "NZ": "high",
+  "JP": "mid", "KR": "mid", "TW": "mid", "SG": "mid", "IL": "mid", "AE": "mid", "SA": "mid", "QA": "mid", "KW": "mid", "BH": "mid", "IT": "mid", "ES": "mid",
+  "VN": "low", "TH": "low", "ID": "low", "PH": "low", "IN": "low", "MY": "low", "MM": "low", "KH": "low", "LA": "low", "BD": "low", "PK": "low", "LK": "low", "NP": "low", "NG": "low", "KE": "low", "ET": "low"
+}
+```
+
+Quốc gia từ Cloudflare `CF-IPCountry` header (server-determined, không giả mạo được).
+
+- Quốc gia không nằm trong `COUNTRY_TIER_MAP` = dùng `DEFAULT_CREDIT_COSTS`
+- Không set env vars = tất cả dùng default
+- Ví dụ: faceswap ở US (tier high) = 10 điểm; ở VN (tier low) = 3 điểm; ở Brazil (không map) = 5 điểm (default)
 
 **API kiểm tra giá:** `GET /api/credit-costs` — trả giá theo quốc gia hiện tại của caller:
 

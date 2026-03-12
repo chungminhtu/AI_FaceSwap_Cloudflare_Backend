@@ -1480,62 +1480,72 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
 };
 
 /**
- * Country pricing tiers with custom point costs per tier.
- * Set env var COUNTRY_PRICING as JSON array of tiers, each with its own costs:
- * [
- *   {
- *     "name": "high",
- *     "countries": ["US","GB","AU","CA","DE","FR","NL","SE","NO","DK","CH","AT","IE","FI","BE","LU","NZ"],
- *     "costs": { "faceswap": 10, "background": 10, "upscaler4k": 10, "enhance": 4, "beauty": 4, "filter": 6, "restore": 4, "aging": 2, "remove_object": 2, "expression": 2, "expand": 4, "editor": 10, "replace_object": 4, "remove_text": 2, "hair_style": 2 }
- *   },
- *   {
- *     "name": "mid",
- *     "countries": ["JP","KR","TW","SG","IL","AE","SA","QA","KW","BH","IT","ES"],
- *     "costs": { "faceswap": 7, "background": 7, "upscaler4k": 7, "enhance": 3, "beauty": 3, "filter": 4, "restore": 3, "aging": 1, "remove_object": 1, "expression": 1, "expand": 3, "editor": 7, "replace_object": 3, "remove_text": 1, "hair_style": 1 }
- *   },
- *   {
- *     "name": "low",
- *     "countries": ["VN","TH","ID","PH","IN","MY","MM","KH","LA","BD","PK","LK","NP","NG","KE","ET"],
- *     "costs": { "faceswap": 3, "background": 3, "upscaler4k": 3, "enhance": 1, "beauty": 1, "filter": 2, "restore": 1, "aging": 1, "remove_object": 1, "expression": 1, "expand": 1, "editor": 3, "replace_object": 1, "remove_text": 1, "hair_style": 1 }
- *   }
- * ]
- * Countries not listed fall back to DEFAULT_CREDIT_COSTS.
- * Country code from Cloudflare CF-IPCountry header (ISO 3166-1 alpha-2, server-determined, can't be faked).
+ * Pricing tiers — each tier has its own custom point costs per action.
+ * Set env var PRICING_TIERS as JSON object:
+ * {
+ *   "high": { "faceswap": 10, "background": 10, "upscaler4k": 10, "enhance": 4, "beauty": 4, "filter": 6, "restore": 4, "aging": 2, "remove_object": 2, "expression": 2, "expand": 4, "editor": 10, "replace_object": 4, "remove_text": 2, "hair_style": 2 },
+ *   "mid":  { "faceswap": 7,  "background": 7,  "upscaler4k": 7,  "enhance": 3, "beauty": 3, "filter": 4, "restore": 3, "aging": 1, "remove_object": 1, "expression": 1, "expand": 3, "editor": 7,  "replace_object": 3, "remove_text": 1, "hair_style": 1 },
+ *   "low":  { "faceswap": 3,  "background": 3,  "upscaler4k": 3,  "enhance": 1, "beauty": 1, "filter": 2, "restore": 1, "aging": 1, "remove_object": 1, "expression": 1, "expand": 1, "editor": 3,  "replace_object": 1, "remove_text": 1, "hair_style": 1 }
+ * }
+ *
+ * Country-to-tier mapping. Set env var COUNTRY_TIER_MAP as JSON object:
+ * {
+ *   "US": "high", "GB": "high", "AU": "high", "CA": "high", "DE": "high", "FR": "high",
+ *   "JP": "mid",  "KR": "mid",  "TW": "mid",  "SG": "mid",
+ *   "VN": "low",  "TH": "low",  "ID": "low",  "PH": "low",  "IN": "low"
+ * }
+ *
+ * Countries not in COUNTRY_TIER_MAP fall back to DEFAULT_CREDIT_COSTS.
+ * Country code from Cloudflare CF-IPCountry header (or client-sent header).
  */
-let _countryPricingCache: { map: Record<string, Record<string, number>>; raw: string } | null = null;
+let _pricingTiersCache: { tiers: Record<string, Record<string, number>>; raw: string } | null = null;
+let _countryTierMapCache: { map: Record<string, string>; raw: string } | null = null;
 
-const getCountryTierCosts = (country: string, env: Env): Record<string, number> | null => {
-  if (!env.COUNTRY_PRICING) return null;
-  const raw = String(env.COUNTRY_PRICING);
-  if (!_countryPricingCache || _countryPricingCache.raw !== raw) {
+const getPricingTiers = (env: Env): Record<string, Record<string, number>> | null => {
+  if (!env.PRICING_TIERS) return null;
+  const raw = String(env.PRICING_TIERS);
+  if (!_pricingTiersCache || _pricingTiersCache.raw !== raw) {
     try {
-      const tiers: Array<{ name: string; countries: string[]; costs: Record<string, number> }> = JSON.parse(raw);
-      const map: Record<string, Record<string, number>> = {};
-      for (const tier of tiers) {
-        for (const cc of tier.countries) {
-          map[cc.toUpperCase()] = tier.costs;
-        }
-      }
-      _countryPricingCache = { map, raw };
+      _pricingTiersCache = { tiers: JSON.parse(raw), raw };
     } catch {
       return null;
     }
   }
-  return _countryPricingCache.map[country.toUpperCase()] ?? null;
+  return _pricingTiersCache.tiers;
+};
+
+const getCountryTierName = (country: string, env: Env): string | null => {
+  if (!env.COUNTRY_TIER_MAP) return null;
+  const raw = String(env.COUNTRY_TIER_MAP);
+  if (!_countryTierMapCache || _countryTierMapCache.raw !== raw) {
+    try {
+      const parsed: Record<string, string> = JSON.parse(raw);
+      const map: Record<string, string> = {};
+      for (const [cc, tier] of Object.entries(parsed)) {
+        map[cc.toUpperCase()] = tier;
+      }
+      _countryTierMapCache = { map, raw };
+    } catch {
+      return null;
+    }
+  }
+  return _countryTierMapCache.map[country.toUpperCase()] ?? null;
 };
 
 /**
- * Get credit cost for an action with country-based pricing.
- * If the country matches a tier in COUNTRY_PRICING, uses that tier's custom cost.
- * Otherwise falls back to DEFAULT_CREDIT_COSTS (or CREDIT_COST_<ACTION> env override).
+ * Get credit cost for an action.
+ * Lookup: country → tier name (COUNTRY_TIER_MAP) → tier costs (PRICING_TIERS) → action cost.
+ * Falls back to DEFAULT_CREDIT_COSTS (or CREDIT_COST_<ACTION> env override) if no match.
  * Cost is always >= 1 to prevent zero-cost bypass.
  */
 export const getCreditCost = (action: string, _tier: string, env: Env, country?: string): number => {
-  // Check country tier first for custom cost
   if (country) {
-    const tierCosts = getCountryTierCosts(country, env);
-    if (tierCosts && action in tierCosts) {
-      return Math.max(1, tierCosts[action]);
+    const tierName = getCountryTierName(country, env);
+    if (tierName) {
+      const tiers = getPricingTiers(env);
+      if (tiers && tierName in tiers && action in tiers[tierName]) {
+        return Math.max(1, tiers[tierName][action]);
+      }
     }
   }
   // Fallback: env override or default
