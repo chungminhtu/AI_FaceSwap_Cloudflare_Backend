@@ -208,17 +208,17 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/restore` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
 | POST `/upscaler4k` | WaveSpeed Image Upscaler | WaveSpeed | `v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | — |
 | POST `/beauty` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
-| POST `/filter` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 3 | $0.016 | Tùy chọn: `additional_prompt` | Sau khi gen |
-| POST `/faceswap` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 5 | $0.016 | Tùy chọn: `additional_prompt` | — |
-| POST `/expression` | Gemini 2.5 Flash Image | Vertex AI trực tiếp | `aiplatform.googleapis.com/.../generateContent` | 1 | ~$0.039 | Không (chọn preset: sad, smile, laugh...) | — |
-| POST `/hair-style` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không (prompt từ preset metadata) | — |
-| POST `/aging` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Tùy chọn: `additional_prompt` | — |
-| POST `/remove-object` | Bria Eraser | WaveSpeed | `v3/bria/eraser` | 1 | $0.040 | Không (dùng mask) | — |
-| POST `/background` | Seedream v4 (ByteDance) | WaveSpeed | `v3/.../seedream-v4/edit-sequential` | 5 | $0.027 | Tùy chọn: `custom_prompt` | Sau khi gen (chỉ khi có custom_prompt) |
+| POST `/filter` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 3 | $0.016 | Có | Sau khi gen |
+| POST `/faceswap` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 5 | $0.016 | Có | — |
+| POST `/expression` | Gemini 2.5 Flash Image | Vertex AI trực tiếp | `aiplatform.googleapis.com/.../generateContent` | 1 | ~$0.039 | Không | — |
+| POST `/hair-style` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
+| POST `/aging` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Có | — |
+| POST `/remove-object` | Bria Eraser | WaveSpeed | `v3/bria/eraser` | 1 | $0.040 | Không | — |
+| POST `/background` | Seedream v4 (ByteDance) | WaveSpeed | `v3/.../seedream-v4/edit-sequential` | 5 | $0.027 | Có | Sau khi gen |
 | POST `/expand` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
-| POST `/replace-object` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Bắt buộc: `custom_prompt` | Sau khi gen |
+| POST `/replace-object` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Có | Sau khi gen |
 | POST `/remove-text` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
-| POST `/editor` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Bắt buộc: `custom_prompt` | Sau khi gen |
+| POST `/editor` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Sau khi gen |
 
 > **Ghi chú:**
 > - Giá từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. Điểm = chi phí credits khi `ENABLE_CREDIT_SYSTEM=true`, có thể override bằng env var `CREDIT_COST_*`.
