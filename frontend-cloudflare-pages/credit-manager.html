@@ -294,9 +294,10 @@
         <thead>
           <tr>
             <th>Action</th>
-            <th>Endpoint</th>
-            <th>Free Tier</th>
-            <th>Subscriber</th>
+            <th>API Endpoint</th>
+            <th>AI Model / Provider</th>
+            <th>Free</th>
+            <th>Sub</th>
           </tr>
         </thead>
         <tbody id="costTableBody">
@@ -313,28 +314,28 @@
   <script>
     let WORKER_URL = '{{BACKEND_URL}}'; // Injected during deployment - DO NOT MODIFY MANUALLY
 
-    // Action display names and categories
+    // Action display names, categories, endpoints, and AI provider URLs
     const ACTION_META = {
-      enhance:        { name: 'Image Enhance',      endpoint: '/enhance',        category: 'Enhance' },
-      restore:        { name: 'Image Restore',       endpoint: '/restore',        category: 'Enhance' },
-      upscaler4k:     { name: 'HD 4K Upscale',       endpoint: '/upscaler4k',     category: 'Enhance' },
-      beauty:         { name: 'AI Beautify',          endpoint: '/beauty',         category: 'Portrait' },
-      filter:         { name: 'AI Filter',            endpoint: '/filter',         category: 'Portrait' },
-      faceswap:       { name: 'AI Avatar',            endpoint: '/faceswap',       category: 'Portrait' },
-      expression:     { name: 'AI Expressions',       endpoint: '/expression',     category: 'Portrait' },
-      hair_style:     { name: 'AI Hairstyles',        endpoint: '/hair-style',     category: 'Portrait' },
-      aging:          { name: 'AI Aging',             endpoint: '/aging',          category: 'Portrait' },
-      remove_object:  { name: 'Remove Object',        endpoint: '/remove-object',  category: 'Edit' },
-      background:     { name: 'AI Background',        endpoint: '/background',     category: 'Edit' },
-      expand:         { name: 'AI Expand',            endpoint: '/expand',         category: 'Edit' },
-      replace_object: { name: 'AI Replace',           endpoint: '/replace-object', category: 'Edit' },
-      remove_text:    { name: 'AI Remove Text',       endpoint: '/remove-text',    category: 'Edit' },
-      editor:         { name: 'AI Editor',            endpoint: '/editor',         category: 'Edit' },
+      enhance:        { name: 'Image Enhance',   endpoint: '/enhance',        category: 'Enhance',  provider: 'Vertex AI Gemini / WaveSpeed Gemini 2.5 Flash Image Edit' },
+      restore:        { name: 'Image Restore',    endpoint: '/restore',        category: 'Enhance',  provider: 'Vertex AI Gemini / WaveSpeed Gemini 2.5 Flash Image Edit' },
+      upscaler4k:     { name: 'HD 4K Upscale',    endpoint: '/upscaler4k',     category: 'Enhance',  provider: 'https://api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler' },
+      beauty:         { name: 'AI Beautify',       endpoint: '/beauty',         category: 'Portrait', provider: 'Vertex AI Gemini (aiplatform.googleapis.com)' },
+      filter:         { name: 'AI Filter',         endpoint: '/filter',         category: 'Portrait', provider: 'Vertex AI Gemini (aiplatform.googleapis.com)' },
+      faceswap:       { name: 'AI Avatar',         endpoint: '/faceswap',       category: 'Portrait', provider: 'RapidAPI Face Swap (env.RAPIDAPI_ENDPOINT)' },
+      expression:     { name: 'AI Expressions',    endpoint: '/expression',     category: 'Portrait', provider: 'Vertex AI Gemini (aiplatform.googleapis.com)' },
+      hair_style:     { name: 'AI Hairstyles',     endpoint: '/hair-style',     category: 'Portrait', provider: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit' },
+      aging:          { name: 'AI Aging',          endpoint: '/aging',          category: 'Portrait', provider: 'Vertex AI Gemini (aiplatform.googleapis.com)' },
+      remove_object:  { name: 'Remove Object',     endpoint: '/remove-object',  category: 'Edit',    provider: 'https://api.wavespeed.ai/api/v3/bria/eraser' },
+      background:     { name: 'AI Background',     endpoint: '/background',     category: 'Edit',    provider: 'https://api.wavespeed.ai/api/v3/bytedance/seedream-v4/edit-sequential' },
+      expand:         { name: 'AI Expand',         endpoint: '/expand',         category: 'Edit',    provider: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit' },
+      replace_object: { name: 'AI Replace',        endpoint: '/replace-object', category: 'Edit',    provider: 'https://api.wavespeed.ai/api/v3/wavespeed-ai/flux-2-klein-9b/edit' },
+      remove_text:    { name: 'AI Remove Text',    endpoint: '/remove-text',    category: 'Edit',    provider: 'https://api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit' },
+      editor:         { name: 'AI Editor',         endpoint: '/editor',         category: 'Edit',    provider: 'Vertex AI Gemini / WaveSpeed Gemini 2.5 Flash Image Edit' },
     };
 
     // Fallback costs if API unreachable
     const FALLBACK_COSTS = {
-      faceswap: 5, background: 5, upscaler4k: 5, enhance: 0, beauty: 2,
+      faceswap: 5, background: 5, upscaler4k: 5, enhance: 2, beauty: 2,
       filter: 3, restore: 2, aging: 1, remove_object: 1, expression: 1,
       expand: 2, editor: 5, replace_object: 2, remove_text: 1, hair_style: 1,
     };
@@ -487,7 +488,7 @@
         // Category header
         const catRow = document.createElement('tr');
         catRow.className = 'category';
-        catRow.innerHTML = `<td colspan="4">${cat}</td>`;
+        catRow.innerHTML = `<td colspan="5">${cat}</td>`;
         tbody.appendChild(catRow);
 
         for (const action of actions) {
@@ -498,9 +499,14 @@
           const subCost = costs ? costs[action]?.subscriber : FALLBACK_COSTS[action];
 
           const row = document.createElement('tr');
+          const isUrl = meta.provider.startsWith('http');
+          const providerHtml = isUrl
+            ? `<a href="${meta.provider}" target="_blank" rel="noopener" style="color:#3b82f6;font-size:11px;word-break:break-all">${meta.provider}</a>`
+            : `<span style="font-size:11px;color:#6b7280">${meta.provider}</span>`;
           row.innerHTML = `
             <td>${meta.name}</td>
             <td><code style="font-size:12px;background:#f3f4f6;padding:2px 6px;border-radius:4px">${meta.endpoint}</code></td>
+            <td>${providerHtml}</td>
             <td class="${freeCost === 0 ? 'cost-free' : 'cost-num'}">${freeCost === 0 ? 'FREE' : freeCost}</td>
             <td class="${subCost === 0 ? 'cost-free' : 'cost-num'}">${subCost === 0 ? 'FREE' : subCost}</td>
           `;

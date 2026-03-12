@@ -1465,7 +1465,7 @@ export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
   faceswap: 5,
   background: 5,
   upscaler4k: 5,
-  enhance: 0,
+  enhance: 2,
   beauty: 2,
   filter: 3,
   restore: 2,
