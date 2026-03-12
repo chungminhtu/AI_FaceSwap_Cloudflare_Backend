@@ -202,31 +202,30 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 
 ## AI Model / Provider theo từng API
 
-| Endpoint | AI Model | Provider | API Endpoint | Điểm | Chi phí/lần | Vision Check |
-|----------|----------|----------|-------------|------|-------------|--------------|
-| POST `/enhance` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/google/gemini-2.5-flash-image/edit` hoặc `v3/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Pre: Gemini 2.0 Flash Lite (*disabled*) |
-| POST `/restore` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/google/gemini-2.5-flash-image/edit` hoặc `v3/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | None |
-| POST `/upscaler4k` | WaveSpeed Image Upscaler | WaveSpeed | `v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | None |
-| POST `/beauty` | Flux 2 Klein 9B | WaveSpeed | `v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Pre: Gemini 2.0 Flash Lite (*disabled*) |
-| POST `/filter` | Flux 2 Klein 9B | WaveSpeed | `v1/wavespeed-ai/flux-2-klein-9b/edit` | 3 | $0.016 | Post: Google Vision SafeSearch |
-| POST `/faceswap` | Flux 2 Klein 9B | WaveSpeed | `v1/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016 | None |
-| POST `/expression` | Gemini 2.5 Flash Image | Vertex AI (direct) | `aiplatform.googleapis.com/.../gemini-2.5-flash-image:generateContent` | 1 | ~$0.039 | None |
-| POST `/hair-style` | Gemini 2.5 Flash Image | WaveSpeed | `v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | None |
-| POST `/aging` | Gemini 2.5 Flash Image | WaveSpeed | `v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Pre: Gemini 2.0 Flash Lite (*disabled*) |
-| POST `/remove-object` | Bria Eraser | WaveSpeed | `v3/bria/eraser` | 1 | $0.040 | None |
-| POST `/background` | Seedream v4 (ByteDance) | WaveSpeed | `v3/bytedance/seedream-v4/edit-sequential` | 5 | $0.027 | Post: Google Vision SafeSearch (custom_prompt only) |
-| POST `/expand` | Flux 2 Klein 9B | WaveSpeed | `v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | None |
-| POST `/replace-object` | Flux 2 Klein 9B | WaveSpeed | `v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Post: Google Vision SafeSearch |
-| POST `/remove-text` | Gemini 2.5 Flash Image | WaveSpeed | `v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | None |
-| POST `/editor` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/google/gemini-2.5-flash-image/edit` hoặc `v3/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Pre: Gemini 2.0 Flash Lite (*disabled*) + Post: Google Vision SafeSearch |
+| Endpoint | AI Model | Provider | API Endpoint | Điểm | Chi phí/lần | Custom Prompt | Vision |
+|----------|----------|----------|-------------|------|-------------|---------------|--------|
+| POST `/enhance` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
+| POST `/restore` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | — |
+| POST `/upscaler4k` | WaveSpeed Image Upscaler | WaveSpeed | `v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | — |
+| POST `/beauty` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
+| POST `/filter` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 3 | $0.016 | Tùy chọn: `additional_prompt` | Sau khi gen |
+| POST `/faceswap` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 5 | $0.016 | Tùy chọn: `additional_prompt` | — |
+| POST `/expression` | Gemini 2.5 Flash Image | Vertex AI trực tiếp | `aiplatform.googleapis.com/.../generateContent` | 1 | ~$0.039 | Không (chọn preset: sad, smile, laugh...) | — |
+| POST `/hair-style` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không (prompt từ preset metadata) | — |
+| POST `/aging` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Tùy chọn: `additional_prompt` | — |
+| POST `/remove-object` | Bria Eraser | WaveSpeed | `v3/bria/eraser` | 1 | $0.040 | Không (dùng mask) | — |
+| POST `/background` | Seedream v4 (ByteDance) | WaveSpeed | `v3/.../seedream-v4/edit-sequential` | 5 | $0.027 | Tùy chọn: `custom_prompt` | Sau khi gen (chỉ khi có custom_prompt) |
+| POST `/expand` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Không | — |
+| POST `/replace-object` | Flux 2 Klein 9B | WaveSpeed | `v1/.../flux-2-klein-9b/edit` | 2 | $0.016 | Bắt buộc: `custom_prompt` | Sau khi gen |
+| POST `/remove-text` | Gemini 2.5 Flash Image | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | — |
+| POST `/editor` | Gemini 2.5 Flash Image (< 800px) / Flux 2 Klein 9B (≥ 800px) | WaveSpeed | `v3/.../gemini-2.5-flash-image/edit` hoặc `v3/.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Bắt buộc: `custom_prompt` | Sau khi gen |
 
 > **Ghi chú:**
 > - Giá từ [WaveSpeed.ai](https://wavespeed.ai/pricing) — có thể thay đổi. Điểm = chi phí credits khi `ENABLE_CREDIT_SYSTEM=true`, có thể override bằng env var `CREDIT_COST_*`.
 > - `/enhance`, `/restore`, `/editor` tự động chọn model theo kích thước ảnh: nhỏ (< 800px) dùng Gemini 2.5 Flash Image (v3), lớn (≥ 800px) dùng Flux 2 Klein 9B (v3).
 > - `/expand`, `/replace-object`, `/beauty`, `/filter`, `/faceswap` dùng Flux 2 Klein 9B endpoint **v1** (default trong `callWaveSpeedEdit`).
 > - `/expression` mặc định dùng **Vertex AI Gemini trực tiếp** (không qua WaveSpeed), có thể override bằng `body.provider` hoặc env `IMAGE_PROVIDER`.
-> - **Vision Check "Pre: disabled"**: `checkImageSafetyWithFlashLite` có code nhưng bị tắt bởi `SAFETY_CHECK_ENABLED = false` trong config.ts — luôn return `safe: true`.
-> - **Vision Check "Post"**: `checkSafeSearch` (Google Vision SafeSearch API) chạy **SAU** khi gen ảnh xong — chỉ áp dụng cho endpoint có custom user prompt (filter, editor, replace-object, background custom_prompt).
+> - **Vision** = Google Vision SafeSearch API — chạy **sau khi gen ảnh xong**, chỉ áp dụng cho endpoint nhận custom prompt từ user.
 
 ---
 
