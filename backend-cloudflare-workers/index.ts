@@ -336,13 +336,8 @@ const deductCredits = async (
       await db.prepare('UPDATE subscriptions SET last_reset_at = ?, cycle_count_used = cycle_count_used + 1, updated_at = unixepoch() WHERE id = ?').bind(now, sub.id).run();
       await auditLog(db, profileId, 'SUB_LAZY_RESET', { points_per_cycle: sub.points_per_cycle, cycle: sub.cycle_count_used + 1 }, null);
     }
-  } else {
-    // No active/grace subscription → sub points should be 0
-    if (subPoints > 0) {
-      await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
-      subPoints = 0;
-    }
   }
+  // If no subscription found, just use whatever sub points are in the profile (allows manual top-up for testing)
 
   // Determine cost (use 'subscriber' tier if active/grace sub with access, else 'free')
   const hasAccess = sub && (sub.status === 'ACTIVE' || (sub.status === 'GRACE' && now <= sub.expires_at));
