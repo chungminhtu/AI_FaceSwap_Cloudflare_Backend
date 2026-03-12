@@ -4,7 +4,7 @@ import { customAlphabet } from 'nanoid';
 const nanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_', 21);
 import JSZip from 'jszip';
 import type { Env, FaceSwapRequest, FaceSwapResponse, Profile, BackgroundRequest, DeviceRegisterRequest, SilentPushRequest, DepositRequest, SubscriptionVerifyRequest, BalanceResponse } from './types';
-import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, auditLog } from './utils';
+import { CORS_HEADERS, getCorsHeaders, jsonResponse, errorResponse, successResponse, validateImageUrl, fetchWithTimeout, getImageDimensions, getClosestAspectRatio, resolveAspectRatio, promisePoolWithConcurrency, normalizePresetId, purgeCdnCache, getCreditCost, DEFAULT_CREDIT_COSTS, auditLog } from './utils';
 import { callFaceSwap, callNanoBanana, callNanoBananaMerge, checkSafeSearch, checkImageSafetyWithFlashLite, generateVertexPrompt, callUpscaler4k, callWaveSpeedSeedreamEdit, callWaveSpeedBriaEraser, callWaveSpeedEdit, callWaveSpeedGeminiImageEdit, sendFcmSilentPush, sendResultNotification, verifyGooglePlayPurchase, acknowledgeGooglePlayPurchase, verifyGooglePlaySubscription, acknowledgeGooglePlaySubscription } from './services';
 import { validateEnv, validateRequest } from './validators';
 import { VERTEX_AI_PROMPTS, IMAGE_PROCESSING_PROMPTS, ASPECT_RATIO_CONFIG, CACHE_CONFIG, TIMEOUT_CONFIG, WAVESPEED_PROMPTS, GOOGLE_PLAY_CONFIG, API_ENDPOINTS } from './config';
@@ -214,6 +214,7 @@ const PROTECTED_MOBILE_APIS = [
   '/replace-object',
   '/remove-text',
   '/editor',
+  '/hair-style',
   '/profiles',
   '/api/products',
   '/api/user/balance',
@@ -352,6 +353,11 @@ const deductCredits = async (
   const tier = hasAccess ? 'subscriber' : 'free';
   const cost = getCreditCost(action, tier, env);
   const totalAvailable = subPoints + profile.consumable_point_remaining;
+
+  // Free actions (cost = 0) skip deduction entirely
+  if (cost === 0) {
+    return { success: true, cost: 0, balance: totalAvailable };
+  }
 
   // Step 4: Fail fast
   if (totalAvailable < cost) {
@@ -7565,7 +7571,7 @@ export default {
         });
       } catch (error) {
         if (body?.profile_id) {
-          try { await refundCredits(DB, body.profile_id, 'remove_object', 0, 'Processing error', request); } catch (_) {}
+          try { await refundCredits(DB, body.profile_id, 'remove_object', creditResult.cost, 'Processing error', request); } catch (_) {}
         }
         logCriticalError('/remove-object', error, request, env, {
           body: {
@@ -8754,6 +8760,64 @@ export default {
       } catch (error) {
         logCriticalError('/api/user/balance', error, request, env);
         return errorResponse('Failed to fetch balance', 500, undefined, request, env);
+      }
+    }
+
+    // GET /api/credit-costs - Get credit cost table for all actions
+    if (path === '/api/credit-costs' && request.method === 'GET') {
+      const actions = Object.keys(DEFAULT_CREDIT_COSTS);
+      const costs: Record<string, { free: number; subscriber: number }> = {};
+      for (const action of actions) {
+        costs[action] = {
+          free: getCreditCost(action, 'free', env),
+          subscriber: getCreditCost(action, 'subscriber', env),
+        };
+      }
+      return jsonResponse({ data: costs, status: 'success', code: 200 }, 200, request, env);
+    }
+
+    // POST /api/admin/credits - Update profile credits (for testing)
+    if (path === '/api/admin/credits' && request.method === 'POST') {
+      try {
+        const body = await request.json() as any;
+        if (!body.profile_id) return errorResponse('profile_id is required', 400, undefined, request, env);
+
+        const updates: string[] = [];
+        const bindings: any[] = [];
+
+        if (body.sub_point_remaining !== undefined) {
+          updates.push('sub_point_remaining = ?');
+          bindings.push(Number(body.sub_point_remaining));
+        }
+        if (body.consumable_point_remaining !== undefined) {
+          updates.push('consumable_point_remaining = ?');
+          bindings.push(Number(body.consumable_point_remaining));
+        }
+        if (updates.length === 0) return errorResponse('No fields to update', 400, undefined, request, env);
+
+        updates.push('updated_at = ?');
+        bindings.push(Math.floor(Date.now() / 1000).toString());
+        bindings.push(body.profile_id);
+
+        const result = await DB.prepare(`UPDATE profiles SET ${updates.join(', ')} WHERE id = ?`).bind(...bindings).run();
+        if (!result.meta?.changes) return errorResponse('Profile not found', 404, undefined, request, env);
+
+        const ip = request.headers.get('cf-connecting-ip') || null;
+        await auditLog(DB, body.profile_id, 'ADMIN_CREDIT_UPDATE', { sub_point_remaining: body.sub_point_remaining, consumable_point_remaining: body.consumable_point_remaining }, ip);
+
+        const row = await DB.prepare('SELECT sub_point_remaining, consumable_point_remaining FROM profiles WHERE id = ?').bind(body.profile_id).first() as any;
+        return jsonResponse({
+          data: {
+            sub_point_remaining: row.sub_point_remaining,
+            consumable_point_remaining: row.consumable_point_remaining,
+            total_available: row.sub_point_remaining + row.consumable_point_remaining,
+          },
+          status: 'success',
+          code: 200,
+        }, 200, request, env);
+      } catch (error) {
+        logCriticalError('/api/admin/credits', error, request, env);
+        return errorResponse('Failed to update credits', 500, undefined, request, env);
       }
     }
 

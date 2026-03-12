@@ -1458,17 +1458,40 @@ export const calculateOptimalSize = (
 // ============================================================
 
 /**
+ * Default credit costs per action.
+ * Can be overridden by env vars CREDIT_COST_<ACTION>.
+ */
+export const DEFAULT_CREDIT_COSTS: Record<string, number> = {
+  faceswap: 5,
+  background: 5,
+  upscaler4k: 5,
+  enhance: 0,
+  beauty: 2,
+  filter: 3,
+  restore: 2,
+  aging: 1,
+  remove_object: 1,
+  expression: 1,
+  expand: 2,
+  editor: 5,
+  replace_object: 2,
+  remove_text: 1,
+  hair_style: 1,
+};
+
+/**
  * Get credit cost for an action, applying tier multiplier.
- * All values come from env vars (CREDIT_COST_*, TIER_MULTIPLIER_*).
+ * Uses DEFAULT_CREDIT_COSTS as fallback, overridable by env vars (CREDIT_COST_*, TIER_MULTIPLIER_*).
  */
 export const getCreditCost = (action: string, tier: string, env: Env): number => {
   const costKey = `CREDIT_COST_${action.toUpperCase()}`;
-  const baseCost = parseInt(env[costKey] || '1', 10);
+  const defaultCost = DEFAULT_CREDIT_COSTS[action] ?? 1;
+  const baseCost = parseInt(env[costKey] || String(defaultCost), 10);
 
   const multiplierKey = `TIER_MULTIPLIER_${tier.toUpperCase()}`;
   const multiplier = parseFloat(env[multiplierKey] || '1.0');
 
-  return Math.max(1, Math.ceil(baseCost * multiplier));
+  return Math.max(0, Math.ceil(baseCost * multiplier));
 };
 
 /**
