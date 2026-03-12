@@ -266,42 +266,30 @@ Mỗi AI endpoint tự động trừ điểm theo 5 bước:
 
 Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (saga compensation).
 
-### Response khi thiếu điểm (HTTP 402)
+### Response khi credit check thất bại (HTTP 400)
 
 ```json
 {
   "data": null,
   "status": "error",
-  "message": "Insufficient credits. Need 5, have 0",
-  "code": 402,
-  "reason": "INSUFFICIENT_CREDITS",
-  "subscription_status": "ACTIVE",
-  "cost": 5,
-  "balance": 0
+  "message": "Credit check failed",
+  "code": 400,
+  "reason": "INSUFFICIENT_CREDITS"
 }
 ```
 
 ### Bảng `reason` codes
 
-| reason | HTTP | Ý nghĩa | App nên làm gì |
-|--------|------|---------|-----------------|
-| `INVALID_TOKEN` | 402 | Token xác thực profile sai | Re-login |
-| `PROFILE_NOT_FOUND` | 402 | Profile không tồn tại | Tạo profile mới |
-| `ACCOUNT_BANNED` | 402 | Tài khoản bị cấm | Hiện thông báo ban |
-| `SUB_ON_HOLD` | 402 | Thanh toán subscription bị giữ | Hiện "Cập nhật thanh toán" |
-| `SUB_GRACE_EXPIRED` | 402 | Grace period hết, sub expired | Hiện "Gia hạn subscription" |
-| `SUB_NONE` | 402 | Không có subscription, sub points = 0 | Hiện "Mua subscription" hoặc "Mua credits" |
-| `INSUFFICIENT_CREDITS` | 402 | Có sub nhưng hết điểm | Hiện "Mua thêm credits" |
-| `CONCURRENT_CONFLICT` | 402 | Race condition (request khác trừ trước) | Retry 1 lần |
-
-### Trường trả về khi lỗi 402
-
-| Trường | Kiểu | Mô tả |
-|--------|------|-------|
-| `reason` | string | Mã lỗi (bảng trên) |
-| `subscription_status` | string | `ACTIVE` / `GRACE` / `ON_HOLD` / `EXPIRED` / `NONE` |
-| `cost` | number | Số điểm cần cho action |
-| `balance` | number | Số điểm hiện có (sub + consumable) |
+| reason | Ý nghĩa | App nên làm gì |
+|--------|---------|-----------------|
+| `INVALID_TOKEN` | Token xác thực sai | Re-login |
+| `PROFILE_NOT_FOUND` | Profile không tồn tại | Tạo profile mới |
+| `ACCOUNT_BANNED` | Tài khoản bị cấm | Hiện thông báo ban |
+| `SUB_ON_HOLD` | Thanh toán bị giữ | Hiện "Cập nhật thanh toán" |
+| `SUB_GRACE_EXPIRED` | Grace period hết | Hiện "Gia hạn subscription" |
+| `SUB_NONE` | Không có subscription | Hiện "Mua subscription" hoặc "Mua credits" |
+| `INSUFFICIENT_CREDITS` | Hết điểm | Hiện "Mua thêm credits" |
+| `CONCURRENT_CONFLICT` | Trùng request | Retry 1 lần |
 
 Chi phí = `CREDIT_COST_*` × `TIER_MULTIPLIER_*`
 
