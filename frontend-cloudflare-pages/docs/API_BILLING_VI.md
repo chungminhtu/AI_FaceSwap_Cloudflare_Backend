@@ -252,14 +252,56 @@ Nhận thông báo từ Google Play qua Pub/Sub (RTDN). App **KHÔNG** gọi end
 
 ## Trừ điểm trong AI Endpoints (Dual Credit Deduction)
 
-Mỗi AI endpoint tự động trừ điểm theo 4 bước:
+Mỗi AI endpoint tự động trừ điểm theo 5 bước:
 
-1. **Check subscription** (nếu có) — ON_HOLD → zero sub; GRACE hết hạn → mark expired, zero sub; ACTIVE quá 30 ngày → lazy reset sub = points_per_cycle
-2. **Nếu không có subscription** — giữ nguyên sub points (cho phép top-up thủ công để test)
-3. **Fail fast** — sub + consumable < cost → REJECT (HTTP 402)
-4. **Trừ điểm** — sub trước, hết sub thì trừ consumable (atomic UPDATE với WHERE guard)
+1. **Auth check** — verify profile token → fail = `INVALID_TOKEN`
+2. **Profile check** — profile tồn tại? bị ban? → fail = `PROFILE_NOT_FOUND` / `ACCOUNT_BANNED`
+3. **Subscription check:**
+   - Có sub ON_HOLD → zero sub points, reason = `SUB_ON_HOLD`
+   - Có sub GRACE nhưng hết hạn → mark EXPIRED, zero sub, reason = `SUB_GRACE_EXPIRED`
+   - Có sub ACTIVE quá 30 ngày → lazy reset sub = points_per_cycle
+   - Không có sub → zero sub points, reason = `SUB_NONE`
+4. **Fail fast** — sub + consumable < cost → HTTP 402, reason = `INSUFFICIENT_CREDITS` (hoặc reason cụ thể hơn nếu do sub status)
+5. **Trừ điểm** — sub trước, hết sub thì trừ consumable (atomic UPDATE với WHERE guard)
 
 Nếu AI xử lý lỗi → hoàn điểm vào `consumable_point_remaining` (saga compensation).
+
+### Response khi thiếu điểm (HTTP 402)
+
+```json
+{
+  "data": null,
+  "status": "error",
+  "message": "Insufficient credits. Need 5, have 0",
+  "code": 402,
+  "reason": "INSUFFICIENT_CREDITS",
+  "subscription_status": "ACTIVE",
+  "cost": 5,
+  "balance": 0
+}
+```
+
+### Bảng `reason` codes
+
+| reason | HTTP | Ý nghĩa | App nên làm gì |
+|--------|------|---------|-----------------|
+| `INVALID_TOKEN` | 402 | Token xác thực profile sai | Re-login |
+| `PROFILE_NOT_FOUND` | 402 | Profile không tồn tại | Tạo profile mới |
+| `ACCOUNT_BANNED` | 402 | Tài khoản bị cấm | Hiện thông báo ban |
+| `SUB_ON_HOLD` | 402 | Thanh toán subscription bị giữ | Hiện "Cập nhật thanh toán" |
+| `SUB_GRACE_EXPIRED` | 402 | Grace period hết, sub expired | Hiện "Gia hạn subscription" |
+| `SUB_NONE` | 402 | Không có subscription, sub points = 0 | Hiện "Mua subscription" hoặc "Mua credits" |
+| `INSUFFICIENT_CREDITS` | 402 | Có sub nhưng hết điểm | Hiện "Mua thêm credits" |
+| `CONCURRENT_CONFLICT` | 402 | Race condition (request khác trừ trước) | Retry 1 lần |
+
+### Trường trả về khi lỗi 402
+
+| Trường | Kiểu | Mô tả |
+|--------|------|-------|
+| `reason` | string | Mã lỗi (bảng trên) |
+| `subscription_status` | string | `ACTIVE` / `GRACE` / `ON_HOLD` / `EXPIRED` / `NONE` |
+| `cost` | number | Số điểm cần cho action |
+| `balance` | number | Số điểm hiện có (sub + consumable) |
 
 Chi phí = `CREDIT_COST_*` × `TIER_MULTIPLIER_*`
 

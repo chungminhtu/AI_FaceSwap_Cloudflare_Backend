@@ -295,17 +295,28 @@ const resolveAspectRatioForNonFaceswap = async (
 // Credit deduction helpers (saga pattern: deduct before AI, refund on failure)
 const CYCLE_DURATION_SECONDS = 30 * 86400; // 30 days
 
+// Credit deduction reason codes (returned in API response body for app to handle)
+// INVALID_TOKEN        - profile token auth failed
+// PROFILE_NOT_FOUND    - profile_id doesn't exist
+// ACCOUNT_BANNED       - profile is banned
+// SUB_ON_HOLD          - subscription payment on hold, sub points zeroed
+// SUB_GRACE_EXPIRED    - grace period ended, subscription expired
+// SUB_NONE             - no active subscription, sub points zeroed
+// INSUFFICIENT_CREDITS - not enough credits (sub + consumable < cost)
+// CONCURRENT_CONFLICT  - race condition, another request deducted first
+type CreditFailReason = 'INVALID_TOKEN' | 'PROFILE_NOT_FOUND' | 'ACCOUNT_BANNED' | 'SUB_ON_HOLD' | 'SUB_GRACE_EXPIRED' | 'SUB_NONE' | 'INSUFFICIENT_CREDITS' | 'CONCURRENT_CONFLICT';
+
 const deductCredits = async (
   db: D1Database, profileId: string, action: string, env: Env, request: Request
-): Promise<{ success: boolean; cost: number; balance: number; error?: string }> => {
+): Promise<{ success: boolean; cost: number; balance: number; error?: string; reason?: CreditFailReason; subscription_status?: string }> => {
   // Verify profile token binding (prevents profile_id spoofing)
   if (!(await checkProfileToken(env, request, profileId))) {
-    return { success: false, cost: 0, balance: 0, error: 'Invalid profile token' };
+    return { success: false, cost: 0, balance: 0, error: 'Invalid profile token', reason: 'INVALID_TOKEN' };
   }
 
   const profile = await db.prepare('SELECT sub_point_remaining, consumable_point_remaining, is_banned FROM profiles WHERE id = ?').bind(profileId).first() as any;
-  if (!profile) return { success: false, cost: 0, balance: 0, error: 'Profile not found' };
-  if (profile.is_banned) return { success: false, cost: 0, balance: 0, error: 'Account is banned' };
+  if (!profile) return { success: false, cost: 0, balance: 0, error: 'Profile not found', reason: 'PROFILE_NOT_FOUND' };
+  if (profile.is_banned) return { success: false, cost: 0, balance: 0, error: 'Account is banned', reason: 'ACCOUNT_BANNED' };
 
   // Step 1-2: Check subscription status (include ON_HOLD to detect and zero out sub points)
   const sub = await db.prepare(
@@ -314,6 +325,7 @@ const deductCredits = async (
 
   const now = Math.floor(Date.now() / 1000);
   let subPoints = profile.sub_point_remaining;
+  let subscriptionStatus = sub ? sub.status : 'NONE';
 
   if (sub) {
     // ON_HOLD → user lost access, zero sub points
@@ -322,12 +334,14 @@ const deductCredits = async (
         await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
         subPoints = 0;
       }
+      subscriptionStatus = 'ON_HOLD';
     }
     // Step 2: Grace period expired → mark EXPIRED, zero out sub points
     else if (sub.status === 'GRACE' && now > sub.expires_at) {
       await db.prepare('UPDATE subscriptions SET status = \'EXPIRED\', updated_at = unixepoch() WHERE id = ?').bind(sub.id).run();
       await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
       subPoints = 0;
+      subscriptionStatus = 'EXPIRED';
     }
     // Step 3: Active → lazy reset if now >= last_reset_at + 30 days
     else if (sub.status === 'ACTIVE' && now >= sub.last_reset_at + CYCLE_DURATION_SECONDS) {
@@ -342,6 +356,7 @@ const deductCredits = async (
       await db.prepare('UPDATE profiles SET sub_point_remaining = 0, updated_at = ? WHERE id = ?').bind(now.toString(), profileId).run();
       subPoints = 0;
     }
+    subscriptionStatus = 'NONE';
   }
 
   // Determine cost (use 'subscriber' tier if active/grace sub with access, else 'free')
@@ -352,12 +367,17 @@ const deductCredits = async (
 
   // Free actions (cost = 0) skip deduction entirely
   if (cost === 0) {
-    return { success: true, cost: 0, balance: totalAvailable };
+    return { success: true, cost: 0, balance: totalAvailable, subscription_status: subscriptionStatus };
   }
 
   // Step 4: Fail fast
   if (totalAvailable < cost) {
-    return { success: false, cost, balance: totalAvailable, error: `Insufficient credits. Need ${cost}, have ${totalAvailable}` };
+    // Determine the specific reason for insufficient credits
+    let reason: CreditFailReason = 'INSUFFICIENT_CREDITS';
+    if (sub?.status === 'ON_HOLD') reason = 'SUB_ON_HOLD';
+    else if (subscriptionStatus === 'EXPIRED') reason = 'SUB_GRACE_EXPIRED';
+    else if (subscriptionStatus === 'NONE') reason = 'SUB_NONE';
+    return { success: false, cost, balance: totalAvailable, error: `Insufficient credits. Need ${cost}, have ${totalAvailable}`, reason, subscription_status: subscriptionStatus };
   }
 
   // Step 5: Deduct sub first, remainder from consumable — ATOMIC with WHERE guard
@@ -369,14 +389,13 @@ const deductCredits = async (
   ).bind(fromSub, fromConsumable, cost, now.toString(), profileId, fromSub, fromConsumable).run();
 
   if (!result.meta?.changes || result.meta.changes === 0) {
-    // Race condition: another request deducted between our read and write
-    return { success: false, cost, balance: 0, error: 'Insufficient credits (concurrent request)' };
+    return { success: false, cost, balance: 0, error: 'Insufficient credits (concurrent request)', reason: 'CONCURRENT_CONFLICT', subscription_status: subscriptionStatus };
   }
 
   const ip = request.headers.get('cf-connecting-ip') || null;
   await auditLog(db, profileId, 'CREDIT_DEDUCT', { action, cost, from_sub: fromSub, from_consumable: fromConsumable, balance_before: totalAvailable }, ip);
 
-  return { success: true, cost, balance: totalAvailable - cost };
+  return { success: true, cost, balance: totalAvailable - cost, subscription_status: subscriptionStatus };
 };
 
 const refundCredits = async (
@@ -5378,7 +5397,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'faceswap', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         let faceSwapResult;
@@ -5729,7 +5748,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'background', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         if (hasCustomPrompt) {
@@ -6155,7 +6174,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'upscaler4k', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const upscalerResult = await callUpscaler4k(body.image_url, env);
@@ -6353,7 +6372,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'enhance', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         let enhancedResult: FaceSwapResponse;
@@ -6580,7 +6599,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'beauty', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const beautyResult = await callNanoBanana(
@@ -6850,7 +6869,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'filter', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const filterResult = await callNanoBanana(
@@ -7025,7 +7044,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'restore', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         let restoredResult: FaceSwapResponse;
@@ -7327,7 +7346,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'aging', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const useWaveSpeedStyleAging = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
@@ -7562,7 +7581,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'remove_object', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         // Use WaveSpeed Bria Eraser API (no prompt needed, just image + mask)
@@ -7762,7 +7781,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'expression', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const expressionResult = await callNanoBanana(
@@ -7919,7 +7938,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'expand', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         // Send PNG (with transparent areas to fill) directly to WaveSpeed
@@ -8140,7 +8159,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body!.profile_id, 'editor', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         let editResult: FaceSwapResponse;
@@ -8323,7 +8342,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'replace_object', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const replaceResult = await callWaveSpeedEdit([selfieUrl], finalPrompt, env);
@@ -8482,7 +8501,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'remove_text', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const removeTextResult = await callWaveSpeedGeminiImageEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.REMOVE_TEXT, env);
@@ -8672,7 +8691,7 @@ export default {
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'hair_style', env, request);
         if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402, reason: creditResult.reason, subscription_status: creditResult.subscription_status, cost: creditResult.cost, balance: creditResult.balance }, 402, request, env);
         }
 
         const hairResult = await callWaveSpeedEdit([selfieUrl], prompt, env, aspectRatio, size);
