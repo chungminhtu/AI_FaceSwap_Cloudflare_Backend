@@ -5031,12 +5031,6 @@ export default {
           return errorResponse('', 400, { error: requestError, path, body: { preset_image_id: body?.preset_image_id, profile_id: body?.profile_id, selfie_ids: body?.selfie_ids } }, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'faceswap', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Extract validated values (validateRequest already confirmed they exist and are correct types)
         const hasSelfieIds = Array.isArray(body.selfie_ids) && body.selfie_ids.length > 0;
         const hasSelfieUrls = Array.isArray(body.selfie_image_urls) && body.selfie_image_urls.length > 0;
@@ -5369,6 +5363,12 @@ export default {
           }
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'faceswap', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         let faceSwapResult;
         let vertexPromptPayload: any;
 
@@ -5430,6 +5430,9 @@ export default {
         }
 
           if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
+            if (body?.profile_id && creditResult?.cost > 0) {
+              await refundCredits(DB, body.profile_id, 'faceswap', creditResult.cost, 'Processing failed', request);
+            }
             console.error('[Vertex] Nano Banana provider failed:', faceSwapResult.Message || 'Unknown error');
 
             const failureCode = faceSwapResult.StatusCode || 500;
@@ -5454,6 +5457,9 @@ export default {
           }
 
         if (!faceSwapResult.Success || !faceSwapResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'faceswap', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = faceSwapResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const flatDebug = debugEnabled ? buildFlatDebug(faceSwapResult, vertexPromptPayload) : undefined;
@@ -5648,12 +5654,6 @@ export default {
         const R2_BUCKET = getR2Bucket(env);
         const requestUrl = new URL(request.url);
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'background', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Optimize database queries: validate profile, preset, and selfie in parallel with JOINs where applicable
         const queries: Promise<any>[] = [
           DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(body.profile_id).first()
@@ -5714,6 +5714,12 @@ export default {
         let presetName: string;
         let presetImageId: string | null = null;
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'background', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         if (hasCustomPrompt) {
           const envError = validateEnv(env, 'wavespeed');
           if (envError) {
@@ -5736,6 +5742,9 @@ export default {
           }
           const mergeResult = await callWaveSpeedSeedreamEdit([selfieUrl], customPrompt, env, validAspectRatio, sizeForProvider);
           if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
+            if (body?.profile_id && creditResult?.cost > 0) {
+              await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Processing failed', request);
+            }
             const failureCode = mergeResult.StatusCode || 500;
             const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
             const debugEnabled = isDebugEnabled(env);
@@ -5920,6 +5929,9 @@ export default {
         }
 
         if (!mergeResult.Success || !mergeResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'background', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = mergeResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -6122,21 +6134,24 @@ export default {
           return errorResponse('Only selfies with action="4k" or "4K" can be used for 4K upscaling', 400, debugEnabled ? { selfieId, selfieAction, path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'upscaler4k', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         const envError = validateEnv(env, 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'upscaler4k', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const upscalerResult = await callUpscaler4k(body.image_url, env);
 
         if (!upscalerResult.Success || !upscalerResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'upscaler4k', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = upscalerResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -6236,12 +6251,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'enhance', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie image URL
         let imageUrl: string = '';
         let selfieResult: any = null;
@@ -6329,6 +6338,12 @@ export default {
         const useGemini = largestDim < 800;
         const effectiveProvider = useGemini ? 'wavespeed_gemini_2_5_flash_image' : 'wavespeed';
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'enhance', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         let enhancedResult: FaceSwapResponse;
         if (useGemini) {
           enhancedResult = await callWaveSpeedGeminiImageEdit(
@@ -6343,6 +6358,9 @@ export default {
         }
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'enhance', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = enhancedResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -6467,12 +6485,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'beauty', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie image URL
         let imageUrl: string = '';
         let selfieResult: any = null;
@@ -6553,6 +6565,12 @@ export default {
           }
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'beauty', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const beautyResult = await callNanoBanana(
           IMAGE_PROCESSING_PROMPTS.BEAUTY,
           imageUrl,
@@ -6564,6 +6582,9 @@ export default {
         );
 
         if (!beautyResult.Success || !beautyResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'beauty', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = beautyResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -6697,12 +6718,6 @@ export default {
           return errorResponse('Cannot provide both selfie_id and selfie_image_url/image_url', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'filter', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         if (hasPresetId) {
           const normalized = normalizePresetId(body.preset_image_id!);
           if (normalized) body.preset_image_id = normalized;
@@ -6820,6 +6835,12 @@ export default {
           ? `${fullPromptJsonString}\n\nAdditional instructions: ${body.additional_prompt}`
           : fullPromptJsonString;
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'filter', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const filterResult = await callNanoBanana(
           finalPrompt,
           imageUrl,
@@ -6831,6 +6852,9 @@ export default {
         );
 
         if (!filterResult.Success || !filterResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'filter', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = filterResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const flatDebug = debugEnabled ? buildFlatDebug(filterResult) : undefined;
@@ -6924,12 +6948,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'restore', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie image URL
         let imageUrl: string = '';
         let selfieResult: any = null;
@@ -6992,6 +7010,12 @@ export default {
         const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
         const useGemini = largestDim < 800;
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'restore', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         let restoredResult: FaceSwapResponse;
         if (useGemini) {
           restoredResult = await callWaveSpeedGeminiImageEdit(
@@ -7006,6 +7030,9 @@ export default {
         }
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'restore', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = restoredResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -7175,12 +7202,6 @@ export default {
           }
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'aging', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie image URL
         let selfieImageUrl: string = '';
         let selfieResult: any = null;
@@ -7291,6 +7312,12 @@ export default {
           return errorResponse('Prompt JSON not found in preset image metadata', 400, debugEnabled ? { path } : undefined, request, env);
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'aging', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const useWaveSpeedStyleAging = effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
         if (useWaveSpeedStyleAging) {
           const isGeminiProvider = effectiveProvider === 'wavespeed_gemini_2_5_flash_image';
@@ -7337,6 +7364,9 @@ export default {
         }
 
         if (!agingResult.Success || !agingResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'aging', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = agingResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const flatDebug = debugEnabled ? buildFlatDebug(agingResult) : undefined;
@@ -7454,12 +7484,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'remove_object', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie (original) image URL
         let selfieUrl: string = '';
         let selfieResult: any = null;
@@ -7523,10 +7547,19 @@ export default {
           }
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'remove_object', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         // Use WaveSpeed Bria Eraser API (no prompt needed, just image + mask)
         const removeResult = await callWaveSpeedBriaEraser(selfieUrl, maskUrl, env);
 
         if (!removeResult.Success || !removeResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'remove_object', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = removeResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -7590,8 +7623,8 @@ export default {
           ...(debugEnabled ? { debug: compact({ ...flatDebug }) } : {}),
         });
       } catch (error) {
-        if (body?.profile_id) {
-          try { await refundCredits(DB, body.profile_id, 'remove_object', creditResult.cost, 'Processing error', request); } catch (_) {}
+        if (body?.profile_id && creditResult?.cost > 0) {
+          await refundCredits(DB, body.profile_id, 'remove_object', creditResult.cost, 'Processing error', request);
         }
         logCriticalError('/remove-object', error, request, env, {
           body: {
@@ -7669,12 +7702,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Credit deduction
-        creditResult = await deductCredits(DB, body.profile_id, 'expression', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie image URL
         let selfieUrl: string = '';
         let selfieResult: any = null;
@@ -7720,6 +7747,12 @@ export default {
         const validAspectRatio = await resolveAspectRatio(body.aspect_ratio, selfieUrl, env, { allowOriginal: true });
         const modelParam = body.model;
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'expression', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const expressionResult = await callNanoBanana(
           expressionPrompt,
           selfieUrl,
@@ -7731,6 +7764,9 @@ export default {
         );
 
         if (!expressionResult.Success || !expressionResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'expression', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = expressionResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -7832,12 +7868,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        // Credit deduction (before processing)
-        creditResult = await deductCredits(DB, body.profile_id, 'expand', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie image URL
         let selfieUrl: string = '';
         let selfieResult: any = null;
@@ -7874,10 +7904,19 @@ export default {
           }
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'expand', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         // Send PNG (with transparent areas to fill) directly to WaveSpeed
         const expandResult = await callWaveSpeedEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.EXPAND, env);
 
         if (!expandResult.Success || !expandResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'expand', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = expandResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -7982,11 +8021,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body!.profile_id, path } : undefined, request, env);
         }
 
-        creditResult = await deductCredits(DB, body!.profile_id, 'editor', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         let selfieUrl: string = '';
         let selfieResult: any = null;
 
@@ -8057,9 +8091,6 @@ export default {
         // Pre-processing safety check on the input image
         const inputSafetyCheck = await checkImageSafetyWithFlashLite(selfieUrl, env);
         if (!inputSafetyCheck.safe) {
-          if (body.profile_id && creditResult?.cost > 0) {
-            await refundCredits(DB, body.profile_id, 'editor', creditResult.cost, 'Input image safety violation', request);
-          }
           const debugEnabled = isDebugEnabled(env);
           return errorResponse(
             inputSafetyCheck.reason || 'Image failed safety check',
@@ -8094,6 +8125,12 @@ export default {
         const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
         const useGemini = effectiveProvider.includes('gemini') || (effectiveProvider === 'wavespeed' && largestDim < 800);
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body!.profile_id, 'editor', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         let editResult: FaceSwapResponse;
         if (useGemini) {
           editResult = await callWaveSpeedGeminiImageEdit(
@@ -8106,6 +8143,9 @@ export default {
         }
 
         if (!editResult.Success || !editResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'editor', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = editResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -8229,11 +8269,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        creditResult = await deductCredits(DB, body.profile_id, 'replace_object', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         let selfieUrl: string = '';
         let selfieResult: any = null;
 
@@ -8273,9 +8308,18 @@ export default {
         const promptTemplate = IMAGE_PROCESSING_PROMPTS.REPLACE_OBJECT;
         const finalPrompt = promptTemplate.replace('{{custom_prompt}}', body.custom_prompt.trim());
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'replace_object', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const replaceResult = await callWaveSpeedEdit([selfieUrl], finalPrompt, env);
 
         if (!replaceResult.Success || !replaceResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'replace_object', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = replaceResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -8388,11 +8432,6 @@ export default {
           return errorResponse('Profile not found', 404, debugEnabled ? { profileId: body.profile_id, path } : undefined, request, env);
         }
 
-        creditResult = await deductCredits(DB, body.profile_id, 'remove_text', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         let selfieUrl: string = '';
         let selfieResult: any = null;
 
@@ -8428,9 +8467,18 @@ export default {
           }
         }
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'remove_text', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const removeTextResult = await callWaveSpeedGeminiImageEdit([selfieUrl], IMAGE_PROCESSING_PROMPTS.REMOVE_TEXT, env);
 
         if (!removeTextResult.Success || !removeTextResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'remove_text', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = removeTextResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);
@@ -8558,11 +8606,6 @@ export default {
           return errorResponse('Preset not found', 404, debugEnabled ? { presetId: body.preset_image_id, path } : undefined, request, env);
         }
 
-        creditResult = await deductCredits(DB, body.profile_id, 'hair_style', env, request);
-        if (!creditResult.success) {
-          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
-        }
-
         // Resolve selfie URL
         let selfieUrl: string = '';
         if (hasSelfieId) {
@@ -8614,9 +8657,18 @@ export default {
         const aspectRatio = await resolveAspectRatio(body.aspect_ratio || 'original', selfieUrl, env, { allowOriginal: true });
         const size = aspectRatio === 'custom' ? undefined : undefined;
 
+        // Credit deduction (after validation, before processing)
+        creditResult = await deductCredits(DB, body.profile_id, 'hair_style', env, request);
+        if (!creditResult.success) {
+          return jsonResponse({ data: null, status: 'error', message: creditResult.error, code: 402 }, 402, request, env);
+        }
+
         const hairResult = await callWaveSpeedEdit([selfieUrl], prompt, env, aspectRatio, size);
 
         if (!hairResult.Success || !hairResult.ResultImageUrl) {
+          if (body?.profile_id && creditResult?.cost > 0) {
+            await refundCredits(DB, body.profile_id, 'hair_style', creditResult.cost, 'Processing failed', request);
+          }
           const failureCode = hairResult.StatusCode || 500;
           const httpStatus = (failureCode >= 1000) ? 422 : (failureCode >= 200 && failureCode < 600 ? failureCode : 500);
           const debugEnabled = isDebugEnabled(env);

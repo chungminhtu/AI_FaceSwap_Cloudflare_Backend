@@ -976,6 +976,7 @@ function parseConfig(config) {
   if (config.FCM_PRIVATE_KEY) secrets.FCM_PRIVATE_KEY = config.FCM_PRIVATE_KEY;
   if (config.CLOUDFLARE_ZONE_ID) secrets.CLOUDFLARE_ZONE_ID = config.CLOUDFLARE_ZONE_ID;
   if (config.CLOUDFLARE_CDN_PURGE_TOKEN) secrets.CLOUDFLARE_CDN_PURGE_TOKEN = config.CLOUDFLARE_CDN_PURGE_TOKEN;
+  if (config.ENABLE_CREDIT_SYSTEM) secrets.ENABLE_CREDIT_SYSTEM = config.ENABLE_CREDIT_SYSTEM;
   if (!config.promptCacheKV || !config.promptCacheKV.namespaceName) {
     throw new Error('promptCacheKV.namespaceName is required in deployments-secrets.json');
   }
