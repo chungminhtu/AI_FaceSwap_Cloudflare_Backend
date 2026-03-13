@@ -204,8 +204,8 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 
 | Endpoint | Provider URL | Điểm | Chi phí/lần | Custom Prompt | Vision Selfie | Vision Kết Quả |
 |----------|-------------|------|-------------|---------------|---------------|----------------|
-| POST `/enhance` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | Có | Không |
-| POST `/restore` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 2 | $0.038 / $0.016 | Không | Có | Không |
+| POST `/enhance` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Có | Không |
+| POST `/restore` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Có | Không |
 | POST `/upscaler4k` | `api.wavespeed.ai/api/v1/wavespeed-ai/image-upscaler` | 5 | $0.010 | Không | Có | Không |
 | POST `/beauty` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Có | Không |
 | POST `/filter` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 3 | $0.016 | Có | Có | Có |
@@ -218,7 +218,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/expand` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Có | Không |
 | POST `/replace-object` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Có | Có | Có |
 | POST `/remove-text` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Có | Không |
-| POST `/editor` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` hoặc `.../flux-2-klein-9b/edit` | 5 | $0.016-$0.038 | Có | Có | Có |
+| POST `/editor` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016 | Có | Có | Có |
 
 ---
 

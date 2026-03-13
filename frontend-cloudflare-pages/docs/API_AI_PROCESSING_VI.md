@@ -257,7 +257,7 @@ curl -X POST https://api.d.shotpix.app/background \
 
 **Mục đích:** AI restoration và enhancement ảnh - cải thiện sharpness, clarity, và fine detail trong khi giữ nguyên chính xác objects và structure từ ảnh gốc. Chỉ restore detail bị mất do blur, noise, hoặc compression — không tạo thêm objects mới.
 
-**API làm gì:** Gửi `image_url` → AI (WaveSpeed) enhance ảnh → trả `resultImageUrl`. Tự động chọn model theo kích thước: ảnh nhỏ (< 800px) dùng Gemini 2.5 Flash Image, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B.
+**API làm gì:** Gửi `image_url` → AI (WaveSpeed Flux 2 Klein 9B) enhance ảnh → trả `resultImageUrl`.
 
 **Lưu ý:**
 - Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
@@ -534,7 +534,7 @@ flowchart TD
 
 **Mục đích:** AI khôi phục và nâng cấp ảnh - phục hồi ảnh bị hư hỏng, cũ, mờ, hoặc đen trắng thành ảnh chất lượng cao với màu sắc sống động.
 
-**API làm gì:** Gửi `image_url` → AI restore (WaveSpeed) → trả `resultImageUrl`. Tự động chọn model theo kích thước ảnh: ảnh nhỏ (< 800px cạnh lớn nhất) dùng Gemini 2.5 Flash Image, ảnh lớn (≥ 800px) dùng Flux 2 Klein 9B v3.
+**API làm gì:** Gửi `image_url` → AI restore (WaveSpeed Flux 2 Klein 9B) → trả `resultImageUrl`.
 
 **Lưu ý:** Endpoint này yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
@@ -1053,7 +1053,7 @@ curl -X POST https://api.d.shotpix.app/remove-text \
 
 ## 2.14. POST `/editor` - AI Image Editor
 
-**Mục đích:** Chỉnh sửa ảnh theo hướng dẫn tự do từ người dùng. Hỗ trợ provider routing tự động (Gemini 2.5 Flash Image cho ảnh nhỏ < 800px, WaveSpeed Flux Klein v3 cho ảnh lớn hơn).
+**Mục đích:** Chỉnh sửa ảnh theo hướng dẫn tự do từ người dùng. Mặc định dùng WaveSpeed Flux 2 Klein 9B; có thể chọn Gemini 2.5 Flash Image qua param `provider`.
 
 **API làm gì:** Nhận ảnh + `custom_prompt` mô tả cách chỉnh sửa → kiểm tra an toàn ảnh đầu vào → AI chỉnh sửa theo hướng dẫn → kiểm tra an toàn kết quả → trả `resultImageUrl`.
 

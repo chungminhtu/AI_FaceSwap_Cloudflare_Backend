@@ -6376,29 +6376,17 @@ export default {
           sizeForProvider = optimal.sizeString;
         }
 
-        // Route by image size: < 800px largest dimension → Gemini 2.5 Flash Image, otherwise → Flux Klein v3
-        const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
-        const useGemini = largestDim < 800;
-        const effectiveProvider = useGemini ? 'wavespeed_gemini_2_5_flash_image' : 'wavespeed';
-
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'enhance', env, request);
         if (!creditResult.success) {
           return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
-        let enhancedResult: FaceSwapResponse;
-        if (useGemini) {
-          enhancedResult = await callWaveSpeedGeminiImageEdit(
-            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.ENHANCE === 'string' ? IMAGE_PROCESSING_PROMPTS.ENHANCE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.ENHANCE),
-            env, validAspectRatio, sizeForProvider
-          );
-        } else {
-          enhancedResult = await callWaveSpeedEdit(
-            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.ENHANCE === 'string' ? IMAGE_PROCESSING_PROMPTS.ENHANCE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.ENHANCE),
-            env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
-          );
-        }
+        // Always use Flux Klein v3 for enhance
+        const enhancedResult = await callWaveSpeedEdit(
+          [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.ENHANCE === 'string' ? IMAGE_PROCESSING_PROMPTS.ENHANCE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.ENHANCE),
+          env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
+        );
 
         if (!enhancedResult.Success || !enhancedResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
@@ -7049,28 +7037,17 @@ export default {
           sizeForProvider = optimal.sizeString;
         }
 
-        // Route by image size: < 800px largest dimension → Gemini 2.5 Flash Image, otherwise → Flux Klein v3
-        const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
-        const useGemini = largestDim < 800;
-
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body.profile_id, 'restore', env, request);
         if (!creditResult.success) {
           return jsonResponse({ data: null, status: 'error', message: 'Credit check failed', code: 402, reason: creditResult.reason }, 402, request, env);
         }
 
-        let restoredResult: FaceSwapResponse;
-        if (useGemini) {
-          restoredResult = await callWaveSpeedGeminiImageEdit(
-            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.RESTORE === 'string' ? IMAGE_PROCESSING_PROMPTS.RESTORE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.RESTORE),
-            env, validAspectRatio, sizeForProvider
-          );
-        } else {
-          restoredResult = await callWaveSpeedEdit(
-            [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.RESTORE === 'string' ? IMAGE_PROCESSING_PROMPTS.RESTORE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.RESTORE),
-            env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
-          );
-        }
+        // Always use Flux Klein v3 for restore
+        const restoredResult = await callWaveSpeedEdit(
+          [imageUrl], typeof IMAGE_PROCESSING_PROMPTS.RESTORE === 'string' ? IMAGE_PROCESSING_PROMPTS.RESTORE : JSON.stringify(IMAGE_PROCESSING_PROMPTS.RESTORE),
+          env, validAspectRatio, sizeForProvider, API_ENDPOINTS.WAVESPEED_FLUX_KLEIN_EDIT_V3
+        );
 
         if (!restoredResult.Success || !restoredResult.ResultImageUrl) {
           if (body?.profile_id && creditResult?.cost > 0) {
@@ -8164,10 +8141,9 @@ export default {
         // Build image array: main image + optional reference image
         const imageUrls = refImageUrl ? [selfieUrl, refImageUrl] : [selfieUrl];
 
-        // Provider routing: small images → Gemini, larger → WaveSpeed Flux Klein v3
+        // Provider routing: use Gemini only if user explicitly requests it, otherwise Flux Klein v3
         const effectiveProvider = getEffectiveProvider(body, env, 'EDITOR');
-        const largestDim = imageDimensionsExtended ? Math.max(imageDimensionsExtended.width, imageDimensionsExtended.height) : 0;
-        const useGemini = effectiveProvider.includes('gemini') || (effectiveProvider === 'wavespeed' && largestDim < 800);
+        const useGemini = effectiveProvider.includes('gemini');
 
         // Credit deduction (after validation, before processing)
         creditResult = await deductCredits(DB, body!.profile_id, 'editor', env, request);
