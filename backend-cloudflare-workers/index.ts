@@ -1427,24 +1427,7 @@ export default {
 
         // Process all files in parallel
         const processFile = async (fileData: FileData, index: number): Promise<any> => {
-          // Check if same filename exists for this profile_id (selfie override detection)
-          let existingId: string | null = null;
-          let existingExt: string | null = null;
-          let isOverride = false;
-
-          if ((type === 'selfie' || type === 'mask') && fileData.filename && profileId) {
-            const existingResult = await DB.prepare(
-              'SELECT id, ext FROM selfies WHERE profile_id = ? AND filename = ? LIMIT 1'
-            ).bind(profileId, fileData.filename).first();
-
-            if (existingResult) {
-              existingId = (existingResult as any).id;
-              existingExt = (existingResult as any).ext;
-              isOverride = true;
-            }
-          }
-
-          const id = isOverride ? existingId! : nanoid(16);
+          const id = nanoid(16);
           // Extract extension from content type, with proper fallback
           let ext = 'jpg'; // Default fallback
           if (fileData.contentType && typeof fileData.contentType === 'string') {
@@ -1495,15 +1478,8 @@ export default {
           // Track URLs for CDN purge
           const urlsToPurge: string[] = [];
 
-          // Upload to R2 (if override with different ext, delete old file first)
+          // Upload to R2
           try {
-            if (isOverride && existingExt && existingExt !== ext) {
-              const oldKey = `${type}/${id}.${existingExt}`;
-              const oldUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
-              urlsToPurge.push(oldUrl);
-              await R2_BUCKET.delete(oldKey).catch(() => {});
-            }
-
             await R2_BUCKET.put(key, fileData.fileData, {
               httpMetadata: {
                 contentType: fileData.contentType,
@@ -1511,7 +1487,7 @@ export default {
               },
             });
 
-            // Always purge cache for the current URL (both override and new uploads)
+            // Purge CDN cache for the uploaded URL
             const newUrl = getR2PublicUrl(env, key, requestUrl.origin);
             urlsToPurge.push(newUrl);
           } catch (r2Error) {
@@ -1796,77 +1772,74 @@ export default {
               actionValue = 'faceswap';
             }
 
-            // Skip limit check if override (same filename for same profile_id)
-            if (!isOverride) {
-              // Optimized: Use LIMIT to fetch only what we need (faster than COUNT on large tables)
-              // Get (maxCount) oldest selfies - if we have exactly maxCount, we need to delete 1 before inserting
-              let maxCount: number;
-              let queryCondition: string;
-              let queryBindings: any[];
+            // Optimized: Use LIMIT to fetch only what we need (faster than COUNT on large tables)
+            // Get (maxCount) oldest selfies - if we have exactly maxCount, we need to delete 1 before inserting
+            let maxCount: number;
+            let queryCondition: string;
+            let queryBindings: any[];
 
-              // Apply selfie limits for FaceSwap and Filter actions - other actions auto-delete after processing
-              if (actionLower === 'faceswap' || actionLower === 'filter') {
-                maxCount = actionLower === 'faceswap' 
-                  ? parseInt(env.SELFIE_MAX_FACESWAP || '5', 10)
-                  : parseInt(env.SELFIE_MAX_FILTER || '5', 10);
-                queryCondition = 'profile_id = ? AND action = ?';
-                queryBindings = [profileId, actionValue];
+            // Apply selfie limits for FaceSwap and Filter actions - other actions auto-delete after processing
+            if (actionLower === 'faceswap' || actionLower === 'filter') {
+              maxCount = actionLower === 'faceswap'
+                ? parseInt(env.SELFIE_MAX_FACESWAP || '5', 10)
+                : parseInt(env.SELFIE_MAX_FILTER || '5', 10);
+              queryCondition = 'profile_id = ? AND action = ?';
+              queryBindings = [profileId, actionValue];
 
-                // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
-                if (isNaN(maxCount) || maxCount < 1) {
-                  maxCount = 1; // Default to 1 if invalid
-                }
-                maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
+              // Validate maxCount is a valid positive integer (SQLite LIMIT requires INTEGER)
+              if (isNaN(maxCount) || maxCount < 1) {
+                maxCount = 1; // Default to 1 if invalid
+              }
+              maxCount = Math.floor(Math.max(1, maxCount)); // Ensure it's a positive integer
 
-                // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
-                const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
-                const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
-                const currentCount = existingResult.results?.length || 0;
+              // Fetch existing selfies up to maxCount (avoids full table scan of COUNT(*))
+              const existingQuery = `SELECT id, ext FROM selfies WHERE ${queryCondition} ORDER BY created_at ASC LIMIT ?`;
+              const existingResult = await DB.prepare(existingQuery).bind(...queryBindings, maxCount).all();
+              const currentCount = existingResult.results?.length || 0;
 
-                // Delete oldest if at limit
-                if (currentCount >= maxCount) {
-                  const toDeleteCount = currentCount - maxCount + 1;
-                  const toDelete = existingResult.results!.slice(0, toDeleteCount);
-                  const idsToDelete = toDelete.map((s: any) => s.id);
+              // Delete oldest if at limit
+              if (currentCount >= maxCount) {
+                const toDeleteCount = currentCount - maxCount + 1;
+                const toDelete = existingResult.results!.slice(0, toDeleteCount);
+                const idsToDelete = toDelete.map((s: any) => s.id);
 
-                  // Delete from DB in batch
-                  const placeholders = idsToDelete.map(() => '?').join(',');
-                  await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
+                // Delete from DB in batch
+                const placeholders = idsToDelete.map(() => '?').join(',');
+                await DB.prepare(`DELETE FROM selfies WHERE id IN (${placeholders})`).bind(...idsToDelete).run();
 
-                  // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
-                  const urlsToPurge: string[] = [];
-                  const r2Deletions = toDelete.map(async (oldSelfie: any) => {
-                    const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
-                    try {
-                      await R2_BUCKET.delete(oldKey);
-                      // Collect URL for CDN purge
-                      const publicUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
-                      urlsToPurge.push(publicUrl);
-                    } catch (r2Error) {
-                      console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
-                    }
-                  });
+                // Delete from R2 - await to ensure cleanup completes (prevent orphaned files)
+                const urlsToPurge: string[] = [];
+                const r2Deletions = toDelete.map(async (oldSelfie: any) => {
+                  const oldKey = reconstructR2Key(oldSelfie.id, oldSelfie.ext, 'selfie');
+                  try {
+                    await R2_BUCKET.delete(oldKey);
+                    // Collect URL for CDN purge
+                    const publicUrl = getR2PublicUrl(env, oldKey, requestUrl.origin);
+                    urlsToPurge.push(publicUrl);
+                  } catch (r2Error) {
+                    console.error(`[R2] Failed to delete ${oldKey}:`, r2Error instanceof Error ? r2Error.message.substring(0, 100) : String(r2Error).substring(0, 100));
+                  }
+                });
 
-                  // Wait for all R2 deletions to complete (parallel within batch)
-                  await Promise.all(r2Deletions);
+                // Wait for all R2 deletions to complete (parallel within batch)
+                await Promise.all(r2Deletions);
 
-                  // Purge CDN cache for deleted selfies (wait for result)
-                  if (urlsToPurge.length > 0) {
-                    try {
-                      const purgeResult = await purgeCdnCache(urlsToPurge, env);
-                      console.log('[Delete Old Selfies] CDN purge result:', {
-                        success: purgeResult.success,
-                        purged: purgeResult.purged,
-                        skipped: purgeResult.skipped
-                      });
-                    } catch (error) {
-                      console.error('[Delete Old Selfies] CDN purge failed:', error);
-                    }
+                // Purge CDN cache for deleted selfies (wait for result)
+                if (urlsToPurge.length > 0) {
+                  try {
+                    const purgeResult = await purgeCdnCache(urlsToPurge, env);
+                    console.log('[Delete Old Selfies] CDN purge result:', {
+                      success: purgeResult.success,
+                      purged: purgeResult.purged,
+                      skipped: purgeResult.skipped
+                    });
+                  } catch (error) {
+                    console.error('[Delete Old Selfies] CDN purge failed:', error);
                   }
                 }
               }
-              // Non-FaceSwap/Filter actions: no limit enforcement - selfies will be auto-deleted after API processing
             }
+            // Non-FaceSwap/Filter actions: no limit enforcement - selfies will be auto-deleted after API processing
 
             // Insert new selfie - ensure all values are correct types
             // Validate and explicitly convert all values to prevent SQLITE_MISMATCH
@@ -1914,33 +1887,24 @@ export default {
             const validFilename = fileData.filename || null;
 
             try {
-              let dbResult;
               // Get dimensions for this specific file (by index)
               const fileDimensions = dimensionsArray[index] || null;
 
-              if (isOverride) {
-                // UPDATE existing selfie (same profile_id + filename)
-                dbResult = await DB.prepare(
-                  'UPDATE selfies SET ext = ?, action = ?, dimensions = ?, created_at = ? WHERE id = ? AND profile_id = ?'
-                ).bind(validExt, validAction, fileDimensions, Math.floor(validCreatedAt), validId, validProfileId).run();
-              } else {
-                // INSERT new selfie with filename
-                dbResult = await DB.prepare(
-                  'INSERT INTO selfies (id, ext, profile_id, action, filename, dimensions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-                ).bind(validId, validExt, validProfileId, validAction, validFilename, fileDimensions, Math.floor(validCreatedAt)).run();
-              }
+              // INSERT new selfie with filename
+              const dbResult = await DB.prepare(
+                'INSERT INTO selfies (id, ext, profile_id, action, filename, dimensions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+              ).bind(validId, validExt, validProfileId, validAction, validFilename, fileDimensions, Math.floor(validCreatedAt)).run();
 
               if (!dbResult.success) {
                 return {
                   success: false,
-                  error: isOverride ? 'Database update failed' : 'Database insert failed',
+                  error: 'Database insert failed',
                   filename: fileData.filename
                 };
               }
             } catch (dbError) {
               console.error('[Selfie Upload] Database error:', {
                 error: dbError instanceof Error ? dbError.message : String(dbError),
-                isOverride,
                 id: validId,
                 ext: validExt,
                 profile_id: validProfileId,
@@ -1992,21 +1956,14 @@ export default {
             const fileDimensions = dimensionsArray[index] || null;
 
             try {
-              let dbResult;
-              if (isOverride) {
-                dbResult = await DB.prepare(
-                  'UPDATE selfies SET ext = ?, action = ?, dimensions = ?, created_at = ? WHERE id = ? AND profile_id = ?'
-                ).bind(validExt, actionValue, fileDimensions, validCreatedAt, validId, validProfileId).run();
-              } else {
-                dbResult = await DB.prepare(
-                  'INSERT INTO selfies (id, ext, profile_id, action, filename, dimensions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-                ).bind(validId, validExt, validProfileId, actionValue, validFilename, fileDimensions, validCreatedAt).run();
-              }
+              const dbResult = await DB.prepare(
+                'INSERT INTO selfies (id, ext, profile_id, action, filename, dimensions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+              ).bind(validId, validExt, validProfileId, actionValue, validFilename, fileDimensions, validCreatedAt).run();
 
               if (!dbResult.success) {
                 return {
                   success: false,
-                  error: isOverride ? 'Database update failed' : 'Database insert failed',
+                  error: 'Database insert failed',
                   filename: fileData.filename
                 };
               }
