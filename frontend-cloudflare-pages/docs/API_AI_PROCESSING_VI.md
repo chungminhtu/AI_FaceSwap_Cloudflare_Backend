@@ -995,16 +995,16 @@ curl -X POST https://api.d.shotpix.app/replace-object \
 
 ## 2.13. POST `/remove-text` - AI Remove Text
 
-**Mục đích:** Xóa text được đánh dấu (masked) khỏi ảnh sử dụng Gemini 2.5 Flash Image Edit qua WaveSpeed.
+**Mục đích:** Xóa text được đánh dấu bằng màu đỏ (red highlight mask) khỏi ảnh sử dụng Gemini 2.5 Flash Image Edit qua WaveSpeed.
 
-**API làm gì:** Gửi ảnh đã ghép (gốc + mask, vùng highlight = text cần xóa) → AI xóa text trong vùng mask, giữ layout → trả `resultImageUrl`.
+**API làm gì:** Gửi 1 ảnh đã ghép (gốc + red mask overlay, vùng đỏ = text cần xóa) → AI xóa text trong vùng đỏ, giữ layout/font/formatting → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 
 **Cách hoạt động:**
-1. Frontend ghép ảnh gốc + mask thành 1 ảnh duy nhất (vùng highlight = text cần xóa)
+1. Frontend ghép ảnh gốc + mask thành 1 ảnh duy nhất (vùng tô đỏ = text cần xóa)
 2. Upload ảnh đã ghép lên
-3. Gọi API - AI sẽ xóa text trong vùng mask, giữ nguyên layout và format
+3. Gọi API - AI sẽ xóa text trong vùng đỏ, reflow text còn lại, giữ nguyên layout và format
 
 **Request:**
 ```bash
