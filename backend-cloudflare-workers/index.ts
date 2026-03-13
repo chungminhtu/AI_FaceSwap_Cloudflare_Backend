@@ -7781,7 +7781,8 @@ export default {
           }
         }
 
-        const envError = validateEnv(env, 'vertex');
+        const effectiveProvider = body.provider || 'wavespeed_gemini_2_5_flash_image';
+        const envError = validateEnv(env, (effectiveProvider === 'wavespeed' || effectiveProvider === 'wavespeed_gemini_2_5_flash_image') ? 'wavespeed' : 'vertex');
         if (envError) {
           const debugEnabled = isDebugEnabled(env);
           return errorResponse('', 500, debugEnabled ? { error: envError, path } : undefined, request, env);
@@ -7803,7 +7804,7 @@ export default {
           env,
           validAspectRatio,
           modelParam,
-          { skipFacialPreservation: true, provider: body.provider }
+          { skipFacialPreservation: true, provider: effectiveProvider }
         );
 
         if (!expressionResult.Success || !expressionResult.ResultImageUrl) {

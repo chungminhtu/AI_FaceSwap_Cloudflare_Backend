@@ -806,7 +806,7 @@ curl -X POST https://api.d.shotpix.app/remove-object \
 
 **Mục đích:** Thay đổi biểu cảm khuôn mặt trong ảnh dựa trên loại biểu cảm được chọn.
 
-**API làm gì:** Gửi selfie + `expression` (sad/laugh/smile/...) → AI (Vertex/WaveSpeed) chỉnh biểu cảm → trả `resultImageUrl`.
+**API làm gì:** Gửi selfie + `expression` (sad/laugh/smile/...) → AI (WaveSpeed Gemini 2.5 Flash Image Edit) chỉnh biểu cảm → trả `resultImageUrl`.
 
 **Lưu ý:** Yêu cầu API key authentication khi `ENABLE_MOBILE_API_KEY_AUTH=true`.
 

@@ -210,7 +210,7 @@ Mọi endpoint AI có thể gửi `"provider": "vertex"`, `"provider": "wavespee
 | POST `/beauty` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 2 | $0.016 | Không | Có | Không |
 | POST `/filter` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 3 | $0.016 | Có | Có | Có |
 | POST `/faceswap` | `api.wavespeed.ai/api/v1/wavespeed-ai/flux-2-klein-9b/edit` | 5 | $0.016 | Có | Có | Không |
-| POST `/expression` | Vertex AI Gemini (`aiplatform.googleapis.com`) | 1 | — | Không | Có | Không |
+| POST `/expression` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Có | Không |
 | POST `/hair-style` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Có | Không |
 | POST `/aging` | `api.wavespeed.ai/api/v3/google/gemini-2.5-flash-image/edit` | 1 | $0.038 | Không | Có | Không |
 | POST `/remove-object` | `api.wavespeed.ai/api/v3/bria/eraser` | 1 | $0.040 | Không | Có | Không |
